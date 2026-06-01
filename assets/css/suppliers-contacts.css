@@ -1,0 +1,207 @@
+/* =============================================================================
+   suppliers-contacts.css
+   Stili per la sezione "Contatti" nella scheda fornitore.
+   Dipende dalle variabili CSS di theme.css e app.css.
+============================================================================= */
+
+/* ── Griglia tile ─────────────────────────────────────────────────────────── */
+.qksc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+/* ── Tile singolo contatto ────────────────────────────────────────────────── */
+.qksc-tile {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  transition: box-shadow var(--qk-transition), border-color var(--qk-transition);
+  position: relative;
+}
+
+.qksc-tile:hover {
+  border-color: var(--qk-accent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+}
+
+/* ── Avatar iniziali ─────────────────────────────────────────────────────── */
+.qksc-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--qk-accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Varianti colore avatar basate su data-color */
+.qksc-avatar[data-color="0"] { background: #4f46e5; }
+.qksc-avatar[data-color="1"] { background: #0891b2; }
+.qksc-avatar[data-color="2"] { background: #059669; }
+.qksc-avatar[data-color="3"] { background: #d97706; }
+.qksc-avatar[data-color="4"] { background: #dc2626; }
+.qksc-avatar[data-color="5"] { background: #7c3aed; }
+.qksc-avatar[data-color="6"] { background: #db2777; }
+.qksc-avatar[data-color="7"] { background: #0284c7; }
+
+/* ── Riga superiore: avatar + nome ──────────────────────────────────────── */
+.qksc-tile-header {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.qksc-tile-name {
+  font-weight: 600;
+  font-size: .92rem;
+  color: var(--qk-text-primary);
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.qksc-tile-role {
+  font-size: .75rem;
+  color: var(--qk-text-muted);
+  margin-top: .1rem;
+}
+
+/* ── Dettagli contatto ───────────────────────────────────────────────────── */
+.qksc-tile-details {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  margin-top: .15rem;
+}
+
+.qksc-detail-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8rem;
+  color: var(--qk-text-secondary);
+  min-width: 0;
+}
+
+.qksc-detail-row i {
+  color: var(--qk-text-muted);
+  font-size: .75rem;
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.qksc-detail-row a {
+  color: var(--qk-accent-text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.qksc-detail-row a:hover { text-decoration: underline; }
+
+/* ── Azioni tile ─────────────────────────────────────────────────────────── */
+.qksc-tile-actions {
+  display: flex;
+  gap: .35rem;
+  margin-top: auto;
+  padding-top: .6rem;
+  border-top: 1px solid var(--qk-card-border);
+}
+
+.qksc-btn-action {
+  background: none;
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .28rem .6rem;
+  font-size: .78rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  transition: background var(--qk-transition), color var(--qk-transition), border-color var(--qk-transition);
+}
+
+/* Modifica: icona accent, testo secondario — azione neutra disponibile */
+.qksc-btn-action.btn-edit {
+  color: var(--qk-text-secondary);
+}
+.qksc-btn-action.btn-edit i {
+  color: var(--qk-accent-text);
+}
+.qksc-btn-action.btn-edit:hover {
+  background: color-mix(in srgb, var(--qk-accent) 10%, transparent);
+  border-color: var(--qk-accent);
+  color: var(--qk-accent-text);
+}
+.qksc-btn-action.btn-edit:hover i {
+  color: inherit;
+}
+
+/* Elimina: rosso a riposo — azione distruttiva sempre riconoscibile */
+.qksc-btn-action.danger {
+  color: var(--qk-danger);
+  border-color: color-mix(in srgb, var(--qk-danger) 30%, var(--qk-card-border));
+}
+.qksc-btn-action.danger:hover {
+  background: var(--qk-danger-bg);
+  border-color: var(--qk-danger);
+  color: var(--qk-danger);
+}
+
+/* ── Tile "aggiungi contatto" ─────────────────────────────────────────────── */
+.qksc-tile-add {
+  border-style: dashed;
+  background: transparent;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--qk-text-muted);
+  gap: .5rem;
+  transition: border-color var(--qk-transition), color var(--qk-transition), background var(--qk-transition);
+}
+.qksc-tile-add:hover {
+  border-color: var(--qk-accent);
+  color: var(--qk-accent-text);
+  background: color-mix(in srgb, var(--qk-accent) 6%, transparent);
+}
+.qksc-tile-add i { font-size: 1.4rem; }
+.qksc-tile-add span { font-size: .82rem; font-weight: 500; }
+
+/* ── Stato vuoto ─────────────────────────────────────────────────────────── */
+.qksc-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--qk-text-muted);
+  font-size: .875rem;
+}
+.qksc-empty i { font-size: 2rem; display: block; margin-bottom: .5rem; opacity: .35; }
+
+/* ── Modal contatto ──────────────────────────────────────────────────────── */
+#modalContatto .modal-header {
+  border-bottom: 1px solid var(--qk-card-border);
+  background: var(--qk-table-head-bg);
+}
+#modalContatto .modal-content {
+  background: var(--qk-card-bg);
+  color: var(--qk-text-primary);
+  border: 1px solid var(--qk-card-border);
+}
+#modalContatto .modal-footer {
+  border-top: 1px solid var(--qk-card-border);
+  background: var(--qk-table-head-bg);
+}

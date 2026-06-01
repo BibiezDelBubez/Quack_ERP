@@ -1,0 +1,403 @@
+<?php
+
+declare(strict_types=1);
+
+final class PurchasesController extends BaseController
+{
+    /* ── Listini acquisto ────────────────────────────────────────────────── */
+
+    public function indexPricelists(): void
+    {
+        $search = get_param('q');
+
+        $sql = "SELECT la.*, 
+                       COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_nome
+                FROM listini_acquisto la
+                LEFT JOIN clienti_fornitori cf ON cf.id = la.fornitore_id
+                WHERE 1=1";
+
+        $params = [];
+        if ($search) {
+            $sql .= " AND (la.nome_listino LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q OR cf.cognome LIKE :q)";
+            $params[':q'] = '%' . $search . '%';
+        }
+
+        $sql .= " ORDER BY la.id DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $pricelists = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/pricelists_list.php', [
+            'page_title'    => 'Listini acquisto',
+            'page_subtitle' => "Gestione dei listini di acquisto e delle tariffe concordate con i fornitori",
+            'breadcrumbs'   => [['label' => 'Acquisti', 'url' => url('purchases/rfq')], ['label' => 'Listini acquisto']],
+            'pricelists'    => $pricelists,
+            'search'        => $search,
+        ]);
+    }
+
+    public function createPricelist(): void
+    {
+        $errors = [];
+        $values = [
+            'fornitore_id'    => '',
+            'fornitore_label' => '',
+            'nome_listino'    => '',
+            'valido_dal'      => '',
+            'valido_al'       => '',
+            'note'            => '',
+        ];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido.';
+            } else {
+                $values = [
+                    'fornitore_id'    => post('fornitore_id'),
+                    'fornitore_label' => post('fornitore_label'),
+                    'nome_listino'    => trim(post('nome_listino') ?? ''),
+                    'valido_dal'      => post('valido_dal') ?: null,
+                    'valido_al'       => post('valido_al') ?: null,
+                    'note'            => post('note'),
+                ];
+
+                if (empty($values['fornitore_id'])) {
+                    $errors['fornitore_id'] = 'Fornitore obbligatorio.';
+                }
+                if (empty($values['nome_listino'])) {
+                    $errors['nome_listino'] = 'Nome listino obbligatorio.';
+                }
+
+                if (empty($errors)) {
+                    try {
+                        $stmt = $this->pdo->prepare(
+                            "INSERT INTO listini_acquisto (fornitore_id, nome_listino, valido_dal, valido_al, note)
+                             VALUES (:fornitore_id, :nome_listino, :valido_dal, :valido_al, :note)"
+                        );
+                        $stmt->execute([
+                            ':fornitore_id' => $values['fornitore_id'],
+                            ':nome_listino' => $values['nome_listino'],
+                            ':valido_dal'   => $values['valido_dal'],
+                            ':valido_al'    => $values['valido_al'],
+                            ':note'         => $values['note'],
+                        ]);
+                        redirect_with('purchases/pricelists', 'success', 'Listino acquisto salvato correttamente.');
+                    } catch (Throwable $e) {
+                        $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/pricelists_form.php', [
+            'page_title'    => 'Nuovo listino acquisto',
+            'page_subtitle' => 'Crea un nuovo listino acquisto per un fornitore',
+            'breadcrumbs'   => [
+                ['label' => 'Acquisti', 'url' => url('purchases/rfq')],
+                ['label' => 'Listini acquisto', 'url' => url('purchases/pricelists')],
+                ['label' => 'Nuovo']
+            ],
+            'errors'        => $errors,
+            'values'        => $values,
+            'isEdit'        => false,
+            'items'         => [],
+        ]);
+    }
+
+    public function editPricelist(): void
+    {
+        $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            redirect_with('purchases/pricelists', 'danger', 'Nessun listino specificato.');
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT la.*, 
+                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_label
+             FROM listini_acquisto la
+             LEFT JOIN clienti_fornitori cf ON cf.id = la.fornitore_id
+             WHERE la.id = :id"
+        );
+        $stmt->execute([':id' => $id]);
+        $pricelist = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$pricelist) {
+            redirect_with('purchases/pricelists', 'danger', 'Listino non trovato.');
+        }
+
+        $errors = [];
+        $values = [
+            'fornitore_id'    => $pricelist['fornitore_id'],
+            'fornitore_label' => $pricelist['fornitore_label'],
+            'nome_listino'    => $pricelist['nome_listino'],
+            'valido_dal'      => $pricelist['valido_dal'] ?: '',
+            'valido_al'       => $pricelist['valido_al'] ?: '',
+            'note'            => $pricelist['note'] ?? '',
+        ];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido.';
+            } else {
+                $values = [
+                    'fornitore_id'    => post('fornitore_id'),
+                    'fornitore_label' => post('fornitore_label'),
+                    'nome_listino'    => trim(post('nome_listino') ?? ''),
+                    'valido_dal'      => post('valido_dal') ?: null,
+                    'valido_al'       => post('valido_al') ?: null,
+                    'note'            => post('note'),
+                ];
+
+                if (empty($values['fornitore_id'])) {
+                    $errors['fornitore_id'] = 'Fornitore obbligatorio.';
+                }
+                if (empty($values['nome_listino'])) {
+                    $errors['nome_listino'] = 'Nome listino obbligatorio.';
+                }
+
+                if (empty($errors)) {
+                    try {
+                        $stmtUpdate = $this->pdo->prepare(
+                            "UPDATE listini_acquisto SET
+                                fornitore_id = :fornitore_id,
+                                nome_listino = :nome_listino,
+                                valido_dal   = :valido_dal,
+                                valido_al    = :valido_al,
+                                note         = :note
+                             WHERE id = :id"
+                        );
+                        $stmtUpdate->execute([
+                            ':fornitore_id' => $values['fornitore_id'],
+                            ':nome_listino' => $values['nome_listino'],
+                            ':valido_dal'   => $values['valido_dal'],
+                            ':valido_al'    => $values['valido_al'],
+                            ':note'         => $values['note'],
+                            ':id'           => $id,
+                        ]);
+                        redirect_with('purchases/pricelists', 'success', 'Listino acquisto aggiornato correttamente.');
+                    } catch (Throwable $e) {
+                        $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+
+        // Recupera gli articoli e i prezzi associati a questo listino
+        $stmtItems = $this->pdo->prepare(
+            "SELECT pfp.*, p.nome AS prodotto_nome, p.sku_interno, pf.sku_fornitore
+             FROM prodotti_fornitori_prezzi pfp
+             JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+             JOIN prodotti p ON p.id = pf.prodotto_id
+             WHERE pfp.listino_acquisto_id = :lid
+             ORDER BY p.nome ASC, pfp.quantita_minima ASC"
+        );
+        $stmtItems->execute([':lid' => $id]);
+        $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/pricelists_form.php', [
+            'page_title'    => 'Modifica listino acquisto',
+            'page_subtitle' => 'Gestisci i dettagli del listino ed esamina gli articoli associati',
+            'breadcrumbs'   => [
+                ['label' => 'Acquisti', 'url' => url('purchases/rfq')],
+                ['label' => 'Listini acquisto', 'url' => url('purchases/pricelists')],
+                ['label' => $pricelist['nome_listino']]
+            ],
+            'errors'        => $errors,
+            'values'        => $values,
+            'isEdit'        => true,
+            'id'            => $id,
+            'items'         => $items,
+        ]);
+    }
+
+    public function deletePricelist(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect_with('purchases/pricelists', 'danger', 'Metodo non consentito.');
+        }
+        if (!csrf_verify()) {
+            redirect_with('purchases/pricelists', 'danger', 'Token di sicurezza invalido.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            redirect_with('purchases/pricelists', 'danger', 'Identificativo non valido.');
+        }
+
+        try {
+            $this->pdo->prepare("DELETE FROM listini_acquisto WHERE id = :id")->execute([':id' => $id]);
+            redirect_with('purchases/pricelists', 'success', 'Listino acquisto eliminato con successo.');
+        } catch (Throwable $e) {
+            redirect_with('purchases/pricelists', 'danger', "Impossibile eliminare il listino: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Trova il prezzo di acquisto corretto per un prodotto, un fornitore e una quantità.
+     * Restituisce un array con i dettagli del prezzo e la descrizione della sorgente.
+     */
+    public function getPurchasePrice(int $prodottoId, int $fornitoreId, float $quantita = 1.0, ?string $dataRiferimento = null): ?array
+    {
+        if (!$dataRiferimento) {
+            $dataRiferimento = date('Y-m-d');
+        }
+
+        // 1. Controlla se il fornitore ha un listino attivo alla dataRiferimento in listini_acquisto
+        $stmtListini = $this->pdo->prepare("
+            SELECT id, nome_listino
+            FROM listini_acquisto
+            WHERE fornitore_id = :fid
+              AND (valido_dal IS NULL OR valido_dal <= :data_rif)
+              AND (valido_al IS NULL OR valido_al >= :data_rif)
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $stmtListini->execute([
+            ':fid'      => $fornitoreId,
+            ':data_rif' => $dataRiferimento
+        ]);
+        $listinoAttivo = $stmtListini->fetch(PDO::FETCH_ASSOC);
+
+        $listinoId   = $listinoAttivo ? (int)$listinoAttivo['id'] : null;
+        $listinoNome = $listinoAttivo ? $listinoAttivo['nome_listino'] : '';
+
+        // Troviamo la riga prodotti_fornitori per recuperare lo SKU del fornitore e l'id di pivot
+        $stmtPf = $this->pdo->prepare("
+            SELECT id, sku_fornitore
+            FROM prodotti_fornitori
+            WHERE prodotto_id = :pid AND fornitore_id = :fid
+            LIMIT 1
+        ");
+        $stmtPf->execute([
+            ':pid' => $prodottoId,
+            ':fid' => $fornitoreId
+        ]);
+        $pf = $stmtPf->fetch(PDO::FETCH_ASSOC);
+        if (!$pf) {
+            return null; // Il prodotto non è venduto da questo fornitore
+        }
+        $prodottoFornitoreId = (int)$pf['id'];
+        $skuFornitore        = $pf['sku_fornitore'] ?: '';
+
+        // Prepariamo la query per i prezzi
+        $sqlPrezzi = "
+            SELECT prezzo, sconto_perc, note, quantita_minima, listino_acquisto_id
+            FROM prodotti_fornitori_prezzi
+            WHERE prodotto_fornitore_id = :pfid
+              AND (valido_dal IS NULL OR valido_dal <= :data_rif)
+              AND (valido_al IS NULL OR valido_al >= :data_rif)
+              AND quantita_minima <= :qty
+        ";
+
+        $params = [
+            ':pfid'     => $prodottoFornitoreId,
+            ':data_rif' => $dataRiferimento,
+            ':qty'      => $quantita
+        ];
+
+        if ($listinoId !== null) {
+            // Cerchiamo prima all'interno del listino attivo
+            $sqlListino = $sqlPrezzi . " AND listino_acquisto_id = :listino_id ORDER BY quantita_minima DESC LIMIT 1";
+            $listinoParams = $params;
+            $listinoParams[':listino_id'] = $listinoId;
+
+            $stmtPrezzo = $this->pdo->prepare($sqlListino);
+            $stmtPrezzo->execute($listinoParams);
+            $prezzoRecord = $stmtPrezzo->fetch(PDO::FETCH_ASSOC);
+
+            if ($prezzoRecord) {
+                $qMin = (float)$prezzoRecord['quantita_minima'];
+                $sorgente = "Listino: " . $listinoNome;
+                if ($qMin > 0) {
+                    $sorgente .= " (Scaglione >= " . number_format($qMin, 0, ',', '.') . ")";
+                }
+                return [
+                    'prezzo'              => (float)$prezzoRecord['prezzo'],
+                    'sconto_perc'         => (float)$prezzoRecord['sconto_perc'],
+                    'sku_fornitore'       => $skuFornitore,
+                    'listino_acquisto_id' => (int)$prezzoRecord['listino_acquisto_id'],
+                    'prezzo_sorgente'     => $sorgente
+                ];
+            }
+        }
+
+        // Se non c'è listino attivo, o se c'è ma non abbiamo trovato prezzi per il prodotto in quel listino,
+        // cerchiamo nei prezzi base (listino_acquisto_id IS NULL)
+        $sqlBase = $sqlPrezzi . " AND listino_acquisto_id IS NULL ORDER BY quantita_minima DESC LIMIT 1";
+        $stmtBase = $this->pdo->prepare($sqlBase);
+        $stmtBase->execute($params);
+        $prezzoRecord = $stmtBase->fetch(PDO::FETCH_ASSOC);
+
+        if ($prezzoRecord) {
+            $qMin = (float)$prezzoRecord['quantita_minima'];
+            $sorgente = "Prezzo base";
+            if ($qMin > 0) {
+                $sorgente .= " (Scaglione >= " . number_format($qMin, 0, ',', '.') . ")";
+            }
+            return [
+                'prezzo'              => (float)$prezzoRecord['prezzo'],
+                'sconto_perc'         => (float)$prezzoRecord['sconto_perc'],
+                'sku_fornitore'       => $skuFornitore,
+                'listino_acquisto_id' => null,
+                'prezzo_sorgente'     => $sorgente
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Endpoint AJAX per la determinazione dinamica del prezzo.
+     */
+    public function apiOttieniPrezzo(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        
+        $prodottoId  = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
+        $fornitoreId = filter_input(INPUT_GET, 'fornitore_id', FILTER_VALIDATE_INT);
+        $quantita    = filter_input(INPUT_GET, 'quantita', FILTER_VALIDATE_FLOAT);
+        $data        = get_param('data') ?: null;
+
+        if ($quantita === false || $quantita === null) {
+            $quantita = 1.0;
+        }
+
+        if (!$prodottoId || !$fornitoreId) {
+            echo json_encode(['ok' => false, 'error' => 'Parametri mancanti.']);
+            exit;
+        }
+
+        $priceInfo = $this->getPurchasePrice($prodottoId, $fornitoreId, $quantita, $data);
+
+        if ($priceInfo) {
+            echo json_encode([
+                'ok'                  => true,
+                'prezzo'              => [
+                    'prezzo_netto'   => $priceInfo['prezzo'],
+                    'sconto_perc'    => $priceInfo['sconto_perc'],
+                    'sku_fornitore'  => $priceInfo['sku_fornitore'],
+                ],
+                'prezzo_valore'       => $priceInfo['prezzo'],
+                'sconto_perc'         => $priceInfo['sconto_perc'],
+                'sku_fornitore'       => $priceInfo['sku_fornitore'],
+                'listino_acquisto_id' => $priceInfo['listino_acquisto_id'],
+                'prezzo_sorgente'     => $priceInfo['prezzo_sorgente'],
+            ]);
+        } else {
+            echo json_encode([
+                'ok'              => false,
+                'prezzo'          => [
+                    'prezzo_netto'   => 0.0,
+                    'sconto_perc'    => 0.0,
+                    'sku_fornitore'  => '',
+                ],
+                'prezzo_valore'   => 0.0,
+                'sconto_perc'     => 0.0,
+                'sku_fornitore'   => '',
+                'prezzo_sorgente' => 'Nessun prezzo configurato',
+            ]);
+        }
+        exit;
+    }
+}

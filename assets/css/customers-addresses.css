@@ -1,0 +1,302 @@
+/* =============================================================================
+   customers-addresses.css
+   Stili per la sezione "Sedi e Indirizzi" nella scheda cliente.
+   Dipende dalle variabili CSS di theme.css and app.css.
+============================================================================= */
+
+/* ── Griglia tile ─────────────────────────────────────────────────────────── */
+.qksa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+/* ── Tile singolo indirizzo ───────────────────────────────────────────────── */
+.qksa-tile {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  transition: box-shadow var(--qk-transition), border-color var(--qk-transition);
+  position: relative;
+}
+
+.qksa-tile:hover {
+  border-color: var(--qk-accent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+}
+
+/* ── Tile header: badge + nome + stella ──────────────────────────────────── */
+.qksa-tile-header {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+}
+
+.qksa-tile-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Badge tipo ──────────────────────────────────────────────────────────── */
+.qksa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .55rem;
+  border-radius: 20px;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: .01em;
+}
+
+/* Colori per tipo */
+.qksa-badge[data-tipo="sede_legale"]    { background: #dbeafe; color: #1e40af; }
+.qksa-badge[data-tipo="sede_operativa"] { background: #cffafe; color: #0e7490; }
+.qksa-badge[data-tipo="spedizione"]     { background: #d1fae5; color: #065f46; }
+.qksa-badge[data-tipo="fatturazione"]   { background: #ede9fe; color: #5b21b6; }
+.qksa-badge[data-tipo="magazzino"]      { background: #fef3c7; color: #92400e; }
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .qksa-badge[data-tipo="sede_legale"]    { background: rgba(59,130,246,.18); color: #93c5fd; }
+  .qksa-badge[data-tipo="sede_operativa"] { background: rgba(6,182,212,.15);  color: #67e8f9; }
+  .qksa-badge[data-tipo="spedizione"]     { background: rgba(16,185,129,.15); color: #6ee7b7; }
+  .qksa-badge[data-tipo="fatturazione"]   { background: rgba(139,92,246,.18); color: #c4b5fd; }
+  .qksa-badge[data-tipo="magazzino"]      { background: rgba(245,158,11,.15); color: #fcd34d; }
+}
+
+/* ── Stella predefinito ──────────────────────────────────────────────────── */
+.qksa-star {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: .05rem;
+}
+
+.qksa-star.is-predefinito {
+  color: #f59e0b;
+}
+
+.qksa-star:not(.is-predefinito) {
+  color: var(--qk-card-border);
+}
+
+/* ── Alias / nome sede ───────────────────────────────────────────────────── */
+.qksa-tile-alias {
+  font-weight: 600;
+  font-size: .88rem;
+  color: var(--qk-text-primary);
+  margin-top: .25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Blocco indirizzo ────────────────────────────────────────────────────── */
+.qksa-tile-address {
+  font-size: .8rem;
+  color: var(--qk-text-secondary);
+  line-height: 1.5;
+  display: flex;
+  gap: .45rem;
+  align-items: flex-start;
+}
+
+.qksa-tile-address i {
+  color: var(--qk-text-muted);
+  font-size: .75rem;
+  width: 14px;
+  flex-shrink: 0;
+  margin-top: .15rem;
+  text-align: center;
+}
+
+/* ── Dettagli consegna ───────────────────────────────────────────────────── */
+.qksa-tile-delivery {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  margin-top: .1rem;
+}
+
+.qksa-delivery-row {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .78rem;
+  color: var(--qk-text-muted);
+  min-width: 0;
+}
+
+.qksa-delivery-row i {
+  width: 14px;
+  text-align: center;
+  font-size: .72rem;
+  flex-shrink: 0;
+}
+
+.qksa-delivery-row a {
+  color: var(--qk-accent-text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qksa-delivery-row a:hover { text-decoration: underline; }
+
+/* ── Note consegna ───────────────────────────────────────────────────────── */
+.qksa-tile-note {
+  font-size: .75rem;
+  color: var(--qk-text-muted);
+  font-style: italic;
+  border-top: 1px dashed var(--qk-card-border);
+  padding-top: .4rem;
+  margin-top: .2rem;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Azioni tile ─────────────────────────────────────────────────────────── */
+.qksa-tile-actions {
+  display: flex;
+  gap: .35rem;
+  margin-top: auto;
+  padding-top: .6rem;
+  border-top: 1px solid var(--qk-card-border);
+}
+
+.qksa-btn-action {
+  background: none;
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .28rem .6rem;
+  font-size: .78rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  transition: background var(--qk-transition), color var(--qk-transition), border-color var(--qk-transition);
+}
+
+/* Modifica: icona accent, testo secondario */
+.qksa-btn-action.btn-edit {
+  color: var(--qk-text-secondary);
+}
+.qksa-btn-action.btn-edit i {
+  color: var(--qk-accent-text);
+}
+.qksa-btn-action.btn-edit:hover {
+  background: color-mix(in srgb, var(--qk-accent) 10%, transparent);
+  border-color: var(--qk-accent);
+  color: var(--qk-accent-text);
+}
+.qksa-btn-action.btn-edit:hover i {
+  color: inherit;
+}
+
+/* Elimina: rosso a riposo */
+.qksa-btn-action.danger {
+  color: var(--qk-danger);
+  border-color: color-mix(in srgb, var(--qk-danger) 30%, var(--qk-card-border));
+}
+.qksa-btn-action.danger:hover {
+  background: var(--qk-danger-bg);
+  border-color: var(--qk-danger);
+  color: var(--qk-danger);
+}
+
+/* ── Tile "aggiungi indirizzo" ───────────────────────────────────────────── */
+.qksa-tile-add {
+  border-style: dashed;
+  background: transparent;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  color: var(--qk-text-muted);
+  gap: .5rem;
+  transition: border-color var(--qk-transition), color var(--qk-transition), background var(--qk-transition);
+}
+
+.qksa-tile-add:hover {
+  border-color: var(--qk-accent);
+  color: var(--qk-accent-text);
+  background: color-mix(in srgb, var(--qk-accent) 6%, transparent);
+}
+
+.qksa-tile-add i { font-size: 1.4rem; }
+.qksa-tile-add span { font-size: .82rem; font-weight: 500; }
+
+/* ── Stato vuoto ─────────────────────────────────────────────────────────── */
+.qksa-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--qk-text-muted);
+  font-size: .875rem;
+}
+.qksa-empty i { font-size: 2rem; display: block; margin-bottom: .5rem; opacity: .35; }
+
+/* ── Modal indirizzo ─────────────────────────────────────────────────────── */
+#modalIndirizzo .modal-header {
+  border-bottom: 1px solid var(--qk-card-border);
+  background: var(--qk-table-head-bg);
+}
+#modalIndirizzo .modal-content {
+  background: var(--qk-card-bg);
+  color: var(--qk-text-primary);
+  border: 1px solid var(--qk-card-border);
+}
+#modalIndirizzo .modal-footer {
+  border-top: 1px solid var(--qk-card-border);
+  background: var(--qk-table-head-bg);
+}
+
+/* ── Fieldset nel modal ──────────────────────────────────────────────────── */
+.qksa-fieldset {
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .75rem 1rem;
+}
+
+.qksa-fieldset legend {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--qk-text-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 0 .4rem;
+  width: auto;
+}
+
+/* ── Checkbox predefinito ────────────────────────────────────────────────── */
+.qksa-predefinito-row {
+  display: flex;
+  align-items: center;
+}
+
+.qksa-check-label {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .85rem;
+  color: var(--qk-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.qksa-check-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--qk-accent);
+  cursor: pointer;
+}

@@ -1,0 +1,759 @@
+/* =============================================================================
+   THEME.CSS — palette Quack ERP (Bootstrap + sidebar + topbar + tabs)
+   Temi disponibili: mallard · orco-marino · svedese-blu · codone · edredone · mandarino · pesciaiola · fischione · fagiano · moretta · cayun
+   Usabilità prima di tutto; rosso/arancio riservati a ADR / warning / errori.
+============================================================================= */
+
+/* Variabili condivise (focus anello, tab “becco”) — sovrascritte per tema se serve */
+:root {
+  --qk-tab-indicator:           #fbbf24;
+  --qk-tab-active-bg:           transparent;
+  --qk-tab-active-text:         inherit;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 1 — MALLARD (Germano reale) — chiaro, professionale, lunghi turni
+───────────────────────────────────────────────────────────────────────────── */
+:root,
+[data-theme="mallard"] {
+  --qk-topbar-bg:               #f3f4f6;
+  --qk-topbar-border:           #e5e7eb;
+  --qk-topbar-text:             #1f2937;
+  --qk-topbar-icon:             #4b5563;
+
+  --qk-search-bg:               #f3f4f6;
+  --qk-search-text:             #1f2937;
+  --qk-focus-ring:              rgba(6, 78, 59, 0.22);
+
+  --qk-sidebar-bg:              #064e3b;
+  --qk-sidebar-text:            #a7d7c4;
+  --qk-sidebar-text-active:     #f9fafb;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.08);
+  --qk-sidebar-active-bg:       rgba(120, 53, 15, 0.28);
+  --qk-sidebar-active-border:   #78350f;
+  --qk-sidebar-section-color:   #6ee7b7;
+  --qk-sidebar-border:          #047857;
+  --qk-sidebar-brand-color:     #ecfdf5;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.2);
+
+  --qk-accent:                  #78350f;
+  --qk-accent-hover:            #5c2d0c;
+  --qk-accent-light:            #fef3c7;
+  --qk-accent-text:             #78350f;
+
+  --qk-body-bg:                 #fafafa;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #e5e7eb;
+  --qk-card-shadow:             0 1px 3px rgba(0, 0, 0, 0.06);
+  --qk-table-head-bg:           #f3f4f6;
+
+  --qk-text-primary:            #1f2937;
+  --qk-text-secondary:          #4b5563;
+  --qk-text-muted:              #6b7280;
+
+  --qk-success:                 #15803d;
+  --qk-success-bg:              #dcfce7;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0369a1;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #fbbf24;
+  --qk-btn-text:                #1f2937;
+  --qk-btn-hover:               #f59e0b;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #fbbf24;
+  --qk-tab-active-bg:           rgba(251, 191, 36, 0.14);
+  --qk-tab-active-text:         #1f2937;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 2 — ORCO MARINO — dark elegante, luci soffuse
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="orco-marino"] {
+  --qk-topbar-bg:               #111827;
+  --qk-topbar-border:           #1f2937;
+  --qk-topbar-text:             #f9fafb;
+  --qk-topbar-icon:             #9ca3af;
+
+  --qk-search-bg:               #374151;
+  --qk-search-text:             #f9fafb;
+  --qk-focus-ring:              rgba(250, 204, 21, 0.25);
+
+  --qk-sidebar-bg:              #111827;
+  --qk-sidebar-text:            #9ca3af;
+  --qk-sidebar-text-active:     #f9fafb;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.06);
+  --qk-sidebar-active-bg:       rgba(249, 250, 251, 0.12);
+  --qk-sidebar-active-border:   #facc15;
+  --qk-sidebar-section-color:   #6b7280;
+  --qk-sidebar-border:          #1f2937;
+  --qk-sidebar-brand-color:     #f9fafb;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.35);
+
+  --qk-accent:                  #60a5fa;
+  --qk-accent-hover:            #3b82f6;
+  --qk-accent-light:            rgba(96, 165, 250, 0.12);
+  --qk-accent-text:             #93c5fd;
+
+  --qk-body-bg:                 #1f2937;
+  --qk-card-bg:                 #111827;
+  --qk-card-border:             #374151;
+  --qk-card-shadow:             0 1px 4px rgba(0, 0, 0, 0.45);
+  --qk-table-head-bg:           #1f2937;
+
+  --qk-text-primary:            #f9fafb;
+  --qk-text-secondary:          #9ca3af;
+  --qk-text-muted:              #6b7280;
+
+  --qk-success:                 #34d399;
+  --qk-success-bg:              rgba(16, 185, 129, 0.12);
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              rgba(234, 88, 12, 0.15);
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               rgba(220, 38, 38, 0.15);
+  --qk-info:                    #22d3ee;
+  --qk-info-bg:                 rgba(34, 211, 238, 0.1);
+
+  --qk-btn-bg:                  #facc15;
+  --qk-btn-text:                #111827;
+  --qk-btn-hover:               #eab308;
+
+  --qk-adr-bg:                  rgba(234, 88, 12, 0.18);
+  --qk-adr-text:                #fdba74;
+  --qk-adr-border:              #f97316;
+
+  --qk-tab-indicator:           #facc15;
+
+  --qk-tab-active-bg:           #f9fafb;
+  --qk-tab-active-text:         #111827;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 3 — SVEDESE BLU — corporate moderno, colori freddi
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="svedese-blu"] {
+  --qk-topbar-bg:               #ffffff;
+  --qk-topbar-border:           #cbd5e1;
+  --qk-topbar-text:             #334155;
+  --qk-topbar-icon:             #64748b;
+
+  --qk-search-bg:               #ffffff;
+  --qk-search-text:             #1e293b;
+  --qk-focus-ring:              rgba(30, 64, 175, 0.2);
+
+  --qk-sidebar-bg:              #334155;
+  --qk-sidebar-text:            #cbd5e1;
+  --qk-sidebar-text-active:     #ffffff;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.07);
+  --qk-sidebar-active-bg:       rgba(103, 232, 249, 0.15);
+  --qk-sidebar-active-border:   #67e8f9;
+  --qk-sidebar-section-color:   #94a3b8;
+  --qk-sidebar-border:          #475569;
+  --qk-sidebar-brand-color:     #f8fafc;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.2);
+
+  --qk-accent:                  #1e40af;
+  --qk-accent-hover:            #1e3a8a;
+  --qk-accent-light:            #e0f2fe;
+  --qk-accent-text:             #1d4ed8;
+
+  --qk-body-bg:                 #f1f5f9;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #e2e8f0;
+  --qk-card-shadow:             0 1px 3px rgba(15, 23, 42, 0.06);
+  --qk-table-head-bg:           #f8fafc;
+
+  --qk-text-primary:            #0f172a;
+  --qk-text-secondary:          #475569;
+  --qk-text-muted:              #64748b;
+
+  --qk-success:                 #0d9488;
+  --qk-success-bg:              #ccfbf1;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0891b2;
+  --qk-info-bg:                 #cffafe;
+
+  --qk-btn-bg:                  #1e40af;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #1e3a8a;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #fbbf24;
+  --qk-tab-active-bg:           rgba(103, 232, 249, 0.45);
+  --qk-tab-active-text:         #0f172a;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 4 — ALZAVOLA — marrone caldo leggibile + teal-verde speculare
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="codone"] {
+  --qk-topbar-bg:               #f5f2ee;
+  --qk-topbar-border:           #e4ddd5;
+  --qk-topbar-text:             #1f1a16;
+  --qk-topbar-icon:             #6b5e54;
+
+  --qk-search-bg:               #ece7e1;
+  --qk-search-text:             #1f1a16;
+  --qk-focus-ring:              rgba(45, 122, 110, 0.22);
+
+  --qk-sidebar-bg:              #6b5848;
+  --qk-sidebar-text:            #d4c4b8;
+  --qk-sidebar-text-active:     #f5f2ee;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.08);
+  --qk-sidebar-active-bg:       rgba(45, 122, 110, 0.28);
+  --qk-sidebar-active-border:   #2d7a6e;
+  --qk-sidebar-section-color:   #a8947f;
+  --qk-sidebar-border:          #806a59;
+  --qk-sidebar-brand-color:     #f5f2ee;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.18);
+
+  --qk-accent:                  #2d7a6e;
+  --qk-accent-hover:            #236258;
+  --qk-accent-light:            #d4f0ec;
+  --qk-accent-text:             #1e6359;
+
+  --qk-body-bg:                 #f5f2ee;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #e4ddd5;
+  --qk-card-shadow:             0 1px 3px rgba(0, 0, 0, 0.06);
+  --qk-table-head-bg:           #ede8e2;
+
+  --qk-text-primary:            #1f1a16;
+  --qk-text-secondary:          #5a4f47;
+  --qk-text-muted:              #8a7d74;
+
+  --qk-success:                 #15803d;
+  --qk-success-bg:              #dcfce7;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0369a1;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #2d7a6e;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #236258;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #2d7a6e;
+  --qk-tab-active-bg:           rgba(45, 122, 110, 0.13);
+  --qk-tab-active-text:         #1f1a16;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 5 — QUATTROCCHI COMUNE — blu notte, teal, bianco ottico
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="edredone"] {
+  --qk-topbar-bg:               #ffffff;
+  --qk-topbar-border:           #e2e8f0;
+  --qk-topbar-text:             #0f172a;
+  --qk-topbar-icon:             #475569;
+
+  --qk-search-bg:               #ffffff;
+  --qk-search-text:             #0f172a;
+  --qk-focus-ring:              rgba(13, 148, 136, 0.2);
+
+  --qk-sidebar-bg:              #0f172a;
+  --qk-sidebar-text:            #94a3b8;
+  --qk-sidebar-text-active:     #ffffff;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.07);
+  --qk-sidebar-active-bg:       rgba(13, 148, 136, 0.2);
+  --qk-sidebar-active-border:   #0d9488;
+  --qk-sidebar-section-color:   #64748b;
+  --qk-sidebar-border:          #1e293b;
+  --qk-sidebar-brand-color:     #f8fafc;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.3);
+
+  --qk-accent:                  #0d9488;
+  --qk-accent-hover:            #0f766e;
+  --qk-accent-light:            #ccfbf1;
+  --qk-accent-text:             #0d9488;
+
+  --qk-body-bg:                 #f8fafc;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #e2e8f0;
+  --qk-card-shadow:             0 1px 3px rgba(15, 23, 42, 0.06);
+  --qk-table-head-bg:           #f1f5f9;
+
+  --qk-text-primary:            #0f172a;
+  --qk-text-secondary:          #334155;
+  --qk-text-muted:              #64748b;
+
+  --qk-success:                 #0d9488;
+  --qk-success-bg:              #ccfbf1;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0284c7;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #0d9488;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #0f766e;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #0d9488;
+  --qk-tab-active-bg:           #d1fae5;
+  --qk-tab-active-text:         #0f172a;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 6 — ANATRA MANDARINA — verde bosco, oro opaco
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="mandarino"] {
+  --qk-topbar-bg:               #f3f4f6;
+  --qk-topbar-border:           #e5e7eb;
+  --qk-topbar-text:             #1f2937;
+  --qk-topbar-icon:             #4b5563;
+
+  --qk-search-bg:               #fef3c7;
+  --qk-search-text:             #1f2937;
+  --qk-focus-ring:              rgba(180, 130, 52, 0.25);
+
+  --qk-sidebar-bg:              #143642;
+  --qk-sidebar-text:            #7fb4aa;
+  --qk-sidebar-text-active:     #f9fafb;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.07);
+  --qk-sidebar-active-bg:       rgba(180, 130, 52, 0.22);
+  --qk-sidebar-active-border:   #b48234;
+  --qk-sidebar-section-color:   #4e8a81;
+  --qk-sidebar-border:          #1d4d5e;
+  --qk-sidebar-brand-color:     #ecfdf5;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.2);
+
+  --qk-accent:                  #b48234;
+  --qk-accent-hover:            #96691f;
+  --qk-accent-light:            #fef3c7;
+  --qk-accent-text:             #92400e;
+
+  --qk-body-bg:                 #f3f4f6;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #e5e7eb;
+  --qk-card-shadow:             0 1px 3px rgba(0, 0, 0, 0.06);
+  --qk-table-head-bg:           #f9fafb;
+
+  --qk-text-primary:            #1f2937;
+  --qk-text-secondary:          #4b5563;
+  --qk-text-muted:              #6b7280;
+
+  --qk-success:                 #15803d;
+  --qk-success-bg:              #dcfce7;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0369a1;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #b48234;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #96691f;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #b48234;
+  --qk-tab-active-bg:           #582c4d;
+  --qk-tab-active-text:         #ffffff;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 7 — VAPORIERA — sidebar chiara, blu elettrico
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="pesciaiola"] {
+  --qk-topbar-bg:               #ffffff;
+  --qk-topbar-border:           #e5e7eb;
+  --qk-topbar-text:             #1f2937;
+  --qk-topbar-icon:             #4b5563;
+
+  --qk-search-bg:               #e5e7eb;
+  --qk-search-text:             #1f2937;
+  --qk-focus-ring:              rgba(37, 99, 235, 0.2);
+
+  --qk-sidebar-bg:              #f9fafb;
+  --qk-sidebar-text:            #374151;
+  --qk-sidebar-text-active:     #111827;
+  --qk-sidebar-hover-bg:        rgba(0, 0, 0, 0.04);
+  --qk-sidebar-active-bg:       rgba(37, 99, 235, 0.1);
+  --qk-sidebar-active-border:   #2563eb;
+  --qk-sidebar-section-color:   #9ca3af;
+  --qk-sidebar-border:          #e5e7eb;
+  --qk-sidebar-brand-color:     #1f2937;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.03);
+
+  --qk-accent:                  #2563eb;
+  --qk-accent-hover:            #1d4ed8;
+  --qk-accent-light:            #eff6ff;
+  --qk-accent-text:             #1d4ed8;
+
+  --qk-body-bg:                 #f1f5f9;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #e2e8f0;
+  --qk-card-shadow:             0 1px 3px rgba(0, 0, 0, 0.06);
+  --qk-table-head-bg:           #f8fafc;
+
+  --qk-text-primary:            #1f2937;
+  --qk-text-secondary:          #4b5563;
+  --qk-text-muted:              #6b7280;
+
+  --qk-success:                 #15803d;
+  --qk-success-bg:              #dcfce7;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0369a1;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #2563eb;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #1d4ed8;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #2563eb;
+  --qk-tab-active-bg:           #1f2937;
+  --qk-tab-active-text:         #ffffff;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 8 — FAGIANO REMO — blu abissale, oro ambrato, arancio bruciato
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="fagiano"] {
+  --qk-topbar-bg:               #ffffff;
+  --qk-topbar-border:           #dde3ee;
+  --qk-topbar-text:             #0e1c30;
+  --qk-topbar-icon:             #5a6880;
+
+  --qk-search-bg:               #f0f4f9;
+  --qk-search-text:             #0e1c30;
+  --qk-focus-ring:              rgba(248, 168, 0, 0.28);
+
+  --qk-sidebar-bg:              #0e1c30;
+  --qk-sidebar-text:            #8a9ab8;
+  --qk-sidebar-text-active:     #ffffff;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.07);
+  --qk-sidebar-active-bg:       rgba(248, 168, 0, 0.16);
+  --qk-sidebar-active-border:   #f8a800;
+  --qk-sidebar-section-color:   #566070;
+  --qk-sidebar-border:          #162438;
+  --qk-sidebar-brand-color:     #f8fafc;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.24);
+
+  --qk-accent:                  #f8a800;
+  --qk-accent-hover:            #d83800;
+  --qk-accent-light:            #fff8e0;
+  --qk-accent-text:             #b86000;
+
+  --qk-body-bg:                 #f0f4f9;
+  --qk-card-bg:                 #ffffff;
+  --qk-card-border:             #dde3ee;
+  --qk-card-shadow:             0 1px 4px rgba(14, 28, 48, 0.08);
+  --qk-table-head-bg:           #f5f8fc;
+
+  --qk-text-primary:            #0e1c30;
+  --qk-text-secondary:          #3d506a;
+  --qk-text-muted:              #707890;
+
+  --qk-success:                 #15803d;
+  --qk-success-bg:              #dcfce7;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0369a1;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #f8a800;
+  --qk-btn-text:                #0e1c30;
+  --qk-btn-hover:               #d83800;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #f8a800;
+  --qk-tab-active-bg:           rgba(248, 168, 0, 0.13);
+  --qk-tab-active-text:         #0e1c30;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 9 — FISCHIONE — Industrial Sand: sabbia calda, ambra, neutri organici
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="fischione"] {
+  --qk-topbar-bg:               #F3F2F1;
+  --qk-topbar-border:           #E7E5E4;
+  --qk-topbar-text:             #292524;
+  --qk-topbar-icon:             #57534E;
+
+  --qk-search-bg:               #FDFCFB;
+  --qk-search-text:             #292524;
+  --qk-focus-ring:              rgba(217, 119, 6, 0.22);
+
+  --qk-sidebar-bg:              #45403E;
+  --qk-sidebar-text:            #c4b8b0;
+  --qk-sidebar-text-active:     #FDFCFB;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.08);
+  --qk-sidebar-active-bg:       rgba(217, 119, 6, 0.2);
+  --qk-sidebar-active-border:   #D97706;
+  --qk-sidebar-section-color:   #9c9289;
+  --qk-sidebar-border:          #57504c;
+  --qk-sidebar-brand-color:     #FDFCFB;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.18);
+
+  --qk-accent:                  #D97706;
+  --qk-accent-hover:            #b45309;
+  --qk-accent-light:            #fef3c7;
+  --qk-accent-text:             #92400e;
+
+  --qk-body-bg:                 #FDFCFB;
+  --qk-card-bg:                 #FFFFFF;
+  --qk-card-border:             #E7E5E4;
+  --qk-card-shadow:             0 1px 3px rgba(0, 0, 0, 0.05);
+  --qk-table-head-bg:           #F3F2F1;
+
+  --qk-text-primary:            #292524;
+  --qk-text-secondary:          #44403c;
+  --qk-text-muted:              #57534E;
+
+  --qk-success:                 #15803d;
+  --qk-success-bg:              #dcfce7;
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              #ffedd5;
+  --qk-danger:                  #dc2626;
+  --qk-danger-bg:               #fef2f2;
+  --qk-info:                    #0369a1;
+  --qk-info-bg:                 #e0f2fe;
+
+  --qk-btn-bg:                  #D97706;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #b45309;
+
+  --qk-adr-bg:                  #ffedd5;
+  --qk-adr-text:                #9a3412;
+  --qk-adr-border:              #ea580c;
+
+  --qk-tab-indicator:           #D97706;
+  --qk-tab-active-bg:           rgba(217, 119, 6, 0.12);
+  --qk-tab-active-text:         #292524;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 10 — MORETTA — Dark mode B&W
+   4 toni neutri per separare i layer, testo quasi-bianco, accent funzionale
+   body #0c0c0c → sidebar #141414 → card #1e1e1e → border #2e2e2e
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="moretta"] {
+  --qk-topbar-bg:               #1e1e1e;
+  --qk-topbar-border:           #2e2e2e;
+  --qk-topbar-text:             #f8f8f8;
+  --qk-topbar-icon:             #888888;
+
+  --qk-search-bg:               #141414;
+  --qk-search-text:             #f8f8f8;
+  --qk-focus-ring:              rgba(255, 255, 255, 0.15);
+
+  --qk-sidebar-bg:              #141414;
+  --qk-sidebar-text:            #686868;
+  --qk-sidebar-text-active:     #f8f8f8;
+  --qk-sidebar-hover-bg:        rgba(255, 255, 255, 0.06);
+  --qk-sidebar-active-bg:       rgba(255, 255, 255, 0.09);
+  --qk-sidebar-active-border:   #f8f8f8;
+  --qk-sidebar-section-color:   #444444;
+  --qk-sidebar-border:          #1e1e1e;
+  --qk-sidebar-brand-color:     #f8f8f8;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.3);
+
+  --qk-accent:                  #6b8cbf;
+  --qk-accent-hover:            #4f70a8;
+  --qk-accent-light:            rgba(107, 140, 191, 0.12);
+  --qk-accent-text:             #8fb0e0;
+
+  --qk-body-bg:                 #0c0c0c;
+  --qk-card-bg:                 #1e1e1e;
+  --qk-card-border:             #2e2e2e;
+  --qk-card-shadow:             0 1px 4px rgba(0, 0, 0, 0.65);
+  --qk-table-head-bg:           #141414;
+
+  --qk-text-primary:            #f8f8f8;
+  --qk-text-secondary:          #888888;
+  --qk-text-muted:              #484848;
+
+  --qk-success:                 #34d399;
+  --qk-success-bg:              rgba(52, 211, 153, 0.1);
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              rgba(234, 88, 12, 0.15);
+  --qk-danger:                  #f87171;
+  --qk-danger-bg:               rgba(248, 113, 113, 0.12);
+  --qk-info:                    #38bdf8;
+  --qk-info-bg:                 rgba(56, 189, 248, 0.1);
+
+  --qk-btn-bg:                  #6b8cbf;
+  --qk-btn-text:                #ffffff;
+  --qk-btn-hover:               #4f70a8;
+
+  --qk-adr-bg:                  rgba(234, 88, 12, 0.15);
+  --qk-adr-text:                #fdba74;
+  --qk-adr-border:              #f97316;
+
+  --qk-tab-indicator:           #f8f8f8;
+  --qk-tab-active-bg:           rgba(255, 255, 255, 0.08);
+  --qk-tab-active-text:         #f8f8f8;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 11 — CAYUN — Cyber Green: sfondo quasi-nero, verde neon #00f5a0
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="cayun"] {
+  --qk-topbar-bg:               #1a2224;
+  --qk-topbar-border:           #2d373a;
+  --qk-topbar-text:             #f8fafc;
+  --qk-topbar-icon:             #94a3b8;
+
+  --qk-search-bg:               #0b0e0f;
+  --qk-search-text:             #f8fafc;
+  --qk-focus-ring:              rgba(0, 245, 160, 0.25);
+
+  --qk-sidebar-bg:              #141a1c;
+  --qk-sidebar-text:            #94a3b8;
+  --qk-sidebar-text-active:     #f8fafc;
+  --qk-sidebar-hover-bg:        rgba(0, 245, 160, 0.08);
+  --qk-sidebar-active-bg:       rgba(0, 245, 160, 0.08);
+  --qk-sidebar-active-border:   #00f5a0;
+  --qk-sidebar-section-color:   #64748b;
+  --qk-sidebar-border:          #2d373a;
+  --qk-sidebar-brand-color:     #00f5a0;
+  --qk-sidebar-sub-bg:          rgba(0, 0, 0, 0.3);
+
+  --qk-accent:                  #00f5a0;
+  --qk-accent-hover:            #00d189;
+  --qk-accent-light:            rgba(0, 245, 160, 0.08);
+  --qk-accent-text:             #00d189;
+
+  --qk-body-bg:                 #0b0e0f;
+  --qk-card-bg:                 #1a2224;
+  --qk-card-border:             #2d373a;
+  --qk-card-shadow:             0 1px 4px rgba(0, 0, 0, 0.5);
+  --qk-table-head-bg:           #141a1c;
+
+  --qk-text-primary:            #f8fafc;
+  --qk-text-secondary:          #cbd5e1;
+  --qk-text-muted:              #94a3b8;
+
+  --qk-success:                 #22c55e;
+  --qk-success-bg:              rgba(34, 197, 94, 0.1);
+  --qk-warning:                 #ea580c;
+  --qk-warning-bg:              rgba(234, 88, 12, 0.15);
+  --qk-danger:                  #ff4655;
+  --qk-danger-bg:               rgba(255, 70, 85, 0.12);
+  --qk-info:                    #3abff8;
+  --qk-info-bg:                 rgba(58, 191, 248, 0.1);
+
+  --qk-btn-bg:                  #00f5a0;
+  --qk-btn-text:                #0b0e0f;
+  --qk-btn-hover:               #00d189;
+
+  --qk-adr-bg:                  rgba(234, 88, 12, 0.15);
+  --qk-adr-text:                #fdba74;
+  --qk-adr-border:              #f97316;
+
+  --qk-tab-indicator:           #00f5a0;
+  --qk-tab-active-bg:           #00f5a0;
+  --qk-tab-active-text:         #0b0e0f;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TEMA 12 — PICCHIO DEBERARDINIS — Contrasto deciso, toni della terra e tocchi vividi
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="picchio-deberardinis"] {
+  /* --- TOPBAR --- */
+  --qk-topbar-bg:                #ffffff;
+  --qk-topbar-border:            #e2e8f0;
+  --qk-topbar-text:              #1e1f22; /* Nero Corteccia */
+  --qk-topbar-icon:              #64748b;
+
+  /* --- SEARCH & INPUTS --- */
+  --qk-search-bg:                #f8fafc; /* Grigio/azzurro chiarissimo, pulito per gli input */
+  --qk-search-text:              #1e1f22;
+  --qk-focus-ring:               rgba(61, 107, 79, 0.2); /* Focus Verde Bosco: addio effetto errore */
+
+  /* --- SIDEBAR --- */
+  --qk-sidebar-bg:               #1e1f22; /* Nero Ardesia/Corteccia */
+  --qk-sidebar-text:             #94a3b8; /* Testo riposante */
+  --qk-sidebar-text-active:      #ffffff; /* Bianco netto per l'elemento selezionato */
+  --qk-sidebar-hover-bg:         rgba(255, 255, 255, 0.06);
+  --qk-sidebar-active-bg:        rgba(192, 57, 43, 0.12); /* Sfondo soft Rosso Picchio */
+  --qk-sidebar-active-border:    #c0392b; /* Dettaglio verticale rosso */
+  --qk-sidebar-section-color:    #b89c74; /* Legno scuro per i titoli dei gruppi */
+  --qk-sidebar-border:           #2d2f34;
+  --qk-sidebar-brand-color:      #ffffff;
+  --qk-sidebar-sub-bg:           rgba(0, 0, 0, 0.2);
+
+  /* --- ACCENT COLORS --- */
+  --qk-accent:                   #3d6b4f; /* Verde Bosco per elementi di selezione secondari */
+  --qk-accent-hover:             #2f543e;
+  --qk-accent-light:             #f1f5f9;
+  --qk-accent-text:              #3d6b4f;
+
+  /* --- BODY & CARDS --- */
+  --qk-body-bg:                  #f4f4f2; /* Tonalità calda di sfondo, molto morbida */
+  --qk-card-bg:                  #ffffff;
+  --qk-card-border:              #e2e8f0;
+  --qk-card-shadow:              0 1px 3px rgba(0, 0, 0, 0.05);
+  --qk-table-head-bg:            #f8fafc;
+
+  /* --- TYPOGRAPHY --- */
+  --qk-text-primary:             #1e1f22;
+  --qk-text-secondary:           #475569; /* Testo leggibile per le label dei form */
+  --qk-text-muted:               #64748b;
+
+  /* --- STATES & ALERTS --- */
+  --qk-success:                  #3d6b4f; /* Verde Bosco */
+  --qk-success-bg:               #f0fdf4;
+  --qk-warning:                  #c97a2b; /* Arancio Warning */
+  --qk-warning-bg:               #fff7ed;
+  --qk-danger:                   #c0392b;  /* Rosso Picchio */
+  --qk-danger-bg:                #fef2f2;
+  --qk-info:                     #356c8c;  /* Blu ERP */
+  --qk-info-bg:                  #f0f9ff;
+
+  /* --- BUTTONS --- */
+  --qk-btn-bg:                   #a63326; /* Rosso mattone scuro per il tasto "Salva" (Azione Primaria) */
+  --qk-btn-text:                 #ffffff;
+  --qk-btn-hover:                #87281d;
+
+  /* --- SECONDARY BUTTONS / ANNULLA / DISATTIVATI --- */
+  /* Risolve il problema visivo separando nettamente l'Annulla dal Salva */
+  --qk-adr-bg:                   #ffffff; 
+  --qk-adr-text:                 #475569;  
+  --qk-adr-border:               #cbd5e1;  
+
+  /* --- TABS --- */
+  --qk-tab-indicator:            #a63326;  
+  --qk-tab-active-bg:            #ffffff;  
+  --qk-tab-active-text:          #1e1f22;  
+}

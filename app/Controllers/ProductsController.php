@@ -1,0 +1,1031 @@
+<?php
+
+declare(strict_types=1);
+
+require_once INCLUDES_DIR . '/prodotti.php';
+
+/**
+ * ProductsController — /products, /products/create, /products/edit
+ */
+final class ProductsController extends BaseController
+{
+    public function index(): void
+    {
+        $search   = get_param('q');
+        $category = get_param('cat');
+        $adr_only = get_param('adr') === '1';
+        $supplierRaw = get_param('fornitore');
+        $supplier    = ($supplierRaw !== null && $supplierRaw !== '') ? (int) $supplierRaw : null;
+        $page        = (int) get_param('page', '1');
+        if ($page < 1) {
+            $page = 1;
+        }
+        $limit       = 50;
+        $offset      = ($page - 1) * $limit;
+
+        $list       = qk_prodotti_list($this->pdo, $search, $category, $adr_only, $supplier, $limit, $offset);
+        $products   = $list['rows'];
+        $total      = $list['total'];
+        $pages      = (int) ceil($total / $limit);
+        $categories = qk_load_categorie($this->pdo);
+        $suppliers  = qk_load_fornitori_disponibili($this->pdo);
+
+        $page_title    = 'Prodotti';
+        $page_subtitle = 'Catalogo e giacenze magazzino';
+        $breadcrumbs   = [['label' => 'Prodotti']];
+        $page_actions  = '<a href="' . url('products/create') . '" class="btn-qk btn-qk-primary">
+            <i class="fa-solid fa-plus"></i> Nuovo prodotto
+        </a>';
+
+        $this->page(APP_ROOT_DIR . '/app/views/products/_list.php', get_defined_vars());
+    }
+
+    /* ── Creazione ────────────────────────────────────────────────────────── */
+
+    public function create(): void
+    {
+        $mode      = 'create';
+        $entity_id = null;
+        $errors    = [];
+        $values    = $this->defaultValues();
+        $immagini  = [];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
+            } else {
+                $values = $this->readPostValues($values);
+                $errors = $this->validate($values);
+
+                if (empty($errors)) {
+                    try {
+                        $id = qk_insert_prodotto($this->pdo, $values);
+                        if (!empty($_FILES['foto_principale']['name'])) {
+                            qk_salva_immagine_prodotto($this->pdo, $id, $_FILES['foto_principale']);
+                        }
+                        redirect_with('products/edit?id=' . $id, 'success', 'Prodotto creato correttamente.');
+                    } catch (Throwable $e) {
+                        $errors['_global'] = qk_prodotti_db_message($e);
+                    }
+                }
+            }
+        }
+
+        $categorie             = qk_load_categorie($this->pdo);
+        $unita_misura_list     = $this->pdo->query('SELECT id, codice, descrizione FROM unita_misura ORDER BY descrizione')->fetchAll(PDO::FETCH_ASSOC);
+        $adr_sostanze          = qk_load_adr_sostanze($this->pdo);
+        $fornitori_disponibili = qk_load_fornitori_disponibili($this->pdo);
+        $prodotto_fornitori    = [];
+        $tutti_prezzi          = []; // nessun prezzo su un prodotto nuovo
+        $all_tags              = qk_load_all_tags($this->pdo);
+        $prodotto_tag_ids      = [];
+        $kit_componenti        = [];
+
+        $page_title    = 'Nuovo prodotto';
+        $page_subtitle = 'Aggiungi un prodotto al catalogo';
+        $breadcrumbs   = [
+            ['label' => 'Prodotti', 'url' => url('products')],
+            ['label' => 'Nuovo'],
+        ];
+        $record_meta = null;
+        $extra_css   = ['products-suppliers.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/products/_form.php', get_defined_vars());
+    }
+
+    /* ── Modifica ─────────────────────────────────────────────────────────── */
+
+    public function edit(): void
+    {
+        $mode      = 'edit';
+        $entity_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+
+        if (!$entity_id) {
+            redirect_with('products', 'danger', 'Prodotto non specificato.');
+        }
+
+        $loaded = qk_load_prodotto_form($this->pdo, $entity_id);
+
+        if (!$loaded) {
+            http_response_code(404);
+            require APP_ROOT_DIR . '/404.php';
+            exit;
+        }
+
+        $record_meta = [
+            'created_at' => $loaded['_created_at'] ?? '',
+            'updated_at' => $loaded['_updated_at'] ?? '',
+        ];
+        unset($loaded['_created_at'], $loaded['_updated_at']);
+
+        $values = array_merge($this->defaultValues(), $loaded);
+        $errors = [];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
+            } else {
+                $values = $this->readPostValues($values);
+                $errors = $this->validate($values, $entity_id);
+
+                // Blocca la disabilitazione di traccia_lotti se esistono lotti con giacenza > 0
+                if (empty($errors)
+                    && ($loaded['traccia_lotti'] ?? '0') === '1'
+                    && $values['traccia_lotti'] === '0'
+                ) {
+                    $stLotti = $this->pdo->prepare(
+                        'SELECT COUNT(*) AS n, COALESCE(SUM(quantita_disponibile), 0) AS tot
+                           FROM lotti
+                          WHERE prodotto_id = ? AND quantita_disponibile > 0'
+                    );
+                    $stLotti->execute([$entity_id]);
+                    $lottiAttivi = $stLotti->fetch(PDO::FETCH_ASSOC);
+
+                    if ((int) $lottiAttivi['n'] > 0) {
+                        $errors['traccia_lotti'] = sprintf(
+                            'Impossibile disabilitare la tracciatura lotti: %d lott%s %s ancora giacenza disponibile (totale: %s). '
+                            . 'Azzera le giacenze di tutti i lotti prima di disabilitare la tracciatura.',
+                            (int) $lottiAttivi['n'],
+                            (int) $lottiAttivi['n'] === 1 ? 'o ha' : 'i hanno',
+                            (int) $lottiAttivi['n'] === 1 ? 'ha' : 'hanno',
+                            number_format((float) $lottiAttivi['tot'], 3, ',', '.')
+                        );
+                    }
+                }
+
+                if (empty($errors)) {
+                    try {
+                        qk_update_prodotto($this->pdo, $entity_id, $values);
+                        if (!empty($_FILES['foto_principale']['name'])) {
+                            qk_salva_immagine_prodotto($this->pdo, $entity_id, $_FILES['foto_principale']);
+                        }
+                        // Sync tag
+                        $raw_tags = $_POST['tag_ids'] ?? [];
+                        $tag_ids  = array_map('intval', (array) $raw_tags);
+                        qk_sync_prodotto_tags($this->pdo, $entity_id, $tag_ids);
+
+                        redirect_with('products/edit?id=' . $entity_id, 'success', 'Prodotto aggiornato.');
+                    } catch (Throwable $e) {
+                        $errors['_global'] = qk_prodotti_db_message($e);
+                    }
+                }
+            }
+        }
+
+        $immagini              = qk_load_prodotto_immagini($this->pdo, $entity_id);
+        $categorie             = qk_load_categorie($this->pdo);
+        $unita_misura_list     = $this->pdo->query('SELECT id, codice, descrizione FROM unita_misura ORDER BY descrizione')->fetchAll(PDO::FETCH_ASSOC);
+        $adr_sostanze          = qk_load_adr_sostanze($this->pdo);
+        $fornitori_disponibili = qk_load_fornitori_disponibili($this->pdo);
+        $prodotto_fornitori    = qk_load_prodotto_fornitori($this->pdo, $entity_id);
+        // Carica tutti i prezzi/scaglioni di tutti i fornitori per il tab Fornitori
+        $tutti_prezzi          = qk_load_prodotto_tutti_prezzi($this->pdo, $entity_id);
+        $all_tags              = qk_load_all_tags($this->pdo);
+        $prodotto_tag_ids      = qk_load_prodotto_tags($this->pdo, $entity_id);
+        $kit_componenti        = ($values['tipo'] === 'kit') ? qk_load_kit_componenti($this->pdo, $entity_id) : [];
+
+        $page_title    = e($values['nome']) ?: 'Modifica prodotto';
+        $page_subtitle = 'SKU ' . e($values['sku_interno']) . ' · ID #' . $entity_id;
+        $breadcrumbs   = [
+            ['label' => 'Prodotti', 'url' => url('products')],
+            ['label' => $values['nome'] ?: 'Modifica'],
+        ];
+        $extra_css = ['products-suppliers.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/products/_form.php', get_defined_vars());
+    }
+
+    /* ── API: crea categoria inline ──────────────────────────────────────── */
+
+    public function crearCategoria(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']); exit;
+        }
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token non valido.']); exit;
+        }
+
+        $nome = trim(post('nome') ?? '');
+        if ($nome === '') {
+            echo json_encode(['ok' => false, 'error' => 'Il nome è obbligatorio.']); exit;
+        }
+        if (mb_strlen($nome) > 100) {
+            echo json_encode(['ok' => false, 'error' => 'Nome troppo lungo (max 100 caratteri).']); exit;
+        }
+
+        try {
+            $id = qk_crea_categoria($this->pdo, $nome);
+            echo json_encode(['ok' => true, 'id' => $id, 'nome' => $nome, 'label' => $nome]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore nel salvataggio.']);
+        }
+        exit;
+    }
+
+    /* ── API: ricerca fornitori (picker) ─────────────────────────────────── */
+
+    public function searchFornitori(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $q     = trim(get_param('q'));
+        $limit = min(100, max(1, (int) get_param('limit', '50')));
+        echo json_encode(qk_search_fornitori($this->pdo, $q, $limit));
+        exit;
+    }
+
+    /* ── API: ricerca categorie (picker) ─────────────────────────────────── */
+
+    public function searchCategorie(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $q     = trim(get_param('q'));
+        $limit = min(100, max(1, (int) get_param('limit', '50')));
+        echo json_encode(qk_search_categorie($this->pdo, $q, $limit));
+        exit;
+    }
+
+    /* ── API: crea tag inline ────────────────────────────────────────────── */
+
+    public function crearTag(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+        $nome = trim(post('nome') ?? '');
+        if ($nome === '') {
+            echo json_encode(['ok' => false, 'error' => 'Il nome è obbligatorio.']); exit;
+        }
+        try {
+            $id = qk_crea_tag($this->pdo, $nome);
+            echo json_encode(['ok' => true, 'id' => $id, 'nome' => $nome]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore nel salvataggio.']);
+        }
+        exit;
+    }
+
+    /* ── API: salva fornitore prodotto (insert o update) ────────────────── */
+
+    public function saveForn(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $prodotto_id  = (int) post('prodotto_id');
+        $id           = (int) post('id');
+        $fornitore_id = (int) post('fornitore_id');
+        if ($prodotto_id <= 0 || $fornitore_id <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Dati obbligatori mancanti.']); exit;
+        }
+
+        $n = fn(string $k): mixed => trim((string)(post($k) ?? '')) === '' ? null : post($k);
+
+        $prezzoBase    = $n('prezzo_acquisto') !== null ? (float) $n('prezzo_acquisto') : null;
+        $ordPref       = max(1, (int) (post('ordine_preferenza_fornitore') ?? 1));
+        $rrpMin        = $n('rrp_min') !== null ? (float) $n('rrp_min') : null;
+        $rrpMax        = $n('rrp_max') !== null ? (float) $n('rrp_max') : null;
+        $leadTime      = $n('lead_time_giorni') !== null ? (int) $n('lead_time_giorni') : null;
+        $note          = $n('note');
+
+        try {
+            $this->pdo->beginTransaction();
+
+            if ($id > 0) {
+                $this->pdo->prepare(
+                    'UPDATE prodotti_fornitori SET
+                       sku_fornitore                 = :sku,
+                       nome_prodotto_fornitore       = :nome,
+                       quantita_minima               = :qta,
+                       ordine_preferenza_fornitore   = :ord_pref,
+                       attivo                        = :attivo,
+                       rrp_min                       = :rrp_min,
+                       rrp_max                       = :rrp_max,
+                       lead_time_giorni              = :lead_time,
+                       note                          = :note,
+                       updated_at                    = CURRENT_TIMESTAMP
+                     WHERE id = :id AND prodotto_id = :pid'
+                )->execute([
+                    ':sku'      => $n('sku_fornitore'),
+                    ':nome'     => $n('nome_prodotto_fornitore'),
+                    ':qta'      => $n('quantita_minima') !== null ? (float) $n('quantita_minima') : null,
+                    ':ord_pref' => $ordPref,
+                    ':attivo'   => post('attivo') === '1' ? 1 : 0,
+                    ':rrp_min'  => $rrpMin,
+                    ':rrp_max'  => $rrpMax,
+                    ':lead_time'=> $leadTime,
+                    ':note'     => $note,
+                    ':id'       => $id,
+                    ':pid'      => $prodotto_id,
+                ]);
+                $pfId = $id;
+            } else {
+                $this->pdo->prepare(
+                    'INSERT INTO prodotti_fornitori
+                       (prodotto_id, fornitore_id, sku_fornitore, nome_prodotto_fornitore,
+                        quantita_minima, ordine_preferenza_fornitore, attivo,
+                        rrp_min, rrp_max, lead_time_giorni, note, created_at)
+                     VALUES
+                       (:pid, :fid, :sku, :nome,
+                        :qta, :ord_pref, :attivo,
+                        :rrp_min, :rrp_max, :lead_time, :note, CURRENT_TIMESTAMP)'
+                )->execute([
+                    ':pid'      => $prodotto_id,
+                    ':fid'      => $fornitore_id,
+                    ':sku'      => $n('sku_fornitore'),
+                    ':nome'     => $n('nome_prodotto_fornitore'),
+                    ':qta'      => $n('quantita_minima') !== null ? (float) $n('quantita_minima') : null,
+                    ':ord_pref' => $ordPref,
+                    ':attivo'   => post('attivo') === '1' ? 1 : 0,
+                    ':rrp_min'  => $rrpMin,
+                    ':rrp_max'  => $rrpMax,
+                    ':lead_time'=> $leadTime,
+                    ':note'     => $note,
+                ]);
+                $pfId = (int) $this->pdo->lastInsertId();
+            }
+
+            // Se no_prezzi=1 i prezzi sono gestiti dal tab Fornitori (products-suppliers.js)
+            // e non devono essere toccati qui — si salva solo il metadata del fornitore.
+            if (post('no_prezzi') !== '1') {
+                $this->pdo->prepare(
+                    'DELETE FROM prodotti_fornitori_prezzi WHERE prodotto_fornitore_id = :pfid'
+                )->execute([':pfid' => $pfId]);
+
+                $prezziJson = post('prezzi');
+                if ($prezziJson !== null) {
+                    $prezziList = json_decode($prezziJson, true) ?: [];
+                    $stmtInsertPrezzo = $this->pdo->prepare(
+                        'INSERT INTO prodotti_fornitori_prezzi
+                           (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
+                         VALUES
+                           (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note)'
+                    );
+                    foreach ($prezziList as $p) {
+                        $listinoId  = !empty($p['listino_acquisto_id']) ? (int)$p['listino_acquisto_id'] : null;
+                        $qta        = !empty($p['quantita_minima']) ? (float)$p['quantita_minima'] : 0.0;
+                        $prezzo     = (float)$p['prezzo'];
+                        $sconto     = !empty($p['sconto_perc']) ? (float)$p['sconto_perc'] : 0.0;
+                        $validoDal  = !empty($p['valido_dal']) ? $p['valido_dal'] : null;
+                        $validoAl   = !empty($p['valido_al']) ? $p['valido_al'] : null;
+                        $notePrezzo = !empty($p['note']) ? trim($p['note']) : null;
+
+                        $stmtInsertPrezzo->execute([
+                            ':pfid'       => $pfId,
+                            ':listino_id' => $listinoId,
+                            ':qta'        => $qta,
+                            ':prezzo'     => $prezzo,
+                            ':sconto'     => $sconto,
+                            ':valido_dal' => $validoDal,
+                            ':valido_al'  => $validoAl,
+                            ':note'       => $notePrezzo,
+                        ]);
+                    }
+                } else {
+                    if ($prezzoBase !== null) {
+                        $this->pdo->prepare(
+                            'INSERT INTO prodotti_fornitori_prezzi
+                               (prodotto_fornitore_id, quantita_minima, prezzo)
+                             VALUES (:pfid, 0, :prezzo)'
+                        )->execute([':pfid' => $pfId, ':prezzo' => $prezzoBase]);
+                    }
+                }
+            }
+
+            $this->pdo->commit();
+
+            // Restituisci la riga completa per l'aggiornamento DOM lato client
+            $rowData = qk_load_single_prodotto_fornitore($this->pdo, $pfId);
+            echo json_encode(['ok' => true, 'row' => $rowData]);
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => qk_prodotti_db_message($e)]);
+        }
+        exit;
+    }
+
+    /* ── API: elimina fornitore prodotto ─────────────────────────────────── */
+
+    public function deleteForn(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $id          = (int) post('id');
+        $prodotto_id = (int) post('prodotto_id');
+        if ($id <= 0 || $prodotto_id <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Record non specificato.']); exit;
+        }
+
+        try {
+            $this->pdo->prepare(
+                'DELETE FROM prodotti_fornitori WHERE id = :id AND prodotto_id = :pid'
+            )->execute([':id' => $id, ':pid' => $prodotto_id]);
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore durante la rimozione.']);
+        }
+        exit;
+    }
+
+    /* ── Helper privati ───────────────────────────────────────────────────── */
+
+    private function defaultValues(): array
+    {
+        return [
+            'sku_interno'          => '',
+            'sku_ecommerce'        => '',
+            'nome'                 => '',
+            'descrizione_breve'    => '',
+            'descrizione_confezione'=> '',
+            'descrizione_completa' => '',
+            'tipo'                 => 'semplice',
+            'categoria_id'         => '',
+            'note_interne'         => '',
+            'attivo'               => '1',
+            'traccia_lotti'        => '1',
+            'unita_misura'         => 'pz',
+            'unita_contenuto_id'   => '',
+            'quantita_contenuto'   => '',
+            'peso_netto_kg'        => '',
+            'peso_lordo_kg'        => '',
+            'ean'                  => '',
+            'adr_sostanza_id'      => '',
+            'adr_packing_group'    => '',
+        ];
+    }
+
+    private function readPostValues(array $current): array
+    {
+        foreach (array_keys($current) as $k) {
+            $current[$k] = post($k, $current[$k] ?? '');
+        }
+        $current['attivo']        = isset($_POST['attivo']) ? '1' : '0';
+        $current['traccia_lotti'] = isset($_POST['traccia_lotti']) ? '1' : '0';
+        return $current;
+    }
+
+    private function validate(array $v, ?int $editId = null): array
+    {
+        $errors = [];
+
+        if (trim($v['sku_interno']) === '') {
+            $errors['sku_interno'] = 'Lo SKU interno è obbligatorio.';
+        } else {
+            $stmt = $this->pdo->prepare(
+                'SELECT id FROM prodotti WHERE sku_interno = :sku AND (:id IS NULL OR id != :id)'
+            );
+            $stmt->execute([':sku' => trim($v['sku_interno']), ':id' => $editId]);
+            if ($stmt->fetch()) {
+                $errors['sku_interno'] = 'Questo SKU interno è già utilizzato.';
+            }
+        }
+
+        if (trim($v['nome']) === '') {
+            $errors['nome'] = 'Il nome del prodotto è obbligatorio.';
+        }
+
+        if (trim($v['unita_misura'] ?? '') === '') {
+            $errors['unita_misura'] = 'L\'unità di misura di stock è obbligatoria.';
+        } else {
+            $umStmt = $this->pdo->prepare('SELECT COUNT(*) FROM unita_misura WHERE codice = :c');
+            $umStmt->execute([':c' => $v['unita_misura']]);
+            if (!$umStmt->fetchColumn()) {
+                $errors['unita_misura'] = 'Unità di misura non valida.';
+            }
+        }
+
+        return $errors;
+    }
+
+    /* ── Categorie Prodotti ────────────────────────────────────────────────── */
+
+    public function categories(): void
+    {
+        $errors = [];
+        $ok = null;
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina.';
+            } else {
+                $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+                $nome = trim(post('nome') ?? '');
+                $parent_id = filter_input(INPUT_POST, 'parent_id', FILTER_VALIDATE_INT) ?: null;
+                $posizione_categoria = (int) post('posizione_categoria', '0');
+
+                if ($nome === '') {
+                    $errors['nome'] = 'Il nome della categoria è obbligatorio.';
+                } elseif (mb_strlen($nome) > 100) {
+                    $errors['nome'] = 'Nome troppo lungo (max 100 caratteri).';
+                }
+
+                if ($id && $parent_id && $id === $parent_id) {
+                    $errors['parent_id'] = 'Una categoria non può essere genitore di se stessa.';
+                }
+
+                if (empty($errors)) {
+                    try {
+                        if ($id) {
+                            $stmt = $this->pdo->prepare(
+                                'UPDATE categorie_prodotto SET nome = :nome, parent_id = :parent_id, posizione_categoria = :pos WHERE id = :id'
+                            );
+                            $stmt->execute([
+                                ':nome'      => $nome,
+                                ':parent_id' => $parent_id,
+                                ':pos'       => $posizione_categoria,
+                                ':id'        => $id,
+                            ]);
+                            redirect_with('products/categories', 'success', 'Categoria aggiornata con successo.');
+                        } else {
+                            $stmt = $this->pdo->prepare(
+                                'INSERT INTO categorie_prodotto (nome, parent_id, posizione_categoria) VALUES (:nome, :parent_id, :pos)'
+                            );
+                            $stmt->execute([
+                                ':nome'      => $nome,
+                                ':parent_id' => $parent_id,
+                                ':pos'       => $posizione_categoria,
+                            ]);
+                            redirect_with('products/categories', 'success', 'Categoria creata con successo.');
+                        }
+                    } catch (Throwable $e) {
+                        $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+
+        // Fetch categories list
+        $categories = $this->pdo->query(
+            'SELECT c.id, c.nome, c.parent_id, c.posizione_categoria, p.nome AS parent_nome
+               FROM categorie_prodotto c
+          LEFT JOIN categorie_prodotto p ON p.id = c.parent_id
+              ORDER BY c.posizione_categoria, c.nome'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        // Fetch flat list for dropdown selection (parent choice)
+        $dropdown_categories = qk_load_categorie($this->pdo);
+
+        $this->page(APP_ROOT_DIR . '/app/views/products/_categories.php', [
+            'page_title'          => 'Categorie Prodotti',
+            'page_subtitle'       => 'Gestione delle categorie merceologiche del catalogo',
+            'breadcrumbs'         => [
+                ['label' => 'Prodotti', 'url' => url('products')],
+                ['label' => 'Categorie'],
+            ],
+            'categories'          => $categories,
+            'dropdown_categories' => $dropdown_categories,
+            'errors'              => $errors,
+        ]);
+    }
+
+    public function deleteCategory(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect_with('products/categories', 'danger', 'Metodo non consentito.');
+        }
+
+        if (!csrf_verify()) {
+            redirect_with('products/categories', 'danger', 'Token di sicurezza non valido.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            redirect_with('products/categories', 'danger', 'Categoria non specificata.');
+        }
+
+        try {
+            // Check if there are subcategories
+            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM categorie_prodotto WHERE parent_id = :id');
+            $stmt->execute([':id' => $id]);
+            if ($stmt->fetchColumn() > 0) {
+                redirect_with('products/categories', 'danger', 'Impossibile eliminare: questa categoria ha delle sotto-categorie.');
+            }
+
+            // Delete
+            $stmt = $this->pdo->prepare('DELETE FROM categorie_prodotto WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            redirect_with('products/categories', 'success', 'Categoria eliminata correttamente.');
+        } catch (Throwable $e) {
+            redirect_with('products/categories', 'danger', 'Impossibile eliminare questa categoria poiché è associata ad uno o più prodotti.');
+        }
+    }
+
+    /* ── Tag Prodotti ──────────────────────────────────────────────────────── */
+
+    public function tags(): void
+    {
+        $errors = [];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina.';
+            } else {
+                $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+                $nome = trim(post('nome') ?? '');
+
+                if ($nome === '') {
+                    $errors['nome'] = 'Il nome del tag è obbligatorio.';
+                } elseif (mb_strlen($nome) > 50) {
+                    $errors['nome'] = 'Nome troppo lungo (max 50 caratteri).';
+                }
+
+                // Check uniqueness
+                if (empty($errors)) {
+                    $stmt = $this->pdo->prepare('SELECT id FROM tag WHERE nome = :nome AND (:id IS NULL OR id != :id)');
+                    $stmt->execute([':nome' => $nome, ':id' => $id]);
+                    if ($stmt->fetch()) {
+                        $errors['nome'] = 'Questo tag esiste già.';
+                    }
+                }
+
+                if (empty($errors)) {
+                    try {
+                        if ($id) {
+                            $stmt = $this->pdo->prepare('UPDATE tag SET nome = :nome WHERE id = :id');
+                            $stmt->execute([':nome' => $nome, ':id' => $id]);
+                            redirect_with('products/tags', 'success', 'Tag aggiornato con successo.');
+                        } else {
+                            $stmt = $this->pdo->prepare('INSERT INTO tag (nome) VALUES (:nome)');
+                            $stmt->execute([':nome' => $nome]);
+                            redirect_with('products/tags', 'success', 'Tag creato con successo.');
+                        }
+                    } catch (Throwable $e) {
+                        $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+
+        // Fetch tags with product count
+        $tags = $this->pdo->query(
+            'SELECT t.id, t.nome, (SELECT COUNT(*) FROM prodotti_tag pt WHERE pt.tag_id = t.id) AS prodotti_count
+               FROM tag t
+              ORDER BY t.nome'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $this->page(APP_ROOT_DIR . '/app/views/products/_tags.php', [
+            'page_title'    => 'Tag Prodotti',
+            'page_subtitle' => 'Gestione delle etichette e dei tag associati ai prodotti',
+            'breadcrumbs'   => [
+                ['label' => 'Prodotti', 'url' => url('products')],
+                ['label' => 'Tag'],
+            ],
+            'tags'          => $tags,
+            'errors'        => $errors,
+        ]);
+    }
+
+    public function deleteTag(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect_with('products/tags', 'danger', 'Metodo non consentito.');
+        }
+
+        if (!csrf_verify()) {
+            redirect_with('products/tags', 'danger', 'Token di sicurezza non valido.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            redirect_with('products/tags', 'danger', 'Tag non specificato.');
+        }
+
+        try {
+            $stmt = $this->pdo->prepare('DELETE FROM tag WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            redirect_with('products/tags', 'success', 'Tag eliminato correttamente.');
+        } catch (Throwable $e) {
+            redirect_with('products/tags', 'danger', 'Errore durante l\'eliminazione del tag.');
+        }
+    }
+
+    /* ── API: ricerca prodotti (per kit component picker) ─────────────────── */
+
+    public function searchProdotti(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $q          = trim(get_param('q'));
+        $limit      = min(100, max(1, (int) get_param('limit', '50')));
+        $exclude_id = filter_input(INPUT_GET, 'exclude', FILTER_VALIDATE_INT) ?: null;
+        echo json_encode(qk_search_prodotti($this->pdo, $q, $limit, $exclude_id));
+        exit;
+    }
+
+    /* ── API: lista componenti kit ────────────────────────────────────────── */
+
+    public function listComponentiKit(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $kit_id = filter_input(INPUT_GET, 'kit_id', FILTER_VALIDATE_INT);
+        if (!$kit_id) { echo json_encode([]); exit; }
+        echo json_encode(qk_load_kit_componenti($this->pdo, $kit_id));
+        exit;
+    }
+
+    /* ── API: salva componente kit (upsert via DELETE + INSERT) ───────────── */
+
+    public function saveComponenteKit(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $kit_id       = (int) post('kit_id');
+        $componente_id = (int) post('componente_id');
+        $quantita     = trim((string)(post('quantita') ?? ''));
+        $note         = trim((string)(post('note') ?? '')) ?: null;
+
+        if ($kit_id <= 0 || $componente_id <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Dati obbligatori mancanti.']); exit;
+        }
+        if ($kit_id === $componente_id) {
+            echo json_encode(['ok' => false, 'error' => 'Un kit non può contenere se stesso.']); exit;
+        }
+        $qty = $quantita !== '' ? (float) $quantita : null;
+        if ($qty === null || $qty <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'La quantità deve essere maggiore di zero.']); exit;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare('SELECT tipo FROM prodotti WHERE id = :id');
+            $stmt->execute([':id' => $kit_id]);
+            $prod = $stmt->fetch();
+            if (!$prod || $prod['tipo'] !== 'kit') {
+                echo json_encode(['ok' => false, 'error' => 'Il prodotto principale non è registrato come Kit nel database. Salva prima le modifiche del prodotto.']); exit;
+            }
+
+            // Upsert: elimina riga esistente e reinserisce
+            $this->pdo->prepare(
+                'DELETE FROM componenti_kit WHERE kit_id = :kit_id AND componente_id = :comp_id'
+            )->execute([':kit_id' => $kit_id, ':comp_id' => $componente_id]);
+
+            $this->pdo->prepare(
+                'INSERT INTO componenti_kit (kit_id, componente_id, quantita, note)
+                 VALUES (:kit_id, :comp_id, :qty, :note)'
+            )->execute([
+                ':kit_id'  => $kit_id,
+                ':comp_id' => $componente_id,
+                ':qty'     => $qty,
+                ':note'    => $note,
+            ]);
+
+            $row = $this->pdo->prepare(
+                'SELECT ck.componente_id, p.nome, p.sku_interno, ck.quantita, ck.note
+                   FROM componenti_kit ck
+                   JOIN prodotti p ON p.id = ck.componente_id
+                  WHERE ck.kit_id = :kit_id AND ck.componente_id = :comp_id'
+            );
+            $row->execute([':kit_id' => $kit_id, ':comp_id' => $componente_id]);
+            echo json_encode(['ok' => true, 'row' => $row->fetch(PDO::FETCH_ASSOC)]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore nel salvataggio.']);
+        }
+        exit;
+    }
+
+    /* ── API: elimina componente kit ──────────────────────────────────────── */
+
+    public function deleteComponenteKit(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $kit_id       = (int) post('kit_id');
+        $componente_id = (int) post('componente_id');
+        if ($kit_id <= 0 || $componente_id <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Record non specificato.']); exit;
+        }
+
+        try {
+            $this->pdo->prepare(
+                'DELETE FROM componenti_kit WHERE kit_id = :kit_id AND componente_id = :comp_id'
+            )->execute([':kit_id' => $kit_id, ':comp_id' => $componente_id]);
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore durante la rimozione.']);
+        }
+        exit;
+    }
+
+    public function apiFornitoreDettagli(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        
+        $pfId = (int) get_param('prodotto_fornitore_id');
+        if ($pfId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'ID fornitore prodotto non valido.']);
+            exit;
+        }
+
+        try {
+            // Ottiene il fornitore_id associato
+            $stmtPf = $this->pdo->prepare('SELECT fornitore_id FROM prodotti_fornitori WHERE id = :id');
+            $stmtPf->execute([':id' => $pfId]);
+            $fornitoreId = (int) ($stmtPf->fetchColumn() ?? 0);
+
+            // Carica tutti i prezzi a scaglione
+            $stmtPrezzi = $this->pdo->prepare(
+                'SELECT pfp.id, pfp.quantita_minima, pfp.prezzo, pfp.sconto_perc,
+                        pfp.valido_dal, pfp.valido_al, pfp.note, pfp.listino_acquisto_id,
+                        la.nome_listino
+                 FROM prodotti_fornitori_prezzi pfp
+                 LEFT JOIN listini_acquisto la ON la.id = pfp.listino_acquisto_id
+                 WHERE pfp.prodotto_fornitore_id = :pfid
+                 ORDER BY pfp.listino_acquisto_id IS NULL DESC, la.nome_listino ASC, pfp.quantita_minima ASC'
+            );
+            $stmtPrezzi->execute([':pfid' => $pfId]);
+            $prezzi = $stmtPrezzi->fetchAll(PDO::FETCH_ASSOC);
+
+            // Carica tutti i listini per questo fornitore
+            $listini = [];
+            if ($fornitoreId > 0) {
+                $stmtListini = $this->pdo->prepare(
+                    'SELECT id, nome_listino 
+                     FROM listini_acquisto 
+                     WHERE fornitore_id = :fid 
+                     ORDER BY nome_listino ASC'
+                );
+                $stmtListini->execute([':fid' => $fornitoreId]);
+                $listini = $stmtListini->fetchAll(PDO::FETCH_ASSOC);
+            }
+
+            echo json_encode(['ok' => true, 'prezzi' => $prezzi, 'listini' => $listini]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /* ── API: salva singola riga prezzo fornitore (insert o update) ──────── */
+
+    public function savePrezzo(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $id         = (int) post('id');           // 0 = insert, > 0 = update
+        $pfId       = (int) post('prodotto_fornitore_id');
+        $prodottoId = (int) post('prodotto_id');  // per verifica ownership
+
+        if ($pfId <= 0 || $prodottoId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Dati obbligatori mancanti.']); exit;
+        }
+
+        // Verifica che prodotto_fornitore_id appartenga davvero al prodotto (sicurezza)
+        $stmtOwn = $this->pdo->prepare(
+            'SELECT id FROM prodotti_fornitori WHERE id = :pfid AND prodotto_id = :pid'
+        );
+        $stmtOwn->execute([':pfid' => $pfId, ':pid' => $prodottoId]);
+        if (!$stmtOwn->fetch()) {
+            echo json_encode(['ok' => false, 'error' => 'Record non trovato o accesso non autorizzato.']); exit;
+        }
+
+        $n = fn(string $k): mixed => trim((string)(post($k) ?? '')) === '' ? null : post($k);
+
+        $listinoId = $n('listino_acquisto_id') !== null ? (int) $n('listino_acquisto_id') : null;
+        $qta       = $n('quantita_minima')     !== null ? (float) $n('quantita_minima')   : 0.0;
+        $prezzo    = (float) (post('prezzo') ?? 0);
+        $sconto    = $n('sconto_perc')         !== null ? (float) $n('sconto_perc')       : 0.0;
+        $validoDal = $n('valido_dal');
+        $validoAl  = $n('valido_al');
+        $note      = $n('note');
+
+        try {
+            if ($id > 0) {
+                // UPDATE — verifica ownership tramite prodotto_fornitore_id
+                $this->pdo->prepare(
+                    'UPDATE prodotti_fornitori_prezzi
+                        SET listino_acquisto_id = :listino_id,
+                            quantita_minima     = :qta,
+                            prezzo              = :prezzo,
+                            sconto_perc         = :sconto,
+                            valido_dal          = :valido_dal,
+                            valido_al           = :valido_al,
+                            note                = :note
+                      WHERE id = :id
+                        AND prodotto_fornitore_id = :pfid'
+                )->execute([
+                    ':listino_id' => $listinoId,
+                    ':qta'        => $qta,
+                    ':prezzo'     => $prezzo,
+                    ':sconto'     => $sconto,
+                    ':valido_dal' => $validoDal,
+                    ':valido_al'  => $validoAl,
+                    ':note'       => $note,
+                    ':id'         => $id,
+                    ':pfid'       => $pfId,
+                ]);
+            } else {
+                // INSERT
+                $this->pdo->prepare(
+                    'INSERT INTO prodotti_fornitori_prezzi
+                       (prodotto_fornitore_id, listino_acquisto_id, quantita_minima,
+                        prezzo, sconto_perc, valido_dal, valido_al, note)
+                     VALUES
+                       (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note)'
+                )->execute([
+                    ':pfid'       => $pfId,
+                    ':listino_id' => $listinoId,
+                    ':qta'        => $qta,
+                    ':prezzo'     => $prezzo,
+                    ':sconto'     => $sconto,
+                    ':valido_dal' => $validoDal,
+                    ':valido_al'  => $validoAl,
+                    ':note'       => $note,
+                ]);
+                $id = (int) $this->pdo->lastInsertId();
+            }
+
+            // Restituisce la riga salvata (con nome_listino per rendering JS)
+            $stmtRow = $this->pdo->prepare(
+                'SELECT pfp.id, pfp.prodotto_fornitore_id, pfp.listino_acquisto_id,
+                        pfp.quantita_minima, pfp.prezzo, pfp.sconto_perc,
+                        pfp.valido_dal, pfp.valido_al, pfp.note,
+                        la.nome_listino
+                   FROM prodotti_fornitori_prezzi pfp
+              LEFT JOIN listini_acquisto la ON la.id = pfp.listino_acquisto_id
+                  WHERE pfp.id = :id'
+            );
+            $stmtRow->execute([':id' => $id]);
+            echo json_encode(['ok' => true, 'row' => $stmtRow->fetch(PDO::FETCH_ASSOC)]);
+
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => qk_prodotti_db_message($e)]);
+        }
+        exit;
+    }
+
+    /* ── API: elimina singola riga prezzo fornitore ───────────────────────── */
+
+    public function deletePrezzo(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $id         = (int) post('id');
+        $prodottoId = (int) post('prodotto_id'); // per verifica ownership
+
+        if ($id <= 0 || $prodottoId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Record non specificato.']); exit;
+        }
+
+        try {
+            // DELETE con verifica ownership via subquery su prodotti_fornitori
+            $this->pdo->prepare(
+                'DELETE FROM prodotti_fornitori_prezzi
+                  WHERE id = :id
+                    AND prodotto_fornitore_id IN (
+                        SELECT id FROM prodotti_fornitori WHERE prodotto_id = :pid
+                    )'
+            )->execute([':id' => $id, ':pid' => $prodottoId]);
+
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore durante la rimozione.']);
+        }
+        exit;
+    }
+
+    public function apiFornitoreListini(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        
+        $fornitoreId = (int) get_param('fornitore_id');
+        if ($fornitoreId <= 0) {
+            echo json_encode(['ok' => true, 'listini' => []]);
+            exit;
+        }
+
+        try {
+            $stmtListini = $this->pdo->prepare(
+                'SELECT id, nome_listino 
+                 FROM listini_acquisto 
+                 WHERE fornitore_id = :fid 
+                 ORDER BY nome_listino ASC'
+            );
+            $stmtListini->execute([':fid' => $fornitoreId]);
+            $listini = $stmtListini->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['ok' => true, 'listini' => $listini]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+}

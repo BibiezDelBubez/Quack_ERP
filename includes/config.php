@@ -1,0 +1,96 @@
+<?php
+/**
+ * config.php — configurazione centrale dell'app Quack ERP
+ *
+ * Include questo file come primo include in ogni pagina.
+ * Rileva automaticamente il BASE_URL dall'ubicazione fisica del file,
+ * senza mai usare porte o hostname fissi.
+ */
+
+/* ── Session ─────────────────────────────────────────────────────────────── */
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+/* ── App info ─────────────────────────────────────────────────────────────── */
+define('APP_NAME',          'Quack ERP');
+define('APP_VERSION',       '0.1.0');
+define('APP_ENV',           'development'); // 'production' in prod
+define('DB_SCHEMA_VERSION', '4.2');         // aggiornare ad ogni migrazione
+
+/* ── Path resolution ──────────────────────────────────────────────────────── */
+// includes/config.php è in <app_root>/includes/
+// app root = dirname di questo file salito di 1 livello
+define('APP_ROOT_DIR', dirname(__DIR__));
+
+// Base URL root-relativa (es. "/quack") calcolata confrontando il percorso
+// fisico dell'app con il document root del server.
+$_docroot = rtrim(str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'])), '/');
+$_approot = rtrim(str_replace('\\', '/', realpath(APP_ROOT_DIR)), '/');
+$_base    = str_replace($_docroot, '', $_approot);
+define('BASE_URL', $_base === '' ? '' : $_base); // es. "/quack"
+unset($_docroot, $_approot, $_base);
+
+define('ASSETS_URL',   BASE_URL . '/assets');
+define('INCLUDES_DIR', APP_ROOT_DIR . '/includes');
+
+/* ── Upload directory (fuori dalla cartella di progetto) ──────────────────
+   In sviluppo: C:/Quack_ERP_data
+   In produzione Linux: es. /var/www/quack-data
+   Cambia SOLO questo define per adattare l'ambiente.
+─────────────────────────────────────────────────────────────────────────── */
+define('UPLOAD_DIR', 'C:/Quack_ERP_data');
+
+/* ── Registro temi — UNICA FONTE DI VERITÀ ────────────────────────────────
+   Aggiungere o rimuovere un tema: modificare SOLO questo array.
+   Ogni voce: slug (CSS data-theme), label (UI), swatch (style inline CSS).
+─────────────────────────────────────────────────────────────────────────── */
+define('QK_THEMES', [
+    ['slug' => 'mallard',    'label' => 'Germano Reale',      'swatch' => 'linear-gradient(90deg,#064e3b 50%,#fbbf24 50%)'],
+    ['slug' => 'moretta',    'label' => 'Moretta',             'swatch' => 'linear-gradient(90deg,#141414 50%,#6b8cbf 50%)'],
+    ['slug' => 'orco-marino','label' => 'Orco Marino',         'swatch' => 'linear-gradient(90deg,#111827 50%,#facc15 50%)'],
+    ['slug' => 'svedese-blu','label' => 'Svedese Blu',         'swatch' => 'linear-gradient(90deg,#334155 50%,#1e40af 50%)'],
+    ['slug' => 'codone',     'label' => 'Alzavola',            'swatch' => 'linear-gradient(90deg,#6b5848 50%,#2d7a6e 50%)'],
+    ['slug' => 'edredone',   'label' => 'Quattrocchi Comune',  'swatch' => 'linear-gradient(90deg,#0f172a 50%,#0d9488 50%)'],
+    ['slug' => 'mandarino',  'label' => 'Anatra Mandarina',    'swatch' => 'linear-gradient(90deg,#143642 50%,#b48234 50%)'],
+    ['slug' => 'pesciaiola', 'label' => 'Vaporiera',           'swatch' => 'linear-gradient(90deg,#f9fafb 50%,#2563eb 50%)', 'swatch_border' => '1px solid #d1d5db'],
+    ['slug' => 'fischione',  'label' => 'Fischione',           'swatch' => 'linear-gradient(90deg,#45403E 50%,#D97706 50%)'],
+    ['slug' => 'fagiano',    'label' => 'Fagiano Remo',        'swatch' => 'linear-gradient(90deg,#0e1c30 50%,#f8a800 50%)'],
+    ['slug' => 'cayun',      'label' => 'Cayun',               'swatch' => 'linear-gradient(90deg,#141a1c 50%,#00f5a0 50%)'],
+    ['slug' => 'picchio-deberardinis', 'label' => 'Picchio Deberardinis', 'swatch' => 'linear-gradient(90deg,#1e1f22 50%,#a63326 50%)'],
+]);
+
+/* ── Migrazione slug obsoleti — UNICA FONTE DI VERITÀ ────────────────────────
+   Usata da: config.php, ThemeController (via costante), app.js (via header.php).
+   Per aggiungere un alias: aggiungere qui, non nei file sopra citati.
+ ─────────────────────────────────────────────────────────────────────────── */
+define('QK_THEME_LEGACY', [
+    'standard' => 'svedese-blu',        // vecchio nome pre-rinomina
+    'whio'     => 'svedese-blu',        // vecchio nome pre-rinomina
+    'cozze'    => 'orco-marino',        // vecchio nome pre-rinomina
+]);
+
+/* ── Tema attivo + migrazione da vecchi slug ──────────────────────────────── */
+$_qk_theme_raw = $_SESSION['qk_theme'] ?? 'svedese-blu';
+if (isset(QK_THEME_LEGACY[$_qk_theme_raw])) {
+    $_SESSION['qk_theme'] = QK_THEME_LEGACY[$_qk_theme_raw];
+    $_qk_theme_raw        = $_SESSION['qk_theme'];
+}
+if (!in_array($_qk_theme_raw, array_column(QK_THEMES, 'slug'), true)) {
+    $_SESSION['qk_theme'] = 'svedese-blu';
+    $_qk_theme_raw        = 'svedese-blu';
+}
+define('ACTIVE_THEME', $_qk_theme_raw);
+unset($_qk_theme_raw);
+
+/* ── Error reporting ──────────────────────────────────────────────────────── */
+if (APP_ENV === 'development') {
+    error_reporting(E_ALL);
+    ini_set('display_errors', '1');
+} else {
+    error_reporting(0);
+    ini_set('display_errors', '0');
+}
+
+/* ── Charset ──────────────────────────────────────────────────────────────── */
+header('Content-Type: text/html; charset=UTF-8');

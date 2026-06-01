@@ -1,0 +1,29 @@
+# Front controller + URL pulite
+RewriteEngine On
+Options -Indexes
+
+# Blocca accesso diretto a directory interne (escluso crea_db.php temporaneamente)
+RewriteCond %{REQUEST_URI} !/db/crea_db\.php$ [NC]
+RewriteRule ^(app|includes|db)/ - [F,L]
+
+# Forza le "route directory" legacy a passare dal front controller
+# (evita l'index listing di Apache su /dashboard/, /customers/, ecc.)
+RewriteRule ^(dashboard|customers|suppliers|orders|offers|products|profile|utenti|settings|adr)(/.*)?$ index.php [L,QSA]
+RewriteRule ^ecommerce(/.*)?$ index.php [L,QSA]
+
+# Forza tutte le richieste PHP (tranne index.php) a passare dal router
+RewriteCond %{REQUEST_URI} \.php$ [NC]
+RewriteCond %{REQUEST_URI} !/index\.php$ [NC]
+RewriteCond %{REQUEST_URI} !/db/crea_db\.php$ [NC]
+RewriteCond %{REQUEST_URI} !/test_mpdf\.php$ [NC]
+RewriteCond %{REQUEST_URI} !/test_docx\.php$ [NC]
+RewriteRule ^ index.php [L,QSA]
+
+# Se è un file reale (asset: css, js, img, ecc.), lascialo servire direttamente
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Tutte le altre richieste passano dal router centrale
+RewriteRule ^ index.php [L,QSA]
+
+# Il router centrale gestisce le 404 via app/routes.php (__404__)

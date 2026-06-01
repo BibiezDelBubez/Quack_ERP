@@ -1,0 +1,26 @@
+# Dipendenze gestite da Composer (rigenerabili con: composer install)
+/vendor/
+
+# File temporanei
+/uploads/mpdf_tmp/
+/scratch/
+
+# Script di utilità (non servono in produzione)
+check_vendor_size.php
+cleanup_vendor_fonts.php
+uploads/gen_header.php
+
+# File di test PDF (temporanei)
+test_mpdf.php
+test_tcpdf.php
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# File di supporto
+/file supporto/
+

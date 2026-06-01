@@ -1,0 +1,311 @@
+/* =============================================================================
+   warehouse.css — Modulo Magazzino di Quack
+   Dipende dalle variabili --qk-* definite in theme.css / app.css
+============================================================================= */
+
+/* ── Lotto mode selector (2-colonne nel form movimento) ───────────────────── */
+#lottoModeWrap .qkwh-tipo-selector { margin-bottom: 0; }
+
+/* Lotto select option esaurita */
+#selectLotto option[disabled] { color: var(--qk-text-muted); font-style: italic; }
+
+/* ── Layout form movimento ────────────────────────────────────────────────── */
+.qkwh-form-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 800px) {
+  .qkwh-form-layout { grid-template-columns: 1fr; }
+}
+
+/* ── Selettore tipo operazione ────────────────────────────────────────────── */
+.qkwh-tipo-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .75rem;
+}
+@media (max-width: 600px) {
+  .qkwh-tipo-selector { grid-template-columns: 1fr; }
+}
+
+.qkwh-tipo-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: 1rem .75rem;
+  border: 2px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  cursor: pointer;
+  transition: border-color var(--qk-transition), background var(--qk-transition), color var(--qk-transition);
+  text-align: center;
+  user-select: none;
+}
+.qkwh-tipo-option input[type=radio] { display: none; }
+
+.qkwh-tipo-option i {
+  font-size: 1.5rem;
+  color: var(--qk-text-muted);
+  transition: color var(--qk-transition);
+}
+.qkwh-tipo-name {
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--qk-text-primary);
+}
+.qkwh-tipo-desc {
+  font-size: .72rem;
+  color: var(--qk-text-muted);
+  line-height: 1.3;
+}
+
+.qkwh-tipo-option:hover {
+  border-color: var(--qk-accent);
+  background: color-mix(in srgb, var(--qk-accent) 6%, transparent);
+}
+.qkwh-tipo-option.selected {
+  border-color: var(--qk-accent);
+  background: color-mix(in srgb, var(--qk-accent) 10%, transparent);
+}
+.qkwh-tipo-option.selected i,
+.qkwh-tipo-option.selected .qkwh-tipo-name {
+  color: var(--qk-accent-text);
+}
+
+/* Carico = verde, Scarico = rosso, Rettifica = arancio (solo quando selezionati) */
+.qkwh-tipo-option[data-tipo=carico].selected,
+.qkwh-tipo-option:has(input[value=carico]).selected { border-color: var(--qk-success); background: color-mix(in srgb, var(--qk-success) 8%, transparent); }
+.qkwh-tipo-option:has(input[value=carico]).selected i,
+.qkwh-tipo-option:has(input[value=carico]).selected .qkwh-tipo-name { color: var(--qk-success); }
+
+.qkwh-tipo-option:has(input[value=scarico]).selected { border-color: var(--qk-danger); background: color-mix(in srgb, var(--qk-danger) 8%, transparent); }
+.qkwh-tipo-option:has(input[value=scarico]).selected i,
+.qkwh-tipo-option:has(input[value=scarico]).selected .qkwh-tipo-name { color: var(--qk-danger); }
+
+.qkwh-tipo-option:has(input[value=rettifica]).selected { border-color: var(--qk-warning); background: color-mix(in srgb, var(--qk-warning) 8%, transparent); }
+.qkwh-tipo-option:has(input[value=rettifica]).selected i,
+.qkwh-tipo-option:has(input[value=rettifica]).selected .qkwh-tipo-name { color: var(--qk-warning); }
+
+/* ── Autocomplete prodotto ────────────────────────────────────────────────── */
+.qkwh-prod-search-wrap { position: relative; }
+
+.qkwh-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  z-index: 100;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.qkwh-dd-item {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .75rem;
+  cursor: pointer;
+  font-size: .85rem;
+  transition: background var(--qk-transition);
+}
+.qkwh-dd-item:hover { background: color-mix(in srgb, var(--qk-accent) 8%, transparent); }
+.qkwh-dd-sku   { font-size: .75rem; color: var(--qk-text-muted); font-family: monospace; flex-shrink: 0; }
+.qkwh-dd-nome  { flex: 1; color: var(--qk-text-primary); }
+.qkwh-dd-lotti { color: var(--qk-warning); font-size: .75rem; flex-shrink: 0; }
+.qkwh-dd-empty { padding: .75rem; text-align: center; color: var(--qk-text-muted); font-size: .82rem; }
+
+/* ── Info prodotto selezionato ────────────────────────────────────────────── */
+.qkwh-prodotto-info {
+  margin-top: .75rem;
+  padding: .65rem .85rem;
+  background: var(--qk-accent-light);
+  border-radius: var(--qk-radius-sm);
+  border-left: 3px solid var(--qk-accent);
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+}
+.qkwh-info-row { display: flex; align-items: center; gap: .5rem; font-size: .82rem; }
+.qkwh-info-label { color: var(--qk-text-muted); min-width: 120px; }
+.qkwh-info-value { color: var(--qk-text-primary); font-weight: 500; }
+.qkwh-lotti-active { color: var(--qk-warning); }
+
+/* ── Input quantità con UoM ───────────────────────────────────────────────── */
+.qkwh-qta-wrap {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.qkwh-qta-wrap .qk-form-control { flex: 1; }
+.qkwh-uom-suffix {
+  font-size: .82rem;
+  color: var(--qk-text-muted);
+  white-space: nowrap;
+  min-width: 30px;
+}
+
+/* ── Hint quantità ────────────────────────────────────────────────────────── */
+.qkwh-qta-hint {
+  font-size: .8rem;
+  color: var(--qk-text-secondary);
+  padding: .4rem .6rem;
+  background: color-mix(in srgb, var(--qk-info) 8%, transparent);
+  border-radius: var(--qk-radius-sm);
+  border-left: 2px solid var(--qk-info);
+}
+
+/* ── Riepilogo pannello laterale ──────────────────────────────────────────── */
+.qkwh-riepilogo { display: flex; flex-direction: column; gap: .5rem; }
+.qkwh-riepilogo-row { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; font-size: .82rem; }
+.qkwh-riepilogo-label { color: var(--qk-text-muted); }
+.qkwh-riepilogo-val { color: var(--qk-text-primary); text-align: right; max-width: 60%; }
+.qkwh-riepilogo-prodotto { font-weight: 600; font-size: .78rem; }
+.qkwh-giacenza-nuova { font-size: .95rem; color: var(--qk-success); }
+.qkwh-giacenza-negativa { color: var(--qk-danger) !important; }
+.qkwh-giacenza-zero { color: var(--qk-warning) !important; }
+
+/* ── Tabella stock overview ───────────────────────────────────────────────── */
+.qkwh-sku code { font-size: .78rem; color: var(--qk-text-muted); }
+.qkwh-uom { font-size: .8rem; color: var(--qk-text-muted); }
+
+.qkwh-qty { font-size: .88rem; font-variant-numeric: tabular-nums; }
+.qkwh-qty-muted { color: var(--qk-text-muted); }
+.qkwh-qty-positive { color: var(--qk-success); }
+.qkwh-qty-danger { color: var(--qk-danger); font-weight: 600; }
+
+.qkwh-row-esaurito td { opacity: .55; }
+.qkwh-row-sottoscorta td:nth-child(7) { color: var(--qk-danger); }
+
+.qkwh-badge-lotti {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  font-size: .68rem;
+  padding: .1rem .35rem;
+  background: color-mix(in srgb, var(--qk-warning) 15%, transparent);
+  color: var(--qk-warning);
+  border-radius: 20px;
+  margin-left: .35rem;
+  vertical-align: middle;
+}
+
+.qkwh-actions { white-space: nowrap; }
+.qkwh-count-label { font-size: .8rem; color: var(--qk-text-muted); }
+.qkwh-link-movimenti { font-size: .8rem; color: var(--qk-accent-text); text-decoration: none; }
+.qkwh-link-movimenti:hover { text-decoration: underline; }
+.qk-table-footer { display: flex; justify-content: space-between; align-items: center; padding: 0 .25rem; }
+
+/* ── Filtri stock overview ────────────────────────────────────────────────── */
+.qk-toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.qk-filter-pills { display: flex; gap: .4rem; flex-wrap: wrap; }
+.qk-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .3rem .7rem;
+  border-radius: 20px;
+  font-size: .8rem;
+  border: 1px solid var(--qk-card-border);
+  color: var(--qk-text-secondary);
+  text-decoration: none;
+  transition: all var(--qk-transition);
+}
+.qk-filter-pill:hover { border-color: var(--qk-accent); color: var(--qk-accent-text); }
+.qk-filter-pill.active { background: var(--qk-accent); border-color: var(--qk-accent); color: #fff; font-weight: 600; }
+.qk-pill-count {
+  background: rgba(255,255,255,.3);
+  border-radius: 20px;
+  padding: 0 .4rem;
+  font-size: .72rem;
+  font-weight: 700;
+}
+.qk-filter-pill:not(.active) .qk-pill-count {
+  background: color-mix(in srgb, var(--qk-danger) 15%, transparent);
+  color: var(--qk-danger);
+}
+
+.qk-search-form { flex: 1; min-width: 200px; max-width: 360px; }
+.qk-search-wrap { position: relative; }
+.qk-search-wrap i { position: absolute; left: .65rem; top: 50%; transform: translateY(-50%); color: var(--qk-text-muted); font-size: .8rem; pointer-events: none; }
+.qk-search-wrap .qk-form-control { padding-left: 2rem; }
+
+/* ── Tabella movimenti ────────────────────────────────────────────────────── */
+.qkwh-movements-table { font-size: .84rem; }
+.qkwh-date { color: var(--qk-text-muted); font-size: .78rem; }
+.qkwh-prod-name { font-weight: 500; color: var(--qk-text-primary); }
+.qkwh-sku-small code { font-size: .72rem; color: var(--qk-text-muted); }
+.qkwh-lotto-tag { font-size: .75rem; color: var(--qk-warning); display: inline-flex; align-items: center; gap: .2rem; }
+
+/* Badge delta quantità per tipo */
+.qkwh-qty-delta { font-variant-numeric: tabular-nums; font-weight: 600; }
+.qkwh-delta-carico         { color: var(--qk-success); }
+.qkwh-delta-scarico        { color: var(--qk-danger); }
+.qkwh-delta-rettifica      { color: var(--qk-warning); }
+.qkwh-delta-reso_cliente   { color: var(--qk-info); }
+.qkwh-delta-reso_fornitore { color: var(--qk-success); }
+.qkwh-delta-riserva        { color: var(--qk-text-muted); }
+.qkwh-delta-svincolo       { color: var(--qk-text-muted); }
+.qkwh-uom-small { font-size: .75rem; color: var(--qk-text-muted); margin-left: .2rem; }
+
+/* Badge tipo movimento */
+.qkwh-tipo-badge {
+  display: inline-block;
+  padding: .15rem .5rem;
+  border-radius: 20px;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.qkwh-tipo-success { background: var(--qk-success-bg); color: var(--qk-success); }
+.qkwh-tipo-danger  { background: var(--qk-danger-bg);  color: var(--qk-danger); }
+.qkwh-tipo-warning { background: var(--qk-warning-bg); color: var(--qk-warning); }
+.qkwh-tipo-info    { background: var(--qk-info-bg);    color: var(--qk-info); }
+.qkwh-tipo-muted   { background: var(--qk-table-head-bg); color: var(--qk-text-muted); }
+
+/* Origine movimento */
+.qkwh-origine-badge { font-size: .75rem; color: var(--qk-text-muted); display: inline-flex; align-items: center; gap: .25rem; }
+.qkwh-origine-auto  { color: var(--qk-info); }
+.qkwh-doc-ref { font-size: .72rem; color: var(--qk-text-muted); margin-top: .1rem; }
+
+.qkwh-note-cell { max-width: 200px; }
+.qkwh-rif-ext  { font-size: .75rem; font-family: monospace; color: var(--qk-text-secondary); }
+.qkwh-note-text { font-size: .75rem; color: var(--qk-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qkwh-utente { font-size: .78rem; color: var(--qk-text-muted); }
+
+/* Filtri movimenti */
+.qkwh-filter-form { display: flex; align-items: center; gap: .6rem; flex: 1; flex-wrap: wrap; }
+.qkwh-select-tipo { max-width: 180px; }
+
+/* Paginazione */
+.qk-pagination { display: flex; gap: .25rem; }
+.qk-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 .4rem;
+  border-radius: var(--qk-radius-sm);
+  border: 1px solid var(--qk-card-border);
+  font-size: .8rem;
+  color: var(--qk-text-secondary);
+  text-decoration: none;
+  transition: all var(--qk-transition);
+}
+.qk-page-btn:hover { border-color: var(--qk-accent); color: var(--qk-accent-text); }
+.qk-page-btn.active { background: var(--qk-accent); border-color: var(--qk-accent); color: #fff; font-weight: 600; }
+
+/* Empty state generico per il modulo */
+.qk-empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--qk-text-muted);
+}
+.qk-empty-state i { font-size: 2.5rem; display: block; margin-bottom: .75rem; opacity: .3; }
+.qk-empty-state p { margin: 0; font-size: .9rem; }

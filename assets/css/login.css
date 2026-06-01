@@ -1,0 +1,425 @@
+/* =============================================================================
+   LOGIN — Piscina vista dall'alto. Bianco + blu scuro. Minimalista.
+   Deck chiaro attorno, acqua scura dentro: lettura zenitale immediata.
+   ============================================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body.qk-login-body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* deck: pietra chiara attorno alla vasca */
+  background: #dde5ea;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 4vw, 3rem);
+}
+
+/* =============================================================================
+   VASCA — blu scuro = acqua profonda vista dall'alto
+   ============================================================================= */
+
+.qk-pool {
+  position: relative;
+  width: min(100%, 460px);
+  min-height: 590px;
+  background: #0d2d48;
+  border: 12px solid #c8d5dc;   /* coping in pietra */
+  border-radius: 36px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 32px 72px rgba(8,28,52,0.40);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* bezel interno */
+.qk-pool::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.10);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* =============================================================================
+   LINEE D'ACQUA — SVG full-pool, linee bianche organiche.
+   Queste linee sono l'unico elemento decorativo.
+   Rappresentano la superficie dell'acqua vista dall'alto:
+   i riflessi di luce che scorrono lentamente.
+   ============================================================================= */
+
+.qk-surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ogni linea ha la propria velocità e direzione */
+.qk-wl { fill: none; stroke: #ffffff; stroke-linecap: round; }
+
+.qk-wl--1 { animation: qk-drift 22s ease-in-out infinite; }
+.qk-wl--2 { animation: qk-drift 28s ease-in-out infinite reverse; animation-delay: -8s; }
+.qk-wl--3 { animation: qk-drift 19s ease-in-out infinite; animation-delay: -5s; }
+.qk-wl--4 { animation: qk-drift 30s ease-in-out infinite reverse; animation-delay: -14s; }
+.qk-wl--5 { animation: qk-drift 24s ease-in-out infinite; animation-delay: -3s; }
+.qk-wl--6 { animation: qk-drift 20s ease-in-out infinite reverse; animation-delay: -10s; }
+.qk-wl--7 { animation: qk-drift 26s ease-in-out infinite; animation-delay: -18s; }
+.qk-wl--8 { animation: qk-drift 32s ease-in-out infinite reverse; animation-delay: -6s; }
+
+@keyframes qk-drift {
+  0%, 100% { transform: translateX(0); }
+  50%       { transform: translateX(-14px); }
+}
+
+/* =============================================================================
+   INCRESPATURE AMBIENTALI
+   ============================================================================= */
+
+.qk-rip {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+}
+.qk-rip::before, .qk-rip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.45);
+  transform: scale(0.05);
+  opacity: 0;
+}
+.qk-rip::before { animation: qk-rip-anim 5.5s ease-out infinite; }
+.qk-rip::after  { animation: qk-rip-anim 5.5s ease-out infinite -2.75s; }
+.qk-rip--a { width: 70px; height: 70px; left: 12%; top: 82%; }
+.qk-rip--b { width: 48px; height: 48px; left: 88%; top: 14%; }
+.qk-rip--b::before { animation-duration: 7s; animation-delay: -3s; }
+.qk-rip--b::after  { animation-duration: 7s; animation-delay: -6s; }
+
+@keyframes qk-rip-anim {
+  0%   { transform: scale(0.05); opacity: 0; }
+  8%   {                          opacity: 0.45; }
+  100% { transform: scale(1);    opacity: 0; }
+}
+
+/* =============================================================================
+   CONTENUTO
+   ============================================================================= */
+
+.qk-content {
+  position: relative;
+  z-index: 2;
+  padding: clamp(2rem, 5vw, 2.75rem) clamp(1.75rem, 5vw, 2.25rem);
+}
+
+/* =============================================================================
+   LOGO — galleggia con ottica zenitale (drone sopra l'acqua).
+   Quando l'oggetto sale (si avvicina alla camera):
+     · il logo si ingrandisce leggermente (prospettiva zenitale)
+     · l'ombra sull'acqua si allarga e sbiadisce (oggetto lontano dalla superficie)
+   Quando scende (si allontana dalla camera):
+     · il logo torna alla dimensione base
+     · l'ombra si restringe e si scurisce (oggetto vicino alla superficie)
+   Il drop-shadow sul logo è centrato (0 0) — nessun offset direzionale.
+   ============================================================================= */
+
+.qk-logo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.qk-logo-mark {
+  width: 58px; height: 58px;
+  color: #ffffff;
+  display: block;
+  filter: drop-shadow(0 0 8px rgba(0,0,0,0.35));
+  animation: qk-float 4.5s ease-in-out infinite;
+}
+
+.qk-logo-shadow {
+  width: 58px; height: 18px;
+  margin-top: -10px;
+  background: rgba(0,0,40,0.65);
+  border-radius: 50%;
+  filter: blur(5px);
+  animation: qk-shadow 4.5s ease-in-out infinite;
+}
+
+@keyframes qk-float {
+  0%, 100% { transform: translateY(0)    scale(1);    }
+  50%       { transform: translateY(-9px) scale(1.13); }
+}
+@keyframes qk-shadow {
+  0%, 100% { transform: scale(0.85); opacity: 0.65; }
+  50%       { transform: scale(1.60); opacity: 0.25; }
+}
+
+/* =============================================================================
+   TESTI
+   ============================================================================= */
+
+.qk-heading {
+  margin: 0 0 0.2rem;
+  text-align: center;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.qk-sub {
+  margin: 0 0 2.2rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.55);
+}
+
+/* =============================================================================
+   CAMPI
+   ============================================================================= */
+
+.qk-field {
+  position: relative;
+  margin-bottom: 1.9rem;
+  transition: transform 0.30s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.qk-field:focus-within { transform: translateY(-3px); }
+
+.qk-field label {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.50);
+  margin-bottom: 0.45rem;
+}
+
+.qk-field input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.22);
+  border-radius: 0;
+  padding: 0.5rem 0;
+  font-family: inherit;
+  font-size: 0.97rem;
+  color: #ffffff;
+  background: transparent;
+  caret-color: rgba(255,255,255,0.85);
+  transition: border-color 0.25s ease;
+}
+.qk-field input::placeholder { color: rgba(255,255,255,0.22); }
+.qk-field input:focus { outline: none; border-bottom-color: rgba(255,255,255,0.80); }
+
+.qk-field input:-webkit-autofill,
+.qk-field input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+  -webkit-text-fill-color: #ffffff;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* =============================================================================
+   BOTTONE — bianco con testo blu scuro: inversione elegante
+   ============================================================================= */
+
+.qk-submit {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.85rem 1.1rem;
+  border: none;
+  border-radius: 9999px;
+  font-family: inherit;
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #0d2d48;
+  cursor: pointer;
+  background: #ffffff;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.30);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.qk-submit:hover {
+  background: #f0f6fa;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.38);
+}
+.qk-submit:active { transform: translateY(0); }
+
+.qk-btn-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(13,45,72,0.12);
+  transform: scale(0);
+  animation: qk-btn-rip 0.55s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes qk-btn-rip { to { transform: scale(3.5); opacity: 0; } }
+
+/* =============================================================================
+   ALERT / HINT
+   ============================================================================= */
+
+.qk-alert {
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 1.4rem;
+  font-size: 0.82rem;
+  background: rgba(254,242,242,0.10);
+  color: #fca5a5;
+  border: 1px solid rgba(252,165,165,0.30);
+}
+
+.qk-hint {
+  margin: 1.5rem 0 0;
+  font-size: 0.70rem;
+  color: rgba(255,255,255,0.55);
+  text-align: center;
+}
+.qk-hint code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  color: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.08);
+  padding: 0.1rem 0.38rem;
+  border-radius: 4px;
+}
+
+/* =============================================================================
+   ACCESSIBILITÀ
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .qk-wl, .qk-rip::before, .qk-rip::after,
+  .qk-logo-mark, .qk-logo-shadow, .qk-field {
+    animation: none; transition: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .qk-pool { border-width: 8px; border-radius: 28px; min-height: 0; }
+}
+
+/* =============================================================================
+   SKIN C — "Onde piatte piene"
+   Canvas p5 dentro la vasca (come Skin A) — nessun z-index trick necessario.
+   Stessa card scura della Skin A, sfondo body celeste per i bordi esterni.
+   ============================================================================= */
+
+body.qk-skin-c {
+  background: #64bfe0;   /* zona superficiale — visibile attorno alla vasca */
+}
+
+/* =============================================================================
+   SKIN B — "Onde orizzontali"
+   Canvas p5 dentro la vasca (come Skin A e C).
+   Sfondo body scuro per mantenere l'estetica "profonda" attorno alla card.
+   ============================================================================= */
+
+body.qk-skin-b {
+  background: transparent; /* il canvas full-screen disegna lo sfondo */
+}
+
+/* =============================================================================
+   SKIN D — "Mattonelle fondale distorte"
+   Canvas p5 dentro la vasca (come Skin A e C).
+   Sfondo body blu fondale, card scura classica.
+   ============================================================================= */
+
+body.qk-skin-d {
+  background: #00324d;
+}
+
+/* Velo scuro tra le mattonelle e il testo — migliora il contrasto */
+body.qk-skin-d .qk-pool::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  background: rgba(0, 18, 36, 0.30);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Il contenuto (form, testi) va sopra il velo */
+body.qk-skin-d .qk-content {
+  z-index: 3;
+}
+
+/* Tutti i testi bianchi e leggibili su sfondo animato */
+body.qk-skin-d .qk-heading {
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.80);
+}
+body.qk-skin-d .qk-sub {
+  color: rgba(255, 255, 255, 0.80);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.70);
+}
+body.qk-skin-d .qk-hint {
+  color: rgba(255, 255, 255, 0.80);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.70);
+}
+body.qk-skin-d .qk-field label {
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.70);
+}
+body.qk-skin-d .qk-field input {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.60);
+}
+body.qk-skin-d .qk-field input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* =============================================================================
+   SKIN E — "Caustiche"
+   Shader WebGL luce rifratta; sfondo body blu abissale.
+   Stessa strategia overlay della Skin D per la leggibilità del form.
+   ============================================================================= */
+
+body.qk-skin-e {
+  background: #01080c;  /* [1,8,12] — il tono più scuro della palette skin C */
+}
+
+body.qk-skin-e .qk-pool::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  background: rgba(0, 12, 28, 0.58);
+  pointer-events: none;
+  z-index: 2;
+}
+
+body.qk-skin-e .qk-content {
+  z-index: 3;
+}
+
+body.qk-skin-e .qk-field label {
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.70);
+}
+
+body.qk-skin-b .qk-pool {
+  position: relative;
+  z-index: 1;                              /* sopra il canvas */
+  background: transparent;                 /* le onde si vedono dentro il form */
+  border-color: rgba(255,255,255,0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 40px 90px rgba(0,0,0,0.65);
+}

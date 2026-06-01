@@ -1,0 +1,309 @@
+/**
+ * products-suppliers.css
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Stili dedicati al tab "Fornitori" della scheda prodotto.
+ *
+ * Usa ESCLUSIVAMENTE variabili CSS da theme.css + app.css per compatibilità
+ * con tutti i temi (light, dark, ocean, warm, etc.).
+ *
+ * Niente colori hardcoded — solo var(--qk-*).
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONTENITORE PRINCIPALE
+   Lista verticale di card fornitore.
+═══════════════════════════════════════════════════════════════════════════ */
+
+#fornitori-container {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARD FORNITORE
+   Ogni fornitore è una card autonoma con header + corpo prezzi.
+   Questo risolve il problema di perdita di contesto nello scroll:
+   l'header è sempre visibile come bordo superiore del gruppo.
+═══════════════════════════════════════════════════════════════════════════ */
+
+.qks-supplier-block {
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  background: var(--qk-card-bg);
+  overflow: hidden;
+  /* Transizione leggera per le operazioni di add/delete */
+  transition: box-shadow .15s;
+}
+
+.qks-supplier-block:hover {
+  box-shadow: var(--qk-card-shadow);
+}
+
+/* Fornitore non attivo: leggermente opaco */
+.qks-supplier-block.is-inactive {
+  opacity: .7;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HEADER FORNITORE
+   Contiene: preferenza, nome, metadata, badge stato, azioni.
+   Background leggermente diverso dalla card per creare gerarchia visiva.
+═══════════════════════════════════════════════════════════════════════════ */
+
+.qks-supplier-hd {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  flex-wrap: wrap;
+  padding: .6rem 1rem;
+  background: var(--qk-table-head-bg);
+  border-bottom: 1px solid var(--qk-card-border);
+  min-height: 2.75rem;
+}
+
+/* Metadati fornitore (nome + badge SKU + lead time) — cresce per occupare spazio */
+.qks-supplier-meta {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.qks-supplier-name {
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--qk-text-primary);
+  white-space: nowrap;
+}
+
+/* Badge SKU — stile monospace con bordo leggero */
+.qks-sku-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  font-family: var(--bs-font-monospace, monospace);
+  font-size: .77rem;
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .1em .45em;
+  color: var(--qk-text-secondary);
+  white-space: nowrap;
+}
+
+.qks-sku-badge .qks-sku-label {
+  color: var(--qk-text-muted);
+  font-style: normal;
+}
+
+/* Lead time — piccolo e discreto */
+.qks-lead-time {
+  font-size: .78rem;
+  color: var(--qk-text-muted);
+  white-space: nowrap;
+}
+
+/* Badge "Attivo" / "Non attivo" */
+.qks-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .78rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.qks-status-badge .qks-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.qks-status-badge.is-active  { color: var(--qk-success); }
+.qks-status-badge.is-active  .qks-dot { background: var(--qk-success); }
+.qks-status-badge.is-inactive { color: var(--qk-text-muted); }
+.qks-status-badge.is-inactive .qks-dot { background: var(--qk-text-muted); }
+
+/* Gruppo pulsanti azioni fornitore */
+.qks-supplier-actions {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  flex-shrink: 0;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CORPO PREZZI
+   Mini-tabella autonoma all'interno di ogni card fornitore.
+   Ha la propria intestazione di colonna — nessuna confusione con le righe
+   del fornitore sopra.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* Wrapper della mini-tabella (necessario per overflow-x su mobile) */
+.qks-price-wrap {
+  overflow-x: auto;
+}
+
+/* Tabella prezzi — eredita font e colori dal tema */
+.qks-price-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875rem;
+  color: var(--qk-text-primary);
+}
+
+/* Intestazioni colonne prezzi */
+.qks-price-table thead th {
+  background: var(--qk-table-head-bg);
+  color: var(--qk-text-muted);
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: .3rem .75rem;
+  border-bottom: 1px solid var(--qk-card-border);
+  white-space: nowrap;
+}
+
+/* Separatore verticale tenue tra header fornitore e thead colonne */
+.qks-price-table thead {
+  border-top: 1px solid var(--qk-card-border);
+}
+
+/* Righe prezzo in lettura */
+.qks-price-table tbody tr {
+  border-bottom: 1px solid var(--qk-card-border);
+  transition: background .1s;
+}
+
+.qks-price-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.qks-price-table tbody tr:hover {
+  background: rgba(128, 128, 128, .04);
+}
+
+/* Celle dati prezzi */
+.qks-price-table td {
+  padding: .5rem .75rem;
+  vertical-align: middle;
+}
+
+/* Colonna azioni — fissa a destra */
+.qks-price-table .col-actions {
+  width: 1px;         /* collassa alla larghezza del contenuto */
+  white-space: nowrap;
+  text-align: right;
+  padding-right: .75rem;
+}
+
+/* Riga in modalità edit — sfondo leggermente tinto */
+.qks-price-edit-row td {
+  background: color-mix(in srgb, var(--qk-accent, #3b82f6) 5%, var(--qk-card-bg));
+  padding-top: .35rem;
+  padding-bottom: .35rem;
+}
+
+/* Fallback per browser senza color-mix */
+@supports not (background: color-mix(in srgb, red 5%, blue)) {
+  .qks-price-edit-row td {
+    background: var(--qk-table-head-bg);
+  }
+}
+
+/* Riga nascosta durante l'editing */
+.qks-price-table tr.d-none { display: none !important; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATO VUOTO (nessun prezzo configurato)
+   Appare all'interno della card, sopra il thead (evita thead vuoto).
+═══════════════════════════════════════════════════════════════════════════ */
+
+.qks-price-empty {
+  padding: .65rem 1rem;
+  font-size: .83rem;
+  color: var(--qk-text-muted);
+  border-top: 1px solid var(--qk-card-border);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EMPTY STATE GLOBALE (nessun fornitore)
+   Mostrato quando non c'è nessun fornitore associato al prodotto.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* Riusa .qk-empty già definito in app.css — nessuna aggiunta necessaria */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COLLAPSE "COME VIENE SCELTO IL PREZZO" — chevron animato
+═══════════════════════════════════════════════════════════════════════════ */
+
+.qks-help-toggle {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: .45rem 0;
+  cursor: pointer;
+  color: var(--qk-text-muted);
+  font-size: .83rem;
+  text-align: left;
+}
+
+.qks-help-toggle:hover {
+  color: var(--qk-text-secondary);
+}
+
+.qks-help-chevron {
+  margin-left: auto;
+  font-size: .72rem;
+  opacity: .5;
+  transition: transform .2s;
+  flex-shrink: 0;
+}
+
+.qks-help-toggle[aria-expanded="true"] .qks-help-chevron {
+  transform: rotate(180deg);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — schermi piccoli
+   Su mobile il tab Fornitori diventa un layout a colonna unica senza
+   perdere leggibilità, grazie alla struttura a card.
+═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .qks-supplier-hd {
+    padding: .5rem .75rem;
+  }
+
+  .qks-price-table td,
+  .qks-price-table thead th {
+    padding-left: .5rem;
+    padding-right: .5rem;
+  }
+
+  /* Su mobile nasconde le colonne meno critiche */
+  .qks-col-dal,
+  .qks-col-al,
+  .qks-col-note {
+    display: none;
+  }
+}
