@@ -201,7 +201,7 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                 $v['fornitore_email'] ?? null,
                 ($v['listino_acquisto_id'] ?? '') !== '' ? (int)$v['listino_acquisto_id'] : null,
                 ($v['metodo_pagamento_id'] ?? '') !== '' ? (int)$v['metodo_pagamento_id'] : null,
-                $v['resa_porto'] ?? null,
+                ($v['resa_porto'] ?? '') !== '' ? $v['resa_porto'] : null,
             ]);
             $id = (int) $pdo->lastInsertId();
         } else {
@@ -260,7 +260,7 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                 $v['fornitore_email'] ?? null,
                 ($v['listino_acquisto_id'] ?? '') !== '' ? (int)$v['listino_acquisto_id'] : null,
                 ($v['metodo_pagamento_id'] ?? '') !== '' ? (int)$v['metodo_pagamento_id'] : null,
-                $v['resa_porto'] ?? null,
+                ($v['resa_porto'] ?? '') !== '' ? $v['resa_porto'] : null,
                 $id,
             ]);
             $pdo->prepare('DELETE FROM rfq_righe WHERE rfq_id = ?')->execute([$id]);

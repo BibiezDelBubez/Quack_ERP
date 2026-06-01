@@ -61,13 +61,15 @@ class OfferteController extends BaseController
                             'quantita_offerta'    => (string)$r['quantita_richiesta'],
                             'unita_misura_id'     => (string)($r['unita_misura_id'] ?? ''),
                             'uom'                 => $r['uom'] ?? '',
-                            'prezzo_unitario'     => '',
+                            'prezzo_unitario'     => ($r['prezzo_indicativo'] !== null && $r['prezzo_indicativo'] !== '') ? (string)$r['prezzo_indicativo'] : '',
                             'sconto_perc'         => '0',
-                            'iva_perc'            => '22',
-                            'data_consegna_prevista' => '',
+                            'iva_perc'            => isset($r['iva_perc']) ? (string)$r['iva_perc'] : '22',
+                            'data_consegna_prevista' => $r['data_consegna_richiesta'] ?? '',
                             'note'                => '',
                         ];
                     }, $detail['righe']);
+                    $dates = array_filter(array_map(fn($r) => $r['data_consegna_richiesta'] ?? null, $detail['righe']));
+                    $values['data_consegna_default'] = !empty($dates) ? min($dates) : '';
                 }
             }
         }
@@ -122,6 +124,8 @@ class OfferteController extends BaseController
         $errors = [];
         $values = $this->mapDetailToValues($detail['offerta']);
         $righe  = $detail['righe'];
+        $dates = array_filter(array_map(fn($r) => $r['data_consegna_prevista'] ?? null, $righe));
+        $values['data_consegna_default'] = !empty($dates) ? min($dates) : '';
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!csrf_verify()) {
@@ -246,6 +250,7 @@ class OfferteController extends BaseController
             'listino_acquisto_id'     => '',
             'metodo_pagamento_id'     => '',
             'resa_porto'              => '',
+            'data_consegna_default'   => '',
         ];
     }
 
@@ -273,6 +278,7 @@ class OfferteController extends BaseController
             'listino_acquisto_id'   => (string)($off['listino_acquisto_id'] ?? ''),
             'metodo_pagamento_id'   => (string)($off['metodo_pagamento_id'] ?? ''),
             'resa_porto'            => $off['resa_porto'] ?? '',
+            'data_consegna_default' => '',
         ];
     }
 
@@ -307,6 +313,7 @@ class OfferteController extends BaseController
             'listino_acquisto_id'   => post('listino_acquisto_id', ''),
             'metodo_pagamento_id'   => post('metodo_pagamento_id', ''),
             'resa_porto'            => post('resa_porto', ''),
+            'data_consegna_default' => post('data_consegna_default', ''),
         ];
     }
 

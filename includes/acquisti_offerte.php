@@ -147,7 +147,7 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                 $v['fornitore_email'] ?? null,
                 ($v['listino_acquisto_id'] ?? '') !== '' ? (int)$v['listino_acquisto_id'] : null,
                 ($v['metodo_pagamento_id'] ?? '') !== '' ? (int)$v['metodo_pagamento_id'] : null,
-                $v['resa_porto'] ?? null,
+                ($v['resa_porto'] ?? '') !== '' ? $v['resa_porto'] : null,
                 $utente_id,
             ]);
             $id = (int) $pdo->lastInsertId();
@@ -182,7 +182,7 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                 $v['fornitore_email'] ?? null,
                 ($v['listino_acquisto_id'] ?? '') !== '' ? (int)$v['listino_acquisto_id'] : null,
                 ($v['metodo_pagamento_id'] ?? '') !== '' ? (int)$v['metodo_pagamento_id'] : null,
-                $v['resa_porto'] ?? null,
+                ($v['resa_porto'] ?? '') !== '' ? $v['resa_porto'] : null,
                 $id,
             ]);
             $pdo->prepare('DELETE FROM offerte_righe WHERE offerta_id = ?')->execute([$id]);

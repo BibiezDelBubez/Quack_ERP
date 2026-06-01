@@ -47,7 +47,7 @@
   </td>
   <td>
     <input type="number" name="riga_quantita[]" class="qk-form-control r-qty"
-           step="0.001" min="0.001" value="<?= e($r['quantita_richiesta'] ?? '1') ?>" required <?= $readonly ?>>
+           step="0.001" min="0.001" value="<?= isset($r['quantita_richiesta']) ? (float)$r['quantita_richiesta'] : '1' ?>" required <?= $readonly ?>>
   </td>
   <td>
     <input type="hidden" name="riga_unita_misura_id[]" class="r-uom-id" value="<?= e($r['unita_misura_id'] ?? '') ?>">
@@ -56,12 +56,12 @@
   <td class="col-prezzo">
     <input type="number" name="riga_prezzo_indicativo[]" class="qk-form-control r-prezzo"
            step="0.0001" min="0" placeholder="0,0000"
-           value="<?= $r['prezzo_indicativo'] !== null ? e($r['prezzo_indicativo']) : '' ?>" <?= $readonly ?>>
+           value="<?= ($r['prezzo_indicativo'] !== null && $r['prezzo_indicativo'] !== '') ? (float)$r['prezzo_indicativo'] : '' ?>" <?= $readonly ?>>
   </td>
   <td>
     <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva"
            step="0.01" min="0" max="100" placeholder="22"
-           value="<?= e($r['iva_perc'] ?? '22') ?>" <?= $readonly ?>>
+           value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : '22' ?>" <?= $readonly ?>>
   </td>
   <td class="col-data-consegna col-hidden">
     <input type="date" name="riga_data_consegna_richiesta[]" class="qk-form-control r-data-consegna"

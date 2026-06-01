@@ -548,6 +548,24 @@ html.sidebar-collapsed .qk-main { margin-left: var(--qk-sidebar-w-col); }
 }
 .btn-qk-danger:hover { background: var(--qk-danger); color: #fff; }
 
+.btn-qk-success {
+  background: var(--qk-success-bg); color: var(--qk-success);
+  border-color: transparent;
+}
+.btn-qk-success:hover { background: var(--qk-success); color: #fff; }
+
+.btn-qk-warning {
+  background: var(--qk-warning-bg); color: var(--qk-warning);
+  border-color: transparent;
+}
+.btn-qk-warning:hover { background: var(--qk-warning); color: #fff; }
+
+.btn-qk-info {
+  background: var(--qk-info-bg); color: var(--qk-info);
+  border-color: transparent;
+}
+.btn-qk-info:hover { background: var(--qk-info); color: #fff; }
+
 .btn-qk-sm { padding: .3rem .7rem; font-size: .8rem; }
 .btn-qk-xs { padding: .2rem .5rem; font-size: .75rem; gap: .25rem; }
 

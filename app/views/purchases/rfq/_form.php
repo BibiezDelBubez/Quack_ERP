@@ -62,14 +62,14 @@ $savedOk = isset($saved) && $saved;
     <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
       <?php if ($isEdit): ?>
         <?php if ($isBozza): ?>
-          <button type="button" class="btn-qk btn-qk-primary" id="btn-invia-rfq">
+          <button type="button" class="btn-qk btn-qk-primary" id="btn-invia-rfq" title="Invia la richiesta di preventivo al fornitore (genera il PDF e segna il documento come Inviato)">
             <i class="fa-solid fa-paper-plane"></i> Invia al Fornitore
           </button>
           <form method="post" action="<?= url('purchases/rfq/delete') ?>" class="d-inline"
                 onsubmit="return confirm('Eliminare definitivamente la RFQ <?= e($rfq['numero']) ?>?')">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
-            <button type="submit" class="btn-qk btn-qk-ghost text-danger" title="Elimina bozza">
+            <button type="submit" class="btn-qk btn-qk-ghost text-danger" title="Elimina definitivamente questa richiesta in bozza">
               <i class="fa-solid fa-trash"></i>
             </button>
           </form>
@@ -80,11 +80,11 @@ $savedOk = isset($saved) && $saved;
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="azione" value="nuova_versione">
-            <button type="submit" class="btn-qk btn-qk-secondary">
+            <button type="submit" class="btn-qk btn-qk-secondary" title="Crea una nuova versione di questa RFQ (ad esempio se il fornitore chiede modifiche alle righe prima di quotare)">
               <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
             </button>
           </form>
-          <a href="<?= url('purchases/offerte/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-success">
+          <a href="<?= url('purchases/offerte/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-primary" title="Registra l'offerta economica con i prezzi ricevuti dal fornitore per questa richiesta">
             <i class="fa-solid fa-file-invoice-dollar"></i> Registra Preventivo Fornitore
           </a>
           <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline"
@@ -92,16 +92,16 @@ $savedOk = isset($saved) && $saved;
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="azione" value="chiudi">
-            <button type="submit" class="btn-qk btn-qk-ghost text-muted">
-              <i class="fa-solid fa-lock"></i> Chiudi
+            <button type="submit" class="btn-qk btn-qk-secondary" title="Chiudi la richiesta senza registrare alcuna offerta (ad esempio se il fornitore non risponde o ha rifiutato)">
+              <i class="fa-solid fa-lock text-muted"></i> Chiudi
             </button>
           </form>
         <?php endif; ?>
 
-        <a href="<?= url('purchases/rfq/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank">
+        <a href="<?= url('purchases/rfq/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Stampa o scarica la richiesta di preventivo in formato PDF">
           <i class="fa-solid fa-file-pdf text-danger"></i> PDF
         </a>
-        <a href="<?= url('purchases/rfq/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank">
+        <a href="<?= url('purchases/rfq/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Scarica il documento in formato Microsoft Word (DOCX)">
           <i class="fa-solid fa-file-word text-primary"></i> Word (DOCX)
         </a>
       <?php endif; ?>
@@ -1067,7 +1067,7 @@ $savedOk = isset($saved) && $saved;
     }
 
     // Aggiorna il pulsante X se già valorizzato
-    if (prodHidden.value) prodClear?.classList.remove('d-none');
+    if (CAN_EDIT && prodHidden.value) prodClear?.classList.remove('d-none');
 
     // Listener per i calcoli in tempo reale
     if (qtyInput)    qtyInput.addEventListener('input', () => recalcRowTotal(tr));
