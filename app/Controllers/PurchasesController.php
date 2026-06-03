@@ -4,6 +4,48 @@ declare(strict_types=1);
 
 final class PurchasesController extends BaseController
 {
+    public function dashboard(): void
+    {
+        // 1. Raccoglie i KPI
+        $rfq_bozza = (int) $this->pdo->query("SELECT COUNT(*) FROM rfq_testata WHERE stato = 'bozza'")->fetchColumn();
+        $rfq_inviata = (int) $this->pdo->query("SELECT COUNT(*) FROM rfq_testata WHERE stato = 'inviata'")->fetchColumn();
+        $ordini_attivi = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
+        $listini_attivi = (int) $this->pdo->query("SELECT COUNT(*) FROM listini_acquisto WHERE valido_dal IS NULL OR valido_dal <= CURRENT_DATE AND (valido_al IS NULL OR valido_al >= CURRENT_DATE)")->fetchColumn();
+
+        // 2. Ultime RFQ (max 5)
+        $st = $this->pdo->query("
+            SELECT r.id, r.numero, r.created_at, r.stato, r.totale,
+                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_nome
+              FROM rfq_testata r
+         LEFT JOIN clienti_fornitori cf ON cf.id = r.fornitore_id
+          ORDER BY r.id DESC
+             LIMIT 5
+        ");
+        $recent_rfqs = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        // 3. Ultimi Ordini d'Acquisto (max 5)
+        $st2 = $this->pdo->query("
+            SELECT ot.id, ot.numero, ot.created_at, ot.stato, ot.totale,
+                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_nome
+              FROM ordini_testata ot
+         LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
+          ORDER BY ot.id DESC
+             LIMIT 5
+        ");
+        $recent_orders = $st2->fetchAll(PDO::FETCH_ASSOC);
+
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/purchases_dashboard.php', [
+            'page_title'     => 'Dashboard Acquisti',
+            'page_subtitle'  => 'Panoramica operativa acquisti e approvvigionamento',
+            'rfq_bozza'      => $rfq_bozza,
+            'rfq_inviata'    => $rfq_inviata,
+            'ordini_attivi'  => $ordini_attivi,
+            'listini_attivi' => $listini_attivi,
+            'recent_rfqs'    => $recent_rfqs,
+            'recent_orders'  => $recent_orders,
+        ]);
+    }
+
     /* ── Listini acquisto ────────────────────────────────────────────────── */
 
     public function indexPricelists(): void

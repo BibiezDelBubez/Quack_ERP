@@ -23,11 +23,31 @@ class WarehouseController extends BaseController
     {
         $search = get_param('q');
         $filter = get_param('filter');
-        if (!in_array($filter, ['in_stock', 'all', 'sottoscorta', 'esauriti'], true)) {
+        if (!in_array($filter, ['in_stock', 'all', 'sottoscorta', 'esauriti', 'in_arrivo'], true)) {
             $filter = 'in_stock'; // default: mostra solo prodotti con giacenza > 0
         }
 
-        $stock = qk_stock_list($this->pdo, $search, $filter);
+        $stock = [];
+        $ordini_in_arrivo = [];
+        
+        // Calcola il numero di ordini in arrivo per il contatore della pill
+        $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
+
+        if ($filter === 'in_arrivo') {
+            $sql = "SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
+                           COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
+                           (SELECT rt.id FROM ricezioni_testata rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
+                      FROM ordini_testata ot
+                 LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
+                     WHERE ot.stato IN ('inviato', 'parzialmente_ricevuto')
+                       AND (ot.numero LIKE :q OR COALESCE(cf.ragione_sociale, cf.nome) LIKE :q)
+                  ORDER BY ot.data_consegna_prevista ASC, ot.created_at DESC";
+            $st = $this->pdo->prepare($sql);
+            $st->execute(['q' => '%' . $search . '%']);
+            $ordini_in_arrivo = $st->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $stock = qk_stock_list($this->pdo, $search, $filter);
+        }
 
         $page_title    = 'Magazzino';
         $page_subtitle = 'Panoramica giacenze';

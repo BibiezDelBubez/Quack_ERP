@@ -135,10 +135,10 @@
       <li class="qk-nav-section">Acquisti</li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('purchases/rfq') ?>" title="Richieste di preventivo"
-           class="<?= nav_active('/purchases/rfq') ?>">
+        <a href="<?= url('purchases') ?>" title="Acquisti"
+           class="<?= nav_active('/purchases') ?>">
           <i class="fa-solid fa-file-signature"></i>
-          <span class="qk-nav-label">Richieste di preventivo</span>
+          <span class="qk-nav-label">Acquisti</span>
         </a>
       </li>
 

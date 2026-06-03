@@ -56,7 +56,28 @@ $savedOk = isset($saved) && $saved;
 </div>
 <?php unset($_SESSION['flash_error']); endif; ?>
 
-<!-- ════════════════════════════════════════════════════════════════════  <!-- Barra Azioni e Stato (Odoo style) -->
+<!-- ════════════════════════════════════════════════════════════════════  <!-- Guidance Box -->
+<div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
+  <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
+  <div>
+    <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
+    <p class="mb-0 text-muted" style="font-size:0.875rem">
+      <?php if (!$isEdit): ?>
+        Crea una nuova richiesta di offerta (RFQ) per richiedere prezzi e disponibilità ai fornitori. Aggiungi i prodotti e clicca su "Salva".
+      <?php elseif ($isBozza): ?>
+        La RFQ è in Bozza. Aggiungi i prodotti che desideri quotare, quindi clicca su <strong>"Invia al Fornitore"</strong> per inviargli la richiesta.
+      <?php elseif ($isInviata): ?>
+        La RFQ è stata inviata al fornitore ed è in attesa dei prezzi. Quando ricevi il preventivo dal fornitore, clicca su <strong>"Registra Preventivo Ricevuto"</strong> per inserire i prezzi concordati.
+      <?php elseif ($isRevisionata): ?>
+        La RFQ è stata revisionata. Puoi creare una nuova offerta o chiuderla.
+      <?php elseif ($isChiusa): ?>
+        Questa RFQ è chiusa. Il ciclo di preventivazione è completato.
+      <?php endif; ?>
+    </p>
+  </div>
+</div>
+
+<!-- Barra Azioni e Stato (Odoo style) -->
   <div class="d-flex justify-content-between align-items-center mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
     <!-- Bottoni Azione -->
     <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
@@ -85,7 +106,7 @@ $savedOk = isset($saved) && $saved;
             </button>
           </form>
           <a href="<?= url('purchases/offerte/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-primary" title="Registra l'offerta economica con i prezzi ricevuti dal fornitore per questa richiesta">
-            <i class="fa-solid fa-file-invoice-dollar"></i> Registra Preventivo Fornitore
+            <i class="fa-solid fa-file-invoice-dollar"></i> Registra Preventivo Ricevuto
           </a>
           <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline"
                 onsubmit="return confirm('Chiudere la RFQ senza registrare un\'offerta?')">

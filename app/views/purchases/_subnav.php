@@ -1,0 +1,24 @@
+<?php
+/**
+ * app/views/purchases/_subnav.php
+ * Sotto-navigazione orizzontale per il modulo Acquisti.
+ * Variabili attese: $active_tab (string)
+ */
+$subnav_tabs = [
+    'dashboard'  => ['label' => 'Panoramica',             'url' => url('purchases')],
+    'rfq'        => ['label' => 'Richieste di preventivo', 'url' => url('purchases/rfq')],
+    'offerte'    => ['label' => 'Preventivi fornitori',   'url' => url('purchases/offerte')],
+    'ordini'     => ['label' => 'Ordini d\'acquisto',      'url' => url('purchases/ordini')],
+    'pricelists' => ['label' => 'Listini acquisto',       'url' => url('purchases/pricelists')],
+];
+?>
+<ul class="nav qk-nav-tabs mb-4" role="tablist">
+  <?php foreach ($subnav_tabs as $key => $tab): ?>
+    <li class="nav-item">
+      <a class="nav-link <?= $active_tab === $key ? 'active' : '' ?>" 
+         href="<?= e($tab['url']) ?>">
+        <?= e($tab['label']) ?>
+      </a>
+    </li>
+  <?php endforeach; ?>
+</ul>

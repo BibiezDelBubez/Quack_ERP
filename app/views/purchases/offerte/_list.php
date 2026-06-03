@@ -23,6 +23,9 @@ $statiLabels = [
 ];
 ?>
 
+<!-- Sotto-navigazione condivisa -->
+<?php $active_tab = 'offerte'; include __DIR__ . '/../_subnav.php'; ?>
+
 <?php if (!empty($_SESSION['flash_success'])): ?>
 <div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
   <i class="fa-solid fa-circle-check"></i>

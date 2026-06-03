@@ -34,6 +34,9 @@ function asset(string $path): string {
  */
 function nav_active(string $match, string $class = 'active'): string {
     $path = request_path();
+    if ($match === '/purchases') {
+        return $path === '/purchases' ? $class : '';
+    }
     return str_contains($path, $match) ? $class : '';
 }
 

@@ -4,6 +4,9 @@
  */
 ?>
 
+<!-- Sotto-navigazione condivisa -->
+<?php $active_tab = 'pricelists'; include __DIR__ . '/_subnav.php'; ?>
+
 <?php if (isset($_SESSION['flash'])): ?>
 <div class="qk-alert qk-alert-<?= e($_SESSION['flash']['type']) ?> mb-3">
   <i class="fa-solid <?= $_SESSION['flash']['type'] === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation' ?>"></i>

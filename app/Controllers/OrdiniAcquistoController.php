@@ -130,8 +130,28 @@ class OrdiniAcquistoController extends BaseController
                     break;
 
                 case 'invia':
+                    // Verifica che tutte le righe abbiano prezzo e quantità maggiori di zero
+                    $stCheck = $this->pdo->prepare('SELECT COUNT(*) FROM ordini_righe WHERE ordine_id = ? AND (prezzo_unitario <= 0 OR quantita_ordinata <= 0)');
+                    $stCheck->execute([$id]);
+                    if ((int)$stCheck->fetchColumn() > 0) {
+                        throw new \RuntimeException("Non è possibile confermare l'ordine: tutte le righe devono avere una quantità e un prezzo unitario maggiori di zero.");
+                    }
+
                     qk_ordine_invia($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'Ordine segnato come inviato al fornitore.';
+                    $_SESSION['flash_success'] = 'Ordine confermato e inviato al fornitore.';
+
+                    // Crea automaticamente la bozza di ricezione merce se non esiste già
+                    require_once INCLUDES_DIR . '/acquisti_ricezioni.php';
+                    $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
+                    $stCheckRec->execute([$id]);
+                    if (!$stCheckRec->fetch()) {
+                        qk_ricezione_apri($this->pdo, $id, (int)current_user()['id']);
+                    }
+                    break;
+
+                case 'forza_chiusura':
+                    qk_ordine_forza_chiusura($this->pdo, $id, (int)current_user()['id']);
+                    $_SESSION['flash_success'] = 'Ordine chiuso forzatamente e residui annullati.';
                     break;
 
                 case 'annulla':

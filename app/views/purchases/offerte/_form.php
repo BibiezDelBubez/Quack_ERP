@@ -39,6 +39,25 @@ $statoLabel = [
   </div>
   <?php endif; ?>
 
+<!-- Guidance Box -->
+<div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
+  <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
+  <div>
+    <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
+    <p class="mb-0 text-muted" style="font-size:0.875rem">
+      <?php if (!$isEdit): ?>
+        Inserisci i dettagli del preventivo spontaneo o della quotazione del fornitore, compresi i prezzi unitari concordati, quindi clicca su "Salva".
+      <?php elseif ($isInValutazione): ?>
+        Il preventivo è in fase di valutazione. Controlla i prezzi unitari e le date di consegna inserite, quindi clicca su <strong>"Accetta e Genera Ordine"</strong> per generare automaticamente l'Ordine di Acquisto collegato.
+      <?php elseif ($isAccettata): ?>
+        Questo preventivo è stato accettato ed è stato generato l'ordine di acquisto collegato.
+      <?php elseif ($isRifiutata): ?>
+        Questo preventivo è stato rifiutato.
+      <?php endif; ?>
+    </p>
+  </div>
+</div>
+
   <!-- Barra Azioni e Stato (Odoo style) -->
   <div class="d-flex justify-content-between align-items-center mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
     <!-- Bottoni Azione -->

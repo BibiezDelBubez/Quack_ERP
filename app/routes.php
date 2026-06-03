@@ -71,6 +71,7 @@ return [
     '/ecommerce/sync'   => ['type' => 'controller', 'controller' => 'EcommerceController', 'action' => 'sync', 'auth' => true],
 
     // ─── Acquisti v2 — RFQ ───────────────────────────────────────────────────
+    '/purchases'                             => ['type' => 'controller', 'controller' => 'PurchasesController', 'action' => 'dashboard',    'auth' => true],
     '/purchases/rfq'                         => ['type' => 'controller', 'controller' => 'RfqController', 'action' => 'index',          'auth' => true],
     '/purchases/rfq/create'                  => ['type' => 'controller', 'controller' => 'RfqController', 'action' => 'create',         'auth' => true],
     '/purchases/rfq/edit'                    => ['type' => 'controller', 'controller' => 'RfqController', 'action' => 'edit',           'auth' => true],

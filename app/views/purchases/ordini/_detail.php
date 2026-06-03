@@ -19,8 +19,17 @@ $isPartRicevuto = $currStato === 'parzialmente_ricevuto';
 $isCompletato   = $currStato === 'completato';
 $isAnnullato    = $currStato === 'annullato';
 
-$canSave = !$isCompletato && !$isAnnullato;
-$canEditLogistics = !$isCompletato && !$isAnnullato;
+$canSave = $isBozza || $isInAppr || $isApprovato;
+$canEditLogistics = $isBozza || $isInAppr || $isApprovato;
+
+// Find draft reception if any
+$draftRicezione = null;
+foreach ($ricezioni as $rc) {
+    if ($rc['stato'] === 'bozza') {
+        $draftRicezione = $rc;
+        break;
+    }
+}
 ?>
 
 <?php if (!empty($_SESSION['flash_success'])): ?>
@@ -38,6 +47,31 @@ $canEditLogistics = !$isCompletato && !$isAnnullato;
   <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
 </div>
 <?php unset($_SESSION['flash_error']); endif; ?>
+
+<!-- Guidance Box -->
+<div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
+  <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
+  <div>
+    <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
+    <p class="mb-0 text-muted" style="font-size:0.875rem">
+      <?php if ($isBozza): ?>
+        L'ordine è in stato di Bozza. Verifica i dati di testata e delle righe, quindi approvalo per procedere.
+      <?php elseif ($isInAppr): ?>
+        L'ordine è in attesa di approvazione. Verifica i dati e clicca su "Approva Ordine".
+      <?php elseif ($isApprovato): ?>
+        L'ordine è stato approvato! Clicca su <strong>"Conferma e Invia Ordine"</strong> per inviarlo formalmente al fornitore e sbloccare la ricezione merci.
+      <?php elseif ($isInviato): ?>
+        L'ordine è stato confermato ed è attivo. È stata generata una bozza di ricezione: clicca su <strong>"Vedi Bozza Ricevimento"</strong> o vai in magazzino per registrare l'arrivo della merce.
+      <?php elseif ($isPartRicevuto): ?>
+        Alcuni articoli sono stati ricevuti. Se la merce rimanente non arriverà più, clicca su <strong>"Forza Chiusura Ordine"</strong> per completare l'ordine senza attendere altre consegne.
+      <?php elseif ($isCompletato): ?>
+        Tutta la merce è stata ricevuta o l'ordine è stato chiuso forzatamente. Il ciclo per questo documento è concluso.
+      <?php elseif ($isAnnullato): ?>
+        Questo ordine è stato annullato e non è più attivo.
+      <?php endif; ?>
+    </p>
+  </div>
+</div>
 
 <!-- StatusBar -->
 <div class="qk-statusbar d-flex justify-content-between align-items-center mb-4 p-2 bg-light border rounded">
@@ -59,16 +93,32 @@ $canEditLogistics = !$isCompletato && !$isAnnullato;
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="invia">
-        <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm">
-          <i class="fa-solid fa-paper-plane me-1"></i> Segna come Inviato
+        <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
+          <i class="fa-solid fa-circle-check me-1"></i> Conferma e Invia Ordine
         </button>
       </form>
     <?php endif; ?>
 
     <?php if ($isInviato || $isPartRicevuto): ?>
-      <a href="<?= url('purchases/ricezioni/create') . '?ordine_id=' . $id ?>" class="btn-qk btn-qk-success btn-qk-sm">
-        <i class="fa-solid fa-boxes-packing me-1"></i> Registra Ricevimento
-      </a>
+      <?php if ($draftRicezione): ?>
+        <a href="<?= url('purchases/ricezioni/edit') . '?id=' . $draftRicezione['id'] ?>" class="btn-qk btn-qk-success btn-qk-sm fw-bold">
+          <i class="fa-solid fa-boxes-packing me-1"></i> Vedi Bozza Ricevimento
+        </a>
+      <?php else: ?>
+        <a href="<?= url('purchases/ricezioni/create') . '?ordine_id=' . $id ?>" class="btn-qk btn-qk-success btn-qk-sm fw-bold">
+          <i class="fa-solid fa-boxes-packing me-1"></i> Registra Ricevimento
+        </a>
+      <?php endif; ?>
+
+      <form action="<?= url('purchases/ordini/action') ?>" method="post" class="d-inline"
+            onsubmit="return confirm('La chiusura forzata completerà l\'ordine annullando i residui attesi e azzerando la quantità in arrivo a magazzino. Procedere?');">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="forza_chiusura">
+        <button type="submit" class="btn-qk btn-qk-warning btn-qk-sm fw-bold">
+          <i class="fa-solid fa-circle-xmark me-1"></i> Forza Chiusura Ordine
+        </button>
+      </form>
     <?php endif; ?>
 
     <?php if (!$isCompletato && !$isAnnullato): ?>
