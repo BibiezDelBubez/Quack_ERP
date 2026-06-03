@@ -103,9 +103,14 @@ function qk_search_prodotti_sales(PDO $pdo, string $q): array
                p.nome AS label, 
                p.sku_interno AS sku, 
                um.codice AS unita_misura,
-               p.descrizione_confezione AS quantita_confezione
+               p.unita_misura_stock_id,
+               p.descrizione_confezione AS quantita_confezione,
+               p.unita_contenuto_id,
+               um_comm.codice AS unita_misura_commerciale,
+               p.quantita_contenuto
         FROM prodotti p
         LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+        LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
         WHERE p.attivo = 1
           AND (p.nome LIKE :q OR p.sku_interno LIKE :q)
         ORDER BY p.nome

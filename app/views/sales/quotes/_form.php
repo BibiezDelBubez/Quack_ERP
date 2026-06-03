@@ -232,9 +232,16 @@ $v = $values;
 
   <!-- ══════════════════ RIGHE PRODOTTO ═══════════════════════════════════ -->
   <div class="qk-card mb-3">
-    <div class="qk-card-header d-flex align-items-center justify-content-between">
+    <div class="qk-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
       <span class="qk-card-title"><i class="fa-solid fa-list me-2"></i>Prodotti / Righe offerta</span>
-      <div class="d-flex gap-2">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-1 me-2" style="font-size: .85rem;">
+          <label class="qk-form-label mb-0 text-muted" style="white-space:nowrap; font-weight:600;">Visualizza in:</label>
+          <select id="sales-uom-mode" name="uom_mode" class="qk-form-control" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
+            <option value="commercial" <?= ($v['uom_mode'] ?? 'commercial') === 'commercial' ? 'selected' : '' ?>>Unità commerciale</option>
+            <option value="stock" <?= ($v['uom_mode'] ?? 'commercial') === 'stock' ? 'selected' : '' ?>>Unità di stock</option>
+          </select>
+        </div>
         <button type="button" id="btn-nuovo-prodotto" class="btn-qk btn-qk-secondary btn-qk-sm">
           <i class="fa-solid fa-box-open"></i> Nuovo prodotto
         </button>
@@ -456,6 +463,7 @@ $v = $values;
 
 const CSRF   = <?= json_encode(csrf_token()) ?>;
 const BASE   = (typeof QK_BASE !== 'undefined') ? QK_BASE : '';
+const PRELOADED_RIGHE = <?= json_encode($preloadedRighe ?? []) ?>;
 
 /* ─────────────────────────────────────────────────────────────────────────
    UTILITÀ
@@ -587,6 +595,7 @@ function selectCliente(item) {
   const parts = [item.email, item.telefono].filter(Boolean);
   elCpInfo.textContent = parts.join(' · ');
   elClientePreview.style.display = '';
+  checkAllRowsCompliance();
 }
 
 function clearCliente() {
@@ -596,6 +605,7 @@ function clearCliente() {
   elClientePreview.style.display = 'none';
   elCpNome.textContent = '';
   elCpInfo.textContent = '';
+  checkAllRowsCompliance();
 }
 
 document.getElementById('btn-clear-cliente').addEventListener('click', clearCliente);
@@ -619,20 +629,106 @@ initAutocomplete({
  ───────────────────────────────────────────────────────────────────────── */
 
 let righeCount = 0;
+let currentUomMode = document.getElementById('sales-uom-mode')?.value || 'commercial';
+
+function syncRowMetadata(tr, metadata) {
+  if (metadata.uomStock !== undefined) {
+    tr.dataset.uomStock = metadata.uomStock;
+    tr.querySelector('.inp-uom-stock').value = metadata.uomStock;
+  }
+  if (metadata.uomStockId !== undefined) {
+    tr.dataset.uomStockId = metadata.uomStockId;
+    tr.querySelector('.inp-uom-stock-id').value = metadata.uomStockId;
+  }
+  if (metadata.uomCommercial !== undefined) {
+    tr.dataset.uomCommercial = metadata.uomCommercial;
+    tr.querySelector('.inp-uom-commercial').value = metadata.uomCommercial;
+  }
+  if (metadata.uomCommercialId !== undefined) {
+    tr.dataset.uomCommercialId = metadata.uomCommercialId;
+    tr.querySelector('.inp-uom-commercial-id').value = metadata.uomCommercialId;
+  }
+  if (metadata.quantitaContenuto !== undefined) {
+    tr.dataset.quantitaContenuto = metadata.quantitaContenuto;
+    tr.querySelector('.inp-quantita-contenuto').value = metadata.quantitaContenuto;
+  }
+  if (metadata.sku !== undefined) {
+    tr.querySelector('.inp-sku').value = metadata.sku;
+    const skuDiv = tr.querySelector('.riga-sku');
+    if (skuDiv) skuDiv.textContent = metadata.sku ? 'SKU: ' + metadata.sku : '';
+  }
+  if (metadata.quantitaConfezione !== undefined) {
+    tr.querySelector('.inp-quantita-confezione').value = metadata.quantitaConfezione;
+    const confInput = tr.querySelector('.riga-conf');
+    if (confInput) confInput.value = metadata.quantitaConfezione;
+  }
+}
+
+function setRowUomMode(tr, targetMode, currentMode) {
+  const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
+  const qtyInput = tr.querySelector('.inp-qta');
+  const priceInput = tr.querySelector('.inp-pu');
+  const umInput = tr.querySelector('.inp-um');
+
+  if (!qtyInput || !priceInput || !umInput) return;
+
+  const currentVal = qtyInput.value ? parseFloat(qtyInput.value) : 0;
+  const currentPrice = priceInput.value ? parseFloat(priceInput.value) : 0;
+
+  if (targetMode === currentMode) {
+    umInput.value = (targetMode === 'stock') 
+      ? (tr.dataset.uomStock || 'pz') 
+      : (tr.dataset.uomCommercial || 'pz');
+    return;
+  }
+
+  if (qFactor > 0 && qFactor !== 1) {
+    if (targetMode === 'commercial') {
+      // Stock -> Commercial (Quantity multiplied by content factor, Price divided)
+      if (qtyInput.value) qtyInput.value = (currentVal * qFactor).toFixed(3);
+      if (priceInput.value) priceInput.value = (currentPrice / qFactor).toFixed(4);
+    } else {
+      // Commercial -> Stock (Quantity divided, Price multiplied)
+      if (qtyInput.value) qtyInput.value = (currentVal / qFactor).toFixed(3);
+      if (priceInput.value) priceInput.value = (currentPrice * qFactor).toFixed(4);
+    }
+  }
+
+  umInput.value = (targetMode === 'stock') 
+    ? (tr.dataset.uomStock || 'pz') 
+    : (tr.dataset.uomCommercial || 'pz');
+}
 
 function buildRiga(prefill = {}) {
   const idx = righeCount++;
   const tr  = document.createElement('tr');
   tr.dataset.idx = idx;
 
+  // Initialize dataset attributes
+  tr.dataset.uomStock = prefill.uom_stock || prefill.unita_misura || '';
+  tr.dataset.uomStockId = prefill.uom_stock_id || '';
+  tr.dataset.uomCommercial = prefill.uom_commercial || prefill.unita_misura || '';
+  tr.dataset.uomCommercialId = prefill.uom_commercial_id || '';
+  tr.dataset.quantitaContenuto = prefill.quantita_contenuto || '1';
+
   tr.innerHTML = `
     <td class="col-search">
       <div class="qk-ac-wrap">
-        <input type="text" class="riga-input riga-search" placeholder="Cerca…" autocomplete="off">
+        <input type="text" class="riga-input riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione || '')}">
         <div class="qk-ac-dropdown riga-ac-drop"></div>
       </div>
-      <div class="riga-sku" data-sku=""></div>
+      <div class="riga-sku" data-sku="">${prefill.sku ? 'SKU: ' + esc(prefill.sku) : ''}</div>
+      <div class="riga-compliance-warn mt-1 text-warning small fw-bold" style="display:none; line-height: 1.2;"></div>
       <input type="hidden" name="righe[${idx}][prodotto_id]" class="inp-prodotto-id" value="${prefill.prodotto_id || ''}">
+      
+      <!-- Hidden UoM metadata -->
+      <input type="hidden" name="righe[${idx}][uom_stock]" class="inp-uom-stock" value="${esc(tr.dataset.uomStock)}">
+      <input type="hidden" name="righe[${idx}][uom_stock_id]" class="inp-uom-stock-id" value="${esc(tr.dataset.uomStockId)}">
+      <input type="hidden" name="righe[${idx}][uom_commercial]" class="inp-uom-commercial" value="${esc(tr.dataset.uomCommercial)}">
+      <input type="hidden" name="righe[${idx}][uom_commercial_id]" class="inp-uom-commercial-id" value="${esc(tr.dataset.uomCommercialId)}">
+      <input type="hidden" name="righe[${idx}][quantita_contenuto]" class="inp-quantita-contenuto" value="${esc(tr.dataset.quantitaContenuto)}">
+      <input type="hidden" name="righe[${idx}][sku]" class="inp-sku" value="${esc(prefill.sku || '')}">
+      <input type="hidden" name="righe[${idx}][quantita_confezione]" class="inp-quantita-confezione" value="${esc(prefill.quantita_confezione || '')}">
     </td>
     <td class="col-desc">
       <input type="text" name="righe[${idx}][descrizione]" class="riga-input inp-desc"
@@ -692,11 +788,26 @@ function buildRiga(prefill = {}) {
     onSelect:    (item) => {
       tr.querySelector('.inp-prodotto-id').value  = item.id;
       tr.querySelector('.inp-desc').value         = item.label;
-      tr.querySelector('.inp-um').value           = item.unita_misura || '';
-      tr.querySelector('.riga-conf').value        = item.quantita_confezione || '';
-      tr.querySelector('[data-sku]').textContent  = item.sku ? 'SKU: ' + item.sku : '';
+      tr.querySelector('.inp-qta').value          = '1';
+      tr.querySelector('.inp-pu').value           = '';
+      
+      // Update metadata structures
+      syncRowMetadata(tr, {
+        uomStock: item.unita_misura || 'pz',
+        uomStockId: item.unita_misura_stock_id || '',
+        uomCommercial: item.unita_misura_commerciale || item.unita_misura || 'pz',
+        uomCommercialId: item.unita_contenuto_id || item.unita_misura_stock_id || '',
+        quantitaContenuto: item.quantita_contenuto || '1',
+        sku: item.sku || '',
+        quantitaConfezione: item.quantita_confezione || ''
+      });
+
+      // Apply currently active UoM mode (starting from default Stock values)
+      setRowUomMode(tr, currentUomMode, 'stock');
+
       searchInput.value = item.label;
       calcTotali();
+      checkRowCompliance(tr);
     },
     onCreate:    () => openModal('modal-nuovo-prodotto', tr),
     createLabel: 'Crea nuovo prodotto',
@@ -736,11 +847,28 @@ function calcTotali() {
   document.getElementById('tot-totale').textContent     = fmtEuro(totale);
 }
 
+// UoM Toggling Listener
+const elUomMode = document.getElementById('sales-uom-mode');
+if (elUomMode) {
+  elUomMode.addEventListener('change', () => {
+    const newMode = elUomMode.value;
+    document.querySelectorAll('#tbody-righe tr').forEach(tr => {
+      setRowUomMode(tr, newMode, currentUomMode);
+    });
+    currentUomMode = newMode;
+    calcTotali();
+  });
+}
+
 document.getElementById('btn-aggiungi-riga').addEventListener('click', () => buildRiga());
 document.getElementById('sconto_globale').addEventListener('input', calcTotali);
 
-// Prima riga vuota all'avvio
-buildRiga();
+// Load preloaded rows if any exist
+if (PRELOADED_RIGHE && PRELOADED_RIGHE.length > 0) {
+  PRELOADED_RIGHE.forEach(r => buildRiga(r));
+} else {
+  buildRiga();
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    MODALI HELPER
@@ -863,6 +991,54 @@ document.getElementById('btn-salva-prodotto').addEventListener('click', async ()
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+function checkRowCompliance(tr) {
+  const clienteId = document.getElementById('cliente_id').value;
+  const prodottoId = tr.querySelector('.inp-prodotto-id').value;
+  const warnDiv = tr.querySelector('.riga-compliance-warn');
+  
+  if (!clienteId || !prodottoId || !warnDiv) {
+    if (warnDiv) {
+      warnDiv.style.display = 'none';
+      warnDiv.innerHTML = '';
+    }
+    return;
+  }
+  
+  const fd = new FormData();
+  fd.set('cliente_id', clienteId);
+  fd.set('prodotto_id', prodottoId);
+  
+  const csrfEl = document.querySelector('input[name="csrf_token"]');
+  if (csrfEl) fd.set('csrf_token', csrfEl.value);
+
+  fetch(BASE + '/sales/quotes/api/check-compliance', {
+    method: 'POST',
+    body: fd
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (!data.ok && data.violations && data.violations.length > 0) {
+      warnDiv.style.display = 'block';
+      warnDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-warning me-1"></i> Non autorizzato: ${esc(data.violations[0].restriction_name)}`;
+    } else {
+      warnDiv.style.display = 'none';
+      warnDiv.innerHTML = '';
+    }
+  })
+  .catch(err => {
+    console.error('Compliance check error:', err);
+  });
+}
+
+function checkAllRowsCompliance() {
+  document.querySelectorAll('#tbody-righe tr').forEach(tr => {
+    checkRowCompliance(tr);
+  });
+}
+
+// Initial check on load
+setTimeout(checkAllRowsCompliance, 300);
 
 document.getElementById('form-offerta').addEventListener('submit', function (e) {
   const clienteId = document.getElementById('cliente_id').value;

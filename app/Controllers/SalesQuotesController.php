@@ -63,12 +63,40 @@ final class SalesQuotesController extends BaseController
                 $errors = qk_offerta_validate($values, $righe);
 
                 if (empty($errors)) {
-                    try {
-                        $user_id = (int) (current_user()['id'] ?? 0);
-                        $id      = qk_insert_offerta($this->pdo, $values, $righe, $user_id);
-                        redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' salvato correttamente.');
-                    } catch (Throwable $e) {
-                        $errors['_global'] = 'Errore database: ' . $e->getMessage();
+                    // Compliance checks
+                    require_once INCLUDES_DIR . '/compliance.php';
+                    $violations = qk_compliance_check_sale($this->pdo, (int)$values['cliente_id'], $righe);
+                    
+                    $is_bozza = ($values['stato'] ?? 'bozza') === 'bozza';
+                    
+                    if (!empty($violations)) {
+                        $violation_msgs = [];
+                        foreach ($violations as $v) {
+                            $violation_msgs[] = $v['message'];
+                        }
+                        
+                        if ($is_bozza) {
+                            $_SESSION['flash_warning'] = "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs);
+                        } else {
+                            $customer_url = url('customers/edit?id=' . $values['cliente_id']);
+                            $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='alert-link' style='color:#721c24;font-weight:bold;text-decoration:underline;'>Gestisci autorizzazioni cliente →</a>";
+                        }
+                    }
+
+                    if (empty($errors)) {
+                        try {
+                            $user_id = (int) (current_user()['id'] ?? 0);
+                            $id      = qk_insert_offerta($this->pdo, $values, $righe, $user_id);
+                            
+                            // If order was generated / accepted, we log compliance transactions if any
+                            if (($values['stato'] ?? '') === 'accettata') {
+                                qk_compliance_log_transactions($this->pdo, $id, $righe);
+                            }
+                            
+                            redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' salvato correttamente.');
+                        } catch (Throwable $e) {
+                            $errors['_global'] = 'Errore database: ' . $e->getMessage();
+                        }
                     }
                 }
             }
@@ -301,8 +329,46 @@ final class SalesQuotesController extends BaseController
                 'sconto_perc'    => $r['sconto_perc']    ?? 0,
                 'iva_perc'       => $r['iva_perc']       ?? 22,
                 'note_riga'      => $r['note_riga']      ?? '',
+                'uom_stock'         => $r['uom_stock'] ?? '',
+                'uom_stock_id'      => $r['uom_stock_id'] ?? '',
+                'uom_commercial'    => $r['uom_commercial'] ?? '',
+                'uom_commercial_id' => $r['uom_commercial_id'] ?? '',
+                'quantita_contenuto'=> $r['quantita_contenuto'] ?? '1',
+                'sku'               => $r['sku'] ?? '',
+                'quantita_confezione'=> $r['quantita_confezione'] ?? '',
             ];
         }
         return $righe;
+    }
+
+    /** POST /sales/quotes/api/check-compliance */
+    public function apiCheckCompliance(): void
+    {
+        ob_start();
+        header('Content-Type: application/json');
+        
+        $customer_id = (int) post('cliente_id', '0');
+        $product_id = (int) post('prodotto_id', '0');
+        
+        if (!$customer_id || !$product_id) {
+            ob_end_clean();
+            echo json_encode(['ok' => true]); // No check if missing client/prod
+            exit;
+        }
+
+        try {
+            require_once INCLUDES_DIR . '/compliance.php';
+            $violations = qk_compliance_check_sale($this->pdo, $customer_id, [['prodotto_id' => $product_id]]);
+            ob_end_clean();
+            if (empty($violations)) {
+                echo json_encode(['ok' => true]);
+            } else {
+                echo json_encode(['ok' => false, 'violations' => $violations]);
+            }
+        } catch (Throwable $e) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
     }
 }

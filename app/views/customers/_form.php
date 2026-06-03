@@ -41,6 +41,15 @@ $nIndirizzi = count($indirizzi_preload);
                 id="badge-indirizzi"><?= $nIndirizzi ?></span>
         </button>
       </li>
+      <?php if ($isEdit): ?>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="ctab-btn-compliance"
+                data-bs-toggle="tab" data-bs-target="#ctab-compliance"
+                type="button" role="tab" aria-selected="false">
+          <i class="fa-solid fa-shield-halved fa-fw me-1"></i>Compliance
+        </button>
+      </li>
+      <?php endif; ?>
     </ul>
 
     <div class="tab-content mt-0" id="customerTabsContent">
@@ -243,6 +252,15 @@ $nIndirizzi = count($indirizzi_preload);
 
       </div><!-- /ctab-indirizzi -->
 
+      <?php if ($isEdit): ?>
+      <!-- TAB 3: COMPLIANCE -->
+      <div class="tab-pane fade" id="ctab-compliance" role="tabpanel">
+        <div id="compliance-status-list" class="mt-3">
+          <div class="qkc-empty"><i class="fa-solid fa-spinner fa-spin fa-lg mb-2"></i><br>Caricamento…</div>
+        </div>
+      </div><!-- /ctab-compliance -->
+      <?php endif; ?>
+
     </div><!-- /tab-content -->
 
   </div><!-- /colonna principale -->
@@ -434,7 +452,19 @@ window.QkCustomerAddr = {
   apiDelete:  <?= json_encode(url('customers/api/indirizzi/delete')) ?>,
   csrfToken:  <?= json_encode(csrf_token()) ?>,
 };
+
+window.QkCustomerCompliance = {
+  customerId: <?= (int) $entity_id ?>,
+  userRole:   <?= json_encode($_SESSION['qk_user']['role'] ?? '') ?>,
+  apiGet:     <?= json_encode(url('customers/api/compliance')) ?>,
+  apiSave:    <?= json_encode(url('customers/api/compliance/save')) ?>,
+  apiUpload:  <?= json_encode(url('customers/api/compliance/upload')) ?>,
+  apiVerify:  <?= json_encode(url('customers/api/compliance/verify')) ?>,
+  apiApprove: <?= json_encode(url('customers/api/compliance/approve')) ?>,
+  csrfToken:  <?= json_encode(csrf_token()) ?>,
+};
 </script>
 <script src="<?= url('assets/js/customers-addresses.js') ?>"></script>
+<script src="<?= url('assets/js/customers-compliance.js') ?>"></script>
 
 <?php endif; ?>

@@ -1532,3 +1532,101 @@ INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) 
     ('offerta',  'OFF/', 2026, 0, 4),
     ('ordine',   'ODA/', 2026, 0, 4);
 
+-- =============================================================================
+-- COMPLIANCE TABLES & SEEDS
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS compliance_restriction_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code VARCHAR(30) UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    regulatory_ref TEXT,
+    requires_vat BOOLEAN NOT NULL DEFAULT 0,
+    validity_days INTEGER NOT NULL DEFAULT 365,
+    log_transactions BOOLEAN NOT NULL DEFAULT 0,
+    report_within_days INTEGER,
+    active BOOLEAN NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS compliance_codice_onu_restrizioni (
+    un_code_id INTEGER NOT NULL REFERENCES adr_codici_onu(id),
+    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id),
+    min_concentration DECIMAL(5,2),
+    max_concentration DECIMAL(5,2),
+    notes TEXT,
+    PRIMARY KEY (un_code_id, restriction_type_id)
+);
+
+CREATE TABLE IF NOT EXISTS compliance_documenti_richiesti (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
+    document_code VARCHAR(50) NOT NULL,
+    document_name TEXT NOT NULL,
+    mandatory BOOLEAN NOT NULL DEFAULT 1,
+    instructions TEXT
+);
+
+CREATE TABLE IF NOT EXISTS compliance_autorizzazioni (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
+    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id),
+    status TEXT NOT NULL CHECK(status IN ('in_attesa', 'approvata', 'rifiutata', 'scaduta', 'sospesa')),
+    issued_date DATE,
+    expiry_date DATE,
+    approved_by INTEGER REFERENCES utenti(id),
+    internal_notes TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS compliance_documenti_caricati (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    authorization_id INTEGER NOT NULL REFERENCES compliance_autorizzazioni(id) ON DELETE CASCADE,
+    required_doc_id INTEGER NOT NULL REFERENCES compliance_documenti_richiesti(id),
+    file_path TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verified BOOLEAN NOT NULL DEFAULT 0,
+    verified_by INTEGER REFERENCES utenti(id),
+    verified_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS compliance_log_transazioni (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL REFERENCES ordini_clienti(id) ON DELETE CASCADE,
+    authorization_id INTEGER NOT NULL REFERENCES compliance_autorizzazioni(id),
+    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id),
+    product_id INTEGER NOT NULL REFERENCES prodotti(id),
+    quantity DECIMAL(10,3) NOT NULL,
+    unit_id INTEGER REFERENCES unita_misura(id),
+    transaction_date DATE NOT NULL,
+    reported_to_authority BOOLEAN NOT NULL DEFAULT 0,
+    reported_at DATETIME,
+    report_reference TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_compliance_autorizzazioni_updated_at
+AFTER UPDATE ON compliance_autorizzazioni
+FOR EACH ROW
+BEGIN
+    UPDATE compliance_autorizzazioni SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Seeds for Explosive Precursors
+INSERT OR IGNORE INTO compliance_restriction_types 
+  (code, name, regulatory_ref, requires_vat, validity_days, log_transactions, report_within_days)
+VALUES 
+  ('EXPLOSIVE_PRECURSOR', 'Precursori di esplosivi', 'Reg. UE 2019/1148', 1, 365, 1, 5);
+
+INSERT OR IGNORE INTO compliance_documenti_richiesti (restriction_type_id, document_code, document_name, mandatory, instructions)
+SELECT id, 'DICHIARAZIONE_USO', 'Dichiarazione d''uso professionale (Allegato IV)', 1,
+       'Modulo firmato dal responsabile aziendale. Scaricare il modello dalla cartella documenti.'
+FROM compliance_restriction_types WHERE code = 'EXPLOSIVE_PRECURSOR';
+
+INSERT OR IGNORE INTO compliance_documenti_richiesti (restriction_type_id, document_code, document_name, mandatory, instructions)
+SELECT id, 'DOCUMENTO_IDENTITA', 'Documento d''identità del firmatario', 1,
+       'Copia fronte/retro di un documento d''identità in corso di validità del responsabile che ha firmato la dichiarazione.'
+FROM compliance_restriction_types WHERE code = 'EXPLOSIVE_PRECURSOR';
+
+

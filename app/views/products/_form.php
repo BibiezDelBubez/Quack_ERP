@@ -347,6 +347,20 @@ $kit_componenti = $kit_componenti ?? [];
               </div>
 
               <div class="qk-form-row">
+                <!-- Scorta minima -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">
+                    Scorta minima
+                    <span class="qk-form-hint">Sotto questa soglia l'articolo risulterà sottoscorta</span>
+                  </label>
+                  <input type="number" name="scorta_minima"
+                         class="qk-form-control"
+                         value="<?= e($v['scorta_minima'] ?? '0') ?>"
+                         placeholder="0.000" min="0" step="0.001">
+                </div>
+              </div>
+
+              <div class="qk-form-row">
                 <!-- Unità di misura contenuto (commerciale) -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">

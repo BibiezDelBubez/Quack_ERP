@@ -1,0 +1,333 @@
+/* =============================================================================
+   customers-compliance.css
+   Stili per la tab "Compliance" nella scheda cliente.
+   Dipende dalle variabili CSS di theme.css e app.css.
+============================================================================= */
+
+/* ── Contenitore principale ───────────────────────────────────────────────── */
+.qkc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+/* ── Card singola restrizione ─────────────────────────────────────────────── */
+.qkc-card {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius, 8px);
+  overflow: hidden;
+  transition: box-shadow 0.15s ease;
+}
+
+.qkc-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+}
+
+/* Accento colorato a sinistra in base allo stato */
+.qkc-card[data-status="approvata"]  { border-left: 3px solid var(--qk-success); }
+.qkc-card[data-status="in_attesa"]  { border-left: 3px solid #60a5fa; }
+.qkc-card[data-status="scaduta"],
+.qkc-card[data-status="rifiutata"]  { border-left: 3px solid var(--qk-danger); }
+.qkc-card[data-status="in_scadenza"]{ border-left: 3px solid var(--qk-warning); }
+.qkc-card[data-status="sospesa"]    { border-left: 3px solid var(--qk-text-muted); }
+.qkc-card[data-status="non_presente"]{ border-left: 3px solid var(--qk-card-border); }
+
+/* ── Header card ──────────────────────────────────────────────────────────── */
+.qkc-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  cursor: default;
+}
+
+.qkc-header-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--qk-accent-light, rgba(120, 53, 15, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--qk-accent);
+  font-size: 0.95rem;
+}
+
+.qkc-header-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qkc-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--qk-text-primary);
+  margin: 0 0 0.2rem;
+  line-height: 1.3;
+}
+
+.qkc-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.qkc-ref {
+  font-size: 0.75rem;
+  color: var(--qk-text-muted);
+}
+
+.qkc-header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Badge stato ──────────────────────────────────────────────────────────── */
+.qkc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.qkc-badge--active    { background: var(--qk-success-bg); color: var(--qk-success); }
+.qkc-badge--warning   { background: var(--qk-warning-bg); color: var(--qk-warning); }
+.qkc-badge--danger    { background: var(--qk-danger-bg);  color: var(--qk-danger);  }
+.qkc-badge--info      { background: var(--qk-info-bg);    color: var(--qk-info);    }
+.qkc-badge--muted     { background: var(--qk-card-border); color: var(--qk-text-muted); }
+
+/* ── Badge pill requisiti (P.IVA, ecc.) ──────────────────────────────────── */
+.qkc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid var(--qk-card-border);
+  color: var(--qk-text-secondary);
+  background: transparent;
+  white-space: nowrap;
+}
+
+/* ── Pannello dettaglio (documenti + note + azioni) ───────────────────────── */
+.qkc-body {
+  border-top: 1px solid var(--qk-card-border);
+  padding: 0.85rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.qkc-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--qk-text-muted);
+  margin-bottom: 0.4rem;
+}
+
+/* ── Riga documento ───────────────────────────────────────────────────────── */
+.qkc-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.qkc-doc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: var(--qk-body-bg, #fafafa);
+  border: 1px solid var(--qk-card-border);
+  transition: border-color 0.12s;
+}
+
+.qkc-doc-row:hover {
+  border-color: var(--qk-accent);
+}
+
+.qkc-doc-icon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  font-size: 1rem;
+  color: var(--qk-text-muted);
+}
+
+.qkc-doc-icon--ok   { color: var(--qk-success); }
+.qkc-doc-icon--miss { color: var(--qk-text-muted); }
+
+.qkc-doc-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qkc-doc-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--qk-text-primary);
+  line-height: 1.3;
+}
+
+.qkc-doc-hint {
+  font-size: 0.75rem;
+  color: var(--qk-text-muted);
+  margin-top: 0.1rem;
+}
+
+.qkc-doc-verify {
+  font-size: 0.75rem;
+  color: var(--qk-success);
+  margin-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.qkc-doc-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+}
+
+.qkc-doc-filename {
+  font-size: 0.75rem;
+  color: var(--qk-text-secondary);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qkc-doc-filename:hover { color: var(--qk-accent); text-decoration: underline; }
+
+/* ── Pulsante upload inline ───────────────────────────────────────────────── */
+.qkc-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  border: 1px solid var(--qk-card-border);
+  color: var(--qk-text-secondary);
+  background: var(--qk-card-bg);
+  white-space: nowrap;
+}
+
+.qkc-upload-btn:hover {
+  border-color: var(--qk-accent);
+  color: var(--qk-accent);
+}
+
+.qkc-upload-btn--primary {
+  background: var(--qk-accent-light, rgba(120,53,15,0.08));
+  border-color: var(--qk-accent);
+  color: var(--qk-accent);
+}
+
+/* Checkbox verifica ───────────────────────────────────────────────────────── */
+.qkc-verify-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--qk-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.qkc-verify-label input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--qk-success);
+}
+
+/* ── Note interne ─────────────────────────────────────────────────────────── */
+.qkc-notes textarea {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  font-size: 0.82rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--qk-card-border);
+  background: var(--qk-card-bg);
+  color: var(--qk-text-primary);
+  font-family: inherit;
+  transition: border-color 0.12s;
+}
+
+.qkc-notes textarea:focus {
+  outline: none;
+  border-color: var(--qk-accent);
+}
+
+/* ── Footer azioni ────────────────────────────────────────────────────────── */
+.qkc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.qkc-approver-info {
+  font-size: 0.75rem;
+  color: var(--qk-text-muted);
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.qkc-locked-info {
+  font-size: 0.75rem;
+  color: var(--qk-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* ── Scadenza ─────────────────────────────────────────────────────────────── */
+.qkc-expiry {
+  font-size: 0.75rem;
+  color: var(--qk-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.qkc-expiry--warning { color: var(--qk-warning); }
+.qkc-expiry--danger  { color: var(--qk-danger);  }
+
+/* ── Stato vuoto ──────────────────────────────────────────────────────────── */
+.qkc-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--qk-text-muted);
+  font-size: 0.875rem;
+}

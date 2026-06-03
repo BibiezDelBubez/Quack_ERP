@@ -1464,4 +1464,109 @@ INSERT IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VAL
     ('rfq',      'RFQ/', 2026, 0, 4),
     ('offerta',  'OFF/', 2026, 0, 4),
     ('ordine',   'ODA/', 2026, 0, 4);
+
+-- =============================================================================
+-- COMPLIANCE TABLES & SEEDS
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS compliance_restriction_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(30) UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    regulatory_ref TEXT,
+    requires_vat TINYINT(1) NOT NULL DEFAULT 0,
+    validity_days INT NOT NULL DEFAULT 365,
+    log_transactions TINYINT(1) NOT NULL DEFAULT 0,
+    report_within_days INT,
+    active TINYINT(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_codice_onu_restrizioni (
+    un_code_id INT NOT NULL,
+    restriction_type_id INT NOT NULL,
+    min_concentration DECIMAL(5,2),
+    max_concentration DECIMAL(5,2),
+    notes TEXT,
+    PRIMARY KEY (un_code_id, restriction_type_id),
+    FOREIGN KEY (un_code_id) REFERENCES adr_codici_onu(id),
+    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_documenti_richiesti (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    restriction_type_id INT NOT NULL,
+    document_code VARCHAR(50) NOT NULL,
+    document_name TEXT NOT NULL,
+    mandatory TINYINT(1) NOT NULL DEFAULT 1,
+    instructions TEXT,
+    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_autorizzazioni (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    restriction_type_id INT NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    issued_date DATE,
+    expiry_date DATE,
+    approved_by INT,
+    internal_notes TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
+    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
+    FOREIGN KEY (approved_by) REFERENCES utenti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_documenti_caricati (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    authorization_id INT NOT NULL,
+    required_doc_id INT NOT NULL,
+    file_path TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verified TINYINT(1) NOT NULL DEFAULT 0,
+    verified_by INT,
+    verified_at DATETIME,
+    FOREIGN KEY (authorization_id) REFERENCES compliance_autorizzazioni(id) ON DELETE CASCADE,
+    FOREIGN KEY (required_doc_id) REFERENCES compliance_documenti_richiesti(id),
+    FOREIGN KEY (verified_by) REFERENCES utenti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_log_transazioni (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sale_id INT NOT NULL,
+    authorization_id INT NOT NULL,
+    restriction_type_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity DECIMAL(10,3) NOT NULL,
+    unit_id INT,
+    transaction_date DATE NOT NULL,
+    reported_to_authority TINYINT(1) NOT NULL DEFAULT 0,
+    reported_at DATETIME,
+    report_reference TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sale_id) REFERENCES ordini_clienti(id) ON DELETE CASCADE,
+    FOREIGN KEY (authorization_id) REFERENCES compliance_autorizzazioni(id),
+    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
+    FOREIGN KEY (product_id) REFERENCES prodotti(id),
+    FOREIGN KEY (unit_id) REFERENCES unita_misura(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Seeds for Explosive Precursors
+INSERT IGNORE INTO compliance_restriction_types 
+  (code, name, regulatory_ref, requires_vat, validity_days, log_transactions, report_within_days)
+VALUES 
+  ('EXPLOSIVE_PRECURSOR', 'Precursori di esplosivi', 'Reg. UE 2019/1148', 1, 365, 1, 5);
+
+INSERT IGNORE INTO compliance_documenti_richiesti (restriction_type_id, document_code, document_name, mandatory, instructions)
+SELECT id, 'DICHIARAZIONE_USO', 'Dichiarazione d''uso professionale (Allegato IV)', 1,
+       'Modulo firmato dal responsabile aziendale. Scaricare il modello dalla cartella documenti.'
+FROM compliance_restriction_types WHERE code = 'EXPLOSIVE_PRECURSOR';
+
+INSERT IGNORE INTO compliance_documenti_richiesti (restriction_type_id, document_code, document_name, mandatory, instructions)
+SELECT id, 'DOCUMENTO_IDENTITA', 'Documento d''identità del firmatario', 1,
+       'Copia fronte/retro di un documento d''identità in corso di validità del responsabile che ha firmato la dichiarazione.'
+FROM compliance_restriction_types WHERE code = 'EXPLOSIVE_PRECURSOR';
+
 SET FOREIGN_KEY_CHECKS = 1;

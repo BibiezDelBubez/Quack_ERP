@@ -459,6 +459,7 @@ final class ProductsController extends BaseController
             'peso_netto_kg'        => '',
             'peso_lordo_kg'        => '',
             'ean'                  => '',
+            'scorta_minima'        => '0',
             'adr_sostanza_id'      => '',
             'adr_packing_group'    => '',
         ];

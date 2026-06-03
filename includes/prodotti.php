@@ -415,7 +415,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
                 p.descrizione_confezione, p.descrizione_completa, p.tipo, p.categoria_id,
                 p.note_interne, p.attivo, p.traccia_lotti, um.codice AS unita_misura,
                 p.peso_netto_kg, p.peso_lordo_kg, p.ean,
-                p.unita_contenuto_id, p.quantita_contenuto,
+                p.unita_contenuto_id, p.quantita_contenuto, p.scorta_minima,
                 p.created_at, p.updated_at
          FROM prodotti p
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
@@ -445,6 +445,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          'ean'                  => (string) ($row['ean']                  ?? ''),
          'unita_contenuto_id'   => (string) ($row['unita_contenuto_id']   ?? ''),
          'quantita_contenuto'   => (string) ($row['quantita_contenuto']   ?? ''),
+         'scorta_minima'        => (string) ($row['scorta_minima']        ?? '0'),
          '_created_at'          => $row['created_at'],
          '_updated_at'          => $row['updated_at'],
      ];
@@ -467,12 +468,12 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
                (sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione, descrizione_completa,
                 tipo, categoria_id, note_interne,
                 attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto, peso_netto_kg, peso_lordo_kg,
-                ean, created_at)
+                ean, scorta_minima, created_at)
              VALUES
                (:sku_interno, :sku_ecommerce, :nome, :desc_breve, :desc_confezione, :desc_completa,
                 :tipo, :cat_id, :note_int,
                 :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto, :peso_netto, :peso_lordo,
-                :ean, CURRENT_TIMESTAMP)'
+                :ean, :scorta_minima, CURRENT_TIMESTAMP)'
         );
         $stmt->execute([
             ':sku_interno'       => trim($v['sku_interno']),
@@ -492,15 +493,19 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
             ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
+            ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
         ]);
 
         $id = (int) $pdo->lastInsertId();
 
         if ($v['tipo'] === 'semplice') {
             $pdo->prepare(
-                'INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, updated_at)
-                 VALUES (:id, 0, 0, 0, CURRENT_TIMESTAMP)'
-            )->execute([':id' => $id]);
+                'INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                 VALUES (:id, 0, 0, 0, :scorta_minima, CURRENT_TIMESTAMP)'
+            )->execute([
+                ':id' => $id,
+                ':scorta_minima' => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
+            ]);
         }
 
         $pdo->commit();
@@ -522,47 +527,65 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
     $umStmt->execute([':c' => $v['unita_misura'] ?? 'pz']);
     $um_id = $umStmt->fetchColumn() ?: null;
 
-    $pdo->prepare(
-        'UPDATE prodotti SET
-           sku_interno            = :sku_interno,
-           sku_ecommerce          = :sku_ecommerce,
-           nome                   = :nome,
-           descrizione_breve      = :desc_breve,
-           descrizione_confezione = :desc_confezione,
-           descrizione_completa   = :desc_completa,
-           tipo                   = :tipo,
-           categoria_id           = :cat_id,
-           note_interne           = :note_int,
-           attivo                 = :attivo,
-           traccia_lotti          = :traccia_lotti,
-           unita_misura_stock_id  = :um_id,
-           unita_contenuto_id     = :unita_contenuto_id,
-           quantita_contenuto     = :quantita_contenuto,
-           peso_netto_kg          = :peso_netto,
-           peso_lordo_kg          = :peso_lordo,
-           ean                    = :ean,
-           updated_at             = CURRENT_TIMESTAMP
-         WHERE id = :id'
-    )->execute([
-        ':sku_interno'       => trim($v['sku_interno']),
-        ':sku_ecommerce'     => qk_prodotti_null($v['sku_ecommerce']),
-        ':nome'              => trim($v['nome']),
-        ':desc_breve'        => qk_prodotti_null($v['descrizione_breve']),
-        ':desc_confezione'   => qk_prodotti_null($v['descrizione_confezione']),
-        ':desc_completa'     => qk_prodotti_null($v['descrizione_completa']),
-        ':tipo'              => $v['tipo'],
-        ':cat_id'            => qk_prodotti_null($v['categoria_id']) !== null ? (int) $v['categoria_id'] : null,
-        ':note_int'          => qk_prodotti_null($v['note_interne']),
-        ':attivo'            => $v['attivo'] === '1' ? 1 : 0,
-        ':traccia_lotti'     => $v['traccia_lotti'] === '1' ? 1 : 0,
-        ':um_id'             => $um_id,
-        ':unita_contenuto_id'=> qk_prodotti_null($v['unita_contenuto_id']) !== null ? (int) $v['unita_contenuto_id'] : null,
-        ':quantita_contenuto'=> qk_prodotti_decimal($v['quantita_contenuto']),
-        ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
-        ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
-        ':ean'               => qk_prodotti_null($v['ean']),
-        ':id'                => $id,
-    ]);
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare(
+            'UPDATE prodotti SET
+               sku_interno            = :sku_interno,
+               sku_ecommerce          = :sku_ecommerce,
+               nome                   = :nome,
+               descrizione_breve      = :desc_breve,
+               descrizione_confezione = :desc_confezione,
+               descrizione_completa   = :desc_completa,
+               tipo                   = :tipo,
+               categoria_id           = :cat_id,
+               note_interne           = :note_int,
+               attivo                 = :attivo,
+               traccia_lotti          = :traccia_lotti,
+               unita_misura_stock_id  = :um_id,
+               unita_contenuto_id     = :unita_contenuto_id,
+               quantita_contenuto     = :quantita_contenuto,
+               peso_netto_kg          = :peso_netto,
+               peso_lordo_kg          = :peso_lordo,
+               ean                    = :ean,
+               scorta_minima          = :scorta_minima,
+               updated_at             = CURRENT_TIMESTAMP
+             WHERE id = :id'
+        )->execute([
+            ':sku_interno'       => trim($v['sku_interno']),
+            ':sku_ecommerce'     => qk_prodotti_null($v['sku_ecommerce']),
+            ':nome'              => trim($v['nome']),
+            ':desc_breve'        => qk_prodotti_null($v['descrizione_breve']),
+            ':desc_confezione'   => qk_prodotti_null($v['descrizione_confezione']),
+            ':desc_completa'     => qk_prodotti_null($v['descrizione_completa']),
+            ':tipo'              => $v['tipo'],
+            ':cat_id'            => qk_prodotti_null($v['categoria_id']) !== null ? (int) $v['categoria_id'] : null,
+            ':note_int'          => qk_prodotti_null($v['note_interne']),
+            ':attivo'            => $v['attivo'] === '1' ? 1 : 0,
+            ':traccia_lotti'     => $v['traccia_lotti'] === '1' ? 1 : 0,
+            ':um_id'             => $um_id,
+            ':unita_contenuto_id'=> qk_prodotti_null($v['unita_contenuto_id']) !== null ? (int) $v['unita_contenuto_id'] : null,
+            ':quantita_contenuto'=> qk_prodotti_decimal($v['quantita_contenuto']),
+            ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
+            ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
+            ':ean'               => qk_prodotti_null($v['ean']),
+            ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
+            ':id'                => $id,
+        ]);
+
+        // Sincronizza anche la colonna scorta_minima in giacenze
+        $pdo->prepare(
+            'UPDATE giacenze SET scorta_minima = :scorta_minima WHERE prodotto_id = :id'
+        )->execute([
+            ':scorta_minima' => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
+            ':id' => $id
+        ]);
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
 }
 
 /* =============================================================================
