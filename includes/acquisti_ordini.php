@@ -203,8 +203,8 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                 (ordine_id, offerta_riga_id, posizione_riga, prodotto_id, descrizione, sku_fornitore,
                  quantita_ordinata, quantita_ricevuta, unita_misura_id,
                  prezzo_unitario, sconto_perc, iva_perc, imponibile_riga, iva_riga,
-                 tolleranza_esubero_perc, data_consegna_prevista, note)
-             VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,0,?,?)"
+                 tolleranza_esubero_perc, data_consegna_prevista, quantita_stock, unita_misura_stock_id, note)
+             VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,0,?,?,?,?)"
         );
         $stPian = $pdo->prepare(
             "INSERT INTO ordini_righe_pianificazione
@@ -213,13 +213,38 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
         );
 
         foreach ($stRighe->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $prodotto_id = $r['prodotto_id'];
+            $um_id = $r['unita_misura_id'];
+            $qta = (float)$r['quantita_offerta'];
+
+            // Convert to stock UoM
+            $quantita_stock = $qta;
+            $unita_misura_stock_id = $um_id;
+            if ($prodotto_id && $um_id) {
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+                $stProdUm->execute([$prodotto_id]);
+                $prodUm = $stProdUm->fetch();
+                if ($prodUm) {
+                    $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
+                    $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
+                    $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                    if ((int)$um_id === $unita_misura_stock_id) {
+                        $quantita_stock = $qta;
+                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
+                        $quantita_stock = round($qta / $factor, 3);
+                    }
+                }
+            }
+
             $stRiga->execute([
                 $ordine_id, $r['id'], $r['posizione_riga'],
                 $r['prodotto_id'], $r['descrizione'], $r['sku_fornitore'],
                 $r['quantita_offerta'], $r['unita_misura_id'],
                 $r['prezzo_unitario'], $r['sconto_perc'], $r['iva_perc'],
                 $r['imponibile_riga'], $r['iva_riga'],
-                $r['data_consegna_prevista'], $r['note'],
+                $r['data_consegna_prevista'],
+                $quantita_stock, $unita_misura_stock_id,
+                $r['note'],
             ]);
             $riga_id = (int) $pdo->lastInsertId();
             $stPian->execute([$riga_id, $r['data_consegna_prevista'], $r['quantita_offerta']]);
@@ -360,7 +385,7 @@ function _ordine_carica(PDO $pdo, int $id): array
  */
 function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): void
 {
-    $righe = $pdo->prepare('SELECT prodotto_id, quantita_ordinata FROM ordini_righe WHERE ordine_id = ?');
+    $righe = $pdo->prepare('SELECT prodotto_id, quantita_stock FROM ordini_righe WHERE ordine_id = ?');
     $righe->execute([$ordine_id]);
     $op = $segno === '+' ? '+' : '-';
     $st = $pdo->prepare(
@@ -369,6 +394,6 @@ function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): vo
           WHERE prodotto_id = ?"
     );
     foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $st->execute([$r['quantita_ordinata'], $r['prodotto_id']]);
+        $st->execute([$r['quantita_stock'] ?? $r['quantita_ordinata'], $r['prodotto_id']]);
     }
 }

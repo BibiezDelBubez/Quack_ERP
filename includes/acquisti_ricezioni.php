@@ -219,23 +219,50 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 : 0.0;
             $motivoRifiuto = $input['motivo_rifiuto'] ?? '';
 
+            // Convert to stock UoM
+            $quantita_stock = $qtaAccettata;
+            $unita_misura_stock_id = null;
+            
+            $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+            $stProdUm->execute([$prodottoId]);
+            $prodUm = $stProdUm->fetch();
+            
+            $stOrderUm = $pdo->prepare('SELECT unita_misura_id FROM ordini_righe WHERE id = ?');
+            $stOrderUm->execute([$ordineRigaId]);
+            $um_id = $stOrderUm->fetchColumn();
+            
+            if ($prodUm && $um_id) {
+                $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
+                $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
+                $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                
+                if ((int)$um_id === $unita_misura_stock_id) {
+                    $quantita_stock = $qtaAccettata;
+                } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
+                    $quantita_stock = round($qtaAccettata / $factor, 3);
+                }
+            } elseif ($prodUm) {
+                $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
+            }
+
             // Salva valori definitivi sulla riga ricezione
             $pdo->prepare(
                 'UPDATE ricezioni_righe
-                    SET quantita_accettata = ?, quantita_rifiutata = ?, motivo_rifiuto = ?
+                    SET quantita_accettata = ?, quantita_rifiutata = ?, motivo_rifiuto = ?,
+                        quantita_stock = ?, unita_misura_stock_id = ?
                   WHERE id = ?'
-            )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $rigaId]);
+            )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $quantita_stock, $unita_misura_stock_id, $rigaId]);
 
             if ($qtaAccettata <= 0) continue;
 
-            // Gestione lotto
+            // Gestione lotto (usando quantita_stock)
             $lotto_id = _ricezione_gestisci_lotto(
                 $pdo,
                 $prodottoId,
                 (int)$ricezione['fornitore_id'],
                 $ordine_id,
                 $rigaId,
-                $qtaAccettata,
+                $quantita_stock,
                 $input['lotto'] ?? [],
                 $utente_id
             );
@@ -249,15 +276,15 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 'UPDATE ordini_righe SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
             )->execute([$qtaAccettata, $ordineRigaId]);
 
-            // Aggiorna giacenza disponibile
-            _ricezione_upsert_giacenza($pdo, $prodottoId, $qtaAccettata);
+            // Aggiorna giacenza disponibile (usando quantita_stock)
+            _ricezione_upsert_giacenza($pdo, $prodottoId, $quantita_stock);
 
-            // Decrementa in_arrivo
+            // Decrementa in_arrivo (usando quantita_stock)
             $pdo->prepare(
                 'UPDATE giacenze
                     SET quantita_in_arrivo = MAX(0, quantita_in_arrivo - ?)
                   WHERE prodotto_id = ?'
-            )->execute([$qtaAccettata, $prodottoId]);
+            )->execute([$quantita_stock, $prodottoId]);
 
             // Avanza pianificazione consegna
             _ricezione_avanza_pianificazione($pdo, $ordineRigaId, $qtaAccettata);

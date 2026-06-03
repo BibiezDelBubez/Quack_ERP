@@ -582,6 +582,8 @@ CREATE TABLE IF NOT EXISTS ordini_acquisto_righe (
     imponibile_riga        DECIMAL(10,2),                      -- prezzo × qtà × (1-sconto); memorizzato per velocità
     iva_riga               DECIMAL(10,2),                      -- memorizzato per velocità
     data_consegna_prevista DATE,                               -- override per la singola riga; NULL = usa la data dell'ordine
+    quantita_stock         DECIMAL(10,3),                      -- quantità in unità stock
+    unita_misura_stock_id  INTEGER       REFERENCES unita_misura(id), -- UoM di stock
     note                   TEXT
 );
 
@@ -638,6 +640,8 @@ CREATE TABLE IF NOT EXISTS ricevimento_merce_righe (
     prodotto_id       INTEGER       NOT NULL REFERENCES prodotti(id),      -- ridondanza intenzionale per comodità
     lotto_id          INTEGER       REFERENCES lotti(id),                  -- lotto registrato per questa riga; NULL se prodotto non traccia lotti
     quantita_ricevuta DECIMAL(10,3) NOT NULL,                              -- quantità fisicamente ricevuta
+    quantita_stock    DECIMAL(10,3),                                  -- quantità in unità stock
+    unita_misura_stock_id INTEGER    REFERENCES unita_misura(id),      -- UoM di stock
     note              TEXT
 );
 
@@ -760,6 +764,8 @@ CREATE TABLE IF NOT EXISTS preventivi_righe (
     totale_costo_riga DECIMAL(10,2),                 -- costo_unitario × quantità
     margine_riga    DECIMAL(10,2),                   -- imponibile_riga − totale_costo_riga
     is_adr          BOOLEAN       NOT NULL DEFAULT 0, -- riga contiene prodotto ADR
+    quantita_stock  DECIMAL(10,3),                   -- quantità convertita in unità di stock
+    unita_misura_stock_id INTEGER REFERENCES unita_misura(id), -- UoM di stock del prodotto
     posizione_riga  INTEGER       NOT NULL DEFAULT 0, -- ordine di visualizzazione
     note_riga       TEXT
 );
@@ -792,6 +798,8 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     unita_misura_id    INTEGER       REFERENCES unita_misura(id),
     prezzo_unitario    DECIMAL(10,4),                                  -- prezzo di vendita
     costo_unitario     DECIMAL(10,4),                                  -- costo d'acquisto al momento dell'ordine
+    quantita_stock     DECIMAL(10,3),                                  -- quantità in unità stock
+    unita_misura_stock_id INTEGER    REFERENCES unita_misura(id),      -- UoM di stock
     note               TEXT
 );
 

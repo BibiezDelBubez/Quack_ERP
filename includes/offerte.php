@@ -256,6 +256,25 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             $stUm->execute([$um_codice]);
             $um_id = $stUm->fetchColumn() ?: null;
 
+            // Calcola equivalenti in unità stock
+            $quantita_stock = $qta;
+            $unita_misura_stock_id = $um_id;
+            if ($prodotto_id && $um_id) {
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+                $stProdUm->execute([$prodotto_id]);
+                $prodUm = $stProdUm->fetch();
+                if ($prodUm) {
+                    $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
+                    $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
+                    $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                    if ((int)$um_id === $unita_misura_stock_id) {
+                        $quantita_stock = $qta;
+                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
+                        $quantita_stock = round($qta / $factor, 3);
+                    }
+                }
+            }
+
             $righe_preparate[] = [
                 'prodotto_id' => $prodotto_id,
                 'descrizione' => trim($r['descrizione']),
@@ -271,6 +290,8 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
                 'totale_costo_riga' => $totale_costo_riga,
                 'margine_riga' => $margine_riga,
                 'is_adr' => $is_adr,
+                'quantita_stock' => $quantita_stock,
+                'unita_misura_stock_id' => $unita_misura_stock_id,
                 'posizione_riga' => $pos,
                 'note_riga' => trim($r['note_riga'] ?? ''),
             ];
@@ -331,11 +352,11 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         $sqlLine = "INSERT INTO preventivi_righe (
             preventivo_id, prodotto_id, descrizione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
-            totale_costo_riga, margine_riga, is_adr, posizione_riga, note_riga
+            totale_costo_riga, margine_riga, is_adr, quantita_stock, unita_misura_stock_id, posizione_riga, note_riga
         ) VALUES (
             :preventivo_id, :prodotto_id, :descrizione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
-            :totale_costo_riga, :margine_riga, :is_adr, :posizione_riga, :note_riga
+            :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :unita_misura_stock_id, :posizione_riga, :note_riga
         )";
         $stmtLine = $pdo->prepare($sqlLine);
 
@@ -357,6 +378,8 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
                 ':totale_costo_riga' => $rl['totale_costo_riga'],
                 ':margine_riga'      => $rl['margine_riga'],
                 ':is_adr'            => $rl['is_adr'],
+                ':quantita_stock'    => $rl['quantita_stock'],
+                ':unita_misura_stock_id' => $rl['unita_misura_stock_id'],
                 ':posizione_riga'    => $rl['posizione_riga'],
                 ':note_riga'         => $rl['note_riga'],
             ]);
