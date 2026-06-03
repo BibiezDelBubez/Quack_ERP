@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/offerte.php';
 
-final class OffersController extends BaseController
+final class SalesQuotesController extends BaseController
 {
     /* ── Lista ────────────────────────────────────────────────────────────── */
 
@@ -34,15 +34,16 @@ final class OffersController extends BaseController
         $offers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $total  = count($offers);
 
-        $page_title    = 'Offerte';
-        $page_subtitle = 'Preventivi e offerte commerciali';
-        $breadcrumbs   = [['label' => 'Offerte']];
-        $page_actions  = '<a href="' . url('offers/create') . '" class="btn-qk btn-qk-primary">
-            <i class="fa-solid fa-plus"></i> Nuova offerta
+        $active_tab    = 'quotes';
+        $page_title    = 'Preventivi';
+        $page_subtitle = 'Preventivi e offerte commerciali clienti';
+        $breadcrumbs   = [['label' => 'Vendite', 'url' => url('sales')], ['label' => 'Preventivi']];
+        $page_actions  = '<a href="' . url('sales/quotes/create') . '" class="btn-qk btn-qk-primary">
+            <i class="fa-solid fa-plus"></i> Nuovo preventivo
         </a>';
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/offers/_list.php';
+        require APP_ROOT_DIR . '/app/views/sales/quotes/_list.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
@@ -65,7 +66,7 @@ final class OffersController extends BaseController
                     try {
                         $user_id = (int) (current_user()['id'] ?? 0);
                         $id      = qk_insert_offerta($this->pdo, $values, $righe, $user_id);
-                        redirect_with('offers', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' salvato correttamente.');
+                        redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' salvato correttamente.');
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore database: ' . $e->getMessage();
                     }
@@ -75,32 +76,34 @@ final class OffersController extends BaseController
 
         $numero_offerta = $values['numero_offerta'] ?: qk_next_numero_offerta($this->pdo);
 
-        $page_title    = 'Nuova offerta';
-        $page_subtitle = 'Crea un preventivo commerciale';
+        $active_tab    = 'quotes';
+        $page_title    = 'Nuovo preventivo';
+        $page_subtitle = 'Crea un preventivo commerciale per un cliente';
         $breadcrumbs   = [
-            ['label' => 'Offerte', 'url' => url('offers')],
-            ['label' => 'Nuova'],
+            ['label' => 'Vendite', 'url' => url('sales')],
+            ['label' => 'Preventivi', 'url' => url('sales/quotes')],
+            ['label' => 'Nuovo'],
         ];
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/offers/_form.php';
+        require APP_ROOT_DIR . '/app/views/sales/quotes/_form.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
-    /* ── Modifica (placeholder) ───────────────────────────────────────────── */
+    /* ── Modifica ─────────────────────────────────────────────────────────── */
 
     public function edit(): void
     {
         $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
         if (!$id) {
-            redirect_with('offers', 'danger', 'Offerta non specificata.');
+            redirect_with('sales/quotes', 'danger', 'Preventivo non specificato.');
         }
 
-        // TODO: implementazione completa in una prossima iterazione
-        $page_title    = 'Modifica offerta #' . $id;
+        $page_title    = 'Modifica preventivo #' . $id;
         $page_subtitle = 'In sviluppo';
         $breadcrumbs   = [
-            ['label' => 'Offerte', 'url' => url('offers')],
+            ['label' => 'Vendite', 'url' => url('sales')],
+            ['label' => 'Preventivi', 'url' => url('sales/quotes')],
             ['label' => '#' . $id],
         ];
 
@@ -108,7 +111,7 @@ final class OffersController extends BaseController
             'page_title'    => $page_title,
             'page_subtitle' => $page_subtitle,
             'breadcrumbs'   => $breadcrumbs,
-            'feature_name'  => 'Modifica offerta',
+            'feature_name'  => 'Modifica preventivo',
         ]);
     }
 
@@ -132,7 +135,7 @@ final class OffersController extends BaseController
     {
         header('Content-Type: application/json; charset=utf-8');
         $q = get_param('q');
-        echo json_encode(qk_search_prodotti($this->pdo, $q), JSON_UNESCAPED_UNICODE);
+        echo json_encode(qk_search_prodotti_sales($this->pdo, $q), JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -160,7 +163,6 @@ final class OffersController extends BaseController
         $email = post('email');
         $tel   = post('telefono');
 
-        // Validazione minima
         $label = $rs ?: trim("$nm $cog");
         if (trim($label) === '') {
             http_response_code(422);
@@ -220,15 +222,20 @@ final class OffersController extends BaseController
 
         try {
             $id  = qk_crea_prodotto_rapido($this->pdo, ['nome' => $nome, 'sku_interno' => $sku, 'unita_misura' => $um]);
-            $row = $this->pdo->prepare('SELECT sku_interno, unita_misura FROM prodotti WHERE id = :id');
+            $row = $this->pdo->prepare('SELECT sku_interno, unita_misura_stock_id FROM prodotti WHERE id = :id');
             $row->execute([':id' => $id]);
             $prod = $row->fetch(PDO::FETCH_ASSOC);
+            
+            $stUm = $this->pdo->prepare('SELECT codice FROM unita_misura WHERE id = ?');
+            $stUm->execute([$prod['unita_misura_stock_id']]);
+            $um_codice = $stUm->fetchColumn() ?: 'pz';
+
             echo json_encode([
                 'success'      => true,
                 'id'           => $id,
                 'label'        => $nome,
                 'sku'          => $prod['sku_interno'],
-                'unita_misura' => $prod['unita_misura'],
+                'unita_misura' => $um_codice,
             ], JSON_UNESCAPED_UNICODE);
         } catch (Throwable $e) {
             http_response_code(500);
@@ -279,13 +286,12 @@ final class OffersController extends BaseController
         ];
     }
 
-    /** Legge le righe da $_POST['righe'] e le normalizza */
     private function readPostRighe(): array
     {
         $raw   = $_POST['righe'] ?? [];
         $righe = [];
         foreach ($raw as $r) {
-            if (empty(trim($r['descrizione'] ?? ''))) continue; // salta righe vuote
+            if (empty(trim($r['descrizione'] ?? ''))) continue;
             $righe[] = [
                 'prodotto_id'    => $r['prodotto_id']    ?: null,
                 'descrizione'    => $r['descrizione']    ?? '',

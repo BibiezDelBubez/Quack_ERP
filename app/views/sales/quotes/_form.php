@@ -1,6 +1,6 @@
 <?php
 /**
- * offers/_form.php — Form creazione/modifica offerta.
+ * sales/quotes/_form.php — Form creazione/modifica offerta.
  * Variabili attese: $values (array), $errors (array), $numero_offerta (string)
  */
 $v = $values;
@@ -100,7 +100,7 @@ $v = $values;
 </div>
 <?php endif; ?>
 
-<form method="post" id="form-offerta" action="<?= url('offers/create') ?>">
+<form method="post" id="form-offerta" action="<?= url('sales/quotes/create') ?>">
   <?= csrf_field() ?>
 
   <!-- Cliente nascosto -->
@@ -320,7 +320,7 @@ $v = $values;
     <button type="submit" name="stato" value="inviata" class="btn-qk btn-qk-primary">
       <i class="fa-solid fa-paper-plane"></i> Salva e invia
     </button>
-    <a href="<?= url('offers') ?>" class="btn-qk btn-qk-secondary" style="margin-left:auto">
+    <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary" style="margin-left:auto">
       <i class="fa-solid fa-xmark"></i> Annulla
     </a>
   </div>
@@ -459,7 +459,7 @@ const BASE   = (typeof QK_BASE !== 'undefined') ? QK_BASE : '';
 
 /* ─────────────────────────────────────────────────────────────────────────
    UTILITÀ
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 function fmtEuro(n) {
   return '€ ' + Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -479,7 +479,7 @@ function debounce(fn, ms) {
      onSelect  — callback(item) chiamata quando l'utente sceglie
      onCreate  — callback() quando l'utente clicca "Crea nuovo" (opzionale)
      createLabel — testo del link "Crea nuovo"
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 function initAutocomplete({ input, dropdown, apiUrl, onSelect, onCreate, createLabel }) {
   let focused = -1;
   let items   = [];
@@ -569,7 +569,7 @@ function initAutocomplete({ input, dropdown, apiUrl, onSelect, onCreate, createL
 
 /* ─────────────────────────────────────────────────────────────────────────
    GESTIONE CLIENTE
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 const elClienteSearch  = document.getElementById('cliente_search');
 const elClienteId      = document.getElementById('cliente_id');
@@ -608,7 +608,7 @@ elClienteSearch.addEventListener('input', () => {
 initAutocomplete({
   input:       elClienteSearch,
   dropdown:    elClienteDrop,
-  apiUrl:      BASE + '/offers/api/clienti',
+  apiUrl:      BASE + '/sales/quotes/api/clienti',
   onSelect:    selectCliente,
   onCreate:    () => openModal('modal-nuovo-cliente'),
   createLabel: 'Crea nuovo cliente',
@@ -616,7 +616,7 @@ initAutocomplete({
 
 /* ─────────────────────────────────────────────────────────────────────────
    RIGHE PRODOTTO
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 let righeCount = 0;
 
@@ -688,7 +688,7 @@ function buildRiga(prefill = {}) {
   initAutocomplete({
     input:       searchInput,
     dropdown:    searchDrop,
-    apiUrl:      BASE + '/offers/api/prodotti',
+    apiUrl:      BASE + '/sales/quotes/api/prodotti',
     onSelect:    (item) => {
       tr.querySelector('.inp-prodotto-id').value  = item.id;
       tr.querySelector('.inp-desc').value         = item.label;
@@ -744,7 +744,7 @@ buildRiga();
 
 /* ─────────────────────────────────────────────────────────────────────────
    MODALI HELPER
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 let _pendingRigaTr = null; // riga che ha richiesto la creazione prodotto
 
@@ -775,7 +775,7 @@ document.querySelectorAll('#form-nuovo-cliente input[name="tipo_soggetto"]').for
 
 /* ─────────────────────────────────────────────────────────────────────────
    SALVA NUOVO CLIENTE (AJAX)
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 document.getElementById('btn-nuovo-cliente').addEventListener('click', () => openModal('modal-nuovo-cliente'));
 
@@ -790,7 +790,7 @@ document.getElementById('btn-salva-cliente').addEventListener('click', async () 
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Salvataggio…';
 
   try {
-    const res  = await fetch(BASE + '/offers/api/crea-cliente', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const res  = await fetch(BASE + '/sales/quotes/api/crea-cliente', { method: 'POST', body: fd, credentials: 'same-origin' });
     const data = await res.json();
     if (data.success) {
       selectCliente(data);
@@ -809,7 +809,7 @@ document.getElementById('btn-salva-cliente').addEventListener('click', async () 
 
 /* ─────────────────────────────────────────────────────────────────────────
    SALVA NUOVO PRODOTTO (AJAX)
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 document.getElementById('btn-nuovo-prodotto').addEventListener('click', () => openModal('modal-nuovo-prodotto', null));
 
@@ -824,7 +824,7 @@ document.getElementById('btn-salva-prodotto').addEventListener('click', async ()
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Salvataggio…';
 
   try {
-    const res  = await fetch(BASE + '/offers/api/crea-prodotto', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const res  = await fetch(BASE + '/sales/quotes/api/crea-prodotto', { method: 'POST', body: fd, credentials: 'same-origin' });
     const data = await res.json();
     if (data.success) {
       // Se c'è una riga in attesa, popola quella; altrimenti aggiungi una nuova riga
@@ -858,7 +858,7 @@ document.getElementById('btn-salva-prodotto').addEventListener('click', async ()
 
 /* ─────────────────────────────────────────────────────────────────────────
    VALIDAZIONE CLIENT-SIDE PRIMA DEL SUBMIT
-───────────────────────────────────────────────────────────────────────── */
+ ───────────────────────────────────────────────────────────────────────── */
 
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

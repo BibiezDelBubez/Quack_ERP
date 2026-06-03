@@ -193,17 +193,25 @@
       <li class="qk-nav-section">Vendite</li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('offers') ?>" title="Preventivi"
-           class="<?= nav_active('/offers') ?>">
-          <i class="fa-solid fa-file-invoice"></i>
+        <a href="<?= url('sales') ?>" title="Vendite"
+           class="<?= nav_active('/sales') ?>">
+          <i class="fa-solid fa-chart-simple"></i>
+          <span class="qk-nav-label">Vendite</span>
+        </a>
+      </li>
+
+      <li class="qk-nav-item">
+        <a href="<?= url('sales/quotes') ?>" title="Preventivi"
+           class="<?= nav_active('/sales/quotes') ?>">
+          <i class="fa-solid fa-file-lines"></i>
           <span class="qk-nav-label">Preventivi</span>
         </a>
       </li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('orders') ?>" title="Ordini"
-           class="<?= nav_active('/orders') ?>">
-          <i class="fa-solid fa-box-open"></i>
+        <a href="<?= url('sales/orders') ?>" title="Ordini"
+           class="<?= nav_active('/sales/orders') ?>">
+          <i class="fa-solid fa-file-invoice-dollar"></i>
           <span class="qk-nav-label">Ordini</span>
         </a>
       </li>

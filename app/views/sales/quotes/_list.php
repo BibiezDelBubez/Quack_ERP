@@ -1,9 +1,12 @@
 <?php
 /**
- * offers/_list.php — Vista HTML della lista offerte.
+ * sales/quotes/_list.php — Vista HTML della lista offerte.
  * Variabili attese: $offers, $total, $search, $status
  */
 ?>
+
+<!-- Sotto-navigazione condivisa -->
+<?php include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
 
 <div class="qk-card">
   <div class="qk-table-toolbar">
@@ -20,7 +23,7 @@
           <?php endforeach; ?>
         </select>
         <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-filter"></i> Filtra</button>
-        <?php if ($search || $status): ?><a href="<?= url('offers') ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-xmark"></i> Pulisci</a><?php endif; ?>
+        <?php if ($search || $status): ?><a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-xmark"></i> Pulisci</a><?php endif; ?>
       </form>
     </div>
     <div class="qk-table-toolbar-right"><small class="qk-text-muted"><?= $total ?> offerte</small></div>
@@ -30,7 +33,7 @@
     <div class="qk-empty">
       <i class="fa-regular fa-file-invoice"></i>
       <p><?= ($search || $status) ? 'Nessuna offerta trovata con i filtri selezionati.' : 'Nessuna offerta ancora.' ?></p>
-      <?php if (!$search && !$status): ?><a href="<?= url('offers/create') ?>" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Crea la prima offerta</a><?php endif; ?>
+      <?php if (!$search && !$status): ?><a href="<?= url('sales/quotes/create') ?>" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Crea la prima offerta</a><?php endif; ?>
     </div>
     <?php else: ?>
     <table class="qk-table">
@@ -38,7 +41,11 @@
       <tbody>
         <?php foreach ($offers as $o): ?>
         <tr>
-          <td class="fw-semibold"><?= e($o['numero_preventivo'] ?? '') ?></td>
+          <td class="fw-semibold">
+            <a href="<?= url('sales/quotes/edit?id=' . $o['id']) ?>" class="qk-text-accent fw-bold text-decoration-none">
+              <?= e($o['numero_preventivo'] ?? '') ?>
+            </a>
+          </td>
           <td><?= e($o['cliente_nome'] ?? '') ?></td>
           <td class="qk-text-secondary"><?= e($o['canale_vendita'] ?? '—') ?></td>
           <td><?= !empty($o['stato']) ? '<span class="qk-badge">' . e(ucfirst($o['stato'])) . '</span>' : '<span class="qk-text-muted">—</span>' ?></td>
