@@ -31,6 +31,9 @@ function wh_tipo_badge(string $tipo): string {
 }
 ?>
 
+<!-- Sotto-navigazione condivisa -->
+<?php $active_tab = 'movements'; include __DIR__ . '/_subnav.php'; ?>
+
 <!-- Filtri -->
 <div class="qk-toolbar mb-3">
   <form method="get" action="<?= url('warehouse/movements') ?>" class="qkwh-filter-form">
@@ -53,7 +56,7 @@ function wh_tipo_badge(string $tipo): string {
     </button>
   </form>
 
-  <a href="<?= url('warehouse') ?>" class="btn-qk btn-qk-ghost">
+  <a href="<?= url('warehouse/stock') ?>" class="btn-qk btn-qk-ghost">
     <i class="fa-solid fa-boxes-stacked"></i> Giacenze
   </a>
 </div>

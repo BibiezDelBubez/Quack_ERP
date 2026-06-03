@@ -180,6 +180,38 @@
       </li>
 
       <li class="qk-nav-item">
+        <a href="<?= url('warehouse/stock') ?>" title="Giacenze"
+           class="<?= nav_active('/warehouse/stock') ?>">
+          <i class="fa-solid fa-cubes"></i>
+          <span class="qk-nav-label">Giacenze</span>
+        </a>
+      </li>
+
+      <li class="qk-nav-item">
+        <a href="<?= url('warehouse/movements') ?>" title="Movimenti"
+           class="<?= nav_active('/warehouse/movements') ?>">
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+          <span class="qk-nav-label">Movimenti</span>
+        </a>
+      </li>
+
+      <li class="qk-nav-item">
+        <a href="<?= url('warehouse/inventari') ?>" title="Inventario fis."
+           class="<?= nav_active('/warehouse/inventari') ?>">
+          <i class="fa-solid fa-clipboard-list"></i>
+          <span class="qk-nav-label">Inventario fis.</span>
+        </a>
+      </li>
+
+      <li class="qk-nav-item">
+        <a href="<?= url('warehouse/reorder') ?>" title="Riordino stock"
+           class="<?= nav_active('/warehouse/reorder') ?>">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          <span class="qk-nav-label">Riordino stock</span>
+        </a>
+      </li>
+
+      <li class="qk-nav-item">
         <a href="<?= url('purchases/ricezioni') ?>" title="Ricezione merci"
            class="<?= nav_active('/purchases/ricezioni') ?>">
           <i class="fa-solid fa-dolly"></i>

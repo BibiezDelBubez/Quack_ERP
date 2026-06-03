@@ -101,7 +101,7 @@ unset($_db_file, $_e, $_info_user);
       <div class="modal-header border-0 pb-0">
         <div class="d-flex align-items-center gap-3">
 		<div class="qk-info-logo">
-		  <img src="assets/img/logo_quack.png" alt="Logo Quack" style="height: 40px; width: auto; object-fit: contain;">
+		  <img src="<?= asset('img/logo.svg') ?>" alt="Logo Quack" style="height: 40px; width: auto; object-fit: contain;">
 		</div>
           <div>
             <h5 class="modal-title mb-0 fw-semibold" id="qkInfoModalLabel">

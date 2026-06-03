@@ -17,27 +17,94 @@ require_once INCLUDES_DIR . '/magazzino.php';
  */
 class WarehouseController extends BaseController
 {
-    /* ── Stock overview ───────────────────────────────────────────────────── */
+    /* ── Dedicated Dashboard ──────────────────────────────────────────────── */
 
-    public function index(): void
+    public function dashboard(): void
+    {
+        // 1. Calcola il Valore Magazzino: Somma di (giacenze.quantita_disponibile * prezzo_acquisto)
+        // Per semplicità, cerchiamo l'ultimo prezzo di acquisto inserito o il prezzo base in prodotti_fornitori_prezzi
+        $valore_magazzino = (float) $this->pdo->query("
+            SELECT SUM(g.quantita_disponibile * COALESCE(
+                (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                 JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+                 WHERE pf.prodotto_id = g.prodotto_id AND pf.attivo = 1 AND pfp.quantita_minima = 0
+                 ORDER BY pfp.id DESC LIMIT 1), 0.0
+            )) 
+            FROM giacenze g
+        ")->fetchColumn();
+
+        // 2. Conta i prodotti Sottoscorta
+        $sottoscorta_count = (int) $this->pdo->query("
+            SELECT COUNT(*) FROM prodotti p
+            LEFT JOIN giacenze g ON g.prodotto_id = p.id
+            WHERE p.attivo = 1 AND p.scorta_minima > 0
+              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
+        ")->fetchColumn();
+
+        // 3. Conta la merce in Arrivo (ordini acquisto pendenti)
+        $in_arrivo_count = (int) $this->pdo->query("
+            SELECT COUNT(*) FROM ordini_acquisto WHERE stato IN ('inviato', 'parzialmente_ricevuto')
+        ")->fetchColumn();
+
+        // 4. Conta la merce in Partenza (spedizioni non ancora completate/consegnate)
+        $in_partenza_count = (int) $this->pdo->query("
+            SELECT COUNT(*) FROM spedizioni WHERE stato IN ('preparazione', 'spedita')
+        ")->fetchColumn();
+
+        // 5. Ultimi 5 movimenti logistici
+        $stmtM = $this->pdo->query("
+            SELECT m.created_at, m.tipo_movimento, m.quantita,
+                   p.nome AS prodotto_nome, u.codice AS uom
+            FROM movimenti_magazzino m
+            JOIN prodotti p ON p.id = m.prodotto_id
+            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+            ORDER BY m.id DESC LIMIT 5
+        ");
+        $recent_movements = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+
+        // 6. Primi 5 prodotti vicini al sottoscorta
+        $stmtU = $this->pdo->query("
+            SELECT p.nome, COALESCE(g.quantita_disponibile, 0) AS quantita_disponibile, p.scorta_minima, u.codice AS uom
+            FROM prodotti p
+            LEFT JOIN giacenze g ON g.prodotto_id = p.id
+            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+            WHERE p.attivo = 1 AND p.scorta_minima > 0
+              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
+            ORDER BY (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) ASC
+            LIMIT 5
+        ");
+        $understock_items = $stmtU->fetchAll(PDO::FETCH_ASSOC);
+
+        $page_title    = 'Magazzino';
+        $page_subtitle = 'Panoramica e KPI operativi';
+        $breadcrumbs   = [['label' => 'Magazzino']];
+        $extra_css = ['warehouse.css'];
+
+        require INCLUDES_DIR . '/header.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/dashboard.php';
+        require INCLUDES_DIR . '/footer.php';
+    }
+
+    /* ── Stock list ───────────────────────────────────────────────────────── */
+
+    public function stock(): void
     {
         $search = get_param('q');
         $filter = get_param('filter');
         if (!in_array($filter, ['in_stock', 'all', 'sottoscorta', 'esauriti', 'in_arrivo'], true)) {
-            $filter = 'in_stock'; // default: mostra solo prodotti con giacenza > 0
+            $filter = 'in_stock'; // default
         }
 
         $stock = [];
         $ordini_in_arrivo = [];
         
-        // Calcola il numero di ordini in arrivo per il contatore della pill
-        $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
+        $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_acquisto WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
 
         if ($filter === 'in_arrivo') {
             $sql = "SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
                            COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
-                           (SELECT rt.id FROM ricezioni_testata rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
-                      FROM ordini_testata ot
+                           (SELECT rt.id FROM ricevimento_merce rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
+                      FROM ordini_acquisto ot
                  LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
                      WHERE ot.stato IN ('inviato', 'parzialmente_ricevuto')
                        AND (ot.numero LIKE :q OR COALESCE(cf.ragione_sociale, cf.nome) LIKE :q)
@@ -49,16 +116,16 @@ class WarehouseController extends BaseController
             $stock = qk_stock_list($this->pdo, $search, $filter);
         }
 
-        $page_title    = 'Magazzino';
-        $page_subtitle = 'Panoramica giacenze';
-        $breadcrumbs   = [['label' => 'Magazzino']];
+        $page_title    = 'Giacenze Magazzino';
+        $page_subtitle = 'Situazione disponibilità e giacenze';
+        $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Giacenze']];
         $page_actions  = '<a href="' . url('warehouse/movements/create') . '" class="btn-qk btn-qk-primary">
             <i class="fa-solid fa-plus"></i> Nuovo movimento
         </a>';
         $extra_css = ['warehouse.css'];
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/_stock.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/stock.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
@@ -94,7 +161,266 @@ class WarehouseController extends BaseController
         $extra_css = ['warehouse.css'];
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/_movements.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/movements.php';
+        require INCLUDES_DIR . '/footer.php';
+    }
+
+    /* ── Physical Inventory Sessions ──────────────────────────────────────── */
+
+    public function inventari(): void
+    {
+        $stmt = $this->pdo->query("
+            SELECT i.*, u.username AS creatore_username
+            FROM inventari i
+            JOIN utenti u ON u.id = i.creato_da
+            ORDER BY i.id DESC
+        ");
+        $inventari = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $page_title    = 'Inventario Fisico';
+        $page_subtitle = 'Gestione e convalida dei conteggi fisici';
+        $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Inventario fis.']];
+        $extra_css = ['warehouse.css'];
+
+        require INCLUDES_DIR . '/header.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/inventari_list.php';
+        require INCLUDES_DIR . '/footer.php';
+    }
+
+    public function createInventario(): void
+    {
+        $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+        $errors = [];
+        $inventario = null;
+        $values = [
+            'data_inventario' => date('Y-m-d'),
+            'note' => '',
+            'righe' => []
+        ];
+
+        // Carica dati se stiamo modificando/visualizzando
+        if ($id) {
+            $stmt = $this->pdo->prepare("SELECT * FROM inventari WHERE id = ?");
+            $stmt->execute([$id]);
+            $inventario = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$inventario) {
+                redirect_with('warehouse/inventari', 'error', 'Sessione inventario non trovata.');
+            }
+            $values['data_inventario'] = $inventario['data_inventario'];
+            $values['note'] = $inventario['note'];
+
+            // Righe esistenti dell'inventario
+            $stmtR = $this->pdo->prepare("
+                SELECT ir.*, p.nome AS nome_prodotto, p.sku_interno, u.codice AS uom, l.codice_lotto_interno
+                FROM inventari_righe ir
+                JOIN prodotti p ON p.id = ir.prodotto_id
+                LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+                LEFT JOIN lotti l ON l.id = ir.lotto_id
+                WHERE ir.inventario_id = ?
+            ");
+            $stmtR->execute([$id]);
+            $prodotti_inventario = $stmtR->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($prodotti_inventario as $p) {
+                $key = $p['prodotto_id'] . ':' . ($p['lotto_id'] ?? '');
+                $values['righe'][$key] = (string)$p['quantita_contata'];
+            }
+        } else {
+            // Nuova sessione: prendiamo tutti i prodotti con relative giacenze teoriche
+            // Se un prodotto gestisce lotti, splittiamo le giacenze teoriche per lotto
+            $sql = "
+                SELECT p.id AS prodotto_id, p.nome AS nome_prodotto, p.sku_interno, u.codice AS uom,
+                       l.id AS lotto_id, l.codice_lotto_interno,
+                       CASE WHEN p.traccia_lotti = 1 THEN COALESCE(l.quantita_disponibile, 0)
+                            ELSE COALESCE(g.quantita_disponibile, 0)
+                       END AS giacenza_teorica
+                FROM prodotti p
+                LEFT JOIN giacenze g ON g.prodotto_id = p.id
+                LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+                LEFT JOIN lotti l ON l.prodotto_id = p.id AND (p.traccia_lotti = 1)
+                WHERE p.attivo = 1
+                ORDER BY p.nome COLLATE NOCASE, l.codice_lotto_interno ASC
+            ";
+            $prodotti_inventario = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if ($inventario && $inventario['stato'] === 'convalidato') {
+                $errors['_global'] = 'L\'inventario è convalidato e non può più essere modificato.';
+            } else if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza scaduto o non valido.';
+            } else {
+                $azione = post('azione', 'salva'); // 'salva' o 'convalida'
+                $data_inventario = post('data_inventario', date('Y-m-d'));
+                $note = post('note', '');
+                $inputRighe = $_POST['righe'] ?? [];
+
+                if (empty($data_inventario)) {
+                    $errors['data_inventario'] = 'La data di rilevamento è obbligatoria.';
+                }
+
+                if (empty($errors)) {
+                    try {
+                        $this->pdo->beginTransaction();
+                        $utente_id = (int)(current_user()['id'] ?? 0);
+
+                        if (!$id) {
+                            // Inserisci testata
+                            $stmt = $this->pdo->prepare("
+                                INSERT INTO inventari (data_inventario, note, creato_da, stato)
+                                VALUES (?, ?, ?, 'bozza')
+                            ");
+                            $stmt->execute([$data_inventario, $note, $utente_id]);
+                            $id = (int)$this->pdo->lastInsertId();
+                        } else {
+                            // Aggiorna testata
+                            $stmt = $this->pdo->prepare("
+                                UPDATE inventari SET data_inventario = ?, note = ? WHERE id = ?
+                            ");
+                            $stmt->execute([$data_inventario, $note, $id]);
+                            // Rimuovi vecchie righe temporaneamente
+                            $this->pdo->prepare("DELETE FROM inventari_righe WHERE inventario_id = ?")->execute([$id]);
+                        }
+
+                        // Reinserisci righe
+                        $stmtIns = $this->pdo->prepare("
+                            INSERT INTO inventari_righe (inventario_id, prodotto_id, lotto_id, giacenza_teorica, quantita_contata)
+                            VALUES (?, ?, ?, ?, ?)
+                        ");
+
+                        foreach ($prodotti_inventario as $p) {
+                            $key = $p['prodotto_id'] . ':' . ($p['lotto_id'] ?? '');
+                            $contata = isset($inputRighe[$key]) ? (float)str_replace(',', '.', $inputRighe[$key]) : (float)$p['giacenza_teorica'];
+                            $lottoId = $p['lotto_id'] ? (int)$p['lotto_id'] : null;
+
+                            $stmtIns->execute([$id, $p['prodotto_id'], $lottoId, $p['giacenza_teorica'], $contata]);
+                        }
+
+                        // Convalida: genera i movimenti logistici e allinea le giacenze
+                        if ($azione === 'convalida') {
+                            // Recupera le righe appena salvate
+                            $stmtRighe = $this->pdo->prepare("SELECT * FROM inventari_righe WHERE inventario_id = ?");
+                            $stmtRighe->execute([$id]);
+                            $righeSalvate = $stmtRighe->fetchAll(PDO::FETCH_ASSOC);
+
+                            foreach ($righeSalvate as $riga) {
+                                $delta = (float)$riga['quantita_contata'] - (float)$riga['giacenza_teorica'];
+                                if (abs($delta) < 0.0001) {
+                                    continue; // nessuna rettifica necessaria
+                                }
+
+                                $tipoMovimento = $delta > 0 ? 'carico' : 'scarico';
+                                $quantitaAssoluta = abs($delta);
+
+                                // 1. Crea il movimento di magazzino
+                                $stmtMov = $this->pdo->prepare("
+                                    INSERT INTO movimenti_magazzino 
+                                    (prodotto_id, lotto_id, tipo_movimento, quantita, documento_tipo, documento_id, canale_origine, note, creato_da)
+                                    VALUES (?, ?, 'rettifica', ?, 'inventario', ?, 'manuale', ?, ?)
+                                ");
+                                $noteMov = sprintf("Rettifica da inventario #%d. Scostamento: %+.3f", $id, $delta);
+                                $stmtMov->execute([
+                                    $riga['prodotto_id'],
+                                    $riga['lotto_id'],
+                                    $quantitaAssoluta,
+                                    $id,
+                                    $noteMov,
+                                    $utente_id
+                                ]);
+                                $movimentoId = (int)$this->pdo->lastInsertId();
+
+                                // Associa il movimento alla riga
+                                $this->pdo->prepare("UPDATE inventari_righe SET movimento_id = ? WHERE id = ?")->execute([$movimentoId, $riga['id']]);
+
+                                // 2. Aggiorna giacenze totali prodotto
+                                $stGiac = $this->pdo->prepare("SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ?");
+                                $stGiac->execute([$riga['prodotto_id']]);
+                                $giac = $stGiac->fetch(PDO::FETCH_ASSOC);
+
+                                if ($giac) {
+                                    $nuovaQta = (float)$giac['quantita_disponibile'] + $delta;
+                                    $this->pdo->prepare("UPDATE giacenze SET quantita_disponibile = ?, updated_at = datetime('now') WHERE id = ?")
+                                              ->execute([$nuovaQta, $giac['id']]);
+                                } else {
+                                    $this->pdo->prepare("INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, updated_at) 
+                                                         VALUES (?, ?, 0, 0, datetime('now'))")
+                                              ->execute([$riga['prodotto_id'], $delta]);
+                                }
+
+                                // 3. Aggiorna quantità disponibile lotto se tracciato
+                                if ($riga['lotto_id']) {
+                                    $this->pdo->prepare("UPDATE lotti SET quantita_disponibile = quantita_disponibile + ? WHERE id = ?")
+                                              ->execute([$delta, $riga['lotto_id']]);
+                                }
+                            }
+
+                            // Segna inventario come convalidato
+                            $this->pdo->prepare("UPDATE inventari SET stato = 'convalidato' WHERE id = ?")->execute([$id]);
+                        }
+
+                        $this->pdo->commit();
+                        $msg = $azione === 'convalida' ? 'Inventario convalidato e rettifiche applicate con successo.' : 'Bozza inventario salvata con successo.';
+                        redirect_with('warehouse/inventari', 'success', $msg);
+
+                    } catch (\Throwable $e) {
+                        $this->pdo->rollBack();
+                        $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+
+        $page_title    = $id ? ($isConvalidato ? 'Dettaglio Inventario' : 'Modifica Inventario') : 'Nuovo Inventario Fisico';
+        $page_subtitle = 'Gestione conteggio giacenze fisiche';
+        $breadcrumbs   = [
+            ['label' => 'Magazzino', 'url' => url('warehouse')],
+            ['label' => 'Inventario fis.', 'url' => url('warehouse/inventari')],
+            ['label' => $id ? '#' . $id : 'Nuovo']
+        ];
+        $extra_css = ['warehouse.css'];
+
+        require INCLUDES_DIR . '/header.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/inventari_form.php';
+        require INCLUDES_DIR . '/footer.php';
+    }
+
+    /* ── Reorder Proposals ────────────────────────────────────────────────── */
+
+    public function reorder(): void
+    {
+        // Trova i prodotti sottoscorta
+        // Per ogni prodotto calcoliamo la quantità libera (disponibile - riservata)
+        // E cerchiamo il fornitore preferenziale + ultimo prezzo di acquisto
+        $sql = "
+            SELECT p.id, p.nome, p.sku_interno, u.codice AS uom,
+                   COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                   COALESCE(g.quantita_riservata, 0) AS qta_riservata,
+                   COALESCE(g.quantita_in_arrivo, 0) AS qta_in_arrivo,
+                   (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) AS qta_libera,
+                   p.scorta_minima,
+                   pf.fornitore_id,
+                   COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
+                   (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                    WHERE pfp.prodotto_fornitore_id = pf.id AND pfp.quantita_minima = 0
+                    ORDER BY pfp.id DESC LIMIT 1) AS ultimo_prezzo
+            FROM prodotti p
+            LEFT JOIN giacenze g ON g.prodotto_id = p.id
+            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+            LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
+            LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
+            WHERE p.attivo = 1 AND p.scorta_minima > 0
+              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
+            ORDER BY p.nome COLLATE NOCASE
+        ";
+        $proposals = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+        $page_title    = 'Proposte di Riordino';
+        $page_subtitle = 'Generazione ordini e RFQ per articoli sottoscorta';
+        $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Riordino']];
+        $extra_css = ['warehouse.css'];
+
+        require INCLUDES_DIR . '/header.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/reorder.php';
         require INCLUDES_DIR . '/footer.php';
     }
 

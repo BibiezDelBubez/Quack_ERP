@@ -270,7 +270,7 @@ if ($prefillProdId && $values['prodotto_id'] === '') {
         <button type="submit" form="formMovimento" class="btn-qk btn-qk-primary">
           <i class="fa-solid fa-check"></i> Registra movimento
         </button>
-        <a href="<?= url('warehouse') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+        <a href="<?= url('warehouse/stock') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
       </div>
     </div>
   </div>

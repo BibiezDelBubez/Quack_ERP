@@ -16,13 +16,16 @@ $nSottoscorta = !empty($stock) ? count(array_filter($stock, fn($r) => $r['sottos
 $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_disponibile'] <= 0)) : 0;
 ?>
 
+<!-- Sotto-navigazione condivisa -->
+<?php $active_tab = 'stock'; include __DIR__ . '/_subnav.php'; ?>
+
 <!-- Filtri rapidi + ricerca -->
 <div class="qk-toolbar mb-3">
   <div class="qk-filter-pills">
     <?php foreach ($filterLabels as $k => $lbl): ?>
     <?php
       $qs = array_filter(['q' => $search, 'filter' => $k]);
-      $pillHref = url('warehouse') . ($qs ? '?' . http_build_query($qs) : '');
+      $pillHref = url('warehouse/stock') . ($qs ? '?' . http_build_query($qs) : '');
     ?>
     <a href="<?= $pillHref ?>"
        class="qk-filter-pill <?= $filter === $k ? 'active' : '' ?>">
@@ -38,7 +41,7 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
     <?php endforeach; ?>
   </div>
 
-  <form method="get" action="<?= url('warehouse') ?>" class="qk-search-form">
+  <form method="get" action="<?= url('warehouse/stock') ?>" class="qk-search-form">
     <?php if ($filter !== 'in_stock'): ?>
     <input type="hidden" name="filter" value="<?= e($filter) ?>">
     <?php endif; ?>
