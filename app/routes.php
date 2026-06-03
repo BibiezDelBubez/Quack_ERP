@@ -37,6 +37,7 @@ return [
     '/sales/quotes/api/crea-cliente'  => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCreaCliente', 'auth' => true],
     '/sales/quotes/api/crea-prodotto' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCreaProdotto', 'auth' => true],
     '/sales/quotes/api/check-compliance' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCheckCompliance', 'auth' => true],
+    '/sales/quotes/api/cliente-dettagli' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiClienteDettagli', 'auth' => true],
     '/sales/orders'              => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'index',    'auth' => true],
     '/sales/orders/create'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'create',   'auth' => true],
     '/products'                    => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'index',            'auth' => true],

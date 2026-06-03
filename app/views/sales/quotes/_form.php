@@ -100,7 +100,7 @@ $v = $values;
 </div>
 <?php endif; ?>
 
-<form method="post" id="form-offerta" action="<?= url('sales/quotes/create') ?>">
+<form method="post" id="form-offerta" action="">
   <?= csrf_field() ?>
 
   <!-- Cliente nascosto -->
@@ -143,20 +143,17 @@ $v = $values;
     </div>
   </div>
 
-  <!-- ══════════════════ INTESTAZIONE OFFERTA ═════════════════════════════ -->
-  <div class="qk-form-grid mb-3">
-
-    <!-- Colonna sinistra: dati offerta -->
-    <div>
-      <div class="qk-card h-100">
-        <div class="qk-card-header"><span class="qk-card-title">Dati offerta</span></div>
-        <div class="qk-card-body">
-
+  <!-- Top Primary Fields Grid -->
+  <div class="qk-card mb-3">
+    <div class="qk-card-body">
+      <div class="qk-form-grid mb-3">
+        <!-- Colonna Sinistra -->
+        <div>
           <div class="qk-form-row">
             <div class="qk-form-group">
-              <label class="qk-form-label">N° Offerta (Prot.) <span class="required">*</span></label>
+              <label class="qk-form-label">N° Offerta (Prot.)</label>
               <input type="text" name="numero_offerta" class="qk-form-control"
-                     value="<?= e($v['numero_offerta'] ?: $numero_offerta) ?>" placeholder="es. 56.26">
+                     value="<?= e($v['numero_offerta'] ?: $numero_offerta) ?>" readonly style="background-color: var(--qk-border-color, #e9ecef);">
             </div>
             <div class="qk-form-group">
               <label class="qk-form-label">Stato</label>
@@ -167,7 +164,14 @@ $v = $values;
               </select>
             </div>
           </div>
-
+          <div class="qk-form-group mt-3">
+            <label class="qk-form-label">Oggetto dell'offerta</label>
+            <input type="text" name="oggetto" class="qk-form-control"
+                   value="<?= e($v['oggetto'] ?? '') ?>" placeholder="Es. Fornitura annuale ipoclorito di sodio">
+          </div>
+        </div>
+        <!-- Colonna Destra -->
+        <div>
           <div class="qk-form-row">
             <div class="qk-form-group">
               <label class="qk-form-label">Data offerta <span class="required">*</span></label>
@@ -180,146 +184,201 @@ $v = $values;
               <input type="date" name="data_scadenza" class="qk-form-control" value="<?= e($v['data_scadenza']) ?>">
             </div>
           </div>
-
-          <div class="qk-form-group">
-            <label class="qk-form-label">Canale vendita</label>
-            <select name="canale_vendita" class="qk-form-control <?= isset($errors['canale_vendita']) ? 'is-invalid' : '' ?>">
-              <?php foreach (['email_diretta'=>'Email diretta','dropshipping'=>'Dropshipping','agente'=>'Agente','sito'=>'Sito web'] as $k => $lbl): ?>
-              <option value="<?= e($k) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Colonna destra: destinatario e condizioni -->
-    <div>
-      <div class="qk-card h-100">
-        <div class="qk-card-header"><span class="qk-card-title">Destinatario e consegna</span></div>
-        <div class="qk-card-body">
-
-          <div class="qk-form-group">
-            <label class="qk-form-label">All'attenzione di</label>
-            <input type="text" name="alla_ca" class="qk-form-control"
-                   value="<?= e($v['alla_ca']) ?>" placeholder="Es. Sig. Mario Rossi">
-          </div>
-
-          <div class="qk-form-group">
-            <label class="qk-form-label">Data consegna richiesta</label>
-            <input type="date" name="data_consegna_richiesta" class="qk-form-control"
-                   value="<?= e($v['data_consegna_richiesta']) ?>">
-          </div>
-
-          <div class="qk-form-group">
-            <label class="qk-form-label">Trasporto</label>
-            <input type="text" name="trasporto" class="qk-form-control"
-                   value="<?= e($v['trasporto']) ?>" placeholder="Es. Franco destino">
-          </div>
-
-          <div class="qk-form-group">
-            <label class="qk-form-label">Condizioni di pagamento</label>
-            <input type="text" name="condizioni_pagamento" class="qk-form-control"
-                   value="<?= e($v['condizioni_pagamento']) ?>" placeholder="Es. 30 gg d.f.f.m., bonifico anticipato…">
-          </div>
-
-        </div>
-      </div>
-    </div>
-
-  </div><!-- /qk-form-grid -->
-
-  <!-- ══════════════════ RIGHE PRODOTTO ═══════════════════════════════════ -->
+  <!-- Odoo-style Navigation Tabs -->
   <div class="qk-card mb-3">
-    <div class="qk-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
-      <span class="qk-card-title"><i class="fa-solid fa-list me-2"></i>Prodotti / Righe offerta</span>
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <div class="d-flex align-items-center gap-1 me-2" style="font-size: .85rem;">
-          <label class="qk-form-label mb-0 text-muted" style="white-space:nowrap; font-weight:600;">Visualizza in:</label>
-          <select id="sales-uom-mode" name="uom_mode" class="qk-form-control" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
-            <option value="commercial" <?= ($v['uom_mode'] ?? 'commercial') === 'commercial' ? 'selected' : '' ?>>Unità commerciale</option>
-            <option value="stock" <?= ($v['uom_mode'] ?? 'commercial') === 'stock' ? 'selected' : '' ?>>Unità di stock</option>
-          </select>
-        </div>
-        <button type="button" id="btn-nuovo-prodotto" class="btn-qk btn-qk-secondary btn-qk-sm">
-          <i class="fa-solid fa-box-open"></i> Nuovo prodotto
+    <div class="qk-card-body">
+      <ul class="nav qk-nav-tabs" role="tablist" style="border-bottom: 1px solid var(--qk-border); padding-bottom: 0.5rem; display: flex; gap: 1rem; list-style: none; margin: 0 0 1rem 0;">
+        <button class="nav-link active" id="tab-prodotti-btn" type="button" onclick="switchQuoteTab('prodotti')" style="background: none; border: none; border-bottom: 2px solid var(--qk-accent); color: var(--qk-accent-text); padding: 0.5rem 1rem; font-weight: 600; cursor: pointer;">
+          <i class="fa-solid fa-list me-1"></i> Prodotti
         </button>
-        <button type="button" id="btn-aggiungi-riga" class="btn-qk btn-qk-primary btn-qk-sm">
-          <i class="fa-solid fa-plus"></i> Aggiungi riga
+        <button class="nav-link" id="tab-altre-info-btn" type="button" onclick="switchQuoteTab('altre-info')" style="background: none; border: none; border-bottom: 2px solid transparent; color: var(--qk-text-muted); padding: 0.5rem 1rem; font-weight: 600; cursor: pointer;">
+          <i class="fa-solid fa-circle-info me-1"></i> Altre Info
         </button>
-      </div>
-    </div>
-    <div class="qk-table-wrap" style="overflow-x:auto">
-      <table id="tbl-righe">
-        <thead>
-          <tr>
-            <th class="col-search">Cerca prodotto</th>
-            <th class="col-desc">Descrizione</th>
-            <th class="col-conf">Confezione</th>
-            <th class="col-qta">Qtà <span class="required">*</span></th>
-            <th class="col-um">U.M.</th>
-            <th class="col-pu">Prezzo unit.</th>
-            <th class="col-sc">Sc. %</th>
-            <th class="col-iva">IVA %</th>
-            <th class="col-tot">Totale</th>
-            <th class="col-del"></th>
-          </tr>
-        </thead>
-        <tbody id="tbody-righe">
-          <!-- Le righe vengono aggiunte da JS -->
-        </tbody>
-      </table>
-      <?php if (isset($errors['righe'])): ?>
-      <div style="padding:.5rem 1rem">
-        <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['righe']) ?></span>
-      </div>
-      <?php endif; ?>
-    </div>
+        <button class="nav-link" id="tab-note-btn" type="button" onclick="switchQuoteTab('note')" style="background: none; border: none; border-bottom: 2px solid transparent; color: var(--qk-text-muted); padding: 0.5rem 1rem; font-weight: 600; cursor: pointer;">
+          <i class="fa-solid fa-pen me-1"></i> Note
+        </button>
+      </ul>
 
-    <!-- Totali -->
-    <div style="padding:1rem 1.25rem; border-top: 1px solid var(--qk-border);">
-      <div class="d-flex justify-content-between align-items-start gap-3">
+      <!-- Tab Content Panes -->
+      <div class="tab-content">
+        
+        <!-- Tab Prodotti -->
+        <div class="tab-pane active" id="pane-prodotti">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+            <h4 style="font-size:1rem; margin:0;"><i class="fa-solid fa-list me-2"></i>Righe preventivo</h4>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <div class="d-flex align-items-center gap-1 me-2" style="font-size: .85rem;">
+                <label class="qk-form-label mb-0 text-muted" style="white-space:nowrap; font-weight:600;">Visualizza in:</label>
+                <select id="sales-uom-mode" name="uom_mode" class="qk-form-control" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
+                  <option value="commercial" <?= ($v['uom_mode'] ?? 'commercial') === 'commercial' ? 'selected' : '' ?>>Unità commerciale</option>
+                  <option value="stock" <?= ($v['uom_mode'] ?? 'commercial') === 'stock' ? 'selected' : '' ?>>Unità di stock</option>
+                </select>
+              </div>
+              <button type="button" id="btn-nuovo-prodotto" class="btn-qk btn-qk-secondary btn-qk-sm">
+                <i class="fa-solid fa-box-open"></i> Nuovo prodotto
+              </button>
+              <button type="button" id="btn-aggiungi-riga" class="btn-qk btn-qk-primary btn-qk-sm">
+                <i class="fa-solid fa-plus"></i> Aggiungi riga
+              </button>
+            </div>
+          </div>
+          
+          <div class="qk-table-wrap" style="overflow-x:auto">
+            <table id="tbl-righe">
+              <thead>
+                <tr>
+                  <th class="col-search">Cerca prodotto</th>
+                  <th class="col-desc">Descrizione</th>
+                  <th class="col-conf">Confezione</th>
+                  <th class="col-qta">Qtà <span class="required">*</span></th>
+                  <th class="col-um">U.M.</th>
+                  <th class="col-pu">Prezzo unit.</th>
+                  <th class="col-sc">Sc. %</th>
+                  <th class="col-iva">IVA %</th>
+                  <th class="col-tot">Totale</th>
+                  <th class="col-del"></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-righe">
+                <!-- Righe gestite via JS -->
+              </tbody>
+            </table>
+            <?php if (isset($errors['righe'])): ?>
+            <div style="padding:.5rem 1rem">
+              <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['righe']) ?></span>
+            </div>
+            <?php endif; ?>
+          </div>
 
-        <!-- Sconto globale -->
-        <div style="max-width:260px">
-          <div class="qk-form-group mb-0">
-            <label class="qk-form-label">Sconto globale %</label>
-            <input type="number" name="sconto_globale_perc" id="sconto_globale"
-                   class="qk-form-control" style="width:120px"
-                   value="<?= e($v['sconto_globale_perc']) ?>" min="0" max="100" step="0.01" placeholder="0">
+          <div style="padding:1rem 1.25rem; border-top: 1px solid var(--qk-border); margin-top:1rem;">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div style="max-width:260px">
+                <div class="qk-form-group mb-0">
+                  <label class="qk-form-label">Sconto globale %</label>
+                  <input type="number" name="sconto_globale_perc" id="sconto_globale"
+                         class="qk-form-control" style="width:120px"
+                         value="<?= e($v['sconto_globale_perc']) ?>" min="0" max="100" step="0.01" placeholder="0">
+                </div>
+              </div>
+              <div class="qk-totali-grid" style="min-width:280px">
+                <span class="lbl">Imponibile</span>
+                <span class="val" id="tot-imponibile">€ 0,00</span>
+                <span class="lbl">IVA (22%)</span>
+                <span class="val" id="tot-iva">€ 0,00</span>
+                <hr class="qk-totali-sep">
+                <span class="lbl lbl-total">Totale IVA inclusa</span>
+                <span class="val val-total" id="tot-totale">€ 0,00</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Riepilogo importi -->
-        <div class="qk-totali-grid" style="min-width:280px">
-          <span class="lbl">Imponibile</span>
-          <span class="val" id="tot-imponibile">€ 0,00</span>
-          <span class="lbl">IVA (22%)</span>
-          <span class="val" id="tot-iva">€ 0,00</span>
-          <hr class="qk-totali-sep">
-          <span class="lbl lbl-total">Totale IVA inclusa</span>
-          <span class="val val-total" id="tot-totale">€ 0,00</span>
+        <!-- Tab Altre Info -->
+        <div class="tab-pane d-none" id="pane-altre-info">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+            
+            <!-- Spedizione & Consegna -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Spedizione & Consegna</h4>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Indirizzo di consegna</label>
+                <select name="indirizzo_spedizione_id" id="quote-indirizzo-spedizione-id" class="qk-form-control" data-selected-id="<?= e($v['indirizzo_spedizione_id'] ?? '') ?>">
+                  <option value="">Seleziona cliente prima...</option>
+                </select>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Data consegna richiesta</label>
+                <input type="date" name="data_consegna_richiesta" class="qk-form-control"
+                       value="<?= e($v['data_consegna_richiesta']) ?>">
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Trasporto (Resa)</label>
+                <input type="text" name="trasporto" class="qk-form-control"
+                       value="<?= e($v['trasporto']) ?>" placeholder="Es. Franco destino">
+              </div>
+            </div>
+
+            <!-- Referente & Recapiti -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
+                <select name="contatto_id" id="quote-contatto-id" class="qk-form-control" data-selected-id="<?= e($v['contatto_id'] ?? '') ?>">
+                  <option value="">Seleziona cliente prima...</option>
+                </select>
+                <input type="hidden" name="contatto_nome" id="quote-contatto-nome" value="<?= e($v['contatto_nome'] ?? '') ?>">
+                <!-- Fallback info -->
+                <input type="hidden" id="customer-generale-telefono" value="">
+                <input type="hidden" id="customer-generale-email" value="">
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Telefono di contatto</label>
+                <input type="text" name="contatto_telefono" id="quote-contatto-telefono" class="qk-form-control"
+                       placeholder="Es. +39 02 123456"
+                       value="<?= e($v['contatto_telefono']) ?>">
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Email di contatto</label>
+                <input type="email" name="contatto_email" id="quote-contatto-email" class="qk-form-control"
+                       placeholder="Es. mario.rossi@cliente.com"
+                       value="<?= e($v['contatto_email']) ?>">
+              </div>
+            </div>
+
+            <!-- Condizioni & Fatturazione -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Fatturazione & Canali</h4>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Condizioni di pagamento</label>
+                <input type="text" name="condizioni_pagamento" id="quote-condizioni-pagamento" class="qk-form-control"
+                       value="<?= e($v['condizioni_pagamento']) ?>" placeholder="Es. 30 gg d.f.f.m.">
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Canale vendita</label>
+                <select name="canale_vendita" class="qk-form-control">
+                  <?php foreach (['email_diretta'=>'Email diretta','dropshipping'=>'Dropshipping','agente'=>'Agente','sito'=>'Sito web'] as $kk => $lbl): ?>
+                  <option value="<?= e($kk) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $kk ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Valuta</label>
+                <select name="valuta" class="qk-form-control">
+                  <option value="EUR" <?= ($v['valuta'] ?? 'EUR') === 'EUR' ? 'selected' : '' ?>>EUR (€)</option>
+                  <option value="USD" <?= ($v['valuta'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
         </div>
+
+        <!-- Tab Note -->
+        <div class="tab-pane d-none" id="pane-note">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+            <div class="qk-form-group">
+              <label class="qk-form-label"><i class="fa-solid fa-note-sticky me-1"></i>Note per il cliente (in offerta)</label>
+              <textarea name="note_cliente" class="qk-form-control" rows="5"
+                        placeholder="Note visibili sul preventivo stampato..."><?= e($v['note_cliente']) ?></textarea>
+            </div>
+            <div class="qk-form-group">
+              <label class="qk-form-label"><i class="fa-solid fa-lock me-1"></i>Note interne (non stampate)</label>
+              <textarea name="note_interne" class="qk-form-control" rows="5"
+                        placeholder="Memo o note per il team interno..."><?= e($v['note_interne']) ?></textarea>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
 
-  <!-- ══════════════════ NOTE ═════════════════════════════════════════════ -->
-  <div class="qk-form-grid mb-3">
-    <div class="qk-form-group">
-      <label class="qk-form-label"><i class="fa-solid fa-note-sticky me-1"></i>Oggetto / Note per il cliente</label>
-      <textarea name="note_cliente" class="qk-form-control" rows="3"
-                placeholder="Descrizione oggetto dell'offerta, condizioni particolari…"><?= e($v['note_cliente']) ?></textarea>
-    </div>
-    <div class="qk-form-group">
-      <label class="qk-form-label"><i class="fa-solid fa-lock me-1"></i>Note interne (non stampate)</label>
-      <textarea name="note_interne" class="qk-form-control" rows="3"
-                placeholder="Appunti interni, memo…"><?= e($v['note_interne']) ?></textarea>
-    </div>
-  </div>
-
-  <!-- ══════════════════ AZIONI STICKY ════════════════════════════════════ -->
+  <!-- Sticky Actions -->
   <div class="qk-form-sticky-actions">
     <button type="submit" name="stato" value="bozza" class="btn-qk btn-qk-secondary">
       <i class="fa-solid fa-floppy-disk"></i> Salva bozza
@@ -596,6 +655,7 @@ function selectCliente(item) {
   elCpInfo.textContent = parts.join(' · ');
   elClientePreview.style.display = '';
   checkAllRowsCompliance();
+  loadClienteDettagli();
 }
 
 function clearCliente() {
@@ -606,6 +666,11 @@ function clearCliente() {
   elCpNome.textContent = '';
   elCpInfo.textContent = '';
   checkAllRowsCompliance();
+  
+  const spedSelect = document.getElementById('quote-indirizzo-spedizione-id');
+  const contSelect = document.getElementById('quote-contatto-id');
+  if (spedSelect) spedSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
+  if (contSelect) contSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
 }
 
 document.getElementById('btn-clear-cliente').addEventListener('click', clearCliente);
@@ -1062,6 +1127,138 @@ document.getElementById('form-offerta').addEventListener('submit', function (e) 
     })();
   }
 });
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TABS & DYNAMIC CUSTOMER DETAILS LOADING (Odoo style)
+───────────────────────────────────────────────────────────────────────── */
+
+window.switchQuoteTab = function(tabId) {
+  document.querySelectorAll('.qk-nav-tabs .nav-link').forEach(btn => {
+    btn.classList.remove('active');
+    btn.style.borderBottomColor = 'transparent';
+    btn.style.color = 'var(--qk-text-muted)';
+  });
+  const activeBtn = document.getElementById('tab-' + tabId + '-btn');
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+    activeBtn.style.borderBottomColor = 'var(--qk-accent)';
+    activeBtn.style.color = 'var(--qk-accent-text)';
+  }
+
+  document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+    pane.classList.add('d-none');
+    pane.classList.remove('active');
+  });
+  const activePane = document.getElementById('pane-' + tabId);
+  if (activePane) {
+    activePane.classList.remove('d-none');
+    activePane.classList.add('active');
+  }
+};
+
+const spedSelect = document.getElementById('quote-indirizzo-spedizione-id');
+const contSelect = document.getElementById('quote-contatto-id');
+const contNomeHidden = document.getElementById('quote-contatto-nome');
+const contTelInput = document.getElementById('quote-contatto-telefono');
+const contEmailInput = document.getElementById('quote-contatto-email');
+const custTelHidden = document.getElementById('customer-generale-telefono');
+const custEmailHidden = document.getElementById('customer-generale-email');
+const condPagInput = document.getElementById('quote-condizioni-pagamento');
+
+let loadedContacts = [];
+
+async function loadClienteDettagli() {
+  if (!spedSelect || !contSelect) return;
+  const clienteId = elClienteId.value;
+  if (!clienteId) {
+    spedSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
+    contSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
+    return;
+  }
+
+  spedSelect.innerHTML = '<option value="">Caricamento...</option>';
+  contSelect.innerHTML = '<option value="">Caricamento...</option>';
+  
+  try {
+    const res = await fetch(`${BASE}/sales/quotes/api/cliente-dettagli?cliente_id=${clienteId}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Errore recupero dettagli');
+
+    loadedContacts = data.contatti || [];
+    
+    // Save general info for fallback
+    if (custTelHidden) custTelHidden.value = data.cliente?.telefono || '';
+    if (custEmailHidden) custEmailHidden.value = data.cliente?.email || data.cliente?.cellulare || '';
+
+    // Propose default payment terms
+    if (condPagInput && !condPagInput.value && data.cliente?.condizioni_pagamento) {
+      condPagInput.value = data.cliente.condizioni_pagamento;
+    }
+
+    // Populate Addresses
+    spedSelect.innerHTML = '<option value="">— Nessun indirizzo specifico (Usa sede legale) —</option>';
+    const selectedSpedId = spedSelect.dataset.selectedId;
+    data.indirizzi.forEach(ind => {
+      const option = document.createElement('option');
+      option.value = ind.id;
+      
+      const labelParts = [];
+      if (ind.nome_sede) labelParts.push(`[${ind.nome_sede}]`);
+      let addrStr = `${ind.via || ''} ${ind.civico || ''}`.trim();
+      if (ind.cap || ind.citta) {
+        addrStr += `, ${ind.cap || ''} ${ind.citta || ''}`.trim();
+      }
+      if (addrStr) labelParts.push(addrStr);
+      if (ind.referente_consegna) labelParts.push(`(Ref: ${ind.referente_consegna})`);
+      option.textContent = labelParts.join(' ');
+
+      if (selectedSpedId && String(ind.id) === String(selectedSpedId)) {
+        option.selected = true;
+      }
+      spedSelect.appendChild(option);
+    });
+
+    // Populate Contacts
+    contSelect.innerHTML = '<option value="">— Nessuno (Usa recapiti generali azienda) —</option>';
+    const selectedContId = contSelect.dataset.selectedId;
+    data.contatti.forEach(c => {
+      const option = document.createElement('option');
+      option.value = c.id;
+      option.textContent = `${c.nome_completo} (${c.email || c.telefono || 'nessun recapito'})`;
+      if (selectedContId && String(c.id) === String(selectedContId)) {
+        option.selected = true;
+      }
+      contSelect.appendChild(option);
+    });
+
+  } catch (err) {
+    spedSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
+    contSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
+  }
+}
+
+if (contSelect) {
+  contSelect.addEventListener('change', () => {
+    const selectedId = contSelect.value;
+    if (!selectedId) {
+      if (contTelInput) contTelInput.value = custTelHidden?.value || '';
+      if (contEmailInput) contEmailInput.value = custEmailHidden?.value || '';
+      if (contNomeHidden) contNomeHidden.value = '';
+    } else {
+      const contact = loadedContacts.find(c => String(c.id) === String(selectedId));
+      if (contact) {
+        if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || custTelHidden?.value || '';
+        if (contEmailInput) contEmailInput.value = contact.email || custEmailHidden?.value || '';
+        if (contNomeHidden) contNomeHidden.value = contact.nome_completo || '';
+      }
+    }
+  });
+}
+
+// Initial load if customer pre-selected
+if (elClienteId && elClienteId.value) {
+  loadClienteDettagli();
+}
 
 })(); // IIFE
 </script>

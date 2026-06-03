@@ -716,9 +716,14 @@ CREATE TABLE IF NOT EXISTS log_stati_ordini (
 CREATE TABLE IF NOT EXISTS preventivi (
     id                      INTEGER      PRIMARY KEY AUTOINCREMENT,
     numero_preventivo       VARCHAR(20)  NOT NULL UNIQUE,
+    riferimento_interno     VARCHAR(100),
     cliente_id              INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
     indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
     alla_ca                 VARCHAR(150),                  -- c/o
+    contatto_id             INTEGER      REFERENCES clienti_fornitori(id),
+    contatto_nome           VARCHAR(150),
+    contatto_email          VARCHAR(150),
+    contatto_telefono       VARCHAR(50),
     oggetto                 VARCHAR(255),                  -- titolo/oggetto del preventivo
     storico                 BOOLEAN      NOT NULL DEFAULT 0, -- preventivo importato solo per tracciabilità
     data_offerta            DATE         NOT NULL,

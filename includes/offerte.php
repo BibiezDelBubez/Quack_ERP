@@ -311,13 +311,13 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
 
         // Inserimento testata
         $sqlHead = "INSERT INTO preventivi (
-            numero_preventivo, cliente_id, alla_ca, data_offerta, data_scadenza, data_consegna_richiesta,
+            numero_preventivo, riferimento_interno, cliente_id, alla_ca, contatto_id, contatto_nome, contatto_email, contatto_telefono, indirizzo_spedizione_id, data_offerta, data_scadenza, data_consegna_richiesta,
             canale_vendita_id, stato, sconto_globale_perc, condizioni_pagamento, trasporto, valuta,
             imponibile, totale_iva, totale, totale_costo, margine_euro, margine_perc,
             note_cliente, note_interne, creato_da, created_at, updated_at
         ) VALUES (
-            :numero_preventivo, :cliente_id, :alla_ca, :data_offerta, :data_scadenza, :data_consegna_richiesta,
-            :canale_vendita_id, :stato, :sconto_globale_perc, :condizioni_pagamento, :trasporto, 'EUR',
+            :numero_preventivo, :riferimento_interno, :cliente_id, :alla_ca, :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono, :indirizzo_spedizione_id, :data_offerta, :data_scadenza, :data_consegna_richiesta,
+            :canale_vendita_id, :stato, :sconto_globale_perc, :condizioni_pagamento, :trasporto, :valuta,
             :imponibile, :totale_iva, :totale, :totale_costo, :margine_euro, :margine_perc,
             :note_cliente, :note_interne, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )";
@@ -325,8 +325,14 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         $stmtHead = $pdo->prepare($sqlHead);
         $stmtHead->execute([
             ':numero_preventivo'       => trim($values['numero_offerta']),
+            ':riferimento_interno'     => qk_null_if_empty($values['riferimento_interno'] ?? ''),
             ':cliente_id'              => (int)$values['cliente_id'],
             ':alla_ca'                 => qk_null_if_empty($values['alla_ca'] ?? ''),
+            ':contatto_id'             => qk_null_if_empty($values['contatto_id'] ?? ''),
+            ':contatto_nome'           => qk_null_if_empty($values['contatto_nome'] ?? ''),
+            ':contatto_email'          => qk_null_if_empty($values['contatto_email'] ?? ''),
+            ':contatto_telefono'       => qk_null_if_empty($values['contatto_telefono'] ?? ''),
+            ':indirizzo_spedizione_id' => qk_null_if_empty($values['indirizzo_spedizione_id'] ?? ''),
             ':data_offerta'            => $values['data_offerta'],
             ':data_scadenza'           => qk_null_if_empty($values['data_scadenza'] ?? ''),
             ':data_consegna_richiesta' => qk_null_if_empty($values['data_consegna_richiesta'] ?? ''),
@@ -335,6 +341,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             ':sconto_globale_perc'     => $sconto_globale_perc,
             ':condizioni_pagamento'    => qk_null_if_empty($values['condizioni_pagamento'] ?? ''),
             ':trasporto'               => qk_null_if_empty($values['trasporto'] ?? ''),
+            ':valuta'                  => ($values['valuta'] ?? '') ?: 'EUR',
             ':imponibile'              => $imponibile,
             ':totale_iva'              => $totale_iva,
             ':totale'                  => $totale,
@@ -389,6 +396,262 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         return $preventivo_id;
 
     } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * Recupera un preventivo completo con le sue righe.
+ */
+function qk_get_offerta(PDO $pdo, int $id): ?array
+{
+    $st = $pdo->prepare('SELECT * FROM preventivi WHERE id = ?');
+    $st->execute([$id]);
+    $quota = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$quota) return null;
+
+    // Get client label
+    $stCli = $pdo->prepare("SELECT COALESCE(ragione_sociale, TRIM(COALESCE(nome,'') || ' ' || COALESCE(cognome,''))) AS label FROM clienti_fornitori WHERE id = ?");
+    $stCli->execute([(int)$quota['cliente_id']]);
+    $quota['cliente_label'] = $stCli->fetchColumn() ?: '';
+
+    // Get lines
+    $stLines = $pdo->prepare('
+        SELECT pr.*, 
+               p.sku_interno AS sku,
+               p.quantita_contenuto,
+               (p.quantita_contenuto || \' \' || uc.codice) AS quantita_confezione,
+               um.codice AS unita_misura,
+               us.codice AS uom_stock,
+               uc.codice AS uom_commercial,
+               pr.unita_misura_stock_id AS uom_stock_id,
+               p.unita_contenuto_id AS uom_commercial_id
+          FROM preventivi_righe pr
+     LEFT JOIN prodotti p ON p.id = pr.prodotto_id
+     LEFT JOIN unita_misura um ON um.id = pr.unita_misura_id
+     LEFT JOIN unita_misura us ON us.id = pr.unita_misura_stock_id
+     LEFT JOIN unita_misura uc ON uc.id = p.unita_contenuto_id
+         WHERE pr.preventivo_id = ?
+      ORDER BY pr.posizione_riga ASC
+    ');
+    $stLines->execute([$id]);
+    $righe = $stLines->fetchAll(PDO::FETCH_ASSOC);
+
+    return [
+        'offerta' => $quota,
+        'righe' => $righe
+    ];
+}
+
+/**
+ * Aggiorna un preventivo esistente e le sue righe.
+ */
+function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $user_id): void
+{
+    $pdo->beginTransaction();
+    try {
+        $stCv = $pdo->prepare('SELECT id FROM canali_vendita WHERE codice = ?');
+        $stCv->execute([$values['canale_vendita'] ?? 'email_diretta']);
+        $canale_vendita_id = $stCv->fetchColumn() ?: null;
+
+        $raw_imponibile = 0.0;
+        $raw_iva = 0.0;
+        $totale_costo = 0.0;
+
+        $righe_preparate = [];
+        foreach ($righe as $pos => $r) {
+            $prodotto_id = $r['prodotto_id'] ? (int)$r['prodotto_id'] : null;
+            $qta = (float)($r['quantita'] ?? 0);
+            $pu = (float)($r['prezzo_unitario'] ?? 0);
+            $sconto = (float)($r['sconto_perc'] ?? 0);
+            $iva = (float)($r['iva_perc'] ?? 22);
+
+            $prezzo_netto = round($pu * (1 - $sconto / 100), 4);
+            $imponibile_riga = round($prezzo_netto * $qta, 2);
+            $iva_riga = round($imponibile_riga * ($iva / 100), 2);
+            $totale_riga = round($imponibile_riga + $iva_riga, 2);
+
+            $costo_unitario = 0.0;
+            if ($prodotto_id) {
+                $stCost = $pdo->prepare('
+                    SELECT MIN(pfp.prezzo) 
+                    FROM prodotti_fornitori_prezzi pfp
+                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
+                ');
+                $stCost->execute([$prodotto_id]);
+                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
+            }
+            $totale_costo_riga = round($costo_unitario * $qta, 2);
+            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
+
+            $is_adr = 0;
+            if ($prodotto_id) {
+                $stAdr = $pdo->prepare('
+                    SELECT COUNT(*) 
+                    FROM prodotto_classificazioni_adr 
+                    WHERE prodotto_id = ? AND e_corrente = 1
+                ');
+                $stAdr->execute([$prodotto_id]);
+                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
+            }
+
+            $um_codice = $r['unita_misura'] ?? 'pz';
+            $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
+            $stUm->execute([$um_codice]);
+            $um_id = $stUm->fetchColumn() ?: null;
+
+            $quantita_stock = $qta;
+            $unita_misura_stock_id = $um_id;
+            if ($prodotto_id && $um_id) {
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+                $stProdUm->execute([$prodotto_id]);
+                $prodUm = $stProdUm->fetch();
+                if ($prodUm) {
+                    $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
+                    $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
+                    $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                    if ((int)$um_id === $unita_misura_stock_id) {
+                        $quantita_stock = $qta;
+                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
+                        $quantita_stock = round($qta / $factor, 3);
+                    }
+                }
+            }
+
+            $righe_preparate[] = [
+                'prodotto_id' => $prodotto_id,
+                'descrizione' => trim($r['descrizione']),
+                'quantita' => $qta,
+                'unita_misura_id' => $um_id,
+                'prezzo_unitario' => $pu,
+                'sconto_perc' => $sconto,
+                'prezzo_netto' => $prezzo_netto,
+                'iva_perc' => $iva,
+                'imponibile_riga' => $imponibile_riga,
+                'totale_riga' => $totale_riga,
+                'costo_unitario' => $costo_unitario,
+                'totale_costo_riga' => $totale_costo_riga,
+                'margine_riga' => $margine_riga,
+                'is_adr' => $is_adr,
+                'quantita_stock' => $quantita_stock,
+                'unita_misura_stock_id' => $unita_misura_stock_id,
+                'posizione_riga' => $pos,
+                'note_riga' => trim($r['note_riga'] ?? ''),
+            ];
+
+            $raw_imponibile += $imponibile_riga;
+            $raw_iva += $iva_riga;
+            $totale_costo += $totale_costo_riga;
+        }
+
+        $sconto_globale_perc = (float)($values['sconto_globale_perc'] ?? 0.0);
+        $imponibile = round($raw_imponibile * (1 - $sconto_globale_perc / 100), 2);
+        $totale_iva = round($raw_iva * (1 - $sconto_globale_perc / 100), 2);
+        $totale = round($imponibile + $totale_iva, 2);
+        $margine_euro = round($imponibile - $totale_costo, 2);
+        $margine_perc = $imponibile > 0 ? round(($margine_euro / $imponibile) * 100, 2) : 0.0;
+
+        $sqlUpdateHead = "UPDATE preventivi SET
+            cliente_id = :cliente_id,
+            alla_ca = :alla_ca,
+            contatto_id = :contatto_id,
+            contatto_nome = :contatto_nome,
+            contatto_email = :contatto_email,
+            contatto_telefono = :contatto_telefono,
+            indirizzo_spedizione_id = :indirizzo_spedizione_id,
+            data_offerta = :data_offerta,
+            data_scadenza = :data_scadenza,
+            data_consegna_richiesta = :data_consegna_richiesta,
+            canale_vendita_id = :canale_vendita_id,
+            stato = :stato,
+            sconto_globale_perc = :sconto_globale_perc,
+            condizioni_pagamento = :condizioni_pagamento,
+            trasporto = :trasporto,
+            valuta = :valuta,
+            imponibile = :imponibile,
+            totale_iva = :totale_iva,
+            totale = :totale,
+            totale_costo = :totale_costo,
+            margine_euro = :margine_euro,
+            margine_perc = :margine_perc,
+            note_cliente = :note_cliente,
+            note_interne = :note_interne,
+            oggetto = :oggetto,
+            riferimento_interno = :riferimento_interno,
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id";
+
+        $stmt = $pdo->prepare($sqlUpdateHead);
+        $stmt->execute([
+            ':id'                      => $id,
+            ':cliente_id'              => (int)$values['cliente_id'],
+            ':alla_ca'                 => qk_null_if_empty($values['alla_ca'] ?? ''),
+            ':contatto_id'             => qk_null_if_empty($values['contatto_id'] ?? ''),
+            ':contatto_nome'           => qk_null_if_empty($values['contatto_nome'] ?? ''),
+            ':contatto_email'          => qk_null_if_empty($values['contatto_email'] ?? ''),
+            ':contatto_telefono'       => qk_null_if_empty($values['contatto_telefono'] ?? ''),
+            ':indirizzo_spedizione_id' => qk_null_if_empty($values['indirizzo_spedizione_id'] ?? ''),
+            ':data_offerta'            => $values['data_offerta'],
+            ':data_scadenza'           => qk_null_if_empty($values['data_scadenza'] ?? ''),
+            ':data_consegna_richiesta' => qk_null_if_empty($values['data_consegna_richiesta'] ?? ''),
+            ':canale_vendita_id'       => $canale_vendita_id,
+            ':stato'                   => $values['stato'] ?: 'bozza',
+            ':sconto_globale_perc'     => $sconto_globale_perc,
+            ':condizioni_pagamento'    => qk_null_if_empty($values['condizioni_pagamento'] ?? ''),
+            ':trasporto'               => qk_null_if_empty($values['trasporto'] ?? ''),
+            ':valuta'                  => ($values['valuta'] ?? '') ?: 'EUR',
+            ':imponibile'              => $imponibile,
+            ':totale_iva'              => $totale_iva,
+            ':totale'                  => $totale,
+            ':totale_costo'            => $totale_costo,
+            ':margine_euro'            => $margine_euro,
+            ':margine_perc'            => $margine_perc,
+            ':note_cliente'            => qk_null_if_empty($values['note_cliente'] ?? ''),
+            ':note_interne'            => qk_null_if_empty($values['note_interne'] ?? ''),
+            ':oggetto'                 => qk_null_if_empty($values['oggetto'] ?? ''),
+        ]);
+
+        $pdo->prepare('DELETE FROM preventivi_righe WHERE preventivo_id = ?')->execute([$id]);
+
+        $sqlLine = "INSERT INTO preventivi_righe (
+            preventivo_id, prodotto_id, descrizione, quantita, unita_misura_id, prezzo_unitario,
+            sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
+            totale_costo_riga, margine_riga, is_adr, quantita_stock, unita_misura_stock_id, posizione_riga, note_riga
+        ) VALUES (
+            :preventivo_id, :prodotto_id, :descrizione, :quantita, :unita_misura_id, :prezzo_unitario,
+            :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
+            :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :unita_misura_stock_id, :posizione_riga, :note_riga
+        )";
+
+        $stmtLine = $pdo->prepare($sqlLine);
+        foreach ($righe_preparate as $rl) {
+            $stmtLine->execute([
+                ':preventivo_id'     => $id,
+                ':prodotto_id'       => $rl['prodotto_id'],
+                ':descrizione'       => $rl['descrizione'],
+                ':quantita'          => $rl['quantita'],
+                ':unita_misura_id'   => $rl['unita_misura_id'],
+                ':prezzo_unitario'   => $rl['prezzo_unitario'],
+                ':sconto_perc'       => $rl['sconto_perc'],
+                ':prezzo_netto'      => $rl['prezzo_netto'],
+                ':iva_perc'          => $rl['iva_perc'],
+                ':imponibile_riga'   => $rl['imponibile_riga'],
+                ':totale_riga'       => $rl['totale_riga'],
+                ':costo_unitario'    => $rl['costo_unitario'],
+                ':totale_costo_riga' => $rl['totale_costo_riga'],
+                ':margine_riga'      => $rl['margine_riga'],
+                ':is_adr'            => $rl['is_adr'],
+                ':quantita_stock'    => $rl['quantita_stock'],
+                ':unita_misura_stock_id' => $rl['unita_misura_stock_id'],
+                ':posizione_riga'    => $rl['posizione_riga'],
+                ':note_riga'         => $rl['note_riga'],
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (\Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }

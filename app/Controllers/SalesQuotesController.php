@@ -127,20 +127,111 @@ final class SalesQuotesController extends BaseController
             redirect_with('sales/quotes', 'danger', 'Preventivo non specificato.');
         }
 
-        $page_title    = 'Modifica preventivo #' . $id;
-        $page_subtitle = 'In sviluppo';
+        $detail = qk_get_offerta($this->pdo, $id);
+        if (!$detail) {
+            redirect_with('sales/quotes', 'danger', 'Preventivo non trovato.');
+        }
+
+        $errors = [];
+        $values = $this->mapDetailToValues($detail['offerta']);
+        $preloadedRighe = $detail['righe'];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
+            } else {
+                $values = $this->readPostValues();
+                $righe  = $this->readPostRighe();
+                $errors = qk_offerta_validate($values, $righe);
+
+                if (empty($errors)) {
+                    // Compliance checks
+                    require_once INCLUDES_DIR . '/compliance.php';
+                    $violations = qk_compliance_check_sale($this->pdo, (int)$values['cliente_id'], $righe);
+                    
+                    $is_bozza = ($values['stato'] ?? 'bozza') === 'bozza';
+                    
+                    if (!empty($violations)) {
+                        $violation_msgs = [];
+                        foreach ($violations as $v) {
+                            $violation_msgs[] = $v['message'];
+                        }
+                        
+                        if ($is_bozza) {
+                            $_SESSION['flash_warning'] = "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs);
+                        } else {
+                            $customer_url = url('customers/edit?id=' . $values['cliente_id']);
+                            $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='alert-link' style='color:#721c24;font-weight:bold;text-decoration:underline;'>Gestisci autorizzazioni cliente →</a>";
+                        }
+                    }
+
+                    if (empty($errors)) {
+                        try {
+                            $user_id = (int) (current_user()['id'] ?? 0);
+                            qk_update_offerta($this->pdo, $id, $values, $righe, $user_id);
+                            
+                            if (($values['stato'] ?? '') === 'accettata') {
+                                qk_compliance_log_transactions($this->pdo, $id, $righe);
+                            }
+                            
+                            redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' modificato correttamente.');
+                        } catch (Throwable $e) {
+                            $errors['_global'] = 'Errore database: ' . $e->getMessage();
+                        }
+                    }
+                }
+            }
+        }
+
+        $numero_offerta = $values['numero_offerta'];
+
+        $active_tab    = 'quotes';
+        $page_title    = 'Modifica preventivo ' . $numero_offerta;
+        $page_subtitle = 'Modifica i dettagli e le righe del preventivo';
         $breadcrumbs   = [
             ['label' => 'Vendite', 'url' => url('sales')],
             ['label' => 'Preventivi', 'url' => url('sales/quotes')],
             ['label' => '#' . $id],
         ];
 
-        $this->page(APP_ROOT_DIR . '/app/views/shared/_coming_soon.php', [
-            'page_title'    => $page_title,
-            'page_subtitle' => $page_subtitle,
-            'breadcrumbs'   => $breadcrumbs,
-            'feature_name'  => 'Modifica preventivo',
-        ]);
+        require INCLUDES_DIR . '/header.php';
+        require APP_ROOT_DIR . '/app/views/sales/quotes/_form.php';
+        require INCLUDES_DIR . '/footer.php';
+    }
+
+    private function mapDetailToValues(array $quote): array
+    {
+        $canale_codice = 'email_diretta';
+        if (!empty($quote['canale_vendita_id'])) {
+            $stCv = $this->pdo->prepare('SELECT codice FROM canali_vendita WHERE id = ?');
+            $stCv->execute([$quote['canale_vendita_id']]);
+            $canale_codice = $stCv->fetchColumn() ?: 'email_diretta';
+        }
+
+        return [
+            'numero_offerta'          => $quote['numero_preventivo'] ?? '',
+            'cliente_id'              => $quote['cliente_id'] ?? '',
+            'cliente_label'           => $quote['cliente_label'] ?? '',
+            'alla_ca'                 => $quote['alla_ca'] ?? '',
+            'contatto_id'             => $quote['contatto_id'] ?? '',
+            'contatto_nome'           => $quote['contatto_nome'] ?? '',
+            'contatto_email'          => $quote['contatto_email'] ?? '',
+            'contatto_telefono'       => $quote['contatto_telefono'] ?? '',
+            'indirizzo_spedizione_id' => $quote['indirizzo_spedizione_id'] ?? '',
+            'data_offerta'            => $quote['data_offerta'] ?? '',
+            'data_scadenza'           => $quote['data_scadenza'] ?? '',
+            'data_consegna_richiesta' => $quote['data_consegna_richiesta'] ?? '',
+            'canale_vendita'          => $canale_codice,
+            'stato'                   => $quote['stato'] ?? 'bozza',
+            'condizioni_pagamento'    => $quote['condizioni_pagamento'] ?? '',
+            'trasporto'               => $quote['trasporto'] ?? 'Franco destino',
+            'valuta'                  => $quote['valuta'] ?? 'EUR',
+            'sconto_globale_perc'     => $quote['sconto_globale_perc'] ?? '0',
+            'note_cliente'            => $quote['note_cliente'] ?? '',
+            'note_interne'            => $quote['note_interne'] ?? '',
+            'oggetto'                 => $quote['oggetto'] ?? '',
+            'riferimento_interno'     => $quote['riferimento_interno'] ?? '',
+        ];
     }
 
     /* ── API: ricerca clienti (JSON) ──────────────────────────────────────── */
@@ -272,6 +363,62 @@ final class SalesQuotesController extends BaseController
         exit;
     }
 
+    public function apiClienteDettagli(): void
+    {
+        ob_start();
+        $cliente_id = (int) get_param('cliente_id', '0');
+        
+        $cliente = null;
+        $contatti = [];
+        $indirizzi = [];
+        
+        if ($cliente_id > 0) {
+            $stmtCli = $this->pdo->prepare(
+                "SELECT cf.id, cf.email, cf.telefono, cf.cellulare, dc.condizioni_pagamento, dc.listino_id
+                   FROM clienti_fornitori cf
+              LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
+                  WHERE cf.id = ? AND cf.attivo = 1"
+            );
+            $stmtCli->execute([$cliente_id]);
+            $cliente = $stmtCli->fetch(PDO::FETCH_ASSOC);
+            
+            if ($cliente) {
+                // Fetch contacts
+                $stmtContatti = $this->pdo->prepare(
+                    "SELECT id, COALESCE(nome || ' ' || COALESCE(cognome, ''), ragione_sociale) AS nome_completo,
+                            email, telefono, cellulare
+                       FROM clienti_fornitori
+                      WHERE parent_id = ? AND attivo = 1
+                      ORDER BY nome, cognome"
+                );
+                $stmtContatti->execute([$cliente_id]);
+                $contatti = $stmtContatti->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Fetch addresses
+                $stmtAddr = $this->pdo->prepare(
+                    "SELECT id, tipo, nome_sede, predefinito, via, civico, cap, citta, provincia, nazione,
+                            referente_consegna, telefono_consegna, note_consegna, presso
+                       FROM indirizzi
+                      WHERE soggetto_id = ? AND attivo = 1
+                      ORDER BY CASE tipo WHEN 'spedizione' THEN 1 WHEN 'principale' THEN 2 ELSE 3 END,
+                               predefinito DESC, id ASC"
+                );
+                $stmtAddr->execute([$cliente_id]);
+                $indirizzi = $stmtAddr->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+        
+        ob_end_clean();
+        header('Content-Type: application/json');
+        echo json_encode([
+            'ok' => true,
+            'cliente' => $cliente,
+            'contatti' => $contatti,
+            'indirizzi' => $indirizzi
+        ]);
+        exit;
+    }
+
     /* ── Helper privati ───────────────────────────────────────────────────── */
 
     private function defaultValues(): array
@@ -281,6 +428,11 @@ final class SalesQuotesController extends BaseController
             'cliente_id'              => '',
             'cliente_label'           => '',
             'alla_ca'                 => '',
+            'contatto_id'             => '',
+            'contatto_nome'           => '',
+            'contatto_email'          => '',
+            'contatto_telefono'       => '',
+            'indirizzo_spedizione_id' => '',
             'data_offerta'            => date('Y-m-d'),
             'data_scadenza'           => date('Y-m-d', strtotime('+6 months')),
             'data_consegna_richiesta' => '',
@@ -288,9 +440,11 @@ final class SalesQuotesController extends BaseController
             'stato'                   => 'bozza',
             'condizioni_pagamento'    => '',
             'trasporto'               => 'Franco destino',
+            'valuta'                  => 'EUR',
             'sconto_globale_perc'     => '0',
             'note_cliente'            => '',
             'note_interne'            => '',
+            'riferimento_interno'     => '',
         ];
     }
 
@@ -301,6 +455,11 @@ final class SalesQuotesController extends BaseController
             'cliente_id'              => post('cliente_id'),
             'cliente_label'           => post('cliente_label'),
             'alla_ca'                 => post('alla_ca'),
+            'contatto_id'             => post('contatto_id'),
+            'contatto_nome'           => post('contatto_nome'),
+            'contatto_email'          => post('contatto_email'),
+            'contatto_telefono'       => post('contatto_telefono'),
+            'indirizzo_spedizione_id' => post('indirizzo_spedizione_id'),
             'data_offerta'            => post('data_offerta'),
             'data_scadenza'           => post('data_scadenza'),
             'data_consegna_richiesta' => post('data_consegna_richiesta'),
@@ -308,9 +467,11 @@ final class SalesQuotesController extends BaseController
             'stato'                   => post('stato', 'bozza'),
             'condizioni_pagamento'    => post('condizioni_pagamento'),
             'trasporto'               => post('trasporto'),
+            'valuta'                  => post('valuta', 'EUR'),
             'sconto_globale_perc'     => post('sconto_globale_perc', '0'),
             'note_cliente'            => post('note_cliente'),
             'note_interne'            => post('note_interne'),
+            'riferimento_interno'     => post('riferimento_interno'),
         ];
     }
 
