@@ -78,7 +78,7 @@ $kit_componenti = $kit_componenti ?? [];
           <button class="nav-link" id="ptab-btn-fornitori"
                   data-bs-toggle="tab" data-bs-target="#ptab-fornitori"
                   type="button" role="tab" aria-selected="false">
-            <i class="fa-solid fa-truck-ramp-box fa-fw me-1"></i>Fornitori
+            <i class="fa-solid fa-handshake fa-fw me-1"></i>Fornitori
             <?php if (!empty($prodotto_fornitori)): ?>
             <span class="badge bg-secondary ms-1" id="badge-fornitori"><?= count($prodotto_fornitori) ?></span>
             <?php else: ?>
@@ -341,8 +341,7 @@ $kit_componenti = $kit_componenti ?? [];
                   </label>
                   <input type="text" name="descrizione_confezione"
                          class="qk-form-control"
-                         value="<?= e($v['descrizione_confezione'] ?? '') ?>"
-                         placeholder="Es. Secchio da 5 kg">
+                         value="<?= e($v['descrizione_confezione'] ?? '') ?>">
                 </div>
               </div>
 
@@ -514,7 +513,7 @@ $kit_componenti = $kit_componenti ?? [];
 
           <!-- ── Stato vuoto (JS lo mostra/nasconde dinamicamente) ────────── -->
           <div class="qk-empty d-none" id="fornitori-empty">
-            <i class="fa-regular fa-truck-ramp-box"></i>
+            <i class="fa-regular fa-handshake"></i>
             <p>Nessun fornitore associato.<br>
                Clicca "Aggiungi fornitore" per iniziare.</p>
           </div>

@@ -660,3 +660,15 @@ function qk_load_kit_componenti(PDO $pdo, int $kit_id): array
     $stmt->execute([':kit_id' => $kit_id]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+/**
+ * Restituisce il fattore di conversione quantita_contenuto per un determinato prodotto.
+ * Ritorna 1.0 se non impostato, non valido o se il prodotto non esiste.
+ */
+function qk_prodotto_get_conversion_factor(PDO $pdo, int $prodotto_id): float
+{
+    $stmt = $pdo->prepare('SELECT quantita_contenuto FROM prodotti WHERE id = ?');
+    $stmt->execute([$prodotto_id]);
+    $factor = $stmt->fetchColumn();
+    return $factor ? (float)$factor : 1.0;
+}

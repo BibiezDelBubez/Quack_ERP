@@ -37,7 +37,7 @@ function ordine_badge_dash(string $stato): string {
 <div class="qk-kpi-grid mb-4">
   <a href="<?= url('purchases/rfq?stato=bozza') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon accent">
-      <i class="fa-solid fa-file-signature"></i>
+      <i class="fa-solid fa-arrow-down-to-bracket"></i>
     </div>
     <div class="qk-kpi-body">
       <div class="qk-kpi-value"><?= $rfq_bozza ?></div>
@@ -57,7 +57,7 @@ function ordine_badge_dash(string $stato): string {
 
   <a href="<?= url('purchases/orders') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon success">
-      <i class="fa-solid fa-file-contract"></i>
+      <i class="fa-solid fa-file-circle-check"></i>
     </div>
     <div class="qk-kpi-body">
       <div class="qk-kpi-value"><?= $ordini_attivi ?></div>
@@ -67,7 +67,7 @@ function ordine_badge_dash(string $stato): string {
 
   <a href="<?= url('purchases/pricelists') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon info">
-      <i class="fa-solid fa-receipt"></i>
+      <i class="fa-solid fa-file-spreadsheet"></i>
     </div>
     <div class="qk-kpi-body">
       <div class="qk-kpi-value"><?= $listini_attivi ?></div>
@@ -86,7 +86,7 @@ function ordine_badge_dash(string $stato): string {
     <div class="qk-card shadow-sm">
       <div class="qk-card-header d-flex justify-content-between align-items-center">
         <span class="qk-card-title">
-          <i class="fa-solid fa-file-signature me-2 text-primary"></i>Ultime richieste di preventivo (RFQ)
+          <i class="fa-solid fa-arrow-down-to-bracket me-2 text-primary"></i>Ultime richieste di preventivo (RFQ)
         </span>
         <a href="<?= url('purchases/rfq') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">Tutte le RFQ</a>
       </div>
@@ -130,7 +130,7 @@ function ordine_badge_dash(string $stato): string {
     <div class="qk-card shadow-sm">
       <div class="qk-card-header d-flex justify-content-between align-items-center">
         <span class="qk-card-title">
-          <i class="fa-solid fa-file-contract me-2 text-success"></i>Ultimi ordini d'acquisto
+          <i class="fa-solid fa-file-circle-check me-2 text-success"></i>Ultimi ordini d'acquisto
         </span>
         <a href="<?= url('purchases/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">Tutti gli ordini</a>
       </div>
@@ -185,10 +185,10 @@ function ordine_badge_dash(string $stato): string {
           <i class="fa-solid fa-plus fa-fw me-2"></i>Nuova RFQ
         </a>
         <a href="<?= url('suppliers/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
-          <i class="fa-solid fa-truck-ramp-box fa-fw me-2"></i>Nuovo Fornitore
+          <i class="fa-solid fa-handshake fa-fw me-2"></i>Nuovo Fornitore
         </a>
         <a href="<?= url('purchases/pricelists/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
-          <i class="fa-solid fa-receipt fa-fw me-2"></i>Nuovo Listino
+          <i class="fa-solid fa-file-spreadsheet fa-fw me-2"></i>Nuovo Listino
         </a>
         <a href="<?= url('warehouse?filter=in_arrivo') ?>" class="btn-qk btn-qk-secondary text-start w-100">
           <i class="fa-solid fa-dolly fa-fw me-2"></i>Ricevi Merci

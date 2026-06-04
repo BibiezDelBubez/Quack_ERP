@@ -40,6 +40,16 @@ return [
     '/sales/quotes/api/cliente-dettagli' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiClienteDettagli', 'auth' => true],
     '/sales/orders'              => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'index',    'auth' => true],
     '/sales/orders/create'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'create',   'auth' => true],
+
+    // ─── Vendite — Listini vendita ─────────────────────────────────────────
+    '/sales/pricelists'                  => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'index',          'auth' => true],
+    '/sales/pricelists/create'           => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'create',         'auth' => true],
+    '/sales/pricelists/edit'             => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'edit',           'auth' => true],
+    '/sales/pricelists/delete'           => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'delete',         'auth' => true],
+    '/sales/pricelists/righe/save'       => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiSaveRiga',    'auth' => true],
+    '/sales/pricelists/righe/delete'     => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiDeleteRiga',  'auth' => true],
+    '/sales/pricelists/api/prodotti'     => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiProdotti',    'auth' => true],
+    '/sales/pricelists/api/ottieni-prezzo' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiOttieniPrezzo', 'auth' => true],
     '/products'                    => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'index',            'auth' => true],
     '/products/create'             => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'create',           'auth' => true],
     '/products/edit'               => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'edit',             'auth' => true],

@@ -11,6 +11,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/purchases_common.php';
+require_once __DIR__ . '/prodotti.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -221,13 +222,13 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $quantita_stock = $qta;
             $unita_misura_stock_id = $um_id;
             if ($prodotto_id && $um_id) {
-                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
                 $stProdUm->execute([$prodotto_id]);
                 $prodUm = $stProdUm->fetch();
                 if ($prodUm) {
                     $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                     $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                    $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                    $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodotto_id);
                     if ((int)$um_id === $unita_misura_stock_id) {
                         $quantita_stock = $qta;
                     } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {

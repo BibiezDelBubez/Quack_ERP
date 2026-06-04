@@ -39,7 +39,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     <button class="nav-link <?= $tab === 'codici'      ? 'active' : '' ?>"
             id="tab-btn-codici" data-bs-toggle="tab" data-bs-target="#tab-codici"
             data-tab-key="codici" type="button" role="tab">
-      <i class="fa-solid fa-table-list fa-fw me-1"></i>Codici ONU
+      <i class="fa-solid fa-list-ol fa-fw me-1"></i>Codici ONU
       <span class="badge bg-secondary ms-1"><?= count($codici) ?></span>
     </button>
   </li>
@@ -47,7 +47,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     <button class="nav-link <?= $tab === 'classi'      ? 'active' : '' ?>"
             id="tab-btn-classi" data-bs-toggle="tab" data-bs-target="#tab-classi"
             data-tab-key="classi" type="button" role="tab">
-      <i class="fa-solid fa-square-9 fa-fw me-1"></i>Classi pericolo
+      <i class="fa-solid fa-fire-flame-curved fa-fw me-1"></i>Classi pericolo
       <span class="badge bg-secondary ms-1"><?= count($classi) ?></span>
     </button>
   </li>
@@ -55,7 +55,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     <button class="nav-link <?= $tab === 'imballaggio' ? 'active' : '' ?>"
             id="tab-btn-imballaggio" data-bs-toggle="tab" data-bs-target="#tab-imballaggio"
             data-tab-key="imballaggio" type="button" role="tab">
-      <i class="fa-solid fa-tally-3 fa-fw me-1"></i>Gruppi imballaggio
+      <i class="fa-solid fa-box-taped fa-fw me-1"></i>Gruppi imballaggio
       <span class="badge bg-secondary ms-1"><?= count($imballaggi) ?></span>
     </button>
   </li>
@@ -79,7 +79,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     <button class="nav-link <?= $tab === 'classificazioni' ? 'active' : '' ?>"
             id="tab-btn-classificazioni" data-bs-toggle="tab" data-bs-target="#tab-classificazioni"
             data-tab-key="classificazioni" type="button" role="tab">
-      <i class="fa-solid fa-code fa-fw me-1"></i>Codici classificazione
+      <i class="fa-solid fa-barcode fa-fw me-1"></i>Codici classificazione
       <span class="badge bg-secondary ms-1"><?= count($codici_classificazione) ?></span>
     </button>
   </li>
@@ -333,7 +333,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
       <div class="qk-table-wrap">
         <?php if (empty($imballaggi)): ?>
         <div class="qk-empty">
-          <i class="fa-solid fa-tally-3"></i>
+          <i class="fa-solid fa-box-taped"></i>
           <p>Nessun gruppo registrato.</p>
         </div>
         <?php else: ?>
@@ -594,7 +594,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
       <div class="qk-table-wrap">
         <?php if (empty($codici_classificazione)): ?>
         <div class="qk-empty">
-          <i class="fa-regular fa-code"></i>
+          <i class="fa-regular fa-barcode"></i>
           <p>Nessun codice di classificazione registrato.</p>
         </div>
         <?php else: ?>
@@ -679,13 +679,13 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         </div>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">Codice <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
             <input type="text" name="codice" id="mc-codice" class="form-control font-monospace"
                    placeholder="es. 3, 4.1, 6.1" maxlength="5" required>
-            <div class="form-text">Per classi con divisioni, usa il codice padre (es. <code>1</code> non <code>1.1</code>).</div>
+            <div class="qk-form-hint">Per classi con divisioni, usa il codice padre (es. <code>1</code> non <code>1.1</code>).</div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Denominazione <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Denominazione <span class="text-danger">*</span></label>
             <input type="text" name="denominazione" id="mc-denom" class="form-control" maxlength="100" required>
           </div>
           <div class="mb-3">
@@ -720,12 +720,12 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         </div>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">Codice <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
             <input type="text" name="codice" id="mi-codice" class="form-control font-monospace text-uppercase"
                    placeholder="I, II, III" maxlength="3" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Descrizione <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Descrizione <span class="text-danger">*</span></label>
             <input type="text" name="descrizione" id="mi-desc" class="form-control" maxlength="100" required>
           </div>
         </div>
@@ -755,19 +755,19 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         <div class="modal-body">
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
-              <label class="form-label">Codice <span class="text-danger">*</span></label>
+              <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
               <input type="text" name="codice" id="mg-codice" class="form-control font-monospace"
                      placeholder="es. B, C/D" maxlength="10" required>
             </div>
             <div class="col-sm-8">
-              <label class="form-label">Codice cisterna</label>
+              <label class="qk-form-label">Codice cisterna</label>
               <input type="text" name="si_applica_a_cisterna" id="mg-cisterna" class="form-control font-monospace"
                      placeholder="Codice diverso per cisterne">
-              <div class="form-text">Lascia vuoto se il codice è lo stesso per colli e cisterne.</div>
+              <div class="qk-form-hint">Lascia vuoto se il codice è lo stesso per colli e cisterne.</div>
             </div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Descrizione</label>
+            <label class="qk-form-label">Descrizione</label>
             <input type="text" name="descrizione" id="mg-desc" class="form-control" maxlength="255">
           </div>
         </div>
@@ -798,23 +798,23 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         <div class="modal-body">
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
-              <label class="form-label">Categoria <span class="text-danger">*</span></label>
+              <label class="qk-form-label">Categoria <span class="text-danger">*</span></label>
               <input type="number" name="categoria" id="mcat-cat" class="form-control font-monospace"
                      placeholder="0–4" min="0" max="4" required>
             </div>
             <div class="col-sm-4">
-              <label class="form-label">Moltiplicatore punti <span class="text-danger">*</span></label>
+              <label class="qk-form-label">Moltiplicatore punti <span class="text-danger">*</span></label>
               <input type="number" name="moltiplicatore_punti" id="mcat-molt" class="form-control"
                      placeholder="es. 50" min="0">
             </div>
             <div class="col-sm-4">
-              <label class="form-label">Soglia esenzione (kg/l)</label>
+              <label class="qk-form-label">Soglia esenzione (kg/l)</label>
               <input type="number" name="soglia_esenzione_kg_l" id="mcat-soglia" class="form-control"
                      placeholder="Lascia vuoto se nessuna" min="0">
             </div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Descrizione</label>
+            <label class="qk-form-label">Descrizione</label>
             <input type="text" name="descrizione" id="mcat-desc" class="form-control" maxlength="255">
           </div>
         </div>
@@ -844,12 +844,12 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         <div class="modal-body">
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
-              <label class="form-label">Codice <span class="text-danger">*</span></label>
+              <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
               <input type="text" name="codice" id="mcl-codice" class="form-control font-monospace text-uppercase"
                      placeholder="es. F1, TF1, 2A" maxlength="20" required>
             </div>
             <div class="col-sm-4">
-              <label class="form-label">Classe ADR <span class="text-danger">*</span></label>
+              <label class="qk-form-label">Classe ADR <span class="text-danger">*</span></label>
               <select name="codice_classe" id="mcl-classe" class="form-select" required>
                 <option value="">— Seleziona —</option>
                 <?php foreach ($classi as $cl): ?>
@@ -858,19 +858,19 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
               </select>
             </div>
             <div class="col-sm-4">
-              <label class="form-label">Pericolo primario</label>
+              <label class="qk-form-label">Pericolo primario</label>
               <input type="text" name="pericolo_primario" id="mcl-prim" class="form-control"
                      placeholder="es. Infiammabile" maxlength="50">
             </div>
           </div>
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
-              <label class="form-label">Pericolo secondario</label>
+              <label class="qk-form-label">Pericolo secondario</label>
               <input type="text" name="pericolo_secondario" id="mcl-sec" class="form-control"
                      placeholder="es. Tossico" maxlength="50">
             </div>
             <div class="col-sm-8">
-              <label class="form-label">Descrizione</label>
+              <label class="qk-form-label">Descrizione</label>
               <input type="text" name="descrizione" id="mcl-desc" class="form-control" maxlength="255">
             </div>
           </div>
@@ -1863,5 +1863,4 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     }
   }
 
-})();
-</script>
+})

@@ -77,7 +77,8 @@ function qk_rfq_detail(PDO $pdo, int $id): ?array
                 um_stock.codice AS uom_stock,
                 COALESCE(um_comm_pf.codice, um_comm_prod.codice, um_stock.codice) AS uom_commercial,
                 p.unita_misura_stock_id,
-                COALESCE(pf.unita_misura_acquisto_id, p.unita_contenuto_id, p.unita_misura_stock_id) AS unita_misura_commercial_id
+                COALESCE(pf.unita_misura_acquisto_id, p.unita_contenuto_id, p.unita_misura_stock_id) AS unita_misura_commercial_id,
+                p.quantita_contenuto
            FROM rfq_righe rr
            JOIN prodotti p ON p.id = rr.prodotto_id
            JOIN rfq_testata r ON r.id = rr.rfq_id

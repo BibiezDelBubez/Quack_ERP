@@ -275,6 +275,166 @@
   /* ────────────────────────────────────────────────────────────────────────
      UTILITY GLOBAL
   ──────────────────────────────────────────────────────────────────────── */
+  window.qkConvertUom = function ({ value, price, qFactor, targetMode }) {
+    qFactor = parseFloat(qFactor) || 1;
+    let convertedValue = parseFloat(value) || 0;
+    let convertedPrice = parseFloat(price) || 0;
+
+    if (qFactor <= 0 || qFactor === 1) {
+      return {
+        value: value ? convertedValue : null,
+        price: price ? convertedPrice : null
+      };
+    }
+
+    if (targetMode === 'commercial') {
+      // Stock -> Commercial (Quantity multiplied by content factor, Price divided)
+      if (value) convertedValue = convertedValue * qFactor;
+      if (price) convertedPrice = convertedPrice / qFactor;
+    } else if (targetMode === 'stock') {
+      // Commercial -> Stock (Quantity divided, Price multiplied)
+      if (value) convertedValue = convertedValue / qFactor;
+      if (price) convertedPrice = convertedPrice * qFactor;
+    }
+
+    return {
+      value: value ? parseFloat(convertedValue.toFixed(3)) : null,
+      price: price ? parseFloat(convertedPrice.toFixed(4)) : null
+    };
+  };
+
+  window.qkDebounce = function (fn, ms) {
+    let t;
+    return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
+  };
+
+  window.qkEscapeHtml = function (s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  window.qkFormatEuro = function (n) {
+    return '€ ' + (parseFloat(n) || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  window.qkAutocomplete = function ({ input, dropdown, fetchFn, onSelect, onCreate, createLabel }) {
+    let activeIdx = -1;
+    let timer = null;
+
+    function close() {
+      dropdown.innerHTML = '';
+      dropdown.style.display = 'none';
+      activeIdx = -1;
+    }
+
+    function open(results) {
+      if (!results || results.length === 0) {
+        if (onCreate && createLabel) {
+          dropdown.innerHTML = `<div class="qk-ac-item qk-ac-create text-primary fw-semibold" style="cursor:pointer; padding:6px 12px; font-size:0.85rem;"><i class="fa-solid fa-plus me-1"></i> ${window.qkEscapeHtml(createLabel)}</div>`;
+          dropdown.style.display = 'block';
+          dropdown.querySelector('.qk-ac-create').onclick = function() {
+            onCreate();
+            close();
+          };
+        } else {
+          close();
+        }
+        return;
+      }
+
+      let html = '';
+      results.forEach((item, index) => {
+        const displayLabel = item.label || item.nome || '';
+        const skuLabel = (item.sku || item.sku_interno) ? ` <span class="text-muted small">(${item.sku || item.sku_interno})</span>` : '';
+        html += `<div class="qk-ac-item" data-index="${index}" style="padding:6px 12px; cursor:pointer; font-size:0.85rem;">${window.qkEscapeHtml(displayLabel)}${skuLabel}</div>`;
+      });
+
+      if (onCreate && createLabel) {
+        html += `<div class="qk-ac-item qk-ac-create text-primary fw-semibold" style="cursor:pointer; padding:6px 12px; border-top:1px solid var(--qk-border); font-size:0.85rem;"><i class="fa-solid fa-plus me-1"></i> ${window.qkEscapeHtml(createLabel)}</div>`;
+      }
+
+      dropdown.innerHTML = html;
+      dropdown.style.display = 'block';
+
+      const items = dropdown.querySelectorAll('.qk-ac-item:not(.qk-ac-create)');
+      items.forEach(el => {
+        el.onmouseenter = () => {
+          items.forEach(i => i.classList.remove('active'));
+          el.classList.add('active');
+          activeIdx = parseInt(el.dataset.index);
+        };
+        el.onclick = () => {
+          const selItem = results[parseInt(el.dataset.index)];
+          onSelect(selItem);
+          close();
+        };
+      });
+
+      if (onCreate && createLabel) {
+        const createBtn = dropdown.querySelector('.qk-ac-create');
+        if (createBtn) {
+          createBtn.onclick = () => {
+            onCreate();
+            close();
+          };
+        }
+      }
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 1) { close(); return; }
+
+      timer = setTimeout(async () => {
+        try {
+          const data = await fetchFn(q);
+          open(data);
+        } catch (e) {
+          console.error(e);
+          close();
+        }
+      }, 250);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      const items = dropdown.querySelectorAll('.qk-ac-item:not(.qk-ac-create)');
+      if (dropdown.style.display === 'none' || items.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIdx = (activeIdx + 1) % items.length;
+        items.forEach((item, idx) => {
+          item.classList.toggle('active', idx === activeIdx);
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIdx = (activeIdx - 1 + items.length) % items.length;
+        items.forEach((item, idx) => {
+          item.classList.toggle('active', idx === activeIdx);
+        });
+      } else if (e.key === 'Enter') {
+        if (activeIdx >= 0 && activeIdx < items.length) {
+          e.preventDefault();
+          items[activeIdx].click();
+        }
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        close();
+      }
+    });
+  };
+
   window.qkToast = function (message, type) {
     type = type || 'info';
     const container = document.getElementById('qk-toast-container');

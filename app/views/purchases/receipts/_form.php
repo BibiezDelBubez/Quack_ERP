@@ -35,7 +35,7 @@ $isBozza = $rc['stato'] === 'bozza';
     </a>
     <?php if (!empty($rc['ordine_id'])): ?>
       <a href="<?= url('purchases/orders/edit') . '?id=' . $rc['ordine_id'] ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
-        <i class="fa-solid fa-file-contract me-1"></i> Vai all'Ordine
+        <i class="fa-solid fa-file-circle-check me-1"></i> Vai all'Ordine
       </a>
     <?php endif; ?>
   </div>

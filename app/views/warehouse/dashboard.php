@@ -34,7 +34,7 @@ function movimento_badge_dash(string $tipo): string {
 
   <a href="<?= url('warehouse/reorder') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon warning">
-      <i class="fa-solid fa-circle-exclamation"></i>
+      <i class="fa-solid fa-bell-on"></i>
     </div>
     <div class="qk-kpi-body">
       <div class="qk-kpi-value"><?= $sottoscorta_count ?></div>
@@ -54,7 +54,7 @@ function movimento_badge_dash(string $tipo): string {
 
   <div class="qk-kpi-card">
     <div class="qk-kpi-icon accent">
-      <i class="fa-solid fa-truck-ramp-box"></i>
+      <i class="fa-solid fa-truck-arrow-right"></i>
     </div>
     <div class="qk-kpi-body">
       <div class="qk-kpi-value"><?= $in_partenza_count ?></div>
@@ -113,7 +113,7 @@ function movimento_badge_dash(string $tipo): string {
     <div class="qk-card shadow-sm">
       <div class="qk-card-header d-flex justify-content-between align-items-center">
         <span class="qk-card-title">
-          <i class="fa-solid fa-circle-exclamation me-2 text-warning"></i>Articoli sottoscorta o in esaurimento
+          <i class="fa-solid fa-bell-on me-2 text-warning"></i>Articoli sottoscorta o in esaurimento
         </span>
         <a href="<?= url('warehouse/reorder') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">Proposte di riordino</a>
       </div>
@@ -163,7 +163,7 @@ function movimento_badge_dash(string $tipo): string {
           <i class="fa-solid fa-clipboard-list fa-fw me-2"></i>Rileva Inventario Fisico
         </a>
         <a href="<?= url('warehouse/reorder') ?>" class="btn-qk btn-qk-secondary text-start w-100">
-          <i class="fa-solid fa-circle-exclamation fa-fw me-2"></i>Proposte di Riordino
+          <i class="fa-solid fa-bell-on fa-fw me-2"></i>Proposte di Riordino
         </a>
       </div>
     </div>

@@ -36,7 +36,7 @@
   <div class="qk-table-wrap">
     <?php if (empty($customers)): ?>
     <div class="qk-empty">
-      <i class="fa-regular fa-users"></i>
+      <i class="fa-regular fa-address-book"></i>
       <p><?= ($search || $type) ? 'Nessun cliente trovato con i filtri selezionati.' : 'Nessun cliente ancora.' ?></p>
       <?php if (!$search && !$type): ?>
       <a href="<?= url('customers/create') ?>" class="btn-qk btn-qk-primary">

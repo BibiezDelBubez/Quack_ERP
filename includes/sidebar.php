@@ -25,7 +25,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('customers') ?>" title="Clienti"
            class="<?= nav_active('/customers') ?>">
-          <i class="fa-solid fa-users"></i>
+          <i class="fa-solid fa-address-book"></i>
           <span class="qk-nav-label">Clienti</span>
         </a>
       </li>
@@ -33,7 +33,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('suppliers') ?>" title="Fornitori"
            class="<?= nav_active('/suppliers') ?>">
-          <i class="fa-solid fa-truck-ramp-box"></i>
+          <i class="fa-solid fa-handshake"></i>
           <span class="qk-nav-label">Fornitori</span>
         </a>
       </li>
@@ -46,7 +46,7 @@
                 data-bs-target="#nav-prodotti"
                 aria-expanded="<?= is_current_section('/products') ? 'true' : 'false' ?>"
                 aria-controls="nav-prodotti">
-          <i class="fa-solid fa-tags"></i>
+          <i class="fa-solid fa-flask"></i>
           <span class="qk-nav-label">Prodotti</span>
           <i class="fa-solid fa-chevron-right qk-nav-arrow ms-auto"></i>
         </button>
@@ -84,7 +84,7 @@
                 data-bs-target="#nav-adr"
                 aria-expanded="<?= is_current_section('/adr') ? 'true' : 'false' ?>"
                 aria-controls="nav-adr">
-          <i class="fa-solid fa-triangle-exclamation"></i>
+          <i class="fa-solid fa-biohazard"></i>
           <span class="qk-nav-label">Anagrafiche ADR</span>
           <i class="fa-solid fa-chevron-right qk-nav-arrow ms-auto"></i>
         </button>
@@ -92,19 +92,19 @@
             id="nav-adr">
           <li class="qk-nav-item">
             <a href="<?= url('adr?tab=codici') ?>" title="Codici ONU">
-              <i class="fa-solid fa-table-list fa-fw"></i>
+              <i class="fa-solid fa-list-ol fa-fw"></i>
               <span class="qk-nav-label">Codici ONU</span>
             </a>
           </li>
           <li class="qk-nav-item">
             <a href="<?= url('adr?tab=classi') ?>" title="Classi di pericolo">
-              <i class="fa-solid fa-square-9 fa-fw"></i>
+              <i class="fa-solid fa-fire-flame-curved fa-fw"></i>
               <span class="qk-nav-label">Classi pericolo</span>
             </a>
           </li>
           <li class="qk-nav-item">
             <a href="<?= url('adr?tab=imballaggio') ?>" title="Gruppi imballaggio">
-              <i class="fa-solid fa-tally-3 fa-fw"></i>
+              <i class="fa-solid fa-box-taped fa-fw"></i>
               <span class="qk-nav-label">Gruppi imballaggio</span>
             </a>
           </li>
@@ -122,7 +122,7 @@
           </li>
           <li class="qk-nav-item">
             <a href="<?= url('adr?tab=classificazioni') ?>" title="Codici classificazione">
-              <i class="fa-solid fa-code fa-fw"></i>
+              <i class="fa-solid fa-barcode fa-fw"></i>
               <span class="qk-nav-label">Codici classificazione</span>
             </a>
           </li>
@@ -137,7 +137,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('purchases') ?>" title="Acquisti"
            class="<?= nav_active('/purchases') ?>">
-          <i class="fa-solid fa-file-signature"></i>
+          <i class="fa-solid fa-arrow-down-to-bracket"></i>
           <span class="qk-nav-label">Acquisti</span>
         </a>
       </li>
@@ -153,7 +153,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('purchases/orders') ?>" title="Ordini d'acquisto"
            class="<?= nav_active('/purchases/orders') ?>">
-          <i class="fa-solid fa-file-contract"></i>
+          <i class="fa-solid fa-file-circle-check"></i>
           <span class="qk-nav-label">Ordini d'acquisto</span>
         </a>
       </li>
@@ -161,7 +161,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('purchases/pricelists') ?>" title="Listini acquisto"
            class="<?= nav_active('/purchases/pricelists') ?>">
-          <i class="fa-solid fa-receipt"></i>
+          <i class="fa-solid fa-file-spreadsheet"></i>
           <span class="qk-nav-label">Listini acquisto</span>
         </a>
       </li>
@@ -206,7 +206,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('warehouse/reorder') ?>" title="Riordino stock"
            class="<?= nav_active('/warehouse/reorder') ?>">
-          <i class="fa-solid fa-circle-exclamation"></i>
+          <i class="fa-solid fa-bell-on"></i>
           <span class="qk-nav-label">Riordino stock</span>
         </a>
       </li>
@@ -227,7 +227,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('sales') ?>" title="Vendite"
            class="<?= nav_active('/sales') ?>">
-          <i class="fa-solid fa-chart-simple"></i>
+          <i class="fa-solid fa-arrow-up-from-bracket"></i>
           <span class="qk-nav-label">Vendite</span>
         </a>
       </li>
@@ -235,7 +235,7 @@
       <li class="qk-nav-item">
         <a href="<?= url('sales/quotes') ?>" title="Preventivi"
            class="<?= nav_active('/sales/quotes') ?>">
-          <i class="fa-solid fa-file-lines"></i>
+          <i class="fa-solid fa-file-invoice"></i>
           <span class="qk-nav-label">Preventivi</span>
         </a>
       </li>
@@ -245,6 +245,14 @@
            class="<?= nav_active('/sales/orders') ?>">
           <i class="fa-solid fa-file-invoice-dollar"></i>
           <span class="qk-nav-label">Ordini</span>
+        </a>
+      </li>
+
+      <li class="qk-nav-item">
+        <a href="<?= url('sales/pricelists') ?>" title="Listini vendita"
+           class="<?= nav_active('/sales/pricelists') ?>">
+          <i class="fa-solid fa-badge-percent"></i>
+          <span class="qk-nav-label">Listini vendita</span>
         </a>
       </li>
 

@@ -104,6 +104,25 @@ final class SalesQuotesController extends BaseController
 
         $numero_offerta = $values['numero_offerta'] ?: qk_next_numero_offerta($this->pdo);
 
+        $aziende = qk_aziende_list($this->pdo);
+        $defaultAziendaId = isset($_SESSION['azienda_attiva_id']) ? (string)$_SESSION['azienda_attiva_id'] : '';
+        if ($defaultAziendaId === '') {
+            foreach ($aziende as $az) {
+                if ($az['predefinita'] == 1) {
+                    $defaultAziendaId = (string)$az['id'];
+                    break;
+                }
+            }
+        }
+        if ($defaultAziendaId === '' && !empty($aziende)) {
+            $defaultAziendaId = (string)$aziende[0]['id'];
+        }
+        if (empty($values['azienda_interna_id'])) {
+            $values['azienda_interna_id'] = $defaultAziendaId;
+        }
+        
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+
         $active_tab    = 'quotes';
         $page_title    = 'Nuovo preventivo';
         $page_subtitle = 'Crea un preventivo commerciale per un cliente';
@@ -184,6 +203,10 @@ final class SalesQuotesController extends BaseController
         }
 
         $numero_offerta = $values['numero_offerta'];
+        
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+        $aziende = qk_aziende_list($this->pdo);
 
         $active_tab    = 'quotes';
         $page_title    = 'Modifica preventivo ' . $numero_offerta;
@@ -212,6 +235,7 @@ final class SalesQuotesController extends BaseController
             'numero_offerta'          => $quote['numero_preventivo'] ?? '',
             'cliente_id'              => $quote['cliente_id'] ?? '',
             'cliente_label'           => $quote['cliente_label'] ?? '',
+            'azienda_interna_id'      => $quote['azienda_interna_id'] ?? '',
             'alla_ca'                 => $quote['alla_ca'] ?? '',
             'contatto_id'             => $quote['contatto_id'] ?? '',
             'contatto_nome'           => $quote['contatto_nome'] ?? '',
@@ -231,6 +255,7 @@ final class SalesQuotesController extends BaseController
             'note_interne'            => $quote['note_interne'] ?? '',
             'oggetto'                 => $quote['oggetto'] ?? '',
             'riferimento_interno'     => $quote['riferimento_interno'] ?? '',
+            'listino_id'              => $quote['listino_id'] ?? '',
         ];
     }
 
@@ -427,6 +452,7 @@ final class SalesQuotesController extends BaseController
             'numero_offerta'          => '',
             'cliente_id'              => '',
             'cliente_label'           => '',
+            'azienda_interna_id'      => '',
             'alla_ca'                 => '',
             'contatto_id'             => '',
             'contatto_nome'           => '',
@@ -445,6 +471,7 @@ final class SalesQuotesController extends BaseController
             'note_cliente'            => '',
             'note_interne'            => '',
             'riferimento_interno'     => '',
+            'listino_id'              => '',
         ];
     }
 
@@ -454,6 +481,7 @@ final class SalesQuotesController extends BaseController
             'numero_offerta'          => post('numero_offerta'),
             'cliente_id'              => post('cliente_id'),
             'cliente_label'           => post('cliente_label'),
+            'azienda_interna_id'      => post('azienda_interna_id'),
             'alla_ca'                 => post('alla_ca'),
             'contatto_id'             => post('contatto_id'),
             'contatto_nome'           => post('contatto_nome'),
@@ -472,6 +500,7 @@ final class SalesQuotesController extends BaseController
             'note_cliente'            => post('note_cliente'),
             'note_interne'            => post('note_interne'),
             'riferimento_interno'     => post('riferimento_interno'),
+            'listino_id'              => post('listino_id'),
         ];
     }
 

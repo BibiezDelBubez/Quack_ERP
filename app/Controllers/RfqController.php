@@ -1247,13 +1247,14 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
     $params = [$like, $like, $like];
 
     $joinPrezzo   = '';
-    $selectPrezzo = "NULL AS prezzo_unitario, NULL AS sku_fornitore, NULL AS uom_comm";
+    $selectPrezzo = "NULL AS prezzo_unitario, NULL AS sku_fornitore, NULL AS uom_comm, NULL AS uom_comm_id";
 
     if ($fornitore_id > 0) {
         $joinPrezzo   = "LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.fornitore_id = $fornitore_id
                          LEFT JOIN unita_misura um_comm ON um_comm.id = pf.unita_misura_acquisto_id";
         $selectPrezzo = "pf.sku_fornitore,
             um_comm.codice AS uom_comm,
+            pf.unita_misura_acquisto_id AS uom_comm_id,
             (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
               WHERE pfp.prodotto_fornitore_id = pf.id
                 AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario";
@@ -1261,7 +1262,10 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
 
     $st = $pdo->prepare(
         "SELECT p.id, p.sku_interno, p.nome, um.codice AS uom, p.iva_acquisto_default AS iva_perc,
+                p.unita_misura_stock_id AS uom_id,
                 um_comm_prod.codice AS uom_comm_prod,
+                p.unita_contenuto_id AS uom_comm_prod_id,
+                p.quantita_contenuto,
                 $selectPrezzo
            FROM prodotti p
       LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id

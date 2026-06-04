@@ -195,7 +195,7 @@ foreach ($ricezioni as $rc) {
   <div class="qk-card mb-4">
     <div class="qk-card-header d-flex justify-content-between align-items-center">
       <span class="qk-card-title">
-        <i class="fa-solid fa-file-contract me-2"></i> Ordine d'Acquisto <?= e($o['numero']) ?>
+        <i class="fa-solid fa-file-circle-check me-2"></i> Ordine d'Acquisto <?= e($o['numero']) ?>
       </span>
       <span class="badge bg-secondary text-monospace"><?= e($o['valuta']) ?></span>
     </div>

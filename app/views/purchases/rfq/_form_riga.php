@@ -15,6 +15,7 @@
     data-uom-stock-id="<?= e($r['unita_misura_stock_id'] ?? $r['unita_misura_id'] ?? '') ?>"
     data-uom-commercial="<?= e($r['uom_commercial'] ?? $r['uom'] ?? '—') ?>" 
     data-uom-commercial-id="<?= e($r['unita_misura_commercial_id'] ?? $r['unita_misura_id'] ?? '') ?>"
+    data-quantita-contenuto="<?= e($r['quantita_contenuto'] ?? '1') ?>"
     <?= $canEdit ? 'draggable="true"' : '' ?>>
   <td class="col-drag">
     <?php if ($canEdit): ?>

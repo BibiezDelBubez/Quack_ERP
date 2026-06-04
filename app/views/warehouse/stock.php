@@ -60,7 +60,7 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
       <!-- Visualizzazione Merce in Arrivo (Ordini Acquisto pendenti) -->
       <?php if (empty($ordini_in_arrivo)): ?>
       <div class="qk-empty-state">
-        <i class="fa-solid fa-truck-ramp-box"></i>
+        <i class="fa-solid fa-dolly"></i>
         <p>Nessun ordine in arrivo o parzialmente ricevuto trovato.</p>
       </div>
       <?php else: ?>

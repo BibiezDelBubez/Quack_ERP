@@ -14,11 +14,11 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <label class="form-label">Nome <span class="text-danger">*</span></label>
+        <label class="qk-form-label">Nome <span class="text-danger">*</span></label>
         <input type="text" id="new-cat-nome" class="form-control"
                placeholder="es. Prodotti per la disinfezione"
                maxlength="100" autocomplete="off">
-        <div id="new-cat-error" class="form-text text-danger d-none"></div>
+        <div id="new-cat-error" class="qk-form-error d-none"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
@@ -51,7 +51,7 @@
         <!-- Fornitore — Many2one autocomplete ───────────────────────── -->
         <div class="row g-3 mb-3">
           <div class="col-sm-8">
-            <label class="form-label">Fornitore <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Fornitore <span class="text-danger">*</span></label>
             <input type="hidden" id="mf-fornitore-id" value="">
             <div class="qk-m2o-wrap" id="mf-m2o-wrap">
               <div class="qk-m2o-input-row">
@@ -66,7 +66,7 @@
             </div>
           </div>
           <div class="col-sm-4">
-            <label class="form-label">SKU fornitore</label>
+            <label class="qk-form-label">SKU fornitore</label>
             <input type="text" id="mf-sku" class="form-control font-monospace"
                    placeholder="Codice articolo fornitore" maxlength="50">
           </div>
@@ -75,12 +75,12 @@
         <!-- Nome commerciale + ordine preferenza ────────────────────── -->
         <div class="row g-3 mb-3">
           <div class="col-sm-8">
-            <label class="form-label">Nome prodotto presso il fornitore</label>
+            <label class="qk-form-label">Nome prodotto presso il fornitore</label>
             <input type="text" id="mf-nome-prod-forn" class="form-control"
                    placeholder="Come lo chiama il fornitore" maxlength="150">
           </div>
           <div class="col-sm-4">
-            <label class="form-label">
+            <label class="qk-form-label">
               Ordine preferenza
               <span class="text-muted small" style="font-weight:normal">(1 = preferito)</span>
             </label>
@@ -92,12 +92,12 @@
         <!-- MOQ + Lead time ─────────────────────────────────────────── -->
         <div class="row g-3 mb-3">
           <div class="col-sm-4">
-            <label class="form-label">Q.tà minima ordine (MOQ)</label>
+            <label class="qk-form-label">Q.tà minima ordine (MOQ)</label>
             <input type="number" id="mf-qta-min" class="form-control"
                    placeholder="0,00" min="0" step="0.001">
           </div>
           <div class="col-sm-4">
-            <label class="form-label">Lead time (giorni)</label>
+            <label class="qk-form-label">Lead time (giorni)</label>
             <input type="number" id="mf-lead-time" class="form-control"
                    placeholder="es. 7" min="0" step="1">
           </div>
@@ -112,12 +112,12 @@
         <!-- RRP consigliato ─────────────────────────────────────────── -->
         <div class="row g-3 mb-3">
           <div class="col-sm-4">
-            <label class="form-label">RRP min. consigliato</label>
+            <label class="qk-form-label">RRP min. consigliato</label>
             <input type="number" id="mf-rrp-min" class="form-control"
                    placeholder="0,00" min="0" step="0.0001">
           </div>
           <div class="col-sm-4">
-            <label class="form-label">RRP max. consigliato</label>
+            <label class="qk-form-label">RRP max. consigliato</label>
             <input type="number" id="mf-rrp-max" class="form-control"
                    placeholder="0,00" min="0" step="0.0001">
           </div>
@@ -126,7 +126,7 @@
         <!-- Note ────────────────────────────────────────────────────── -->
         <div class="row g-3 mb-3">
           <div class="col-12">
-            <label class="form-label">Note</label>
+            <label class="qk-form-label">Note</label>
             <textarea id="mf-note" class="form-control" rows="2"
                       placeholder="Note specifiche per questo fornitore…"></textarea>
           </div>
@@ -167,7 +167,7 @@
 
         <!-- Prodotto — QkM2O -->
         <div class="mb-3">
-          <label class="form-label">Prodotto <span class="text-danger">*</span></label>
+          <label class="qk-form-label">Prodotto <span class="text-danger">*</span></label>
           <input type="hidden" id="mc-prodotto-id" value="">
           <div class="qk-m2o-wrap" id="mc-m2o-wrap">
             <div class="qk-m2o-input-row">
@@ -180,20 +180,20 @@
             </div>
             <div class="qk-m2o-dropdown" id="mc-m2o-dd"></div>
           </div>
-          <div id="mc-edit-info" class="form-text text-muted d-none">
+          <div id="mc-edit-info" class="qk-form-hint d-none">
             Il prodotto non può essere modificato in fase di modifica. Rimuovi e ricrea il componente.
           </div>
         </div>
 
         <div class="row g-3 mb-3">
           <div class="col-sm-6">
-            <label class="form-label">Quantità <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Quantità <span class="text-danger">*</span></label>
             <input type="number" id="mc-quantita" class="form-control"
                    placeholder="es. 1" min="0.001" step="0.001">
-            <div class="form-text text-muted" style="font-size:0.75rem">Nell'unità di stoccaggio del prodotto da aggiungere</div>
+            <div class="qk-form-hint" style="font-size:0.75rem">Nell'unità di stoccaggio del prodotto da aggiungere</div>
           </div>
           <div class="col-sm-6">
-            <label class="form-label">Note</label>
+            <label class="qk-form-label">Note</label>
             <input type="text" id="mc-note" class="form-control"
                    placeholder="Opzionale" maxlength="255">
           </div>

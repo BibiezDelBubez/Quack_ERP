@@ -39,7 +39,7 @@
   <div class="qk-table-wrap">
     <?php if (empty($products)): ?>
     <div class="qk-empty">
-      <i class="fa-regular fa-tags"></i>
+      <i class="fa-regular fa-flask"></i>
       <p><?= ($search || $category || $adr_only) ? 'Nessun prodotto trovato con i filtri selezionati.' : 'Nessun prodotto ancora.' ?></p>
       <?php if (!$search && !$category && !$adr_only): ?><a href="<?= url('products/create') ?>" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Aggiungi prodotto</a><?php endif; ?>
     </div>

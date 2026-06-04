@@ -82,6 +82,8 @@ class CustomersController extends BaseController
         ];
         $record_meta = null;
 
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
     }
 
@@ -147,6 +149,8 @@ class CustomersController extends BaseController
 
         $extra_css = ['customers-addresses.css', 'customers-compliance.css'];
 
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
     }
 
@@ -180,6 +184,7 @@ class CustomersController extends BaseController
             'status'        => 'active',
             'notes'         => '',
             'newsletter'    => '0',
+            'listino_id'    => '',
         ];
     }
 

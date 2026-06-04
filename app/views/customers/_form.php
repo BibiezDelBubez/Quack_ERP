@@ -208,6 +208,19 @@ $nIndirizzi = count($indirizzi_preload);
                          value="<?= e($v['discount']) ?>" placeholder="0" min="0" max="100" step="0.1">
                 </div>
               </div>
+              <div class="qk-form-row">
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Listino vendite predefinito</label>
+                  <select name="listino_id" class="qk-form-control">
+                    <option value="">— Nessuno (Usa Listino Standard) —</option>
+                    <?php foreach ($listini as $lst): ?>
+                    <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>><?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)</option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="qk-form-group">
+                </div>
+              </div>
               <div class="qk-form-group">
                 <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
                   <input type="checkbox" name="newsletter" value="1" <?= $v['newsletter'] === '1' ? 'checked' : '' ?>>

@@ -39,13 +39,16 @@ $v = $values;
                                   cursor: pointer; color: var(--qk-text-muted); padding: .1rem .3rem; }
 
 /* Tabella righe offerta */
-#tbl-righe       { width: 100%; border-collapse: collapse; font-size: .85rem; }
-#tbl-righe thead th { padding: .5rem .5rem; font-weight: 600; font-size: .78rem;
+#tbl-righe       { width: 100%; border-collapse: collapse; font-size: .875rem; }
+#tbl-righe thead th { padding: .75rem .5rem; font-weight: 600; font-size: .78rem;
                       text-transform: uppercase; letter-spacing: .05em;
                       color: var(--qk-text-muted); border-bottom: 2px solid var(--qk-border);
                       white-space: nowrap; }
-#tbl-righe tbody td { padding: .35rem .4rem; border-bottom: 1px solid var(--qk-border); vertical-align: top; }
-#tbl-righe tbody tr:last-child td { border-bottom: none; }
+#tbl-righe tbody td { padding: .65rem .5rem; vertical-align: middle; }
+#tbl-righe tbody tr { border-bottom: 1px solid var(--qk-border); transition: background-color 0.12s ease; }
+#tbl-righe tbody tr:nth-child(even) { background-color: #f8fafc; }
+#tbl-righe tbody tr:hover { background-color: #f1f5f9 !important; }
+#tbl-righe tbody tr:last-child { border-bottom: none; }
 #tbl-righe .col-search { min-width: 180px; width: 22%; }
 #tbl-righe .col-desc   { min-width: 200px; width: 28%; }
 #tbl-righe .col-conf   { width: 90px; }
@@ -58,13 +61,15 @@ $v = $values;
 #tbl-righe .col-del    { width: 36px; }
 
 .riga-input { width: 100%; background: transparent; border: 1px solid transparent;
-              border-radius: var(--qk-radius-sm); padding: .3rem .4rem;
-              color: var(--qk-text-primary); font-size: .85rem;
-              transition: border .15s, background .15s; }
-.riga-input:focus { outline: none; border-color: var(--qk-accent); background: var(--qk-input-bg, var(--qk-card-bg)); }
-.riga-input.text-end { text-align: right; }
-.riga-total { font-weight: 600; text-align: right; padding: .4rem .4rem;
-              color: var(--qk-text-primary); }
+              border-radius: var(--qk-radius-sm); padding: .25rem .4rem;
+              color: var(--qk-text-primary); font-size: .875rem;
+              outline: none; transition: all 0.12s ease; }
+.riga-input:focus { border-color: var(--qk-accent); background: var(--qk-input-bg, var(--qk-card-bg));
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.riga-input[readonly] { cursor: not-allowed; color: var(--qk-text-muted); opacity: 0.85; }
+.riga-input.text-end { text-align: right; font-family: monospace; }
+.riga-total { font-weight: 600; text-align: right; padding: .25rem .4rem;
+              color: var(--qk-text-primary); font-family: monospace; }
 .riga-del   { background: none; border: none; cursor: pointer; color: var(--qk-text-muted);
               font-size: .9rem; padding: .3rem; border-radius: var(--qk-radius-sm);
               transition: color .12s, background .12s; }
@@ -100,48 +105,61 @@ $v = $values;
 </div>
 <?php endif; ?>
 
+<!-- Barra Azioni e Stato (Odoo style) -->
+<div class="d-flex justify-content-between align-items-center mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
+  <!-- Bottoni Azione / Navigazione -->
+  <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+    <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+      <i class="fa-solid fa-arrow-left"></i> Torna alla lista
+    </a>
+  </div>
+
+  <!-- Pipeline visivo stati -->
+  <ul class="qk-status-path d-none d-sm-flex">
+    <?php
+    $stato = $v['stato'] ?? 'bozza';
+    $steps = [
+      ['bozza',     'Bozza'],
+      ['inviata',   'Inviata'],
+      ['accettata', 'Accettata'],
+    ];
+    if ($stato === 'rifiutata') {
+        $steps[] = ['rifiutata', 'Rifiutata'];
+    } elseif ($stato === 'scaduta') {
+        $steps[] = ['scaduta', 'Scaduta'];
+    } elseif ($stato === 'annullata') {
+        $steps[] = ['annullata', 'Annullata'];
+    }
+    
+    $currentIdx = 0;
+    foreach ($steps as $idx => [$s, $lbl]) {
+        if ($stato === $s) {
+            $currentIdx = $idx;
+            break;
+        }
+    }
+    foreach ($steps as $idx => [$s, $lbl]):
+        if ($stato === $s) {
+            $statusClass = 'active';
+        } elseif ($idx < $currentIdx) {
+            $statusClass = 'completed';
+        } else {
+            $statusClass = 'pending';
+        }
+    ?>
+      <li class="qk-status-path-item <?= $statusClass ?>">
+        <?= e($lbl) ?>
+      </li>
+    <?php endforeach; ?>
+  </ul>
+</div>
+
 <form method="post" id="form-offerta" action="">
   <?= csrf_field() ?>
 
   <!-- Cliente nascosto -->
   <input type="hidden" name="cliente_id"    id="cliente_id"    value="<?= e($v['cliente_id']) ?>">
   <input type="hidden" name="cliente_label" id="cliente_label" value="<?= e($v['cliente_label']) ?>">
-
-  <!-- ══════════════════ CLIENTE ══════════════════════════════════════════ -->
-  <div class="qk-card mb-3">
-    <div class="qk-card-header">
-      <span class="qk-card-title"><i class="fa-solid fa-building me-2"></i>Cliente</span>
-    </div>
-    <div class="qk-card-body">
-      <div class="d-flex gap-2 align-items-start">
-        <div class="qk-ac-wrap flex-grow-1">
-          <input type="text" id="cliente_search" class="qk-form-control <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
-                 placeholder="Cerca per nome, ragione sociale, email…"
-                 value="<?= e($v['cliente_label']) ?>" autocomplete="off">
-          <div class="qk-ac-dropdown" id="ac-clienti-drop"></div>
-        </div>
-        <button type="button" class="btn-qk btn-qk-secondary" id="btn-nuovo-cliente"
-                title="Crea nuovo cliente" style="white-space:nowrap">
-          <i class="fa-solid fa-plus"></i> Nuovo cliente
-        </button>
-      </div>
-      <?php if (isset($errors['cliente_id'])): ?>
-      <span class="qk-form-error mt-1"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['cliente_id']) ?></span>
-      <?php endif; ?>
-
-      <!-- Preview cliente selezionato -->
-      <div id="cliente-preview" class="qk-cliente-preview" style="<?= $v['cliente_id'] ? '' : 'display:none' ?>">
-        <i class="fa-solid fa-building fa-lg" style="color:var(--qk-accent);margin-top:.1rem"></i>
-        <div>
-          <div class="name" id="cp-nome"><?= e($v['cliente_label']) ?></div>
-          <div class="info" id="cp-info"></div>
-        </div>
-        <button type="button" class="btn-clear" id="btn-clear-cliente" title="Rimuovi cliente">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-    </div>
-  </div>
 
   <!-- Top Primary Fields Grid -->
   <div class="qk-card mb-3">
@@ -158,9 +176,76 @@ $v = $values;
       <input type="hidden" name="numero_offerta" value="<?= e($v['numero_offerta'] ?: $numero_offerta) ?>">
       
       <div class="qk-form-grid mb-3">
-        <!-- Colonna Sinistra -->
+        <!-- Colonna Sinistra: Cliente, Azienda Venditrice e Oggetto -->
         <div>
-          <div class="qk-form-row">
+          <!-- Cliente & Azienda Venditrice in una riga -->
+          <div class="qk-form-row mb-3">
+            <div class="qk-form-group flex-grow-1">
+              <label class="qk-form-label">Cliente <span class="required">*</span></label>
+              <div class="d-flex gap-2 align-items-start">
+                <div class="qk-ac-wrap flex-grow-1">
+                  <input type="text" id="cliente_search" class="qk-form-control <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
+                         placeholder="Cerca cliente per nome, ragione sociale, email…"
+                         value="<?= e($v['cliente_label']) ?>" autocomplete="off">
+                  <div class="qk-ac-dropdown" id="ac-clienti-drop"></div>
+                </div>
+                <button type="button" class="btn-qk btn-qk-secondary" id="btn-nuovo-cliente"
+                        title="Crea nuovo cliente" style="white-space:nowrap">
+                  <i class="fa-solid fa-plus"></i> Nuovo
+                </button>
+              </div>
+              <?php if (isset($errors['cliente_id'])): ?>
+              <span class="qk-form-error mt-1"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['cliente_id']) ?></span>
+              <?php endif; ?>
+            </div>
+            
+            <div class="qk-form-group" style="flex: 0 0 200px; min-width: 170px;">
+              <label class="qk-form-label">Azienda venditrice</label>
+              <select name="azienda_interna_id" id="quote-azienda-interna-id" class="qk-form-control" style="font-size: 0.85rem;">
+                <?php foreach ($aziende as $az): ?>
+                  <option value="<?= $az['id'] ?>" <?= (string)($v['azienda_interna_id'] ?? '') === (string)$az['id'] ? 'selected' : '' ?>>
+                    <?= e($az['ragione_sociale']) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <div class="qk-form-group" style="flex: 0 0 200px; min-width: 170px;">
+              <label class="qk-form-label">Listino prezzi</label>
+              <select name="listino_id" id="quote-listino-id" class="qk-form-control" style="font-size: 0.85rem;">
+                <option value="">— Nessuno (Prezzi liberi) —</option>
+                <?php foreach ($listini as $lst): ?>
+                  <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>>
+                    <?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+          
+          <!-- Cliente Preview -->
+          <div id="cliente-preview" class="qk-cliente-preview mb-3" style="<?= $v['cliente_id'] ? '' : 'display:none' ?>">
+            <i class="fa-solid fa-building fa-lg" style="color:var(--qk-accent);margin-top:.1rem"></i>
+            <div>
+              <div class="name" id="cp-nome"><?= e($v['cliente_label']) ?></div>
+              <div class="info" id="cp-info"></div>
+            </div>
+            <button type="button" class="btn-clear" id="btn-clear-cliente" title="Rimuovi cliente">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          
+          <!-- Oggetto dell'offerta -->
+          <div class="qk-form-group">
+            <label class="qk-form-label">Oggetto dell'offerta</label>
+            <input type="text" name="oggetto" class="qk-form-control"
+                   value="<?= e($v['oggetto'] ?? '') ?>" placeholder="Es. Fornitura annuale ipoclorito di sodio">
+          </div>
+        </div>
+        
+        <!-- Colonna Destra: Riferimento, Stato, Date -->
+        <div>
+          <div class="qk-form-row mb-3">
             <div class="qk-form-group">
               <label class="qk-form-label">Riferimento interno</label>
               <input type="text" name="riferimento_interno" class="qk-form-control"
@@ -169,21 +254,19 @@ $v = $values;
             </div>
             <div class="qk-form-group">
               <label class="qk-form-label">Stato</label>
-              <select name="stato" class="qk-form-control">
-                <?php foreach (['bozza'=>'Bozza','inviata'=>'Inviata','accettata'=>'Accettata','rifiutata'=>'Rifiutata','scaduta'=>'Scaduta','annullata'=>'Annullata'] as $k => $lbl): ?>
-                <option value="<?= e($k) ?>" <?= ($v['stato'] ?? 'bozza') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
-                <?php endforeach; ?>
-              </select>
+              <?php if (empty($id)): ?>
+                <input type="hidden" name="stato" value="bozza">
+                <input type="text" class="qk-form-control" value="Bozza" readonly style="background-color: var(--qk-bg-subtle); cursor: not-allowed;">
+              <?php else: ?>
+                <select name="stato" class="qk-form-control">
+                  <?php foreach (['bozza'=>'Bozza','inviata'=>'Inviata','accettata'=>'Accettata','rifiutata'=>'Rifiutata','scaduta'=>'Scaduta','annullata'=>'Annullata'] as $k => $lbl): ?>
+                  <option value="<?= e($k) ?>" <?= ($v['stato'] ?? 'bozza') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              <?php endif; ?>
             </div>
           </div>
-          <div class="qk-form-group mt-3">
-            <label class="qk-form-label">Oggetto dell'offerta</label>
-            <input type="text" name="oggetto" class="qk-form-control"
-                   value="<?= e($v['oggetto'] ?? '') ?>" placeholder="Es. Fornitura annuale ipoclorito di sodio">
-          </div>
-        </div>
-        <!-- Colonna Destra -->
-        <div>
+          
           <div class="qk-form-row">
             <div class="qk-form-group">
               <label class="qk-form-label">Data offerta <span class="required">*</span></label>
@@ -246,7 +329,7 @@ $v = $values;
                 <tr>
                   <th class="col-search">Cerca prodotto</th>
                   <th class="col-desc">Descrizione</th>
-                  <th class="col-conf">Confezione</th>
+                  <th class="col-conf">Confezione <i class="fa-solid fa-circle-info" data-bs-toggle="tooltip" title="Es. secchio 5 kg" style="cursor:help; font-size:0.8rem; opacity:0.8;"></i></th>
                   <th class="col-qta">Qtà <span class="required">*</span></th>
                   <th class="col-um">U.M.</th>
                   <th class="col-pu">Prezzo unit.</th>
@@ -525,11 +608,9 @@ $v = $values;
     </div>
   </div>
 </div>
-
-
 <!-- ══════════════════════════════ JAVASCRIPT ═══════════════════════════════ -->
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
 'use strict';
 
 const CSRF   = <?= json_encode(csrf_token()) ?>;
@@ -537,113 +618,20 @@ const BASE   = (typeof QK_BASE !== 'undefined') ? QK_BASE : '';
 const PRELOADED_RIGHE = <?= json_encode($preloadedRighe ?? []) ?>;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   UTILITÀ
+   UTILITÀ & AC FETCH
  ───────────────────────────────────────────────────────────────────────── */
-
-function fmtEuro(n) {
-  return '€ ' + Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function fetchClienti(q) {
+  try {
+    const res  = await fetch(BASE + '/sales/quotes/api/clienti?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+    return await res.json();
+  } catch (e) { return []; }
 }
 
-function debounce(fn, ms) {
-  let t;
-  return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   AUTOCOMPLETE GENERICO
-   Parametri:
-     input     — <input> visibile di testo
-     dropdown  — <div> contenitore del dropdown
-     apiUrl    — stringa URL
-     onSelect  — callback(item) chiamata quando l'utente sceglie
-     onCreate  — callback() quando l'utente clicca "Crea nuovo" (opzionale)
-     createLabel — testo del link "Crea nuovo"
- ───────────────────────────────────────────────────────────────────────── */
-function initAutocomplete({ input, dropdown, apiUrl, onSelect, onCreate, createLabel }) {
-  let focused = -1;
-  let items   = [];
-
-  function close() {
-    dropdown.classList.remove('open');
-    dropdown.innerHTML = '';
-    focused = -1;
-    items   = [];
-  }
-
-  function open(results) {
-    dropdown.innerHTML = '';
-    items = results;
-    focused = -1;
-
-    if (results.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'qk-ac-empty';
-      empty.textContent = 'Nessun risultato';
-      dropdown.appendChild(empty);
-    } else {
-      results.forEach((item, i) => {
-        const el = document.createElement('div');
-        el.className = 'qk-ac-item';
-        el.innerHTML = `<span class="qk-ac-item-label">${escHtml(item.label || item.nome || '')}</span>`
-                     + (item.email    ? `<span class="qk-ac-item-sub">${escHtml(item.email)}</span>` : '')
-                     + (item.telefono ? `<span class="qk-ac-item-sub">${escHtml(item.telefono)}</span>` : '')
-                     + (item.sku      ? `<span class="qk-ac-item-sub">SKU: ${escHtml(item.sku)}</span>` : '');
-        el.addEventListener('mousedown', (e) => { e.preventDefault(); onSelect(item); close(); });
-        dropdown.appendChild(el);
-      });
-    }
-
-    if (onCreate) {
-      const cr = document.createElement('div');
-      cr.className = 'qk-ac-create';
-      cr.innerHTML = `<i class="fa-solid fa-plus"></i> ${escHtml(createLabel || 'Crea nuovo')}`;
-      cr.addEventListener('mousedown', (e) => { e.preventDefault(); close(); onCreate(); });
-      dropdown.appendChild(cr);
-    }
-
-    dropdown.classList.add('open');
-  }
-
-  function escHtml(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  const doSearch = debounce(async function(q) {
-    if (!q) { close(); return; }
-    try {
-      const res  = await fetch(apiUrl + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
-      const data = await res.json();
-      open(data);
-    } catch (e) { close(); }
-  }, 280);
-
-  input.addEventListener('input', () => doSearch(input.value.trim()));
-  input.addEventListener('focus', () => { if (input.value.trim()) doSearch(input.value.trim()); });
-
-  // Keyboard navigation
-  input.addEventListener('keydown', (e) => {
-    const els = dropdown.querySelectorAll('.qk-ac-item');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      focused = Math.min(focused + 1, els.length - 1);
-      els.forEach((el, i) => el.classList.toggle('focused', i === focused));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      focused = Math.max(focused - 1, 0);
-      els.forEach((el, i) => el.classList.toggle('focused', i === focused));
-    } else if (e.key === 'Enter' && focused >= 0 && items[focused]) {
-      e.preventDefault();
-      onSelect(items[focused]);
-      close();
-    } else if (e.key === 'Escape') {
-      close();
-    }
-  });
-
-  // Click outside
-  document.addEventListener('click', (e) => {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) close();
-  });
+async function fetchProdotti(q) {
+  try {
+    const res  = await fetch(BASE + '/sales/quotes/api/prodotti?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+    return await res.json();
+  } catch (e) { return []; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -692,10 +680,10 @@ elClienteSearch.addEventListener('input', () => {
   if (!elClienteSearch.value.trim()) clearCliente();
 });
 
-initAutocomplete({
+window.qkAutocomplete({
   input:       elClienteSearch,
   dropdown:    elClienteDrop,
-  apiUrl:      BASE + '/sales/quotes/api/clienti',
+  fetchFn:     fetchClienti,
   onSelect:    selectCliente,
   onCreate:    () => openModal('modal-nuovo-cliente'),
   createLabel: 'Crea nuovo cliente',
@@ -749,9 +737,6 @@ function setRowUomMode(tr, targetMode, currentMode) {
 
   if (!qtyInput || !priceInput || !umInput) return;
 
-  const currentVal = qtyInput.value ? parseFloat(qtyInput.value) : 0;
-  const currentPrice = priceInput.value ? parseFloat(priceInput.value) : 0;
-
   if (targetMode === currentMode) {
     umInput.value = (targetMode === 'stock') 
       ? (tr.dataset.uomStock || 'pz') 
@@ -759,17 +744,15 @@ function setRowUomMode(tr, targetMode, currentMode) {
     return;
   }
 
-  if (qFactor > 0 && qFactor !== 1) {
-    if (targetMode === 'commercial') {
-      // Stock -> Commercial (Quantity multiplied by content factor, Price divided)
-      if (qtyInput.value) qtyInput.value = (currentVal * qFactor).toFixed(3);
-      if (priceInput.value) priceInput.value = (currentPrice / qFactor).toFixed(4);
-    } else {
-      // Commercial -> Stock (Quantity divided, Price multiplied)
-      if (qtyInput.value) qtyInput.value = (currentVal / qFactor).toFixed(3);
-      if (priceInput.value) priceInput.value = (currentPrice * qFactor).toFixed(4);
-    }
-  }
+  const { value: newQty, price: newPrice } = window.qkConvertUom({
+    value: qtyInput.value,
+    price: priceInput.value,
+    qFactor,
+    targetMode
+  });
+
+  if (qtyInput.value && newQty !== null) qtyInput.value = newQty;
+  if (priceInput.value && newPrice !== null) priceInput.value = newPrice;
 
   umInput.value = (targetMode === 'stock') 
     ? (tr.dataset.uomStock || 'pz') 
@@ -824,8 +807,13 @@ function buildRiga(prefill = {}) {
              placeholder="pz" maxlength="5" value="${esc(prefill.unita_misura || '')}">
     </td>
     <td class="col-pu">
-      <input type="number" name="righe[${idx}][prezzo_unitario]" class="riga-input text-end inp-pu"
-             placeholder="0,00" min="0" step="0.0001" value="${prefill.prezzo_unitario || ''}">
+      <div style="position:relative; display:flex; align-items:center; width:100%;">
+        <input type="number" name="righe[${idx}][prezzo_unitario]" class="riga-input text-end inp-pu"
+               placeholder="0,00" min="0" step="0.0001" value="${prefill.prezzo_unitario || ''}" style="padding-right:20px; width:100%;">
+        <span class="price-origin-badge" style="position:absolute; right:4px; font-size:0.75rem; cursor:pointer;" title="Nessun prezzo configurato">
+          <i class="fa-solid fa-triangle-exclamation" style="color:var(--qk-danger)"></i>
+        </span>
+      </div>
     </td>
     <td class="col-sc">
       <input type="number" name="righe[${idx}][sconto_perc]" class="riga-input text-end inp-sc"
@@ -849,19 +837,33 @@ function buildRiga(prefill = {}) {
     calcTotali();
   });
 
+  // Listen to manual price overrides
+  const puInput = tr.querySelector('.inp-pu');
+  const badge = tr.querySelector('.price-origin-badge');
+  if (puInput && badge) {
+    puInput.addEventListener('input', () => {
+      badge.innerHTML = '<i class="fa-solid fa-pen-to-square" style="color:var(--qk-warning)"></i>';
+      badge.title = 'Modificato manualmente';
+    });
+  }
+
   // Ricalcola quando cambiano i valori numerici
   ['inp-qta','inp-pu','inp-sc','inp-iva'].forEach(cls => {
     tr.querySelector('.' + cls).addEventListener('input', calcTotali);
+  });
+
+  tr.querySelector('.inp-qta').addEventListener('input', () => {
+    fetchQuotePrice(tr);
   });
 
   // Autocomplete prodotto
   const searchInput = tr.querySelector('.riga-search');
   const searchDrop  = tr.querySelector('.riga-ac-drop');
 
-  initAutocomplete({
+  window.qkAutocomplete({
     input:       searchInput,
     dropdown:    searchDrop,
-    apiUrl:      BASE + '/sales/quotes/api/prodotti',
+    fetchFn:     fetchProdotti,
     onSelect:    (item) => {
       tr.querySelector('.inp-prodotto-id').value  = item.id;
       tr.querySelector('.inp-desc').value         = item.label;
@@ -885,10 +887,24 @@ function buildRiga(prefill = {}) {
       searchInput.value = item.label;
       calcTotali();
       checkRowCompliance(tr);
+      fetchQuotePrice(tr);
     },
     onCreate:    () => openModal('modal-nuovo-prodotto', tr),
     createLabel: 'Crea nuovo prodotto',
   });
+
+  // Convert row values if loaded in a different UoM mode than current view mode
+  let savedMode = currentUomMode;
+  if (prefill.unita_misura) {
+    if (prefill.unita_misura === tr.dataset.uomStock) {
+      savedMode = 'stock';
+    } else if (prefill.unita_misura === tr.dataset.uomCommercial) {
+      savedMode = 'commercial';
+    }
+  }
+  if (prefill.unita_misura && savedMode !== currentUomMode) {
+    setRowUomMode(tr, currentUomMode, savedMode);
+  }
 
   document.getElementById('tbody-righe').appendChild(tr);
   calcTotali();
@@ -910,7 +926,7 @@ function calcTotali() {
     imponibile += tot;
     totIva     += rig;
     if (tr.querySelector('.riga-total')) {
-      tr.querySelector('.riga-total').textContent = fmtEuro(tot);
+      tr.querySelector('.riga-total').textContent = window.qkFormatEuro(tot);
     }
   });
 
@@ -919,9 +935,9 @@ function calcTotali() {
   const ivaSc  = Math.round(totIva    * (1 - scGlob / 100) * 100) / 100;
   const totale = Math.round((impSc + ivaSc) * 100) / 100;
 
-  document.getElementById('tot-imponibile').textContent = fmtEuro(impSc);
-  document.getElementById('tot-iva').textContent        = fmtEuro(ivaSc);
-  document.getElementById('tot-totale').textContent     = fmtEuro(totale);
+  document.getElementById('tot-imponibile').textContent = window.qkFormatEuro(impSc);
+  document.getElementById('tot-iva').textContent        = window.qkFormatEuro(ivaSc);
+  document.getElementById('tot-totale').textContent     = window.qkFormatEuro(totale);
 }
 
 // UoM Toggling Listener
@@ -1207,6 +1223,13 @@ async function loadClienteDettagli() {
       condPagInput.value = data.cliente.condizioni_pagamento;
     }
 
+    // Propose default pricelist
+    const listinoSelect = document.getElementById('quote-listino-id');
+    if (listinoSelect && !listinoSelect.value && data.cliente?.listino_id) {
+      listinoSelect.value = data.cliente.listino_id;
+      refetchAllRowPrices();
+    }
+
     // Populate Addresses
     spedSelect.innerHTML = '<option value="">— Nessun indirizzo specifico (Usa sede legale) —</option>';
     const selectedSpedId = spedSelect.dataset.selectedId;
@@ -1267,10 +1290,79 @@ if (contSelect) {
   });
 }
 
+async function fetchQuotePrice(tr) {
+  const prodottoId = tr.querySelector('.inp-prodotto-id')?.value;
+  const listinoId = document.getElementById('quote-listino-id')?.value;
+  const qtyInput = tr.querySelector('.inp-qta');
+  const priceInput = tr.querySelector('.inp-pu');
+
+  if (!prodottoId || !listinoId || !qtyInput || !priceInput) return;
+
+  const qty = parseFloat(qtyInput.value) || 1.0;
+  
+  try {
+    const res = await fetch(`${BASE}/sales/pricelists/api/ottieni-prezzo?prodotto_id=${prodottoId}&listino_id=${listinoId}&quantita=${qty}`);
+    const data = await res.json();
+    
+    if (data.ok) {
+      let computedPrice = parseFloat(data.prezzo_unitario) || 0;
+      
+      // Factoring in active UoM mode conversions (engine returns price in commercial/standard unit)
+      if (currentUomMode === 'stock') {
+        const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
+        if (qFactor > 0 && qFactor !== 1) {
+          computedPrice = computedPrice * qFactor;
+        }
+      }
+      
+      priceInput.value = parseFloat(computedPrice.toFixed(4));
+      
+      const discountInput = tr.querySelector('.inp-sc');
+      if (discountInput && data.sconto_perc !== undefined) {
+        discountInput.value = parseFloat(data.sconto_perc) || 0;
+      }
+    }
+
+    // Update source badge
+    const badge = tr.querySelector('.price-origin-badge');
+    if (badge && data.origine) {
+      let iconHtml = '';
+      if (data.origine === 'dedicato') {
+        iconHtml = '<i class="fa-solid fa-tag" style="color:var(--qk-accent)" title="${data.prezzo_sorgente}"></i>';
+      } else if (data.origine === 'standard') {
+        iconHtml = '<i class="fa-solid fa-globe" style="color:var(--qk-text-muted)" title="${data.prezzo_sorgente}"></i>';
+      } else if (data.origine === 'costo') {
+        iconHtml = '<i class="fa-solid fa-circle-exclamation" style="color:var(--qk-warning)" title="${data.prezzo_sorgente}"></i>';
+      } else {
+        iconHtml = '<i class="fa-solid fa-triangle-exclamation" style="color:var(--qk-danger)" title="${data.prezzo_sorgente}"></i>';
+      }
+      badge.innerHTML = iconHtml;
+      badge.title = data.prezzo_sorgente || '';
+    }
+
+    calcTotali();
+  } catch (e) {
+    console.error('Error fetching listino price:', e);
+  }
+}
+
+function refetchAllRowPrices() {
+  document.querySelectorAll('#tbody-righe tr').forEach(tr => {
+    fetchQuotePrice(tr);
+  });
+}
+
+document.getElementById('quote-listino-id')?.addEventListener('change', () => {
+  refetchAllRowPrices();
+});
+
 // Initial load if customer pre-selected
 if (elClienteId && elClienteId.value) {
   loadClienteDettagli();
 }
 
-})(); // IIFE
+// Unconditionally refetch pricing origins for existing rows on page load
+refetchAllRowPrices();
+
+});
 </script>

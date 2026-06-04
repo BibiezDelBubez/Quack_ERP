@@ -69,8 +69,18 @@ if (!empty($aziende_topbar)) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= e($page_title ?? 'Dashboard') ?> — <?= e(APP_NAME) ?></title>
 
-  <!-- Bootstrap 5 -->
+  <!-- Bootstrap 5 — usato per utility (d-flex, gap-*, col-*, modal JS) e componenti interattivi -->
   <link rel="stylesheet" href="<?= asset('css/bootstrap.min.css') ?>">
+
+  <!--
+    Framework alternativi disponibili in assets/css/ ma non caricati:
+    - Bulma  (assets/css/bulma.min.css)  — CSS-only, nessun JS, ottimo per prototipi rapidi
+    - Pico   (assets/css/pico.min.css)   — minimal semantic CSS, ottimo per form semplici
+    Per usarli: decommentare la riga corrispondente e verificare conflitti con Bootstrap/qk-*.
+    <link rel="stylesheet" href="<?= asset('css/bulma.min.css') ?>">
+    <link rel="stylesheet" href="<?= asset('css/pico.min.css') ?>">
+  -->
+
   <!-- FontAwesome Pro -->
   <link rel="stylesheet" href="<?= asset('fontawesome/css/all.min.css') ?>">
   <!-- Quack: tema e layout -->

@@ -56,6 +56,43 @@ $savedOk = isset($saved) && $saved;
 </div>
 <?php unset($_SESSION['flash_error']); endif; ?>
 
+<style>
+/* Miglioramento UX per righe RFQ */
+#tbl-righe tbody tr {
+  border-bottom: 1px solid var(--qk-border);
+  transition: background-color 0.12s ease;
+}
+#tbl-righe tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+#tbl-righe tbody tr:hover {
+  background-color: #f1f5f9 !important;
+}
+#tbl-righe tbody td {
+  padding: .65rem .5rem !important;
+  vertical-align: middle;
+}
+/* Affordance visiva input */
+#tbl-righe .qk-form-control {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  padding: .25rem .4rem !important;
+  height: auto !important;
+  font-size: .875rem !important;
+  outline: none;
+  transition: all 0.12s ease;
+}
+#tbl-righe .qk-form-control:focus {
+  border-color: var(--qk-accent) !important;
+  background: var(--qk-input-bg, var(--qk-card-bg)) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+}
+#tbl-righe .qk-form-control[readonly], #tbl-righe .qk-form-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+</style>
+
 <!-- ════════════════════════════════════════════════════════════════════  <!-- Guidance Box -->
 <div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
   <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
@@ -827,7 +864,7 @@ $savedOk = isset($saved) && $saved;
      SCRIPT
 ════════════════════════════════════════════════════════════════════════ -->
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
   'use strict';
 
   /* ── Costanti ────────────────────────────────────────────────────────── */
@@ -841,71 +878,52 @@ $savedOk = isset($saved) && $saved;
   let fornitoreSel = { id: '<?= e($values['fornitore_id']) ?>', nome: '' };
   let rigaIdx      = 0;  // contatore righe per data-idx univoci
   let draggedRow   = null;
-  /* ══════════════════════════════════════════════════════════════════════
-     AUTOCOMPLETE GENERICO
-     Usato sia per il campo fornitore che per il campo prodotto sulle righe.
-  ═══════════════════════════════════════════════════════════════════════ */
-  function autocomplete({ inputEl, dropdownEl, clearEl, hiddenEl, fetchFn, onSelect }) {
-    let timer = null;
+  let currentUomMode = document.getElementById('rfq-uom-mode')?.value || 'commercial';
 
-    inputEl.addEventListener('input', () => {
-      clearTimeout(timer);
-      const q = inputEl.value.trim();
-      if (q.length < 1) { dropdownEl.innerHTML = ''; dropdownEl.style.display = 'none'; return; }
-      timer = setTimeout(async () => {
-        const items = await fetchFn(q);
-        if (!items.length) {
-          dropdownEl.innerHTML = '<div class="qk-m2o-item qk-text-muted" style="font-size:.83rem">Nessun risultato</div>';
-        } else {
-          dropdownEl.innerHTML = items.map(it => {
-            let labelHtml = it.label ?? '';
-            if (it.sku_interno) {
-              labelHtml = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                <span style="font-weight:500;">${it.nome}</span>
-                <span class="qk-badge draft" style="font-size:.7rem; padding: 2px 6px; border-radius:4px; font-weight:normal; background:var(--qk-border, rgba(0,0,0,0.05)); color:var(--qk-text-secondary); margin-left:10px; border:1px solid var(--qk-border);">${it.sku_interno}</span>
-              </div>`;
-            } else if (it.codice) {
-              labelHtml = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                <span style="font-weight:500;">${it.label}</span>
-                <span class="qk-badge draft" style="font-size:.7rem; padding: 2px 6px; border-radius:4px; font-weight:normal; background:var(--qk-border, rgba(0,0,0,0.05)); color:var(--qk-text-secondary); margin-left:10px; border:1px solid var(--qk-border);">${it.codice}</span>
-              </div>`;
-            } else {
-              labelHtml = `<span style="font-weight:500;">${labelHtml}</span>`;
-            }
-            return `<div class="qk-m2o-item" data-id="${it.id}" data-label="${it.label?.replace(/"/g,'&quot;') ?? ''}" data-extra='${JSON.stringify(it)}'>${labelHtml}</div>`;
-          }).join('');
-        }
-        dropdownEl.style.display = 'block';
+  function setRowUomMode(tr, targetMode, currentMode) {
+    const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
+    const qtyInput = tr.querySelector('.r-qty');
+    const priceInput = tr.querySelector('.r-prezzo');
+    const uomLabel = tr.querySelector('.r-uom-label');
+    const uomIdInput = tr.querySelector('.r-uom-id');
 
-        dropdownEl.querySelectorAll('.qk-m2o-item[data-id]').forEach(el => {
-          el.addEventListener('mousedown', e => {
-            e.preventDefault();
-            const data = JSON.parse(el.dataset.extra);
-            hiddenEl.value  = el.dataset.id;
-            inputEl.value   = el.dataset.label;
-            dropdownEl.style.display = 'none';
-            if (clearEl) { clearEl.classList.remove('d-none'); }
-            onSelect && onSelect(data);
-          });
-        });
-      }, 220);
+    if (!qtyInput || !uomLabel || !uomIdInput) return;
+
+    if (targetMode === currentMode) {
+      if (uomLabel) {
+        uomLabel.textContent = (targetMode === 'stock') 
+          ? (tr.dataset.uomStock || '—') 
+          : (tr.dataset.uomCommercial || '—');
+      }
+      if (uomIdInput) {
+        uomIdInput.value = (targetMode === 'stock')
+          ? (tr.dataset.uomStockId || '')
+          : (tr.dataset.uomCommercialId || '');
+      }
+      return;
+    }
+
+    const { value: newQty, price: newPrice } = window.qkConvertUom({
+      value: qtyInput.value,
+      price: priceInput ? priceInput.value : null,
+      qFactor,
+      targetMode
     });
 
-    inputEl.addEventListener('blur', () => {
-      setTimeout(() => { dropdownEl.style.display = 'none'; }, 200);
-    });
+    if (qtyInput.value && newQty !== null) qtyInput.value = newQty;
+    if (priceInput && priceInput.value && newPrice !== null) priceInput.value = newPrice;
 
-    if (clearEl) {
-      clearEl.addEventListener('click', () => {
-        hiddenEl.value = '';
-        inputEl.value  = '';
-        clearEl.classList.add('d-none');
-        dropdownEl.style.display = 'none';
-        onSelect && onSelect(null);
-      });
+    if (uomLabel) {
+      uomLabel.textContent = (targetMode === 'stock') 
+        ? (tr.dataset.uomStock || '—') 
+        : (tr.dataset.uomCommercial || '—');
+    }
+    if (uomIdInput) {
+      uomIdInput.value = (targetMode === 'stock')
+        ? (tr.dataset.uomStockId || '')
+        : (tr.dataset.uomCommercialId || '');
     }
   }
-
   /* ── Fetch fornitori ─────────────────────────────────────────────────── */
   async function fetchFornitori(q) {
     const res = await fetch(`${API_FORNITORI}?q=${encodeURIComponent(q)}`);
@@ -951,17 +969,36 @@ $savedOk = isset($saved) && $saved;
     const fClear    = document.getElementById('rfq-fornitore-clear');
 
     if (fInput) {
-      autocomplete({
-        inputEl:    fInput,
-        dropdownEl: fDropdown,
-        clearEl:    fClear,
-        hiddenEl:   fHidden,
-        fetchFn:    fetchFornitori,
-        onSelect:   (sel) => {
-          fornitoreSel = sel ? { id: String(sel.id), nome: sel.label } : { id: '', nome: '' };
+      window.qkAutocomplete({
+        input:       fInput,
+        dropdown:    fDropdown,
+        fetchFn:     fetchFornitori,
+        onSelect:    (sel) => {
+          if (sel) {
+            fHidden.value = sel.id;
+            fInput.value = sel.label || sel.nome || '';
+            fClear?.classList.remove('d-none');
+            fornitoreSel = { id: String(sel.id), nome: sel.label || sel.nome || '' };
+          } else {
+            fHidden.value = '';
+            fInput.value = '';
+            fClear?.classList.add('d-none');
+            fornitoreSel = { id: '', nome: '' };
+          }
           loadFornitoreDettagli();
         },
       });
+
+      if (fClear) {
+        fClear.addEventListener('click', () => {
+          fHidden.value = '';
+          fInput.value = '';
+          fClear.classList.add('d-none');
+          fDropdown.style.display = 'none';
+          fornitoreSel = { id: '', nome: '' };
+          loadFornitoreDettagli();
+        });
+      }
 
       // Se c'è già un valore, mostra il tasto X
       if (fHidden.value) fClear?.classList.remove('d-none');
@@ -1015,42 +1052,47 @@ $savedOk = isset($saved) && $saved;
     const rimuoviBtn   = tr.querySelector('.r-rimuovi');
     const qtyInput     = tr.querySelector('.r-qty');
 
-    autocomplete({
-      inputEl:    prodInput,
-      dropdownEl: prodDropdown,
-      clearEl:    prodClear,
-      hiddenEl:   prodHidden,
-      fetchFn:    fetchProdotti,
-      onSelect:   (sel) => {
+    window.qkAutocomplete({
+      input:       prodInput,
+      dropdown:    prodDropdown,
+      fetchFn:     fetchProdotti,
+      onSelect:    (sel) => {
         if (!sel) {
+          prodHidden.value    = '';
+          prodInput.value     = '';
+          prodClear?.classList.add('d-none');
           uomId.value        = '';
           uomLabel.textContent = '—';
           tr.dataset.uomStock = '—';
           tr.dataset.uomStockId = '';
           tr.dataset.uomCommercial = '—';
           tr.dataset.uomCommercialId = '';
+          tr.dataset.quantitaContenuto = '1';
           const formatoSpan = tr.querySelector('.r-formato');
           if (formatoSpan) formatoSpan.textContent = '—';
           if (ivaInput) ivaInput.value = '22';
           recalcRowTotal(tr);
           return;
         }
+        prodHidden.value = sel.id;
+        prodInput.value = sel.label || sel.nome || '';
+        prodClear?.classList.remove('d-none');
         tr.dataset.uomStock = sel.uom ?? '—';
         tr.dataset.uomStockId = sel.uom_id ?? '';
         tr.dataset.uomCommercial = sel.uom_comm || sel.uom_comm_prod || sel.uom || '—';
         tr.dataset.uomCommercialId = sel.uom_comm_id || sel.uom_comm_prod_id || sel.uom_id || '';
+        tr.dataset.quantitaContenuto = sel.quantita_contenuto || '1';
         
         const formatoSpan = tr.querySelector('.r-formato');
         if (formatoSpan) formatoSpan.textContent = sel.formato || '—';
         
-        // Aggiorna la label e l'ID in base al modo corrente
-        const mode = document.getElementById('rfq-uom-mode')?.value || 'commercial';
-        uomLabel.textContent = (mode === 'stock') ? tr.dataset.uomStock : tr.dataset.uomCommercial;
-        uomId.value          = (mode === 'stock') ? tr.dataset.uomStockId : tr.dataset.uomCommercialId;
-
         if (sel.sku_fornitore) skuInput.value  = sel.sku_fornitore;
         if (sel.prezzo)        prezzoInput.value = sel.prezzo;
         if (sel.iva_perc && ivaInput) ivaInput.value = sel.iva_perc;
+
+        // Converte e allinea le UoM in base al modo corrente
+        const mode = document.getElementById('rfq-uom-mode')?.value || 'commercial';
+        setRowUomMode(tr, mode, 'commercial');
 
         recalcRowTotal(tr);
 
@@ -1061,6 +1103,26 @@ $savedOk = isset($saved) && $saved;
         }
       },
     });
+
+    if (prodClear) {
+      prodClear.addEventListener('click', () => {
+        prodHidden.value = '';
+        prodInput.value  = '';
+        prodClear.classList.add('d-none');
+        prodDropdown.style.display = 'none';
+        uomId.value        = '';
+        uomLabel.textContent = '—';
+        tr.dataset.uomStock = '—';
+        tr.dataset.uomStockId = '';
+        tr.dataset.uomCommercial = '—';
+        tr.dataset.uomCommercialId = '';
+        tr.dataset.quantitaContenuto = '1';
+        const formatoSpan = tr.querySelector('.r-formato');
+        if (formatoSpan) formatoSpan.textContent = '—';
+        if (ivaInput) ivaInput.value = '22';
+        recalcRowTotal(tr);
+      });
+    }
 
     // Navigazione tra le righe tramite Invio
     tr.querySelectorAll('input').forEach(input => {
@@ -1208,21 +1270,12 @@ $savedOk = isset($saved) && $saved;
   const uomModeSelect = document.getElementById('rfq-uom-mode');
   if (uomModeSelect) {
     uomModeSelect.addEventListener('change', () => {
-      const mode = uomModeSelect.value;
+      const targetMode = uomModeSelect.value;
       document.querySelectorAll('tr.rfq-riga').forEach(tr => {
-        const uomLabel = tr.querySelector('.r-uom-label');
-        const uomIdInput = tr.querySelector('.r-uom-id');
-        if (uomLabel) {
-          uomLabel.textContent = (mode === 'stock') 
-            ? (tr.dataset.uomStock || '—') 
-            : (tr.dataset.uomCommercial || '—');
-        }
-        if (uomIdInput) {
-          uomIdInput.value = (mode === 'stock')
-            ? (tr.dataset.uomStockId || '')
-            : (tr.dataset.uomCommercialId || '');
-        }
+        setRowUomMode(tr, targetMode, currentUomMode);
+        recalcRowTotal(tr);
       });
+      currentUomMode = targetMode;
     });
     // Allinea subito i testi e gli ID delle UoM sul caricamento pagina
     uomModeSelect.dispatchEvent(new Event('change'));
@@ -1632,5 +1685,5 @@ $savedOk = isset($saved) && $saved;
     }
   };
 
-})();
+});
 </script>

@@ -44,7 +44,7 @@
   <div class="qk-table-wrap">
     <?php if (empty($pricelists)): ?>
     <div class="qk-empty">
-      <i class="fa-solid fa-receipt fs-1 text-muted mb-3"></i>
+      <i class="fa-solid fa-file-spreadsheet fs-1 text-muted mb-3"></i>
       <p>Nessun listino acquisto trovato.</p>
     </div>
     <?php else: ?>

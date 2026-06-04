@@ -4,7 +4,7 @@
   <div style="background:var(--qk-card-bg);border:1px solid var(--qk-border);
               border-radius:var(--qk-radius-lg);padding:1.5rem;width:100%;max-width:420px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <strong><i class="fa-solid fa-truck-ramp-box me-2"></i>Nuovo fornitore rapido</strong>
+      <strong><i class="fa-solid fa-handshake me-2"></i>Nuovo fornitore rapido</strong>
       <button type="button" onclick="document.getElementById('modal-quick-fornitore').style.display='none'"
               style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--qk-text-muted)">&times;</button>
     </div>

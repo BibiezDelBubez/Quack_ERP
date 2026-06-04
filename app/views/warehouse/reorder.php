@@ -11,7 +11,7 @@
 <div class="qk-card shadow-sm">
   <div class="qk-card-header d-flex justify-content-between align-items-center">
     <span class="qk-card-title">
-      <i class="fa-solid fa-circle-exclamation me-2 text-warning"></i>Proposte di Riordino
+      <i class="fa-solid fa-bell-on me-2 text-warning"></i>Proposte di Riordino
     </span>
     <span class="qk-text-muted fs-7">Articoli con disponibilità libera inferiore alla scorta minima</span>
   </div>

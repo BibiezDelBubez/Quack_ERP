@@ -39,7 +39,7 @@ function ordine_badge_dash(string $stato): string {
 <div class="qk-kpi-grid mb-4">
   <a href="<?= url('sales/quotes?status=bozza') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon accent">
-      <i class="fa-solid fa-file-lines"></i>
+      <i class="fa-solid fa-file-invoice"></i>
     </div>
     <div class="qk-kpi-body">
       <div class="qk-kpi-value"><?= $quotes_bozza ?></div>
@@ -78,7 +78,7 @@ function ordine_badge_dash(string $stato): string {
     <div class="qk-card shadow-sm">
       <div class="qk-card-header d-flex justify-content-between align-items-center">
         <span class="qk-card-title">
-          <i class="fa-solid fa-file-lines me-2 text-primary"></i>Ultimi preventivi clienti
+          <i class="fa-solid fa-file-invoice me-2 text-primary"></i>Ultimi preventivi clienti
         </span>
         <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">Tutti i preventivi</a>
       </div>
@@ -180,7 +180,7 @@ function ordine_badge_dash(string $stato): string {
           <i class="fa-solid fa-user-plus fa-fw me-2"></i>Nuovo Cliente
         </a>
         <a href="<?= url('sales/orders/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
-          <i class="fa-solid fa-file-lines fa-fw me-2"></i>Nuovo Ordine Diretto
+          <i class="fa-solid fa-file-invoice fa-fw me-2"></i>Nuovo Ordine Diretto
         </a>
       </div>
     </div>

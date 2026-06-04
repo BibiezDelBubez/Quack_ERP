@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/purchases_orders.php';
+require_once __DIR__ . '/prodotti.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -223,7 +224,7 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
             $quantita_stock = $qtaAccettata;
             $unita_misura_stock_id = null;
             
-            $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+            $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
             $stProdUm->execute([$prodottoId]);
             $prodUm = $stProdUm->fetch();
             
@@ -234,7 +235,7 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
             if ($prodUm && $um_id) {
                 $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                 $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodottoId);
                 
                 if ((int)$um_id === $unita_misura_stock_id) {
                     $quantita_stock = $qtaAccettata;

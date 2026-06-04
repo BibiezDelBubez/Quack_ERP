@@ -47,25 +47,25 @@
         <input type="hidden" name="action" value="dati">
         <div class="row g-3 mb-3">
           <div class="col-sm-6">
-            <label class="form-label">Nome <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Nome <span class="text-danger">*</span></label>
             <input type="text" name="nome" class="form-control <?= isset($errors['nome']) ? 'is-invalid' : '' ?>" value="<?= e($values['nome']) ?>">
             <?php if (isset($errors['nome'])): ?><div class="invalid-feedback"><?= e($errors['nome']) ?></div><?php endif; ?>
           </div>
           <div class="col-sm-6">
-            <label class="form-label">Cognome <span class="text-danger">*</span></label>
+            <label class="qk-form-label">Cognome <span class="text-danger">*</span></label>
             <input type="text" name="cognome" class="form-control <?= isset($errors['cognome']) ? 'is-invalid' : '' ?>" value="<?= e($values['cognome']) ?>">
             <?php if (isset($errors['cognome'])): ?><div class="invalid-feedback"><?= e($errors['cognome']) ?></div><?php endif; ?>
           </div>
         </div>
         <div class="mb-4">
-          <label class="form-label">Email <span class="text-danger">*</span></label>
+          <label class="qk-form-label">Email <span class="text-danger">*</span></label>
           <input type="email" name="email" class="form-control <?= isset($errors['email']) ? 'is-invalid' : '' ?>" value="<?= e($values['email']) ?>">
           <?php if (isset($errors['email'])): ?><div class="invalid-feedback"><?= e($errors['email']) ?></div><?php endif; ?>
         </div>
         <div class="mb-3">
-          <label class="form-label">Ruolo</label>
+          <label class="qk-form-label">Ruolo</label>
           <input type="text" class="form-control" value="<?= e($utente['ruolo']) ?>" disabled>
-          <div class="form-text">Il ruolo viene assegnato dall'amministratore.</div>
+          <div class="qk-form-hint">Il ruolo viene assegnato dall'amministratore.</div>
         </div>
         <div class="d-flex justify-content-end pt-3 border-top">
           <button type="submit" class="btn-qk btn-qk-primary"><i class="fa-solid fa-floppy-disk me-1"></i>Salva modifiche</button>
@@ -77,18 +77,18 @@
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="password">
         <div class="mb-3">
-          <label class="form-label">Password attuale <span class="text-danger">*</span></label>
+          <label class="qk-form-label">Password attuale <span class="text-danger">*</span></label>
           <input type="password" name="pwd_current" autocomplete="current-password" class="form-control <?= isset($errors['pwd_current']) ? 'is-invalid' : '' ?>">
           <?php if (isset($errors['pwd_current'])): ?><div class="invalid-feedback"><?= e($errors['pwd_current']) ?></div><?php endif; ?>
         </div>
         <div class="mb-3">
-          <label class="form-label">Nuova password <span class="text-danger">*</span></label>
+          <label class="qk-form-label">Nuova password <span class="text-danger">*</span></label>
           <input type="password" name="pwd_new" autocomplete="new-password" class="form-control <?= isset($errors['pwd_new']) ? 'is-invalid' : '' ?>">
           <?php if (isset($errors['pwd_new'])): ?><div class="invalid-feedback"><?= e($errors['pwd_new']) ?></div><?php endif; ?>
-          <div class="form-text">Minimo 8 caratteri.</div>
+          <div class="qk-form-hint">Minimo 8 caratteri.</div>
         </div>
         <div class="mb-4">
-          <label class="form-label">Conferma nuova password <span class="text-danger">*</span></label>
+          <label class="qk-form-label">Conferma nuova password <span class="text-danger">*</span></label>
           <input type="password" name="pwd_confirm" autocomplete="new-password" class="form-control <?= isset($errors['pwd_confirm']) ? 'is-invalid' : '' ?>">
           <?php if (isset($errors['pwd_confirm'])): ?><div class="invalid-feedback"><?= e($errors['pwd_confirm']) ?></div><?php endif; ?>
         </div>

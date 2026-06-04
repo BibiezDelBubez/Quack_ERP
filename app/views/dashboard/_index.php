@@ -105,7 +105,7 @@ function get_stato_label(string $stato): string {
     <div class="qk-card shadow-sm" style="margin: 0;">
       <div class="qk-card-header d-flex justify-content-between align-items-center">
         <span class="qk-card-title">
-          <i class="fa-solid fa-file-contract fa-sm me-2 text-success"></i>Ordini Acquisto Recenti
+          <i class="fa-solid fa-file-circle-check fa-sm me-2 text-success"></i>Ordini Acquisto Recenti
         </span>
         <a href="<?= url('purchases/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
           Tutti gli ordini <i class="fa-solid fa-arrow-right fa-xs"></i>
@@ -166,10 +166,10 @@ function get_stato_label(string $stato): string {
           <i class="fa-solid fa-file-invoice fa-fw me-2"></i>Nuovo Preventivo Cliente
         </a>
         <a href="<?= url('purchases/rfq/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
-          <i class="fa-solid fa-file-signature fa-fw me-2"></i>Nuova RFQ Acquisti
+          <i class="fa-solid fa-arrow-down-to-bracket fa-fw me-2"></i>Nuova RFQ Acquisti
         </a>
         <a href="<?= url('purchases/quotes/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
-          <i class="fa-solid fa-file-invoice-dollar fa-fw me-2"></i>Registra Prev. Fornitore
+          <i class="fa-solid fa-envelope-open-text fa-fw me-2"></i>Registra Prev. Fornitore
         </a>
         <a href="<?= url('warehouse/stock') ?>" class="btn-qk btn-qk-secondary text-start w-100">
           <i class="fa-solid fa-boxes-stacked fa-fw me-2"></i>Controllo Giacenze

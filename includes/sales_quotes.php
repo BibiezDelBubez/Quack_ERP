@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/anagrafiche.php';
+require_once __DIR__ . '/prodotti.php';
 
 /**
  * Genera il prossimo numero progressivo per il preventivo cliente.
@@ -193,6 +194,90 @@ function qk_crea_prodotto_rapido(PDO $pdo, array $data): int
 }
 
 /**
+ * Recupera e restituisce i dati denormalizzati di azienda, cliente e consegna per l'integrità storica.
+ */
+function qk_denormalize_offerta_details(PDO $pdo, array $values): array
+{
+    $azienda = null;
+    if (!empty($values['azienda_interna_id'])) {
+        $stAz = $pdo->prepare("
+            SELECT cf.ragione_sociale, cf.partita_iva, cf.codice_fiscale, cf.email, cf.telefono,
+                   ind.via, ind.civico, ind.cap, ind.citta, ind.provincia, ind.nazione,
+                   az.iban_default
+            FROM aziende_interne az
+            JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'legale'
+            WHERE az.id = ?
+            LIMIT 1
+        ");
+        $stAz->execute([(int)$values['azienda_interna_id']]);
+        $azienda = $stAz->fetch(PDO::FETCH_ASSOC);
+    }
+
+    $cliente = null;
+    if (!empty($values['cliente_id'])) {
+        $stCli = $pdo->prepare("
+            SELECT cf.ragione_sociale, cf.nome, cf.cognome, cf.partita_iva, cf.codice_fiscale,
+                   ind.via, ind.civico, ind.cap, ind.citta, ind.provincia, ind.nazione
+            FROM clienti_fornitori cf
+            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'legale'
+            WHERE cf.id = ?
+            LIMIT 1
+        ");
+        $stCli->execute([(int)$values['cliente_id']]);
+        $cliente = $stCli->fetch(PDO::FETCH_ASSOC);
+    }
+
+    $consegna = null;
+    if (!empty($values['indirizzo_spedizione_id'])) {
+        $stInd = $pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
+        $stInd->execute([(int)$values['indirizzo_spedizione_id']]);
+        $consegna = $stInd->fetch(PDO::FETCH_ASSOC);
+    }
+
+    $azienda_ragione_sociale = $azienda['ragione_sociale'] ?? null;
+    $azienda_partita_iva     = $azienda['partita_iva'] ?? null;
+    $azienda_codice_fiscale  = $azienda['codice_fiscale'] ?? null;
+    $azienda_indirizzo       = $azienda ? trim(($azienda['via'] ?? '') . ' ' . ($azienda['civico'] ?? '') . ', ' . ($azienda['cap'] ?? '') . ' ' . ($azienda['citta'] ?? '') . ' (' . ($azienda['provincia'] ?? '') . ')') : null;
+    $azienda_telefono        = $azienda['telefono'] ?? null;
+    $azienda_email           = $azienda['email'] ?? null;
+    $azienda_iban            = $azienda['iban_default'] ?? null;
+
+    $cliente_label = '';
+    if ($cliente) {
+        $cliente_label = $cliente['ragione_sociale'] ?: trim(($cliente['nome'] ?? '') . ' ' . ($cliente['cognome'] ?? ''));
+    }
+    $cliente_ragione_sociale = $cliente_label ?: null;
+    $cliente_partita_iva     = $cliente['partita_iva'] ?? null;
+    $cliente_codice_fiscale  = $cliente['codice_fiscale'] ?? null;
+    $cliente_indirizzo       = $cliente ? trim(($cliente['via'] ?? '') . ' ' . ($cliente['civico'] ?? '') . ', ' . ($cliente['cap'] ?? '') . ' ' . ($cliente['citta'] ?? '') . ' (' . ($cliente['provincia'] ?? '') . ')') : null;
+
+    return [
+        'azienda_ragione_sociale' => $azienda_ragione_sociale,
+        'azienda_partita_iva'     => $azienda_partita_iva,
+        'azienda_codice_fiscale'  => $azienda_codice_fiscale,
+        'azienda_indirizzo'       => $azienda_indirizzo,
+        'azienda_telefono'        => $azienda_telefono,
+        'azienda_email'           => $azienda_email,
+        'azienda_iban'            => $azienda_iban,
+        'cliente_ragione_sociale' => $cliente_ragione_sociale,
+        'cliente_partita_iva'     => $cliente_partita_iva,
+        'cliente_codice_fiscale'  => $cliente_codice_fiscale,
+        'cliente_indirizzo'       => $cliente_indirizzo,
+        'consegna_via'            => $consegna['via'] ?? null,
+        'consegna_civico'         => $consegna['civico'] ?? null,
+        'consegna_cap'            => $consegna['cap'] ?? null,
+        'consegna_citta'          => $consegna['citta'] ?? null,
+        'consegna_provincia'      => $consegna['provincia'] ?? null,
+        'consegna_nazione'        => $consegna['nazione'] ?? null,
+        'consegna_presso'         => $consegna['presso'] ?? null,
+        'consegna_referente'      => $consegna['referente_consegna'] ?? null,
+        'consegna_telefono'       => $consegna['telefono_consegna'] ?? null,
+        'consegna_note'           => $consegna['note_consegna'] ?? null,
+    ];
+}
+
+/**
  * Inserimento preventivo e relative righe.
  */
 function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id): int
@@ -260,13 +345,13 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             $quantita_stock = $qta;
             $unita_misura_stock_id = $um_id;
             if ($prodotto_id && $um_id) {
-                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
                 $stProdUm->execute([$prodotto_id]);
                 $prodUm = $stProdUm->fetch();
                 if ($prodUm) {
                     $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                     $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                    $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                    $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodotto_id);
                     if ((int)$um_id === $unita_misura_stock_id) {
                         $quantita_stock = $qta;
                     } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
@@ -309,17 +394,25 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         $margine_euro = round($imponibile - $totale_costo, 2);
         $margine_perc = $imponibile > 0 ? round(($margine_euro / $imponibile) * 100, 2) : 0.0;
 
+        $denorm = qk_denormalize_offerta_details($pdo, $values);
+
         // Inserimento testata
         $sqlHead = "INSERT INTO preventivi (
-            numero_preventivo, riferimento_interno, cliente_id, alla_ca, contatto_id, contatto_nome, contatto_email, contatto_telefono, indirizzo_spedizione_id, data_offerta, data_scadenza, data_consegna_richiesta,
+            numero_preventivo, riferimento_interno, cliente_id, azienda_interna_id, listino_id, alla_ca, contatto_id, contatto_nome, contatto_email, contatto_telefono, indirizzo_spedizione_id, data_offerta, data_scadenza, data_consegna_richiesta,
             canale_vendita_id, stato, sconto_globale_perc, condizioni_pagamento, trasporto, valuta,
             imponibile, totale_iva, totale, totale_costo, margine_euro, margine_perc,
-            note_cliente, note_interne, creato_da, created_at, updated_at
+            note_cliente, note_interne, creato_da, created_at, updated_at,
+            azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
+            cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
+            consegna_via, consegna_civico, consegna_cap, consegna_citta, consegna_provincia, consegna_nazione, consegna_presso, consegna_referente, consegna_telefono, consegna_note
         ) VALUES (
-            :numero_preventivo, :riferimento_interno, :cliente_id, :alla_ca, :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono, :indirizzo_spedizione_id, :data_offerta, :data_scadenza, :data_consegna_richiesta,
+            :numero_preventivo, :riferimento_interno, :cliente_id, :azienda_interna_id, :listino_id, :alla_ca, :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono, :indirizzo_spedizione_id, :data_offerta, :data_scadenza, :data_consegna_richiesta,
             :canale_vendita_id, :stato, :sconto_globale_perc, :condizioni_pagamento, :trasporto, :valuta,
             :imponibile, :totale_iva, :totale, :totale_costo, :margine_euro, :margine_perc,
-            :note_cliente, :note_interne, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            :note_cliente, :note_interne, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+            :azienda_ragione_sociale, :azienda_partita_iva, :azienda_codice_fiscale, :azienda_indirizzo, :azienda_telefono, :azienda_email, :azienda_iban,
+            :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
+            :consegna_via, :consegna_civico, :consegna_cap, :consegna_citta, :consegna_provincia, :consegna_nazione, :consegna_presso, :consegna_referente, :consegna_telefono, :consegna_note
         )";
 
         $stmtHead = $pdo->prepare($sqlHead);
@@ -327,6 +420,8 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             ':numero_preventivo'       => trim($values['numero_offerta']),
             ':riferimento_interno'     => qk_null_if_empty($values['riferimento_interno'] ?? ''),
             ':cliente_id'              => (int)$values['cliente_id'],
+            ':azienda_interna_id'      => !empty($values['azienda_interna_id']) ? (int)$values['azienda_interna_id'] : null,
+            ':listino_id'              => !empty($values['listino_id']) ? (int)$values['listino_id'] : null,
             ':alla_ca'                 => qk_null_if_empty($values['alla_ca'] ?? ''),
             ':contatto_id'             => qk_null_if_empty($values['contatto_id'] ?? ''),
             ':contatto_nome'           => qk_null_if_empty($values['contatto_nome'] ?? ''),
@@ -351,6 +446,27 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             ':note_cliente'            => qk_null_if_empty($values['note_cliente'] ?? ''),
             ':note_interne'            => qk_null_if_empty($values['note_interne'] ?? ''),
             ':creato_da'               => $user_id,
+            ':azienda_ragione_sociale' => $denorm['azienda_ragione_sociale'],
+            ':azienda_partita_iva'     => $denorm['azienda_partita_iva'],
+            ':azienda_codice_fiscale'  => $denorm['azienda_codice_fiscale'],
+            ':azienda_indirizzo'       => $denorm['azienda_indirizzo'],
+            ':azienda_telefono'        => $denorm['azienda_telefono'],
+            ':azienda_email'           => $denorm['azienda_email'],
+            ':azienda_iban'            => $denorm['azienda_iban'],
+            ':cliente_ragione_sociale' => $denorm['cliente_ragione_sociale'],
+            ':cliente_partita_iva'     => $denorm['cliente_partita_iva'],
+            ':cliente_codice_fiscale'  => $denorm['cliente_codice_fiscale'],
+            ':cliente_indirizzo'       => $denorm['cliente_indirizzo'],
+            ':consegna_via'            => $denorm['consegna_via'],
+            ':consegna_civico'         => $denorm['consegna_civico'],
+            ':consegna_cap'            => $denorm['consegna_cap'],
+            ':consegna_citta'          => $denorm['consegna_citta'],
+            ':consegna_provincia'      => $denorm['consegna_provincia'],
+            ':consegna_nazione'        => $denorm['consegna_nazione'],
+            ':consegna_presso'         => $denorm['consegna_presso'],
+            ':consegna_referente'      => $denorm['consegna_referente'],
+            ':consegna_telefono'       => $denorm['consegna_telefono'],
+            ':consegna_note'           => $denorm['consegna_note'],
         ]);
 
         $preventivo_id = (int)$pdo->lastInsertId();
@@ -505,13 +621,13 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             $quantita_stock = $qta;
             $unita_misura_stock_id = $um_id;
             if ($prodotto_id && $um_id) {
-                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
                 $stProdUm->execute([$prodotto_id]);
                 $prodUm = $stProdUm->fetch();
                 if ($prodUm) {
                     $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                     $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                    $factor = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+                    $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodotto_id);
                     if ((int)$um_id === $unita_misura_stock_id) {
                         $quantita_stock = $qta;
                     } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
@@ -553,8 +669,12 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         $margine_euro = round($imponibile - $totale_costo, 2);
         $margine_perc = $imponibile > 0 ? round(($margine_euro / $imponibile) * 100, 2) : 0.0;
 
+        $denorm = qk_denormalize_offerta_details($pdo, $values);
+
         $sqlUpdateHead = "UPDATE preventivi SET
             cliente_id = :cliente_id,
+            azienda_interna_id = :azienda_interna_id,
+            listino_id = :listino_id,
             alla_ca = :alla_ca,
             contatto_id = :contatto_id,
             contatto_nome = :contatto_nome,
@@ -580,6 +700,27 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             note_interne = :note_interne,
             oggetto = :oggetto,
             riferimento_interno = :riferimento_interno,
+            azienda_ragione_sociale = :azienda_ragione_sociale,
+            azienda_partita_iva = :azienda_partita_iva,
+            azienda_codice_fiscale = :azienda_codice_fiscale,
+            azienda_indirizzo = :azienda_indirizzo,
+            azienda_telefono = :azienda_telefono,
+            azienda_email = :azienda_email,
+            azienda_iban = :azienda_iban,
+            cliente_ragione_sociale = :cliente_ragione_sociale,
+            cliente_partita_iva = :cliente_partita_iva,
+            cliente_codice_fiscale = :cliente_codice_fiscale,
+            cliente_indirizzo = :cliente_indirizzo,
+            consegna_via = :consegna_via,
+            consegna_civico = :consegna_civico,
+            consegna_cap = :consegna_cap,
+            consegna_citta = :consegna_citta,
+            consegna_provincia = :consegna_provincia,
+            consegna_nazione = :consegna_nazione,
+            consegna_presso = :consegna_presso,
+            consegna_referente = :consegna_referente,
+            consegna_telefono = :consegna_telefono,
+            consegna_note = :consegna_note,
             updated_at = CURRENT_TIMESTAMP
             WHERE id = :id";
 
@@ -587,6 +728,8 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         $stmt->execute([
             ':id'                      => $id,
             ':cliente_id'              => (int)$values['cliente_id'],
+            ':azienda_interna_id'      => !empty($values['azienda_interna_id']) ? (int)$values['azienda_interna_id'] : null,
+            ':listino_id'              => !empty($values['listino_id']) ? (int)$values['listino_id'] : null,
             ':alla_ca'                 => qk_null_if_empty($values['alla_ca'] ?? ''),
             ':contatto_id'             => qk_null_if_empty($values['contatto_id'] ?? ''),
             ':contatto_nome'           => qk_null_if_empty($values['contatto_nome'] ?? ''),
@@ -612,6 +755,27 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             ':note_interne'            => qk_null_if_empty($values['note_interne'] ?? ''),
             ':oggetto'                 => qk_null_if_empty($values['oggetto'] ?? ''),
             ':riferimento_interno'     => qk_null_if_empty($values['riferimento_interno'] ?? ''),
+            ':azienda_ragione_sociale' => $denorm['azienda_ragione_sociale'],
+            ':azienda_partita_iva'     => $denorm['azienda_partita_iva'],
+            ':azienda_codice_fiscale'  => $denorm['azienda_codice_fiscale'],
+            ':azienda_indirizzo'       => $denorm['azienda_indirizzo'],
+            ':azienda_telefono'        => $denorm['azienda_telefono'],
+            ':azienda_email'           => $denorm['azienda_email'],
+            ':azienda_iban'            => $denorm['azienda_iban'],
+            ':cliente_ragione_sociale' => $denorm['cliente_ragione_sociale'],
+            ':cliente_partita_iva'     => $denorm['cliente_partita_iva'],
+            ':cliente_codice_fiscale'  => $denorm['cliente_codice_fiscale'],
+            ':cliente_indirizzo'       => $denorm['cliente_indirizzo'],
+            ':consegna_via'            => $denorm['consegna_via'],
+            ':consegna_civico'         => $denorm['consegna_civico'],
+            ':consegna_cap'            => $denorm['consegna_cap'],
+            ':consegna_citta'          => $denorm['consegna_citta'],
+            ':consegna_provincia'      => $denorm['consegna_provincia'],
+            ':consegna_nazione'        => $denorm['consegna_nazione'],
+            ':consegna_presso'         => $denorm['consegna_presso'],
+            ':consegna_referente'      => $denorm['consegna_referente'],
+            ':consegna_telefono'       => $denorm['consegna_telefono'],
+            ':consegna_note'           => $denorm['consegna_note'],
         ]);
 
         $pdo->prepare('DELETE FROM preventivi_righe WHERE preventivo_id = ?')->execute([$id]);

@@ -195,6 +195,7 @@ function qk_cliente_prepare_row(array $values, ?string $existingNoteCommerciali 
         'codice_sdi'           => qk_null_if_empty($values['sdi_code'] ?? ''),
         'note_commerciali'     => $noteComm,
         'note_interne'         => $noteInterne,
+        'listino_id'           => !empty($values['listino_id']) ? (int)$values['listino_id'] : null,
     ];
 
     $via = trim((string) ($values['address'] ?? ''));
@@ -306,8 +307,8 @@ function qk_insert_cliente(PDO $pdo, array $values): int
         $stmtD = $pdo->prepare(
             'INSERT INTO dettagli_clienti (
                 soggetto_id, tipo_cliente_id, sconto_extra_perc, condizioni_pagamento,
-                codice_sdi, note_commerciali, note_interne
-            ) VALUES (?,?,?,?,?,?,?)'
+                codice_sdi, note_commerciali, note_interne, listino_id
+            ) VALUES (?,?,?,?,?,?,?,?)'
         );
         $stmtD->execute([
             $id,
@@ -317,6 +318,7 @@ function qk_insert_cliente(PDO $pdo, array $values): int
             $d['codice_sdi'],
             $d['note_commerciali'],
             $d['note_interne'],
+            $d['listino_id'],
         ]);
 
         if ($prep['indirizzo']) {
@@ -398,7 +400,7 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
             $pdo->prepare(
                 'UPDATE dettagli_clienti SET
                     tipo_cliente_id = ?, sconto_extra_perc = ?, condizioni_pagamento = ?,
-                    codice_sdi = ?, note_commerciali = ?, note_interne = ?
+                    codice_sdi = ?, note_commerciali = ?, note_interne = ?, listino_id = ?
                  WHERE soggetto_id = ?'
             )->execute([
                 $tipo_cliente_id,
@@ -407,14 +409,15 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
                 $d['codice_sdi'],
                 $d['note_commerciali'],
                 $d['note_interne'],
+                $d['listino_id'],
                 $id,
             ]);
         } else {
             $pdo->prepare(
                 'INSERT INTO dettagli_clienti (
                     soggetto_id, tipo_cliente_id, sconto_extra_perc, condizioni_pagamento,
-                    codice_sdi, note_commerciali, note_interne
-                ) VALUES (?,?,?,?,?,?,?)'
+                    codice_sdi, note_commerciali, note_interne, listino_id
+                ) VALUES (?,?,?,?,?,?,?,?)'
             )->execute([
                 $id,
                 $tipo_cliente_id,
@@ -423,6 +426,7 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
                 $d['codice_sdi'],
                 $d['note_commerciali'],
                 $d['note_interne'],
+                $d['listino_id'],
             ]);
         }
 
@@ -439,7 +443,7 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
 function qk_load_cliente_form(PDO $pdo, int $id): ?array
 {
     $sql = 'SELECT cf.*, tc.codice AS tipo_cliente, dc.sconto_extra_perc, dc.condizioni_pagamento,
-                   dc.codice_sdi, dc.note_commerciali, dc.note_interne,
+                   dc.codice_sdi, dc.note_commerciali, dc.note_interne, dc.listino_id,
                    i.via AS ind_via, i.civico AS ind_civico, i.cap AS ind_cap,
                    i.citta AS ind_citta, i.provincia AS ind_provincia, i.nazione AS ind_nazione
             FROM clienti_fornitori cf
@@ -486,6 +490,7 @@ function qk_load_cliente_form(PDO $pdo, int $id): ?array
         'category'      => qk_map_tipo_cliente_to_category($row['tipo_cliente'] ?? null),
         'discount'      => isset($row['sconto_extra_perc']) ? (string) $row['sconto_extra_perc'] : '',
         'payment_terms' => (string) ($row['condizioni_pagamento'] ?? ''),
+        'listino_id'    => isset($row['listino_id']) ? (string) $row['listino_id'] : '',
         'status'        => qk_reverse_status((int) $row['attivo']),
         'notes'         => $notesClean,
         'newsletter'    => $newsletter,

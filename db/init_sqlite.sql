@@ -718,6 +718,7 @@ CREATE TABLE IF NOT EXISTS preventivi (
     numero_preventivo       VARCHAR(20)  NOT NULL UNIQUE,
     riferimento_interno     VARCHAR(100),
     cliente_id              INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
+    azienda_interna_id      INTEGER      REFERENCES aziende_interne(id),
     indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
     alla_ca                 VARCHAR(150),                  -- c/o
     contatto_id             INTEGER      REFERENCES clienti_fornitori(id),
@@ -745,7 +746,34 @@ CREATE TABLE IF NOT EXISTS preventivi (
     totale_costo            DECIMAL(10,2),
     margine_euro            DECIMAL(10,2),
     margine_perc            DECIMAL(5,2),
-    note_cliente            TEXT,                          -- visibili al cliente
+    -- Dati denormalizzati dell'azienda venditrice per integrità storica (best practice)
+    azienda_ragione_sociale VARCHAR(255),
+    azienda_partita_iva     VARCHAR(30),
+    azienda_codice_fiscale  VARCHAR(30),
+    azienda_indirizzo       VARCHAR(255),
+    azienda_telefono        VARCHAR(50),
+    azienda_email           VARCHAR(100),
+    azienda_iban            VARCHAR(50),
+
+    -- Dati denormalizzati del cliente per integrità storica (best practice)
+    cliente_ragione_sociale VARCHAR(255),
+    cliente_partita_iva     VARCHAR(30),
+    cliente_codice_fiscale  VARCHAR(30),
+    cliente_indirizzo       VARCHAR(255),
+
+    -- Spedizione denormalizzata per integrità storica (best practice)
+    consegna_via            VARCHAR(150),
+    consegna_civico         VARCHAR(10),
+    consegna_cap            VARCHAR(10),
+    consegna_citta          VARCHAR(100),
+    consegna_provincia      CHAR(2),
+    consegna_nazione        CHAR(2),
+    consegna_presso         VARCHAR(100),
+    consegna_referente      VARCHAR(80),
+    consegna_telefono       VARCHAR(20),
+    consegna_note           VARCHAR(255),
+
+    note_cliente            TEXT,
     note_interne            TEXT,
     creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

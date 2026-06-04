@@ -5,9 +5,10 @@
  * Variabili attese: $active_tab (string)
  */
 $subnav_tabs = [
-    'dashboard'  => ['label' => 'Panoramica',   'url' => url('sales')],
-    'quotes'     => ['label' => 'Preventivi',   'url' => url('sales/quotes')],
-    'orders'     => ['label' => 'Ordini',       'url' => url('sales/orders')],
+    'dashboard'  => ['label' => 'Panoramica',      'url' => url('sales')],
+    'quotes'     => ['label' => 'Preventivi',      'url' => url('sales/quotes')],
+    'orders'     => ['label' => 'Ordini',          'url' => url('sales/orders')],
+    'pricelists' => ['label' => 'Listini vendita', 'url' => url('sales/pricelists')],
 ];
 ?>
 <ul class="nav qk-nav-tabs mb-4" role="tablist">
