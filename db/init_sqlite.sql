@@ -795,6 +795,7 @@ CREATE TABLE IF NOT EXISTS preventivi_righe (
     preventivo_id   INTEGER       NOT NULL REFERENCES preventivi(id) ON DELETE CASCADE,
     prodotto_id     INTEGER       REFERENCES prodotti(id),
     descrizione     VARCHAR(255)  NOT NULL,          -- testo riga; può differire dal nome prodotto
+    descrizione_confezione VARCHAR(255),             -- descrizione della confezione personalizzata/formato
     quantita        DECIMAL(10,3) NOT NULL,
     unita_misura_id INTEGER       REFERENCES unita_misura(id),  -- UoM usata in questo preventivo
     prezzo_unitario DECIMAL(10,4) NOT NULL,          -- imponibile nell'unità di misura della riga

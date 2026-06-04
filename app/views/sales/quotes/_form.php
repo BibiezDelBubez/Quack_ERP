@@ -112,6 +112,14 @@ $v = $values;
     <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
       <i class="fa-solid fa-arrow-left"></i> Torna alla lista
     </a>
+    <?php if (isset($id) && $id > 0): ?>
+      <a href="<?= url('sales/quotes/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank" title="Stampa o scarica il preventivo in formato PDF">
+        <i class="fa-solid fa-file-pdf text-danger"></i> PDF
+      </a>
+      <a href="<?= url('sales/quotes/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank" title="Scarica il documento in formato Microsoft Word (DOCX)">
+        <i class="fa-solid fa-file-word text-primary"></i> Word (DOCX)
+      </a>
+    <?php endif; ?>
   </div>
 
   <!-- Pipeline visivo stati -->
@@ -799,15 +807,14 @@ function buildRiga(prefill = {}) {
       <input type="hidden" name="righe[${idx}][uom_commercial_id]" class="inp-uom-commercial-id" value="${esc(tr.dataset.uomCommercialId)}">
       <input type="hidden" name="righe[${idx}][quantita_contenuto]" class="inp-quantita-contenuto" value="${esc(tr.dataset.quantitaContenuto)}">
       <input type="hidden" name="righe[${idx}][sku]" class="inp-sku" value="${esc(prefill.sku || '')}">
-      <input type="hidden" name="righe[${idx}][quantita_confezione]" class="inp-quantita-confezione" value="${esc(prefill.quantita_confezione || '')}">
     </td>
     <td class="col-desc">
       <input type="text" name="righe[${idx}][descrizione]" class="riga-input inp-desc"
              placeholder="Descrizione prodotto" value="${esc(prefill.descrizione || '')}">
     </td>
     <td class="col-conf">
-      <input type="text" class="riga-input riga-conf" readonly
-             value="${esc(prefill.quantita_confezione || '')}" placeholder="—" title="Confezione (da catalogo)" style="color:var(--qk-text-muted)">
+      <input type="text" name="righe[${idx}][quantita_confezione]" class="riga-input riga-conf inp-quantita-confezione"
+             value="${esc(prefill.quantita_confezione || '')}" placeholder="—" title="Confezione">
     </td>
     <td class="col-qta">
       <input type="number" name="righe[${idx}][quantita]" class="riga-input text-end inp-qta"

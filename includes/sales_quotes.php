@@ -363,6 +363,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             $righe_preparate[] = [
                 'prodotto_id' => $prodotto_id,
                 'descrizione' => trim($r['descrizione']),
+                'descrizione_confezione' => isset($r['quantita_confezione']) ? trim($r['quantita_confezione']) : null,
                 'quantita' => $qta,
                 'unita_misura_id' => $um_id,
                 'prezzo_unitario' => $pu,
@@ -473,11 +474,11 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
 
         // Inserimento righe
         $sqlLine = "INSERT INTO preventivi_righe (
-            preventivo_id, prodotto_id, descrizione, quantita, unita_misura_id, prezzo_unitario,
+            preventivo_id, prodotto_id, descrizione, descrizione_confezione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
             totale_costo_riga, margine_riga, is_adr, quantita_stock, unita_misura_stock_id, posizione_riga, note_riga
         ) VALUES (
-            :preventivo_id, :prodotto_id, :descrizione, :quantita, :unita_misura_id, :prezzo_unitario,
+            :preventivo_id, :prodotto_id, :descrizione, :descrizione_confezione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
             :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :unita_misura_stock_id, :posizione_riga, :note_riga
         )";
@@ -489,6 +490,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
                 ':preventivo_id'     => $rl['preventivo_id'],
                 ':prodotto_id'       => $rl['prodotto_id'],
                 ':descrizione'       => $rl['descrizione'],
+                ':descrizione_confezione' => $rl['descrizione_confezione'],
                 ':quantita'          => $rl['quantita'],
                 ':unita_misura_id'   => $rl['unita_misura_id'],
                 ':prezzo_unitario'   => $rl['prezzo_unitario'],
@@ -537,7 +539,10 @@ function qk_get_offerta(PDO $pdo, int $id): ?array
         SELECT pr.*, 
                p.sku_interno AS sku,
                p.quantita_contenuto,
-               (p.quantita_contenuto || \' \' || uc.codice) AS quantita_confezione,
+               CASE 
+                   WHEN pr.descrizione_confezione IS NOT NULL AND pr.descrizione_confezione != \'\' THEN pr.descrizione_confezione
+                   ELSE COALESCE(p.descrizione_confezione, (p.quantita_contenuto || \' \' || uc.codice)) 
+               END AS quantita_confezione,
                um.codice AS unita_misura,
                us.codice AS uom_stock,
                uc.codice AS uom_commercial,
@@ -639,6 +644,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             $righe_preparate[] = [
                 'prodotto_id' => $prodotto_id,
                 'descrizione' => trim($r['descrizione']),
+                'descrizione_confezione' => isset($r['quantita_confezione']) ? trim($r['quantita_confezione']) : null,
                 'quantita' => $qta,
                 'unita_misura_id' => $um_id,
                 'prezzo_unitario' => $pu,
@@ -781,11 +787,11 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         $pdo->prepare('DELETE FROM preventivi_righe WHERE preventivo_id = ?')->execute([$id]);
 
         $sqlLine = "INSERT INTO preventivi_righe (
-            preventivo_id, prodotto_id, descrizione, quantita, unita_misura_id, prezzo_unitario,
+            preventivo_id, prodotto_id, descrizione, descrizione_confezione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
             totale_costo_riga, margine_riga, is_adr, quantita_stock, unita_misura_stock_id, posizione_riga, note_riga
         ) VALUES (
-            :preventivo_id, :prodotto_id, :descrizione, :quantita, :unita_misura_id, :prezzo_unitario,
+            :preventivo_id, :prodotto_id, :descrizione, :descrizione_confezione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
             :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :unita_misura_stock_id, :posizione_riga, :note_riga
         )";
@@ -796,6 +802,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
                 ':preventivo_id'     => $id,
                 ':prodotto_id'       => $rl['prodotto_id'],
                 ':descrizione'       => $rl['descrizione'],
+                ':descrizione_confezione' => $rl['descrizione_confezione'],
                 ':quantita'          => $rl['quantita'],
                 ':unita_misura_id'   => $rl['unita_misura_id'],
                 ':prezzo_unitario'   => $rl['prezzo_unitario'],
