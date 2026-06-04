@@ -1344,6 +1344,301 @@ a, button, input, select, textarea, .qk-filter-pill, .qk-page-btn, .qk-status-pa
   background: var(--qk-text-muted);
 }
 
+/* 5. Completezza Elementi UI ERP (Estensioni per Autocomplete, Switch, Stepper, Layout Complessi) */
+
+/* Typography & Labels */
+h1, .qk-title-h1 { font-size: 1.75rem; font-weight: 700; color: var(--qk-text-primary); margin-bottom: 0.5rem; }
+h2, .qk-title-h2 { font-size: 1.35rem; font-weight: 600; color: var(--qk-text-primary); margin-bottom: 0.5rem; }
+h3, .qk-title-h3 { font-size: 1.1rem; font-weight: 600; color: var(--qk-text-primary); margin-bottom: 0.5rem; }
+.qk-text-intro { font-size: 1.05rem; line-height: 1.6; color: var(--qk-text-secondary); margin-bottom: 1.25rem; }
+.qk-text-desc { font-size: 0.85rem; color: var(--qk-text-muted); }
+.qk-required::after { content: " *"; color: var(--qk-danger); font-weight: bold; }
+
+/* Advanced Layout Containers */
+.qk-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.qk-split-panel { display: flex; gap: 1rem; width: 100%; }
+.qk-split-panel > .qk-panel-left { flex: 1; min-width: 0; }
+.qk-split-panel > .qk-panel-right { width: 320px; flex-shrink: 0; }
+@media (max-width: 992px) { .qk-split-panel { flex-direction: column; } .qk-split-panel > .qk-panel-right { width: 100%; } }
+
+/* Drawer / Off-Canvas moderni */
+.qk-drawer {
+  position: fixed; top: 0; right: -400px; width: 400px; height: 100%;
+  background: var(--qk-card-bg); border-left: 1px solid var(--qk-card-border);
+  box-shadow: -4px 0 16px rgba(0,0,0,0.08); z-index: 1050;
+  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.qk-drawer.open { right: 0; }
+
+/* Wizard & Steppers */
+.qk-stepper { display: flex; justify-content: space-between; border-bottom: 1px solid var(--qk-card-border); padding-bottom: 1rem; margin-bottom: 1.5rem; gap: 0.5rem; }
+.qk-step { display: flex; align-items: center; gap: 0.5rem; color: var(--qk-text-muted); font-weight: 500; font-size: 0.85rem; }
+.qk-step-number { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--qk-text-muted); font-size: 0.75rem; }
+.qk-step.active { color: var(--qk-accent); }
+.qk-step.active .qk-step-number { border-color: var(--qk-accent); background: var(--qk-accent); color: var(--qk-card-bg); }
+.qk-step.completed { color: var(--qk-success); }
+.qk-step.completed .qk-step-number { border-color: var(--qk-success); background: var(--qk-success-bg); color: var(--qk-success); }
+
+/* Tree Views (Anagrafiche/Classificazioni gerarchiche) */
+.qk-tree { list-style: none; padding-left: 0; margin: 0; }
+.qk-tree-item { display: flex; align-items: center; padding: 0.35rem 0.5rem; border-radius: var(--qk-radius-sm); cursor: pointer; gap: 0.5rem; }
+.qk-tree-item:hover { background: var(--qk-body-bg); }
+.qk-tree-children { list-style: none; padding-left: 1.25rem; }
+
+/* Custom Checkbox, Radio e Toggle Switch moderni */
+.qk-switch {
+  position: relative; display: inline-flex; align-items: center; cursor: pointer; gap: 0.5rem; user-select: none;
+}
+.qk-switch-input { display: none; }
+.qk-switch-slider {
+  position: relative; width: 38px; height: 20px; background-color: var(--qk-card-border);
+  border-radius: 20px; transition: background-color 0.2s;
+}
+.qk-switch-slider::before {
+  content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px;
+  background-color: white; border-radius: 50%; transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.qk-switch-input:checked + .qk-switch-slider { background-color: var(--qk-success); }
+.qk-switch-input:checked + .qk-switch-slider::before { transform: translateX(18px); }
+
+/* Input Groups Prefix/Suffix */
+.qk-input-group { display: flex; align-items: stretch; width: 100%; }
+.qk-input-group-text {
+  display: flex; align-items: center; padding: 0.375rem 0.75rem; font-size: 0.875rem;
+  color: var(--qk-text-secondary); background-color: var(--qk-body-bg);
+  border: 1px solid var(--qk-card-border); border-radius: var(--qk-radius-sm);
+}
+.qk-input-group .qk-input-group-text:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+.qk-input-group .qk-form-control:not(:first-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* Autocomplete suggestions popup overlay */
+.qk-autocomplete-suggestions {
+  position: absolute; z-index: 1000; background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border); border-radius: var(--qk-radius-sm);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-height: 240px; overflow-y: auto;
+  list-style: none; padding: 0.25rem 0; margin: 0; width: 100%;
+}
+.qk-autocomplete-suggestion {
+  padding: 0.5rem 1rem; cursor: pointer; color: var(--qk-text-primary); font-size: 0.85rem;
+}
+.qk-autocomplete-suggestion:hover { background: var(--qk-body-bg); }
+
+/* Floating Action Button (FAB) */
+.btn-qk-fab {
+  position: fixed; bottom: 2rem; right: 2rem; width: 56px; height: 56px; border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center;
+  z-index: 999;
+}
+
+/* Split Action Button */
+.qk-split-btn { display: inline-flex; border-radius: var(--qk-radius-sm); overflow: hidden; }
+.qk-split-btn .btn-qk:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 1px solid rgba(255,255,255,0.15); }
+.qk-split-btn .btn-qk:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; padding-left: 0.5rem; padding-right: 0.5rem; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ADDITIONAL PREDICTED ERP UI COMPONENT STYLES
+   Styling rules for advanced interactive elements in typical ERP platforms
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Advanced Table Features */
+.qk-table-sticky {
+  max-height: 500px;
+  overflow-y: auto;
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+}
+.qk-table-sticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--qk-table-head-bg);
+  box-shadow: inset 0 -1px 0 var(--qk-card-border);
+}
+.qk-table-total-row {
+  font-weight: 700;
+  background-color: var(--qk-bg-subtle) !important;
+}
+.qk-sort-icon {
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+  color: var(--qk-text-muted);
+}
+.qk-sort-icon.active {
+  color: var(--qk-accent);
+}
+
+/* 2. Advanced KPI Cards & Trends */
+.qk-kpi-card {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: var(--qk-card-shadow);
+}
+.qk-kpi-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--qk-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+.qk-kpi-val {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--qk-text-primary);
+  line-height: 1.2;
+}
+.qk-kpi-label {
+  font-size: 0.8rem;
+  color: var(--qk-text-muted);
+}
+.qk-kpi-trend {
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+.qk-kpi-trend.up { color: var(--qk-success); }
+.qk-kpi-trend.down { color: var(--qk-danger); }
+
+/* 3. Activity Feed / Timeline Widgets */
+.qk-timeline {
+  position: relative;
+  padding-left: 1.5rem;
+  margin: 0;
+  list-style: none;
+}
+.qk-timeline::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--qk-card-border);
+}
+.qk-timeline-item {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+.qk-timeline-badge {
+  position: absolute;
+  left: -29px;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--qk-card-bg);
+  border: 2px solid var(--qk-accent);
+}
+.qk-timeline-badge.success { border-color: var(--qk-success); }
+.qk-timeline-badge.danger { border-color: var(--qk-danger); }
+.qk-timeline-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--qk-text-primary);
+}
+.qk-timeline-time {
+  font-size: 0.75rem;
+  color: var(--qk-text-muted);
+}
+.qk-timeline-desc {
+  font-size: 0.8rem;
+  color: var(--qk-text-secondary);
+  margin-top: 0.15rem;
+}
+
+/* 4. Priority Ratings (Stars) */
+.qk-priority-rating {
+  display: inline-flex;
+  gap: 0.15rem;
+  color: var(--qk-warning);
+  cursor: pointer;
+}
+.qk-priority-rating .fa-star {
+  font-size: 0.9rem;
+}
+.qk-priority-rating .fa-star.empty {
+  color: var(--qk-card-border);
+}
+
+/* 5. Progress Bars */
+.qk-progress {
+  height: 8px;
+  background-color: var(--qk-body-bg);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+.qk-progress-bar {
+  background-color: var(--qk-accent);
+  transition: width 0.6s ease;
+}
+.qk-progress-bar.success { background-color: var(--qk-success); }
+.qk-progress-bar.danger { background-color: var(--qk-danger); }
+
+/* 6. Notifications & Floating Badge */
+.qk-badge-notification {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: var(--qk-danger);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-weight: 700;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--qk-card-bg);
+}
+
+/* 7. File Attachments Card Grid */
+.qk-attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.qk-attachment-card {
+  background: var(--qk-body-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+}
+.qk-attachment-icon {
+  font-size: 1.5rem;
+  color: var(--qk-text-secondary);
+  margin-bottom: 0.5rem;
+}
+.qk-attachment-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qk-attachment-size {
+  font-size: 0.7rem;
+  color: var(--qk-text-muted);
+}
+
+
+
 
 
 

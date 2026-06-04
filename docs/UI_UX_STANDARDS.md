@@ -65,6 +65,8 @@ This document establishes the UI/UX standards for Quack ERP. **All developers an
     </td>
     ```
 * **Row Interactions**: Tables implement `.qk-table tbody tr:hover` transition. They automatically highlight with a 4% overlay of the active theme accent color.
+* **Sticky Header Tables**: Use `.qk-table-sticky` wrapper around a `.qk-table` for container scroll with locked column headers.
+* **Total Rows**: Apply `.qk-table-total-row` on transaction bottom rows (e.g. subtotal, tax, grand total).
 
 ---
 
@@ -83,7 +85,7 @@ Use the following CSS classes exclusively:
 
 ---
 
-## 5. Built-in Spacing & Flexbox Custom Utilities
+## 5. Spacing & Flexbox Custom Utilities
 To prevent messy inline styling (e.g. `style="display:flex; gap:10px;"`), use these custom utilities:
 
 * **Flexbox & Grid**:
@@ -103,7 +105,54 @@ To prevent messy inline styling (e.g. `style="display:flex; gap:10px;"`), use th
 
 ---
 
-## 6. Theme Variable Consistency
+## 6. Advanced ERP Widgets & Components
+
+### A. KPI Cards (`.qk-kpi-card`)
+A standard grid container widget for dashboards.
+* **Structure**:
+  ```html
+  <div class="qk-kpi-card">
+    <div class="qk-kpi-icon-wrap" style="background: var(--qk-accent-light); color: var(--qk-accent);">
+      <i class="fa-solid fa-coins"></i>
+    </div>
+    <div>
+      <div class="qk-kpi-val">€ 12.450,00</div>
+      <div class="qk-kpi-label">Fatturato Mese</div>
+      <div class="qk-kpi-trend up"><i class="fa-solid fa-arrow-trend-up"></i> +12%</div>
+    </div>
+  </div>
+  ```
+
+### B. Activity Timeline / History Feed (`.qk-timeline`)
+Standard visual track for audit trail, status updates, or note history.
+* **Structure**:
+  ```html
+  <ul class="qk-timeline">
+    <li class="qk-timeline-item">
+      <div class="qk-timeline-badge success"></div>
+      <div class="qk-timeline-title">Ordine Approvato</div>
+      <div class="qk-timeline-time">Oggi, 14:32 - Mario Rossi</div>
+      <div class="qk-timeline-desc">L'ordine è stato approvato e inviato al fornitore.</div>
+    </li>
+  </ul>
+  ```
+
+### C. File Attachments Card Grid (`.qk-attachment-grid`)
+Styled block for uploaded document links (PDFs, invoices, images).
+* **Structure**:
+  ```html
+  <div class="qk-attachment-grid">
+    <div class="qk-attachment-card">
+      <i class="fa-solid fa-file-pdf qk-attachment-icon text-danger"></i>
+      <a href="/uploads/doc.pdf" target="_blank" class="qk-attachment-name">Preventivo_Firmato.pdf</a>
+      <span class="qk-attachment-size">1.2 MB</span>
+    </div>
+  </div>
+  ```
+
+---
+
+## 7. Theme Variable Consistency
 Never hardcode hexadecimal or RGB colors in inline HTML styles. Always use theme variables:
 * Backgrounds: `var(--qk-body-bg)`, `var(--qk-card-bg)`, `var(--qk-bg-subtle)`
 * Borders: `var(--qk-card-border)` or `var(--qk-border)`
