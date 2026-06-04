@@ -107,6 +107,16 @@ class CustomersController extends BaseController
             exit;
         }
 
+        $stmtListini = $this->pdo->prepare("
+            SELECT cl.listino_id, cl.priorita, cl.data_inizio, cl.data_fine, l.nome AS listino_nome
+            FROM clienti_listini cl
+            JOIN listini l ON l.id = cl.listino_id
+            WHERE cl.cliente_id = ?
+            ORDER BY cl.priorita DESC, l.nome ASC
+        ");
+        $stmtListini->execute([$entity_id]);
+        $loaded['listini'] = $stmtListini->fetchAll(PDO::FETCH_ASSOC);
+
         $record_meta = [
             'codice'     => $loaded['_codice'] ?? '',
             'created_at' => $loaded['_created_at'] ?? '',
@@ -185,6 +195,7 @@ class CustomersController extends BaseController
             'notes'         => '',
             'newsletter'    => '0',
             'listino_id'    => '',
+            'listini'       => [],
         ];
     }
 
@@ -192,7 +203,11 @@ class CustomersController extends BaseController
     private function readPostValues(array $current): array
     {
         foreach (array_keys($current) as $k) {
-            $current[$k] = post($k, $current[$k] ?? '');
+            if ($k === 'listini') {
+                $current[$k] = $_POST['listini'] ?? [];
+            } else {
+                $current[$k] = post($k, $current[$k] ?? '');
+            }
         }
         $current['newsletter'] = isset($_POST['newsletter']) ? '1' : '0';
         return $current;

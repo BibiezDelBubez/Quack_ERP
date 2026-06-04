@@ -427,6 +427,10 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          return null;
      }
 
+     $stmtPrice = $pdo->prepare('SELECT prezzo_unitario FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+     $stmtPrice->execute([$id]);
+     $prezzo_base = $stmtPrice->fetchColumn();
+
      return [
          'sku_interno'          => (string) ($row['sku_interno']         ?? ''),
          'sku_ecommerce'        => (string) ($row['sku_ecommerce']        ?? ''),
@@ -446,6 +450,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          'unita_contenuto_id'   => (string) ($row['unita_contenuto_id']   ?? ''),
          'quantita_contenuto'   => (string) ($row['quantita_contenuto']   ?? ''),
          'scorta_minima'        => (string) ($row['scorta_minima']        ?? '0'),
+         'prezzo_vendita_base'  => $prezzo_base !== false ? (string)$prezzo_base : '',
          '_created_at'          => $row['created_at'],
          '_updated_at'          => $row['updated_at'],
      ];
@@ -506,6 +511,12 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
                 ':id' => $id,
                 ':scorta_minima' => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
             ]);
+        }
+
+        $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
+        if ($prezzo_base !== null) {
+            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario) VALUES (1, ?, 0, ?)')
+                ->execute([$id, $prezzo_base]);
         }
 
         $pdo->commit();
@@ -580,6 +591,20 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
             ':scorta_minima' => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
             ':id' => $id
         ]);
+
+        $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
+        if ($prezzo_base !== null) {
+            $stmtCheckRule = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+            $stmtCheckRule->execute([$id]);
+            $ruleId = $stmtCheckRule->fetchColumn();
+            if ($ruleId) {
+                $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ? WHERE id = ?')
+                    ->execute([$prezzo_base, $ruleId]);
+            } else {
+                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario) VALUES (1, ?, 0, ?)')
+                    ->execute([$id, $prezzo_base]);
+            }
+        }
 
         $pdo->commit();
     } catch (Throwable $e) {

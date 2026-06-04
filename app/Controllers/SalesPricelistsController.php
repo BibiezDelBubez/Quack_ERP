@@ -421,17 +421,72 @@ final class SalesPricelistsController extends BaseController
     /**
      * Determina il prezzo di vendita per un prodotto dato un listino, una quantità e una data.
      * Strategia (analoga a getPurchasePrice):
-     *  1. Cerca nel listino specificato (per scaglione quantità)
-     *  2. Se non trova, torna null
+     *  1. Cerca nei listini associati del cliente (in ordine di priorità) o nel listino specificato
+     *  2. Se non trova, cade sul listino standard o ricarico su costo
      */
-    public function getSalePrice(int $prodottoId, int $listinoId, float $quantita = 1.0, ?string $dataRiferimento = null): ?array
+    public function getSalePrice(int $prodottoId, int $listinoId, float $quantita = 1.0, ?string $dataRiferimento = null, ?int $clienteId = null): ?array
     {
         if (!$dataRiferimento) {
             $dataRiferimento = date('Y-m-d');
         }
 
-        // --- LEVEL 1: DEDICATO (Requested listinoId) ---
-        if ($listinoId > 0) {
+        // --- LEVEL 1: DEDICATO (Client pricelists or requested listinoId) ---
+        
+        // Se c'è un cliente specificato, scorriamo i suoi listini attivi in ordine di priorità decrescente
+        if ($clienteId && $clienteId > 0) {
+            $stmtClientiListini = $this->pdo->prepare("
+                SELECT cl.listino_id, l.nome, l.valuta
+                FROM clienti_listini cl
+                JOIN listini l ON l.id = cl.listino_id
+                WHERE cl.cliente_id = :cliente_id AND l.attivo = 1
+                  AND (l.valido_dal IS NULL OR l.valido_dal <= :data)
+                  AND (l.valido_al  IS NULL OR l.valido_al  >= :data)
+                  AND (cl.data_inizio IS NULL OR cl.data_inizio <= :data)
+                  AND (cl.data_fine IS NULL OR cl.data_fine >= :data)
+                ORDER BY cl.priorita DESC, l.nome ASC
+            ");
+            $stmtClientiListini->execute([':cliente_id' => $clienteId, ':data' => $dataRiferimento]);
+            $clientPricelists = $stmtClientiListini->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($clientPricelists as $clientListino) {
+                $stmtP = $this->pdo->prepare(
+                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima
+                     FROM listini_prezzi
+                     WHERE listino_id = :lid
+                       AND prodotto_id = :pid
+                       AND quantita_minima <= :qty
+                     ORDER BY quantita_minima DESC
+                     LIMIT 1"
+                );
+                $stmtP->execute([
+                    ':lid' => $clientListino['listino_id'],
+                    ':pid' => $prodottoId,
+                    ':qty' => $quantita,
+                ]);
+                $row = $stmtP->fetch(PDO::FETCH_ASSOC);
+
+                if ($row) {
+                    $qMin    = (float)$row['quantita_minima'];
+                    $sorgente = 'Listino Cliente: ' . $clientListino['nome'];
+                    if ($qMin > 0) {
+                        $sorgente .= ' (Scaglione >= ' . number_format($qMin, 0, ',', '.') . ')';
+                    }
+
+                    return [
+                        'prezzo_unitario' => (float)$row['prezzo_unitario'],
+                        'sconto_perc'     => (float)$row['sconto_perc'],
+                        'valuta'          => $clientListino['valuta'],
+                        'listino_id'      => $clientListino['listino_id'],
+                        'listino_nome'    => $clientListino['nome'],
+                        'prezzo_sorgente' => $sorgente,
+                        'origine'         => 'dedicato',
+                    ];
+                }
+            }
+        }
+
+        // Se non abbiamo trovato nulla o non è definito un cliente, controlliamo il listinoId esplicito fornito
+        if ($listinoId > 0 && $listinoId !== 1) {
             $stmtL = $this->pdo->prepare(
                 "SELECT id, nome, valuta FROM listini
                  WHERE id = :id AND attivo = 1
@@ -572,17 +627,19 @@ final class SalesPricelistsController extends BaseController
 
         $prodottoId = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
         $listinoId  = filter_input(INPUT_GET, 'listino_id',  FILTER_VALIDATE_INT);
+        $clienteId  = filter_input(INPUT_GET, 'cliente_id',  FILTER_VALIDATE_INT);
         $quantita   = filter_input(INPUT_GET, 'quantita',    FILTER_VALIDATE_FLOAT);
         $data       = get_param('data') ?: null;
 
-        if (!$prodottoId || !$listinoId) {
-            echo json_encode(['ok' => false, 'error' => 'Parametri mancanti.']);
+        if (!$prodottoId) {
+            echo json_encode(['ok' => false, 'error' => 'Prodotto ID mancante.']);
             exit;
         }
 
+        $listinoId = $listinoId ?: 0;
         $quantita = ($quantita === false || $quantita === null) ? 1.0 : $quantita;
 
-        $priceInfo = $this->getSalePrice($prodottoId, $listinoId, $quantita, $data);
+        $priceInfo = $this->getSalePrice($prodottoId, $listinoId, $quantita, $data, $clienteId);
 
         if ($priceInfo) {
             echo json_encode([
@@ -603,6 +660,113 @@ final class SalesPricelistsController extends BaseController
                 'prezzo_sorgente' => 'Nessun prezzo configurato',
                 'origine'         => 'manuale',
             ]);
+        }
+        exit;
+    }
+
+    /* ── API endpoint: ottieni tutti i clienti con stato assegnazione ───────── */
+
+    public function apiClientiAssegnazione(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $listinoId = filter_input(INPUT_GET, 'listino_id', FILTER_VALIDATE_INT);
+        if (!$listinoId) {
+            echo json_encode(['ok' => false, 'error' => 'Listino ID mancante.']);
+            exit;
+        }
+
+        try {
+            // Ottieni tutti i clienti attivi
+            $stmt = $this->pdo->prepare("
+                SELECT cf.id,
+                       COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS nome_cliente,
+                       cf.partita_iva,
+                       (SELECT 1 FROM clienti_listini cl WHERE cl.cliente_id = cf.id AND cl.listino_id = :lid) AS assegnato_pivot,
+                       (SELECT 1 FROM dettagli_clienti dc WHERE dc.soggetto_id = cf.id AND dc.listino_id = :lid) AS assegnato_default
+                FROM clienti_fornitori cf
+                WHERE cf.tipo IN ('cliente', 'entrambi') AND cf.attivo = 1
+                ORDER BY nome_cliente ASC
+            ");
+            $stmt->execute([':lid' => $listinoId]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $result = [];
+            foreach ($rows as $row) {
+                $result[] = [
+                    'id' => (int)$row['id'],
+                    'nome_cliente' => $row['nome_cliente'],
+                    'partita_iva' => $row['partita_iva'] ?? '',
+                    'assegnato' => ($row['assegnato_pivot'] || $row['assegnato_default']) ? true : false,
+                ];
+            }
+
+            echo json_encode(['ok' => true, 'clienti' => $result]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /* ── API endpoint: salva assegnazioni massive ───────────────────────────── */
+
+    public function apiAssegnaClienti(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token non valido.']);
+            exit;
+        }
+
+        $listinoId = filter_input(INPUT_POST, 'listino_id', FILTER_VALIDATE_INT);
+        $clienteIds = $_POST['cliente_ids'] ?? [];
+
+        if (!$listinoId) {
+            echo json_encode(['ok' => false, 'error' => 'Listino ID mancante.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+
+            // Rimuovi assegnazioni esistenti nel pivot
+            $stmtDel = $this->pdo->prepare("DELETE FROM clienti_listini WHERE listino_id = ?");
+            $stmtDel->execute([$listinoId]);
+
+            // Inserisci le nuove
+            if (!empty($clienteIds)) {
+                $stmtIns = $this->pdo->prepare("
+                    INSERT INTO clienti_listini (cliente_id, listino_id, priorita)
+                    VALUES (?, ?, 10)
+                ");
+                foreach ($clienteIds as $cid) {
+                    $stmtIns->execute([(int)$cid, $listinoId]);
+                }
+            }
+
+            $this->pdo->commit();
+
+            // Ricarica la lista aggiornata dei clienti assegnati per restituirla al frontend
+            $stmtClienti = $this->pdo->prepare("
+                SELECT DISTINCT cf.id,
+                       COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS nome_cliente
+                FROM clienti_fornitori cf
+                LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
+                LEFT JOIN clienti_listini cl ON cl.cliente_id = cf.id
+                WHERE (dc.listino_id = :lid OR cl.listino_id = :lid)
+                  AND cf.attivo = 1
+                ORDER BY nome_cliente ASC
+            ");
+            $stmtClienti->execute([':lid' => $listinoId]);
+            $clienti_assegnati = $stmtClienti->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode(['ok' => true, 'clienti_assegnati' => $clienti_assegnati]);
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
         exit;
     }

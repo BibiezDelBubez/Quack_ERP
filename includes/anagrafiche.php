@@ -321,6 +321,24 @@ function qk_insert_cliente(PDO $pdo, array $values): int
             $d['listino_id'],
         ]);
 
+        // Sync many-to-many listini from form values
+        if (!empty($values['listini'])) {
+            $insListino = $pdo->prepare("
+                INSERT INTO clienti_listini (cliente_id, listino_id, priorita, data_inizio, data_fine)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            foreach ($values['listini'] as $lst) {
+                if (empty($lst['listino_id'])) continue;
+                $insListino->execute([
+                    $id,
+                    (int)$lst['listino_id'],
+                    isset($lst['priorita']) && $lst['priorita'] !== '' ? (int)$lst['priorita'] : 10,
+                    !empty($lst['data_inizio']) ? $lst['data_inizio'] : null,
+                    !empty($lst['data_fine']) ? $lst['data_fine'] : null
+                ]);
+            }
+        }
+
         if ($prep['indirizzo']) {
             $prep['indirizzo']['soggetto_id'] = $id;
             $ins = $pdo->prepare(
@@ -428,6 +446,25 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
                 $d['note_interne'],
                 $d['listino_id'],
             ]);
+        }
+
+        // Sync many-to-many listini from form values
+        $pdo->prepare("DELETE FROM clienti_listini WHERE cliente_id = ?")->execute([$id]);
+        if (!empty($values['listini'])) {
+            $insListino = $pdo->prepare("
+                INSERT INTO clienti_listini (cliente_id, listino_id, priorita, data_inizio, data_fine)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            foreach ($values['listini'] as $lst) {
+                if (empty($lst['listino_id'])) continue;
+                $insListino->execute([
+                    $id,
+                    (int)$lst['listino_id'],
+                    isset($lst['priorita']) && $lst['priorita'] !== '' ? (int)$lst['priorita'] : 10,
+                    !empty($lst['data_inizio']) ? $lst['data_inizio'] : null,
+                    !empty($lst['data_fine']) ? $lst['data_fine'] : null
+                ]);
+            }
         }
 
         qk_upsert_indirizzo($pdo, $id, $prep['indirizzo']);

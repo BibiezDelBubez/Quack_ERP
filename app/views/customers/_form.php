@@ -41,6 +41,13 @@ $nIndirizzi = count($indirizzi_preload);
                 id="badge-indirizzi"><?= $nIndirizzi ?></span>
         </button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="ctab-btn-listini"
+                data-bs-toggle="tab" data-bs-target="#ctab-listini"
+                type="button" role="tab" aria-selected="false">
+          <i class="fa-solid fa-tags fa-fw me-1"></i>Listini & Vendite
+        </button>
+      </li>
       <?php if ($isEdit): ?>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="ctab-btn-compliance"
@@ -164,9 +171,9 @@ $nIndirizzi = count($indirizzi_preload);
             </div>
           </div>
 
-          <!-- Dati fiscali e commerciali -->
+          <!-- Dati fiscali -->
           <div class="qk-card mb-3">
-            <div class="qk-card-header"><span class="qk-card-title">Dati fiscali e commerciali</span></div>
+            <div class="qk-card-header"><span class="qk-card-title">Dati fiscali</span></div>
             <div class="qk-card-body">
               <div class="qk-form-row">
                 <div class="qk-form-group">
@@ -187,41 +194,10 @@ $nIndirizzi = count($indirizzi_preload);
                          value="<?= e($v['pec']) ?>" placeholder="pec@pec.it">
                 </div>
                 <div class="qk-form-group">
-                  <label class="qk-form-label">Condizioni di pagamento</label>
-                  <input type="text" name="payment_terms" class="qk-form-control"
-                         value="<?= e($v['payment_terms']) ?>" placeholder="30 gg d.f.f.m.">
                 </div>
               </div>
-              <div class="qk-form-row">
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Categoria cliente</label>
-                  <select name="category" class="qk-form-control">
-                    <option value="standard" <?= $v['category'] === 'standard' ? 'selected' : '' ?>>Standard (End user)</option>
-                    <option value="premium"  <?= $v['category'] === 'premium'  ? 'selected' : '' ?>>Premium (Dropshipper)</option>
-                    <option value="reseller" <?= $v['category'] === 'reseller' ? 'selected' : '' ?>>Rivenditore</option>
-                    <option value="wholesale"<?= $v['category'] === 'wholesale'? 'selected' : '' ?>>Grossista</option>
-                  </select>
-                </div>
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Sconto extra (%)</label>
-                  <input type="number" name="discount" class="qk-form-control"
-                         value="<?= e($v['discount']) ?>" placeholder="0" min="0" max="100" step="0.1">
-                </div>
-              </div>
-              <div class="qk-form-row">
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Listino vendite predefinito</label>
-                  <select name="listino_id" class="qk-form-control">
-                    <option value="">— Nessuno (Usa Listino Standard) —</option>
-                    <?php foreach ($listini as $lst): ?>
-                    <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>><?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)</option>
-                    <?php endforeach; ?>
-                  </select>
-                </div>
-                <div class="qk-form-group">
-                </div>
-              </div>
-              <div class="qk-form-group">
+              
+              <div class="qk-form-group mt-2">
                 <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
                   <input type="checkbox" name="newsletter" value="1" <?= $v['newsletter'] === '1' ? 'checked' : '' ?>>
                   Iscritto alla newsletter
@@ -244,6 +220,196 @@ $nIndirizzi = count($indirizzi_preload);
         </form>
 
       </div><!-- /ctab-dati -->
+
+      <!-- TAB 2: LISTINI & VENDITE -->
+      <div class="tab-pane fade" id="ctab-listini" role="tabpanel">
+        
+        <div class="qk-card mb-3 mt-3">
+          <div class="qk-card-header"><span class="qk-card-title">Impostazioni commerciali</span></div>
+          <div class="qk-card-body">
+            <div class="qk-form-row">
+              <div class="qk-form-group">
+                <label class="qk-form-label">Condizioni di pagamento</label>
+                <input type="text" name="payment_terms" form="formCliente" class="qk-form-control"
+                       value="<?= e($v['payment_terms']) ?>" placeholder="30 gg d.f.f.m.">
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Categoria cliente</label>
+                <select name="category" form="formCliente" class="qk-form-control">
+                  <option value="standard" <?= $v['category'] === 'standard' ? 'selected' : '' ?>>Standard (End user)</option>
+                  <option value="premium"  <?= $v['category'] === 'premium'  ? 'selected' : '' ?>>Premium (Dropshipper)</option>
+                  <option value="reseller" <?= $v['category'] === 'reseller' ? 'selected' : '' ?>>Rivenditore</option>
+                  <option value="wholesale"<?= $v['category'] === 'wholesale'? 'selected' : '' ?>>Grossista</option>
+                </select>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Sconto extra (%)</label>
+                <input type="number" name="discount" form="formCliente" class="qk-form-control"
+                       value="<?= e($v['discount']) ?>" placeholder="0" min="0" max="100" step="0.1">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Listini prezzi associati molti-a-molti -->
+        <div class="qk-card mt-3 mb-3">
+          <div class="qk-card-header d-flex justify-content-between align-items-center">
+            <span class="qk-card-title"><i class="fa-solid fa-tags me-1"></i>Listini prezzi associati</span>
+            <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-add-listino">
+              <i class="fa-solid fa-plus"></i> Aggiungi listino
+            </button>
+          </div>
+          <div class="qk-card-body p-0">
+            <table class="qk-table mb-0" id="table-listini-clienti">
+              <thead>
+                <tr>
+                  <th>Listino <span class="required">*</span></th>
+                  <th style="width: 120px;">Priorità</th>
+                  <th style="width: 180px;">Data Inizio</th>
+                  <th style="width: 180px;">Data Fine</th>
+                  <th style="width: 60px; text-align: center;">Azione</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-listini-clienti">
+                <?php 
+                $listini_rules = $v['listini'] ?? [];
+                if (empty($listini_rules)): ?>
+                  <tr class="empty-row-placeholder">
+                    <td colspan="5" class="text-center py-3" style="color: var(--qk-text-muted);">
+                      Nessun listino specifico associato. Verrà applicato il Listino Standard.
+                    </td>
+                  </tr>
+                <?php else: ?>
+                  <?php foreach ($listini_rules as $index => $rule): ?>
+                    <tr class="listino-row" data-index="<?= $index ?>">
+                      <td>
+                        <select name="listini[<?= $index ?>][listino_id]" form="formCliente" class="qk-form-control qk-form-control-sm" required>
+                          <option value="">— Seleziona Listino —</option>
+                          <?php foreach ($listini as $lst): ?>
+                            <option value="<?= $lst['id'] ?>" <?= (string)$rule['listino_id'] === (string)$lst['id'] ? 'selected' : '' ?>>
+                              <?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)
+                            </option>
+                          <?php endforeach; ?>
+                        </select>
+                      </td>
+                      <td>
+                        <input type="number" name="listini[<?= $index ?>][priorita]" form="formCliente" class="qk-form-control qk-form-control-sm" value="<?= e($rule['priorita']) ?>" min="1" step="1" required>
+                      </td>
+                      <td>
+                        <input type="date" name="listini[<?= $index ?>][data_inizio]" form="formCliente" class="qk-form-control qk-form-control-sm" value="<?= e($rule['data_inizio'] ?? '') ?>">
+                      </td>
+                      <td>
+                        <input type="date" name="listini[<?= $index ?>][data_fine]" form="formCliente" class="qk-form-control qk-form-control-sm" value="<?= e($rule['data_fine'] ?? '') ?>">
+                      </td>
+                      <td class="text-center">
+                        <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-listino-row">
+                          <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <script>
+        (function() {
+          var tbody = document.getElementById('tbody-listini-clienti');
+          var btnAdd = document.getElementById('btn-add-listino');
+          var listiniData = <?= json_encode($listini) ?>;
+
+          function reindexRows() {
+            var rows = tbody.querySelectorAll('.listino-row');
+            rows.forEach(function(row, idx) {
+              row.setAttribute('data-index', idx);
+              row.querySelectorAll('[name]').forEach(function(input) {
+                var nameAttr = input.getAttribute('name');
+                var newName = nameAttr.replace(/listini\[\d+\]/, 'listini[' + idx + ']');
+                input.setAttribute('name', newName);
+              });
+            });
+            
+            var placeholder = tbody.querySelector('.empty-row-placeholder');
+            if (rows.length === 0) {
+              if (!placeholder) {
+                var tr = document.createElement('tr');
+                tr.className = 'empty-row-placeholder';
+                tr.innerHTML = '<td colspan="5" class="text-center py-3" style="color: var(--qk-text-muted);">Nessun listino specifico associato. Verrà applicato il Listino Standard.</td>';
+                tbody.appendChild(tr);
+              }
+            } else {
+              if (placeholder) {
+                placeholder.remove();
+              }
+            }
+          }
+
+          if (btnAdd) {
+            btnAdd.addEventListener('click', function() {
+              var nextIdx = tbody.querySelectorAll('.listino-row').length;
+              
+              var tr = document.createElement('tr');
+              tr.className = 'listino-row';
+              tr.setAttribute('data-index', nextIdx);
+              
+              var optionsHtml = '<option value="">— Seleziona Listino —</option>';
+              listiniData.forEach(function(lst) {
+                optionsHtml += '<option value="' + lst.id + '">' + escapeHtml(lst.nome) + ' (' + escapeHtml(lst.valuta) + ')</option>';
+              });
+
+              tr.innerHTML = `
+                <td>
+                  <select name="listini[\${nextIdx}][listino_id]" form="formCliente" class="qk-form-control qk-form-control-sm" required>
+                    \${optionsHtml}
+                  </select>
+                </td>
+                <td>
+                  <input type="number" name="listini[\${nextIdx}][priorita]" form="formCliente" class="qk-form-control qk-form-control-sm" value="10" min="1" step="1" required>
+                </td>
+                <td>
+                  <input type="date" name="listini[\${nextIdx}][data_inizio]" form="formCliente" class="qk-form-control qk-form-control-sm">
+                </td>
+                <td>
+                  <input type="date" name="listini[\${nextIdx}][data_fine]" form="formCliente" class="qk-form-control qk-form-control-sm">
+                </td>
+                <td class="text-center">
+                  <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-listino-row">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                </td>
+              `;
+              
+              tbody.appendChild(tr);
+              reindexRows();
+            });
+          }
+
+          if (tbody) {
+            tbody.addEventListener('click', function(e) {
+              var btn = e.target.closest('.btn-delete-listino-row');
+              if (btn) {
+                var row = btn.closest('.listino-row');
+                if (row) {
+                  row.remove();
+                  reindexRows();
+                }
+              }
+            });
+          }
+
+          function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, "&amp;")
+                      .replace(/</g, "&lt;")
+                      .replace(/>/g, "&gt;")
+                      .replace(/"/g, "&quot;")
+                      .replace(/'/g, "&#039;");
+          }
+        })();
+        </script>
+      </div><!-- /ctab-listini -->
 
       <!-- TAB 2: SEDI E INDIRIZZI -->
       <div class="tab-pane fade" id="ctab-indirizzi" role="tabpanel">

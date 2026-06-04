@@ -737,6 +737,17 @@ function setRowUomMode(tr, targetMode, currentMode) {
 
   if (!qtyInput || !priceInput || !umInput) return;
 
+  // Se il prodotto non ha una unità commerciale definita (quantità contenuto non impostata o pari a 1)
+  const haUnitaCommerciale = tr.dataset.uomCommercialId && qFactor > 1;
+  if (!haUnitaCommerciale) {
+    umInput.value = tr.dataset.uomStock || 'pz';
+    // Se eravamo in visualizzazione commerciale, forziamo il reset a valori stock
+    if (targetMode === 'commercial' && currentMode === 'stock') {
+      // Non convertiamo nulla perché non c'è unità commerciale diversa
+    }
+    return;
+  }
+
   if (targetMode === currentMode) {
     umInput.value = (targetMode === 'stock') 
       ? (tr.dataset.uomStock || 'pz') 
@@ -1296,12 +1307,14 @@ async function fetchQuotePrice(tr) {
   const qtyInput = tr.querySelector('.inp-qta');
   const priceInput = tr.querySelector('.inp-pu');
 
-  if (!prodottoId || !listinoId || !qtyInput || !priceInput) return;
+  const clienteId = document.getElementById('cliente_id')?.value || '';
+
+  if (!prodottoId || !qtyInput || !priceInput) return;
 
   const qty = parseFloat(qtyInput.value) || 1.0;
   
   try {
-    const res = await fetch(`${BASE}/sales/pricelists/api/ottieni-prezzo?prodotto_id=${prodottoId}&listino_id=${listinoId}&quantita=${qty}`);
+    const res = await fetch(`${BASE}/sales/pricelists/api/ottieni-prezzo?prodotto_id=${prodottoId}&listino_id=${listinoId || ''}&cliente_id=${clienteId}&quantita=${qty}`);
     const data = await res.json();
     
     if (data.ok) {

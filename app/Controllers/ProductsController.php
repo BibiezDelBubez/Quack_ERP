@@ -77,6 +77,7 @@ final class ProductsController extends BaseController
         $fornitori_disponibili = qk_load_fornitori_disponibili($this->pdo);
         $prodotto_fornitori    = [];
         $tutti_prezzi          = []; // nessun prezzo su un prodotto nuovo
+        $prezzi_vendita_regole = [];
         $all_tags              = qk_load_all_tags($this->pdo);
         $prodotto_tag_ids      = [];
         $kit_componenti        = [];
@@ -183,6 +184,17 @@ final class ProductsController extends BaseController
         $all_tags              = qk_load_all_tags($this->pdo);
         $prodotto_tag_ids      = qk_load_prodotto_tags($this->pdo, $entity_id);
         $kit_componenti        = ($values['tipo'] === 'kit') ? qk_load_kit_componenti($this->pdo, $entity_id) : [];
+
+        $listini_prezzi_regole = $this->pdo->prepare('
+            SELECT lp.*, l.nome AS listino_nome, l.valuta
+            FROM listini_prezzi lp
+            JOIN listini l ON l.id = lp.listino_id
+            WHERE lp.prodotto_id = ?
+              AND NOT (lp.listino_id = 1 AND lp.quantita_minima = 0)
+            ORDER BY l.nome ASC, lp.quantita_minima ASC
+        ');
+        $listini_prezzi_regole->execute([$entity_id]);
+        $prezzi_vendita_regole = $listini_prezzi_regole->fetchAll(PDO::FETCH_ASSOC);
 
         $page_title    = e($values['nome']) ?: 'Modifica prodotto';
         $page_subtitle = 'SKU ' . e($values['sku_interno']) . ' · ID #' . $entity_id;
@@ -462,6 +474,7 @@ final class ProductsController extends BaseController
             'scorta_minima'        => '0',
             'adr_sostanza_id'      => '',
             'adr_packing_group'    => '',
+            'prezzo_vendita_base'  => '',
         ];
     }
 

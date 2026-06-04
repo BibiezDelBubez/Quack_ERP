@@ -255,6 +255,16 @@ CREATE TABLE IF NOT EXISTS listini (
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS clienti_listini (
+    id          INTEGER      PRIMARY KEY AUTOINCREMENT,
+    cliente_id  INTEGER      NOT NULL REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
+    listino_id  INTEGER      NOT NULL REFERENCES listini(id) ON DELETE CASCADE,
+    priorita    INTEGER      NOT NULL DEFAULT 10,
+    data_inizio DATE,
+    data_fine   DATE,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =============================================================================
 -- 11. ANAGRAFICA SOGGETTI
 -- =============================================================================

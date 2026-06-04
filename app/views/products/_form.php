@@ -86,6 +86,18 @@ $kit_componenti = $kit_componenti ?? [];
             <?php endif; ?>
           </button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="ptab-btn-listini"
+                  data-bs-toggle="tab" data-bs-target="#ptab-listini"
+                  type="button" role="tab" aria-selected="false">
+            <i class="fa-solid fa-tag fa-fw me-1"></i>Listini & Sconti
+            <?php if (!empty($prezzi_vendita_regole)): ?>
+            <span class="badge bg-secondary ms-1" id="badge-listini"><?= count($prezzi_vendita_regole) ?></span>
+            <?php else: ?>
+            <span class="badge bg-secondary ms-1 d-none" id="badge-listini">0</span>
+            <?php endif; ?>
+          </button>
+        </li>
         <li class="nav-item" role="presentation" id="ptab-li-kit"
             <?= !$isKit ? 'style="display:none"' : '' ?>>
           <button class="nav-link" id="ptab-btn-kit"
@@ -346,6 +358,17 @@ $kit_componenti = $kit_componenti ?? [];
               </div>
 
               <div class="qk-form-row">
+                <!-- Prezzo di vendita base -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">
+                    Prezzo di vendita base (€)
+                    <span class="qk-form-hint">Imposta il prezzo nel listino standard (ID 1)</span>
+                  </label>
+                  <input type="number" name="prezzo_vendita_base"
+                         class="qk-form-control"
+                         value="<?= e($v['prezzo_vendita_base'] ?? '') ?>"
+                         placeholder="0.00" min="0" step="0.01">
+                </div>
                 <!-- Scorta minima -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">
@@ -473,6 +496,64 @@ $kit_componenti = $kit_componenti ?? [];
           </div>
 
         </div><!-- /ptab-dati -->
+
+        <!-- ──────────────────────────────────────────────────────────────
+             TAB: LISTINI & SCONTI
+        ─────────────────────────────────────────────────────────────────── -->
+        <div class="tab-pane fade" id="ptab-listini" role="tabpanel">
+          <div class="qk-card mt-3">
+            <div class="qk-card-header d-flex justify-content-between align-items-center" style="border-bottom:1px solid var(--qk-border); padding:.75rem 1.25rem;">
+              <div>
+                <span class="qk-card-title">Listini e regole di vendita</span>
+                <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted);">Regole di prezzo e sconti configurati per questo prodotto in tutti i listini</span>
+              </div>
+              <?php if ($isEdit): ?>
+              <a href="<?= url('sales/pricelists') ?>" class="btn-qk btn-qk-secondary btn-sm" style="font-size:.8rem; padding:.25rem .6rem;">
+                <i class="fa-solid fa-gears me-1"></i>Gestisci listini
+              </a>
+              <?php endif; ?>
+            </div>
+            <div class="qk-card-body" style="padding:1.25rem;">
+              <?php if (empty($prezzi_vendita_regole)): ?>
+              <div class="qk-empty text-center py-5">
+                <i class="fa-solid fa-tag fa-3x mb-3 text-muted" style="opacity:.25; color:var(--qk-accent)"></i>
+                <p class="text-muted small">Nessuna regola speciale configurata per questo prodotto.<br>
+                Verrà applicato il prezzo di vendita base o il ricarico di emergenza.</p>
+              </div>
+              <?php else: ?>
+              <div class="table-responsive">
+                <table class="qk-table mt-2" style="font-size:.85rem">
+                  <thead>
+                    <tr>
+                      <th>Listino</th>
+                      <th class="text-end">Quantità Minima</th>
+                      <th class="text-end">Prezzo Unitario</th>
+                      <th class="text-end">Sconto %</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php foreach ($prezzi_vendita_regole as $regola): ?>
+                    <tr>
+                      <td>
+                        <a href="<?= url('sales/pricelists/edit?id=' . $regola['listino_id']) ?>" style="font-weight:bold; color:var(--qk-accent-text); text-decoration:none;">
+                          <?= e($regola['listino_nome']) ?>
+                        </a>
+                      </td>
+                      <td class="text-end"><?= number_format((float)$regola['quantita_minima'], 3, ',', '.') ?></td>
+                      <td class="text-end" style="font-family:monospace;font-weight:600;"><?= number_format((float)$regola['prezzo_unitario'], 2, ',', '.') ?> <?= e($regola['valuta']) ?></td>
+                      <td class="text-end" style="color:var(--qk-danger); font-weight:600;"><?= number_format((float)$regola['sconto_perc'], 2, ',', '.') ?>%</td>
+                      <td><span class="text-muted small"><?= e($regola['note'] ?: '—') ?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+
 
 
         <!-- ──────────────────────────────────────────────────────────────

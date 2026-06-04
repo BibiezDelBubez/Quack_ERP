@@ -5,7 +5,17 @@
  */
 ?>
 
-<div class="qk-settings-grid">
+<!-- Barra di ricerca -->
+<div class="qk-settings-search-wrap mb-4">
+  <i class="fa-solid fa-magnifying-glass qk-settings-search-icon"></i>
+  <input type="search" id="settings-search" class="qk-form-control qk-settings-search-input"
+         placeholder="Cerca impostazione…" autocomplete="off">
+  <span id="settings-no-results" style="display:none;font-size:.85rem;color:var(--qk-text-muted);margin-top:.6rem">
+    Nessun risultato.
+  </span>
+</div>
+
+<div class="qk-settings-grid" id="settings-grid">
 
   <!-- Configurazione Aziendale -->
   <div class="qk-card qk-settings-card">
@@ -43,15 +53,15 @@
     </div>
   </div>
 
-  <!-- Integrazioni API (Placeholder) -->
-  <div class="qk-card qk-settings-card qk-settings-card-muted">
-    <div class="qk-settings-card-icon"><i class="fa-solid fa-network-wired"></i></div>
+  <!-- Integrazioni & WooCommerce -->
+  <div class="qk-card qk-settings-card">
+    <div class="qk-settings-card-icon"><i class="fa-brands fa-wordpress" style="color:#3858e9"></i></div>
     <div class="qk-settings-card-body">
       <h3>Integrazioni & WooCommerce</h3>
       <p>Configura le chiavi API di WooCommerce e i parametri di sincronizzazione automatica dei prodotti e ordini.</p>
-      <button class="btn-qk btn-qk-secondary btn-qk-sm mt-auto align-self-start" disabled>
-        In arrivo...
-      </button>
+      <a href="<?= url('settings/woocommerce') ?>" class="btn-qk btn-qk-secondary btn-qk-sm mt-auto align-self-start">
+        Configura <i class="fa-solid fa-arrow-right ms-1"></i>
+      </a>
     </div>
   </div>
 
@@ -122,4 +132,48 @@
 .qk-settings-card-muted {
   opacity: 0.7;
 }
+
+/* Ricerca */
+.qk-settings-search-wrap {
+  position: relative;
+  max-width: 420px;
+}
+.qk-settings-search-icon {
+  position: absolute;
+  left: .85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--qk-text-muted);
+  pointer-events: none;
+  font-size: .85rem;
+}
+.qk-settings-search-input {
+  padding-left: 2.25rem !important;
+}
+.qk-settings-card-hidden {
+  display: none !important;
+}
 </style>
+
+<script>
+(function () {
+  const input    = document.getElementById('settings-search');
+  const grid     = document.getElementById('settings-grid');
+  const noRes    = document.getElementById('settings-no-results');
+
+  input.addEventListener('input', function () {
+    const q     = this.value.trim().toLowerCase();
+    const cards = grid.querySelectorAll('.qk-settings-card');
+    let visible = 0;
+
+    cards.forEach(function (card) {
+      const text = card.textContent.toLowerCase();
+      const match = !q || text.includes(q);
+      card.classList.toggle('qk-settings-card-hidden', !match);
+      if (match) visible++;
+    });
+
+    noRes.style.display = (q && visible === 0) ? 'block' : 'none';
+  });
+})();
+</script>

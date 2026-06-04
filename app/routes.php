@@ -50,6 +50,8 @@ return [
     '/sales/pricelists/righe/delete'     => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiDeleteRiga',  'auth' => true],
     '/sales/pricelists/api/prodotti'     => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiProdotti',    'auth' => true],
     '/sales/pricelists/api/ottieni-prezzo' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiOttieniPrezzo', 'auth' => true],
+    '/sales/pricelists/api/clienti-assegnazione' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiClientiAssegnazione', 'auth' => true],
+    '/sales/pricelists/api/assegna-clienti'      => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiAssegnaClienti', 'auth' => true],
     '/products'                    => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'index',            'auth' => true],
     '/products/create'             => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'create',           'auth' => true],
     '/products/edit'               => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'edit',             'auth' => true],
@@ -89,7 +91,9 @@ return [
     '/settings/aziende'        => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'index',  'auth' => true],
     '/settings/aziende/create' => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'create', 'auth' => true],
     '/settings/aziende/edit'   => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'edit',   'auth' => true],
-    '/settings/aziende/delete' => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'delete', 'auth' => true],
+    '/settings/aziende/delete'                    => ['type' => 'controller', 'controller' => 'AziendeController',            'action' => 'delete',          'auth' => true],
+    '/settings/woocommerce'                       => ['type' => 'controller', 'controller' => 'WoocommerceSettingsController', 'action' => 'index',           'auth' => true],
+    '/settings/woocommerce/test-connection'       => ['type' => 'controller', 'controller' => 'WoocommerceSettingsController', 'action' => 'testConnection',  'auth' => true],
     '/ecommerce/sync'   => ['type' => 'controller', 'controller' => 'EcommerceController', 'action' => 'sync', 'auth' => true],
 
     // ─── Acquisti v2 — RFQ ───────────────────────────────────────────────────
