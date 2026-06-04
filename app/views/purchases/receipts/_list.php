@@ -1,6 +1,6 @@
 <?php
 /**
- * purchases/ricezioni/_list.php
+ * purchases/receipts/_list.php
  * Elenco ricezioni merci.
  * Variabili attese: $ricezioni_list (array), $stato (string)
  */
@@ -44,7 +44,7 @@ $statiLabels = [
   <div class="qk-table-toolbar">
     <div class="qk-filter-pills">
       <?php foreach ($statiLabels as $k => $lbl): ?>
-      <a href="<?= url('purchases/ricezioni') . ($k !== '' ? '?' . http_build_query(['stato' => $k]) : '') ?>"
+      <a href="<?= url('purchases/receipts') . ($k !== '' ? '?' . http_build_query(['stato' => $k]) : '') ?>"
          class="qk-filter-pill <?= $stato === $k ? 'active' : '' ?>">
         <?= e($lbl) ?>
       </a>
@@ -77,13 +77,13 @@ $statiLabels = [
         <?php foreach ($ricezioni_list as $r): ?>
         <tr>
           <td>
-            <a href="<?= url('purchases/ricezioni/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong">
+            <a href="<?= url('purchases/receipts/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong">
               <?= e($r['numero']) ?>
             </a>
           </td>
           <td>
             <?php if (!empty($r['ordine_numero'])): ?>
-              <a href="<?= url('purchases/ordini/edit') . '?id=' . $r['ordine_id'] ?>" class="qk-link-strong">
+              <a href="<?= url('purchases/orders/edit') . '?id=' . $r['ordine_id'] ?>" class="qk-link-strong">
                 <?= e($r['ordine_numero']) ?>
               </a>
             <?php else: ?>
@@ -95,7 +95,7 @@ $statiLabels = [
           <td><?= e($r['created_at']) ?></td>
           <td><?= e($r['data_effettiva'] ?? '—') ?></td>
           <td class="qk-table-actions">
-            <a href="<?= url('purchases/ricezioni/edit') . '?id=' . $r['id'] ?>"
+            <a href="<?= url('purchases/receipts/edit') . '?id=' . $r['id'] ?>"
                class="btn-qk btn-qk-xs btn-qk-secondary" title="Apri / Conferma">
               <i class="fa-solid fa-pencil"></i>
             </a>

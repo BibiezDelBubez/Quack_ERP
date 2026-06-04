@@ -1,13 +1,13 @@
 <?php
 /**
- * app/views/warehouse/inventari_form.php
+ * app/views/warehouse/inventories_form.php
  * Form/Gestione sessione di inventario fisico.
  */
 $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
 ?>
 
 <!-- Sotto-navigazione condivisa -->
-<?php $active_tab = 'inventari'; include __DIR__ . '/_subnav.php'; ?>
+<?php $active_tab = 'inventories'; include __DIR__ . '/_subnav.php'; ?>
 
 <?php if (!empty($errors['_global'])): ?>
 <div class="qk-alert qk-alert-danger mb-3">
@@ -16,7 +16,7 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
 </div>
 <?php endif; ?>
 
-<form method="post" action="<?= url('warehouse/inventari/create') . (isset($inventario) ? '?id=' . $inventario['id'] : '') ?>">
+<form method="post" action="<?= url('warehouse/inventories/create') . (isset($inventario) ? '?id=' . $inventario['id'] : '') ?>">
   <?= csrf_field() ?>
 
   <div class="qk-card mb-4 mt-3">
@@ -123,7 +123,7 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
   </div>
 
   <div class="d-flex justify-content-between align-items-center mb-5">
-    <a href="<?= url('warehouse/inventari') ?>" class="btn-qk btn-qk-secondary">
+    <a href="<?= url('warehouse/inventories') ?>" class="btn-qk btn-qk-secondary">
       <i class="fa-solid fa-arrow-left me-1"></i> Torna alla lista
     </a>
     

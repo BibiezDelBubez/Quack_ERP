@@ -1,6 +1,6 @@
 <?php
 /**
- * purchases/ordini/_detail.php
+ * purchases/orders/_detail.php
  * Dettaglio ordine di acquisto.
  * Variabili attese: $detail (array), $errors (array), $saved (bool), $page_title (string)
  */
@@ -78,7 +78,7 @@ foreach ($ricezioni as $rc) {
   
   <div class="qk-statusbar-buttons d-flex gap-2">
     <?php if ($isBozza || $isInAppr): ?>
-      <form action="<?= url('purchases/ordini/action') ?>" method="post" class="d-inline">
+      <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="approva">
@@ -89,7 +89,7 @@ foreach ($ricezioni as $rc) {
     <?php endif; ?>
 
     <?php if ($isApprovato): ?>
-      <form action="<?= url('purchases/ordini/action') ?>" method="post" class="d-inline">
+      <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="invia">
@@ -101,16 +101,16 @@ foreach ($ricezioni as $rc) {
 
     <?php if ($isInviato || $isPartRicevuto): ?>
       <?php if ($draftRicezione): ?>
-        <a href="<?= url('purchases/ricezioni/edit') . '?id=' . $draftRicezione['id'] ?>" class="btn-qk btn-qk-success btn-qk-sm fw-bold">
+        <a href="<?= url('purchases/receipts/edit') . '?id=' . $draftRicezione['id'] ?>" class="btn-qk btn-qk-success btn-qk-sm fw-bold">
           <i class="fa-solid fa-boxes-packing me-1"></i> Vedi Bozza Ricevimento
         </a>
       <?php else: ?>
-        <a href="<?= url('purchases/ricezioni/create') . '?ordine_id=' . $id ?>" class="btn-qk btn-qk-success btn-qk-sm fw-bold">
+        <a href="<?= url('purchases/receipts/create') . '?ordine_id=' . $id ?>" class="btn-qk btn-qk-success btn-qk-sm fw-bold">
           <i class="fa-solid fa-boxes-packing me-1"></i> Registra Ricevimento
         </a>
       <?php endif; ?>
 
-      <form action="<?= url('purchases/ordini/action') ?>" method="post" class="d-inline"
+      <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline"
             onsubmit="return confirm('La chiusura forzata completerà l\'ordine annullando i residui attesi e azzerando la quantità in arrivo a magazzino. Procedere?');">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -122,7 +122,7 @@ foreach ($ricezioni as $rc) {
     <?php endif; ?>
 
     <?php if (!$isCompletato && !$isAnnullato): ?>
-      <form action="<?= url('purchases/ordini/action') ?>" method="post" class="d-inline"
+      <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline"
             onsubmit="return confirm('Sei sicuro di voler annullare questo ordine?');">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -133,11 +133,11 @@ foreach ($ricezioni as $rc) {
       </form>
     <?php endif; ?>
     
-    <a href="<?= url('purchases/ordini/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank">
+    <a href="<?= url('purchases/orders/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank">
       <i class="fa-solid fa-file-word text-primary me-1"></i> Word (DOCX)
     </a>
     
-    <a href="<?= url('purchases/ordini') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+    <a href="<?= url('purchases/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
       <i class="fa-solid fa-arrow-left me-1"></i> Lista Ordini
     </a>
   </div>
@@ -182,7 +182,7 @@ foreach ($ricezioni as $rc) {
   </ul>
 </div>
 
-<form action="<?= url('purchases/ordini/edit') . '?id=' . $id ?>" method="post">
+<form action="<?= url('purchases/orders/edit') . '?id=' . $id ?>" method="post">
   <?= csrf_field() ?>
 
   <?php if (!empty($errors['_global'])): ?>
@@ -415,7 +415,7 @@ foreach ($ricezioni as $rc) {
                 <td><?= e($rc['created_at']) ?></td>
                 <td><?= e($rc['data_effettiva'] ?? '—') ?></td>
                 <td class="qk-text-right">
-                  <a href="<?= url('purchases/ricezioni/edit') . '?id=' . $rc['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary">
+                  <a href="<?= url('purchases/receipts/edit') . '?id=' . $rc['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary">
                     <i class="fa-solid fa-pencil"></i> Apri
                   </a>
                 </td>

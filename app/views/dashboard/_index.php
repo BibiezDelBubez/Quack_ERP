@@ -1,3 +1,37 @@
+<?php
+function get_badge_class(string $stato): string {
+    $map = [
+        'bozza'                 => 'draft',
+        'in_approvazione'       => 'pending',
+        'approvato'             => 'confirmed',
+        'inviato'               => 'active',
+        'in_lavorazione'        => 'pending',
+        'parzialmente_spedito'  => 'warning',
+        'parzialmente_ricevuto' => 'warning',
+        'spedito'               => 'active',
+        'completato'            => 'confirmed',
+        'annullato'             => 'draft',
+    ];
+    return $map[$stato] ?? 'draft';
+}
+
+function get_stato_label(string $stato): string {
+    $map = [
+        'bozza'                 => 'Bozza',
+        'in_approvazione'       => 'In Appr.',
+        'approvato'             => 'Approvato',
+        'inviato'               => 'Inviato',
+        'in_lavorazione'        => 'In Lavorazione',
+        'parzialmente_spedito'  => 'Parz. Spedito',
+        'parzialmente_ricevuto' => 'Parz. Ricevuto',
+        'spedito'               => 'Spedito',
+        'completato'            => 'Completato',
+        'annullato'             => 'Annullato',
+    ];
+    return $map[$stato] ?? ucfirst($stato);
+}
+?>
+
 <!-- KPI grid -->
 <div class="qk-kpi-grid">
 <?php foreach ($kpi as $k): ?>
@@ -13,97 +47,145 @@
 <?php endforeach; ?>
 </div>
 
-<!-- Due colonne: ultimi ordini + azioni rapide -->
-<div class="qk-two-col">
+<!-- Layout: Liste principale (Ordini Vendite + Ordini Acquisto) + Azioni Rapide a destra -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) 260px; gap: 1.5rem; margin-top: 1.5rem; align-items: start;">
 
-  <!-- Ultimi ordini -->
-  <div class="qk-card">
-    <div class="qk-card-header">
-      <span class="qk-card-title">
-        <i class="fa-solid fa-box-open fa-sm me-2 qk-text-accent"></i>Ordini recenti
-      </span>
-      <a href="<?= url('orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
-        Tutti gli ordini <i class="fa-solid fa-arrow-right fa-xs"></i>
-      </a>
+  <!-- Colonna Documenti Recenti -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem; grid-column: span 1;">
+    
+    <!-- Ordini Clienti Recenti -->
+    <div class="qk-card shadow-sm" style="margin: 0;">
+      <div class="qk-card-header d-flex justify-content-between align-items-center">
+        <span class="qk-card-title">
+          <i class="fa-solid fa-box-open fa-sm me-2 qk-text-accent"></i>Ordini Clienti Recenti
+        </span>
+        <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+          Tutti gli ordini <i class="fa-solid fa-arrow-right fa-xs"></i>
+        </a>
+      </div>
+      <div class="qk-table-wrap">
+        <?php if (empty($recent_sales_orders)): ?>
+        <div class="qk-table-empty p-4 text-center text-muted">
+          <i class="fa-regular fa-folder-open d-block fs-3 mb-2"></i> Nessun ordine cliente recente.
+        </div>
+        <?php else: ?>
+        <table class="qk-table" style="font-size: 0.85rem;">
+          <thead>
+            <tr>
+              <th>N° Ordine</th>
+              <th>Cliente</th>
+              <th>Stato</th>
+              <th class="text-end">Totale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($recent_sales_orders as $o): ?>
+            <tr>
+              <td>
+                <a href="<?= url('sales/orders/edit?id=' . $o['id']) ?>" class="fw-bold qk-text-accent">
+                  <?= e($o['numero_ordine']) ?>
+                </a>
+              </td>
+              <td><?= e($o['cliente_nome']) ?></td>
+              <td>
+                <span class="qk-badge <?= get_badge_class($o['stato']) ?>">
+                  <?= get_stato_label($o['stato']) ?>
+                </span>
+              </td>
+              <td class="text-end fw-semibold">€ <?= number_format((float)$o['totale'], 2, ',', '.') ?></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <?php endif; ?>
+      </div>
     </div>
-    <?php if (empty($recent_orders)): ?>
-    <div class="qk-empty">
-      <i class="fa-regular fa-box-open"></i>
-      <p>Nessun ordine recente.</p>
-      <a href="<?= url('orders/create') ?>" class="btn-qk btn-qk-primary">
-        <i class="fa-solid fa-plus"></i> Crea il primo ordine
-      </a>
+
+    <!-- Ordini Acquisto Recenti -->
+    <div class="qk-card shadow-sm" style="margin: 0;">
+      <div class="qk-card-header d-flex justify-content-between align-items-center">
+        <span class="qk-card-title">
+          <i class="fa-solid fa-file-contract fa-sm me-2 text-success"></i>Ordini Acquisto Recenti
+        </span>
+        <a href="<?= url('purchases/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+          Tutti gli ordini <i class="fa-solid fa-arrow-right fa-xs"></i>
+        </a>
+      </div>
+      <div class="qk-table-wrap">
+        <?php if (empty($recent_purchase_orders)): ?>
+        <div class="qk-table-empty p-4 text-center text-muted">
+          <i class="fa-regular fa-folder-open d-block fs-3 mb-2"></i> Nessun ordine acquisto recente.
+        </div>
+        <?php else: ?>
+        <table class="qk-table" style="font-size: 0.85rem;">
+          <thead>
+            <tr>
+              <th>N° Ordine</th>
+              <th>Fornitore</th>
+              <th>Stato</th>
+              <th class="text-end">Totale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($recent_purchase_orders as $o): ?>
+            <tr>
+              <td>
+                <a href="<?= url('purchases/orders/edit?id=' . $o['id']) ?>" class="fw-bold qk-text-accent">
+                  <?= e($o['numero']) ?>
+                </a>
+              </td>
+              <td><?= e($o['fornitore_nome']) ?></td>
+              <td>
+                <span class="qk-badge <?= get_badge_class($o['stato']) ?>">
+                  <?= get_stato_label($o['stato']) ?>
+                </span>
+              </td>
+              <td class="text-end fw-semibold">
+                <?= $o['totale'] !== null ? '€ ' . number_format((float)$o['totale'], 2, ',', '.') : '—' ?>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <?php endif; ?>
+      </div>
     </div>
-    <?php else: ?>
-    <div class="qk-table-wrap">
-      <table class="qk-table">
-        <thead>
-          <tr>
-            <th>N° Ordine</th>
-            <th>Cliente</th>
-            <th>Stato</th>
-            <th class="text-end">Importo</th>
-            <th class="col-actions"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($recent_orders as $o): ?>
-          <tr>
-            <td>
-              <a href="<?= url('orders/view?id=' . urlencode($o['id'])) ?>"
-                 class="fw-semibold qk-text-accent text-decoration-none">
-                <?= e($o['id']) ?>
-              </a>
-              <?= adr_badge($o['adr']) ?>
-            </td>
-            <td><?= e($o['customer']) ?></td>
-            <td><?= status_badge($o['status']) ?></td>
-            <td class="text-end fw-semibold"><?= fmt_money($o['amount']) ?></td>
-            <td class="col-actions">
-              <div class="dropdown">
-                <button class="btn-qk btn-qk-secondary btn-qk-sm px-2"
-                        data-bs-toggle="dropdown" aria-expanded="false">
-                  <i class="fa-solid fa-ellipsis-vertical"></i>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                  <li><a class="dropdown-item" href="<?= url('orders/view?id=' . urlencode($o['id'])) ?>">
-                    <i class="fa-solid fa-eye fa-fw me-2"></i>Dettaglio</a></li>
-                  <li><a class="dropdown-item" href="<?= url('orders/edit?id=' . urlencode($o['id'])) ?>">
-                    <i class="fa-solid fa-pen fa-fw me-2"></i>Modifica</a></li>
-                </ul>
-              </div>
-            </td>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-    <?php endif; ?>
+
   </div>
 
-  <!-- Pannello azioni rapide -->
-  <div>
-    <div class="qk-card">
+  <!-- Pannello azioni rapide (Destra) -->
+  <div style="grid-column: span 1;">
+    <div class="qk-card shadow-sm" style="margin: 0;">
       <div class="qk-card-header">
         <span class="qk-card-title">
-          <i class="fa-solid fa-bolt fa-sm me-2 qk-text-accent"></i>Azioni rapide
+          <i class="fa-solid fa-bolt fa-sm me-2 text-warning"></i>Azioni rapide
         </span>
       </div>
-      <div class="qk-card-body" style="display:flex;flex-direction:column;gap:.6rem;">
-        <a href="<?= url('offers/create') ?>" class="btn-qk btn-qk-primary">
-          <i class="fa-solid fa-plus"></i> Nuova offerta
+      <div class="qk-card-body d-flex flex-column gap-2">
+        <a href="<?= url('sales/quotes/create') ?>" class="btn-qk btn-qk-primary text-start w-100">
+          <i class="fa-solid fa-file-invoice fa-fw me-2"></i>Nuovo Preventivo Cliente
         </a>
-        <a href="<?= url('orders/create') ?>" class="btn-qk btn-qk-secondary">
-          <i class="fa-solid fa-plus"></i> Nuovo ordine
+        <a href="<?= url('purchases/rfq/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+          <i class="fa-solid fa-file-signature fa-fw me-2"></i>Nuova RFQ Acquisti
         </a>
-        <a href="<?= url('customers/create') ?>" class="btn-qk btn-qk-secondary">
-          <i class="fa-solid fa-user-plus"></i> Nuovo cliente
+        <a href="<?= url('purchases/quotes/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+          <i class="fa-solid fa-file-invoice-dollar fa-fw me-2"></i>Registra Prev. Fornitore
         </a>
-        <a href="<?= url('products/create') ?>" class="btn-qk btn-qk-secondary">
-          <i class="fa-solid fa-plus"></i> Nuovo prodotto
+        <a href="<?= url('warehouse/stock') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+          <i class="fa-solid fa-boxes-stacked fa-fw me-2"></i>Controllo Giacenze
+        </a>
+        <a href="<?= url('warehouse/movements/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+          <i class="fa-solid fa-arrows-rotate fa-fw me-2"></i>Movimento Magazzino
+        </a>
+        <a href="<?= url('warehouse/inventories/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+          <i class="fa-solid fa-clipboard-list fa-fw me-2"></i>Rettifica Giacenze (Inventario)
+        </a>
+        <a href="<?= url('products/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+          <i class="fa-solid fa-box fa-fw me-2"></i>Nuovo Articolo
         </a>
       </div>
     </div>
   </div>
 
 </div>
+

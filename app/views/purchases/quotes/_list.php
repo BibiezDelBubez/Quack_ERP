@@ -1,38 +1,30 @@
 <?php
 /**
- * purchases/ordini/_list.php
- * Elenco ordini di acquisto.
- * Variabili attese: $ordini_list (array), $search (string), $stato (string)
+ * purchases/quotes/_list.php
+ * Elenco preventivi / offerte ricevute dai fornitori.
+ * Variabili attese: $offerte_list (array), $search (string), $stato (string)
  */
 
-function ordine_badge(string $stato): string {
+function offerta_badge(string $stato): string {
     $map = [
-        'bozza'                 => ['draft',     'Bozza'],
-        'in_approvazione'       => ['pending',   'In approvazione'],
-        'approvato'             => ['confirmed', 'Approvato'],
-        'inviato'               => ['active',    'Inviato'],
-        'parzialmente_ricevuto' => ['warning',   'Parz. Ricevuto'],
-        'completato'            => ['confirmed', 'Completato'],
-        'annullato'             => ['cancelled', 'Annullato'],
+        'in_valutazione' => ['pending',   'In valutazione'],
+        'accettata'      => ['confirmed', 'Accettata'],
+        'rifiutata'      => ['draft',     'Rifiutata'],
     ];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
 }
 
 $statiLabels = [
-    ''                      => 'Tutti',
-    'bozza'                 => 'Bozza',
-    'in_approvazione'       => 'In Approvazione',
-    'approvato'             => 'Approvato',
-    'inviato'               => 'Inviato',
-    'parzialmente_ricevuto' => 'Parz. Ricevuto',
-    'completato'            => 'Completato',
-    'annullato'             => 'Annullato',
+    ''               => 'Tutti',
+    'in_valutazione' => 'In Valutazione',
+    'accettata'      => 'Accettati',
+    'rifiutata'      => 'Rifiutati',
 ];
 ?>
 
 <!-- Sotto-navigazione condivisa -->
-<?php $active_tab = 'ordini'; include __DIR__ . '/../_subnav.php'; ?>
+<?php $active_tab = 'quotes'; include __DIR__ . '/../_subnav.php'; ?>
 
 <?php if (!empty($_SESSION['flash_success'])): ?>
 <div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
@@ -55,7 +47,7 @@ $statiLabels = [
 <div class="qk-card">
   <!-- Toolbar: ricerca + filtri -->
   <div class="qk-table-toolbar">
-    <form method="get" action="<?= url('purchases/ordini') ?>" class="qk-search-form">
+    <form method="get" action="<?= url('purchases/quotes') ?>" class="qk-search-form">
       <div class="qk-search-wrap">
         <i class="fa-solid fa-magnifying-glass qk-search-icon"></i>
         <input type="text" name="q" class="qk-form-control qk-search-input"
@@ -69,7 +61,7 @@ $statiLabels = [
 
     <div class="qk-filter-pills">
       <?php foreach ($statiLabels as $k => $lbl): ?>
-      <a href="<?= url('purchases/ordini') . ($k !== '' || $search !== '' ? '?' . http_build_query(array_filter(['q' => $search, 'stato' => $k])) : '') ?>"
+      <a href="<?= url('purchases/quotes') . ($k !== '' || $search !== '' ? '?' . http_build_query(array_filter(['q' => $search, 'stato' => $k])) : '') ?>"
          class="qk-filter-pill <?= $stato === $k ? 'active' : '' ?>">
         <?= e($lbl) ?>
       </a>
@@ -82,49 +74,43 @@ $statiLabels = [
     <table class="qk-table">
       <thead>
         <tr>
-          <th>Numero Ordine</th>
-          <th>Origine</th>
+          <th>Numero preventivo</th>
+          <th>RFQ di Origine</th>
           <th>Fornitore</th>
           <th>Stato</th>
-          <th>Data Ordine</th>
+          <th>Data Ricezione</th>
           <th class="qk-text-right">Imponibile</th>
           <th class="qk-text-right">Totale</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        <?php if (empty($ordini_list)): ?>
+        <?php if (empty($offerte_list)): ?>
         <tr>
           <td colspan="8" class="qk-table-empty">
-            <i class="fa-solid fa-inbox"></i> Nessun ordine trovato.
+            <i class="fa-solid fa-inbox"></i> Nessun preventivo trovato.
           </td>
         </tr>
         <?php else: ?>
-        <?php foreach ($ordini_list as $o): ?>
+        <?php foreach ($offerte_list as $o): ?>
         <tr>
           <td>
-            <a href="<?= url('purchases/ordini/edit') . '?id=' . $o['id'] ?>" class="qk-link-strong">
+            <a href="<?= url('purchases/quotes/edit') . '?id=' . $o['id'] ?>" class="qk-link-strong">
               <?= e($o['numero']) ?>
             </a>
           </td>
           <td>
-            <?php if (!empty($o['offerta_numero'])): ?>
-              <span class="qk-text-muted">Offerta:</span>
-              <a href="<?= url('purchases/offerte/edit') . '?id=' . $o['offerta_id'] ?>" class="qk-link-strong">
-                <?= e($o['offerta_numero']) ?>
-              </a>
-            <?php elseif (!empty($o['rfq_numero'])): ?>
-              <span class="qk-text-muted">RFQ:</span>
+            <?php if (!empty($o['rfq_id'])): ?>
               <a href="<?= url('purchases/rfq/edit') . '?id=' . $o['rfq_id'] ?>" class="qk-link-strong">
-                #<?= e($o['rfq_numero']) ?>
+                #<?= e($o['rfq_numero'] ?: $o['rfq_id']) ?>
               </a>
             <?php else: ?>
-              <span class="qk-text-muted">—</span>
+              <span class="qk-text-muted">Spontaneo</span>
             <?php endif; ?>
           </td>
           <td><?= e($o['fornitore_nome'] ?? '—') ?></td>
-          <td><?= ordine_badge($o['stato']) ?></td>
-          <td><?= e($o['data_ordine'] ?? '—') ?></td>
+          <td><?= offerta_badge($o['stato']) ?></td>
+          <td><?= e($o['data_offerta'] ?? '—') ?></td>
           <td class="qk-text-right">
             <?= $o['imponibile'] !== null ? '€ ' . number_format((float)$o['imponibile'], 2, ',', '.') : '—' ?>
           </td>
@@ -132,7 +118,7 @@ $statiLabels = [
             <?= $o['totale'] !== null ? '€ ' . number_format((float)$o['totale'], 2, ',', '.') : '—' ?>
           </td>
           <td class="qk-table-actions">
-            <a href="<?= url('purchases/ordini/edit') . '?id=' . $o['id'] ?>"
+            <a href="<?= url('purchases/quotes/edit') . '?id=' . $o['id'] ?>"
                class="btn-qk btn-qk-xs btn-qk-secondary" title="Apri / Modifica">
               <i class="fa-solid fa-pencil"></i>
             </a>
@@ -144,10 +130,3 @@ $statiLabels = [
     </table>
   </div>
 </div>
-
-<style>
-.qk-badge.cancelled {
-  background: var(--qk-border-color);
-  color: var(--qk-text-secondary);
-}
-</style>

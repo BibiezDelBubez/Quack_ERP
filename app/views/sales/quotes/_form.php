@@ -145,15 +145,27 @@ $v = $values;
 
   <!-- Top Primary Fields Grid -->
   <div class="qk-card mb-3">
+    <div class="qk-card-header d-flex justify-content-between align-items-center">
+      <span class="qk-card-title" style="margin:0">
+        <i class="fa-solid fa-file-invoice me-2 text-primary"></i>
+        <?= ($v['numero_offerta'] ?? '') ? 'Preventivo ' . e($v['numero_offerta']) : 'Nuovo Preventivo' ?>
+      </span>
+      <?php if (!($v['numero_offerta'] ?? '')): ?>
+        <span class="qk-text-muted" style="font-size:.82rem">Numero ERP provvisorio: <strong><?= e($numero_offerta) ?></strong></span>
+      <?php endif; ?>
+    </div>
     <div class="qk-card-body">
+      <input type="hidden" name="numero_offerta" value="<?= e($v['numero_offerta'] ?: $numero_offerta) ?>">
+      
       <div class="qk-form-grid mb-3">
         <!-- Colonna Sinistra -->
         <div>
           <div class="qk-form-row">
             <div class="qk-form-group">
-              <label class="qk-form-label">N° Offerta (Prot.)</label>
-              <input type="text" name="numero_offerta" class="qk-form-control"
-                     value="<?= e($v['numero_offerta'] ?: $numero_offerta) ?>" readonly style="background-color: var(--qk-border-color, #e9ecef);">
+              <label class="qk-form-label">Riferimento interno</label>
+              <input type="text" name="riferimento_interno" class="qk-form-control"
+                     placeholder="Es. Prot. 56/2026"
+                     value="<?= e($v['riferimento_interno'] ?? '') ?>">
             </div>
             <div class="qk-form-group">
               <label class="qk-form-label">Stato</label>

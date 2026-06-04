@@ -1,6 +1,6 @@
 <?php
 /**
- * purchases/offerte/_form.php
+ * purchases/quotes/_form.php
  * Form di creazione / modifica Offerta/Preventivo Fornitore (ciclo acquisti v2).
  *
  * Variabili attese:
@@ -64,7 +64,7 @@ $statoLabel = [
     <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
       <?php if ($isEdit && $isInValutazione): ?>
         <!-- Accetta ed eventualmente genera ordine -->
-        <form method="post" action="<?= url('purchases/offerte/action') ?>" class="d-inline">
+        <form method="post" action="<?= url('purchases/quotes/action') ?>" class="d-inline">
           <?= csrf_field() ?>
           <input type="hidden" name="id" value="<?= $id ?>">
           <input type="hidden" name="azione" value="accetta">
@@ -79,7 +79,7 @@ $statoLabel = [
         </button>
       <?php endif; ?>
 
-      <a href="<?= url('purchases/offerte') ?>" class="btn-qk btn-qk-secondary">
+      <a href="<?= url('purchases/quotes') ?>" class="btn-qk btn-qk-secondary">
         <i class="fa-solid fa-arrow-left"></i> Elenco Preventivi
       </a>
     </div>
@@ -122,7 +122,7 @@ $statoLabel = [
     </ul>
   </div>
 
-<form method="post" action="<?= $isEdit ? url('purchases/offerte/edit') . '?id=' . $id : url('purchases/offerte/create') ?>" id="form-offerta" enctype="multipart/form-data">
+<form method="post" action="<?= $isEdit ? url('purchases/quotes/edit') . '?id=' . $id : url('purchases/quotes/create') ?>" id="form-offerta" enctype="multipart/form-data">
   <?= csrf_field() ?>
   <input type="hidden" name="stato" value="<?= e($stato) ?>">
   <input type="hidden" name="rfq_id" value="<?= e($values['rfq_id']) ?>">
@@ -582,7 +582,7 @@ $statoLabel = [
 
   <?php if ($canEdit): ?>
   <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-bottom:2rem">
-    <a href="<?= url('purchases/offerte') ?>" class="btn-qk btn-qk-ghost">Annulla</a>
+    <a href="<?= url('purchases/quotes') ?>" class="btn-qk btn-qk-ghost">Annulla</a>
     <button type="submit" class="btn-qk btn-qk-primary">
       <i class="fa-solid fa-floppy-disk"></i> Salva Preventivo
     </button>
@@ -1190,7 +1190,7 @@ $statoLabel = [
               style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--qk-text-muted)">&times;</button>
     </div>
     
-    <form method="post" action="<?= url('purchases/offerte/action') ?>" style="margin:0">
+    <form method="post" action="<?= url('purchases/quotes/action') ?>" style="margin:0">
       <?= csrf_field() ?>
       <input type="hidden" name="id" value="<?= $id ?>">
       <input type="hidden" name="azione" value="rifiuta">

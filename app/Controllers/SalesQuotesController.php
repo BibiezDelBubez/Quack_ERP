@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require_once INCLUDES_DIR . '/offerte.php';
+require_once INCLUDES_DIR . '/sales_quotes.php';
 
 final class SalesQuotesController extends BaseController
 {

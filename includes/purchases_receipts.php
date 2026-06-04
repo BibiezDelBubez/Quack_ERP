@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 /**
- * includes/acquisti_ricezioni.php
+ * includes/purchases_receipts.php
  * Funzioni DB per le Ricezioni Merce.
  *
  * La conferma di una ricezione aggiorna:
@@ -11,11 +11,11 @@ declare(strict_types=1);
  *   - ordini_righe_pianificazione (avanza o split)
  *   - stato dell'ordine padre
  *
- * Dipende da: includes/acquisti_comune.php, includes/acquisti_ordini.php
+ * Dipende da: includes/purchases_common.php, includes/purchases_orders.php
  */
 
-require_once __DIR__ . '/acquisti_comune.php';
-require_once __DIR__ . '/acquisti_ordini.php';
+require_once __DIR__ . '/purchases_common.php';
+require_once __DIR__ . '/purchases_orders.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA

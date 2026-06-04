@@ -1,6 +1,6 @@
 <?php
 /**
- * purchases/ricezioni/_form.php
+ * purchases/receipts/_form.php
  * Form di conferma ricezione merce.
  * Variabili attese: $detail (array), $page_title (string)
  */
@@ -30,11 +30,11 @@ $isBozza = $rc['stato'] === 'bozza';
 <!-- StatusBar/Actions -->
 <div class="qk-statusbar d-flex justify-content-between align-items-center mb-4 p-2 bg-light border rounded">
   <div class="qk-statusbar-buttons d-flex gap-2">
-    <a href="<?= url('purchases/ricezioni') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+    <a href="<?= url('purchases/receipts') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
       <i class="fa-solid fa-arrow-left me-1"></i> Lista Ricezioni
     </a>
     <?php if (!empty($rc['ordine_id'])): ?>
-      <a href="<?= url('purchases/ordini/edit') . '?id=' . $rc['ordine_id'] ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+      <a href="<?= url('purchases/orders/edit') . '?id=' . $rc['ordine_id'] ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
         <i class="fa-solid fa-file-contract me-1"></i> Vai all'Ordine
       </a>
     <?php endif; ?>
@@ -50,7 +50,7 @@ $isBozza = $rc['stato'] === 'bozza';
   </ul>
 </div>
 
-<form action="<?= url('purchases/ricezioni/conferma') ?>" method="post">
+<form action="<?= url('purchases/receipts/conferma') ?>" method="post">
   <?= csrf_field() ?>
   <input type="hidden" name="ricezione_id" value="<?= $id ?>">
 

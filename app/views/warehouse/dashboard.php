@@ -159,7 +159,7 @@ function movimento_badge_dash(string $tipo): string {
         <a href="<?= url('warehouse/movements/create') ?>" class="btn-qk btn-qk-primary text-start w-100">
           <i class="fa-solid fa-plus fa-fw me-2"></i>Nuovo Movimento Manuale
         </a>
-        <a href="<?= url('warehouse/inventari/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
+        <a href="<?= url('warehouse/inventories/create') ?>" class="btn-qk btn-qk-secondary text-start w-100">
           <i class="fa-solid fa-clipboard-list fa-fw me-2"></i>Rileva Inventario Fisico
         </a>
         <a href="<?= url('warehouse/reorder') ?>" class="btn-qk btn-qk-secondary text-start w-100">

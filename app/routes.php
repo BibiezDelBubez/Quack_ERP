@@ -65,8 +65,8 @@ return [
     '/warehouse/stock'                => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'stock',           'auth' => true],
     '/warehouse/movements'            => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'movements',       'auth' => true],
     '/warehouse/movements/create'     => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'createMovement',  'auth' => true],
-    '/warehouse/inventari'            => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'inventari',       'auth' => true],
-    '/warehouse/inventari/create'     => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'createInventario','auth' => true],
+    '/warehouse/inventories'          => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'inventari',       'auth' => true],
+    '/warehouse/inventories/create'   => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'createInventario','auth' => true],
     '/warehouse/reorder'              => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'reorder',         'auth' => true],
     '/warehouse/api/prodotto-info'    => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiProdottoInfo',     'auth' => true],
     '/warehouse/api/prodotti-search'  => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiProdottiSearch',   'auth' => true],
@@ -99,25 +99,25 @@ return [
     '/purchases/rfq/pdf'                     => ['type' => 'controller', 'controller' => 'RfqController', 'action' => 'pdf',            'auth' => true],
     '/purchases/rfq/docx'                    => ['type' => 'controller', 'controller' => 'RfqController', 'action' => 'docx',           'auth' => true],
 
-    // ─── Acquisti v2 — Offerte ────────────────────────────────────────────────
-    '/purchases/offerte'                     => ['type' => 'controller', 'controller' => 'OfferteController', 'action' => 'index',    'auth' => true],
-    '/purchases/offerte/create'              => ['type' => 'controller', 'controller' => 'OfferteController', 'action' => 'create',   'auth' => true],
-    '/purchases/offerte/edit'                => ['type' => 'controller', 'controller' => 'OfferteController', 'action' => 'edit',     'auth' => true],
-    '/purchases/offerte/action'              => ['type' => 'controller', 'controller' => 'OfferteController', 'action' => 'action',   'auth' => true],
+    // ─── Acquisti v2 — Offerte (Supplier Quotes) ───────────────────────────────────────
+    '/purchases/quotes'                      => ['type' => 'controller', 'controller' => 'PurchasesQuotesController', 'action' => 'index',    'auth' => true],
+    '/purchases/quotes/create'               => ['type' => 'controller', 'controller' => 'PurchasesQuotesController', 'action' => 'create',   'auth' => true],
+    '/purchases/quotes/edit'                 => ['type' => 'controller', 'controller' => 'PurchasesQuotesController', 'action' => 'edit',     'auth' => true],
+    '/purchases/quotes/action'               => ['type' => 'controller', 'controller' => 'PurchasesQuotesController', 'action' => 'action',   'auth' => true],
 
-    // ─── Acquisti v2 — Ordini ─────────────────────────────────────────────────
-    '/purchases/ordini'                      => ['type' => 'controller', 'controller' => 'OrdiniAcquistoController', 'action' => 'index',          'auth' => true],
-    '/purchases/ordini/create'               => ['type' => 'controller', 'controller' => 'OrdiniAcquistoController', 'action' => 'create',         'auth' => true],
-    '/purchases/ordini/edit'                 => ['type' => 'controller', 'controller' => 'OrdiniAcquistoController', 'action' => 'edit',           'auth' => true],
-    '/purchases/ordini/action'               => ['type' => 'controller', 'controller' => 'OrdiniAcquistoController', 'action' => 'action',         'auth' => true],
-    '/purchases/ordini/pdf'                  => ['type' => 'controller', 'controller' => 'OrdiniAcquistoController', 'action' => 'pdf',            'auth' => true],
-    '/purchases/ordini/docx'                 => ['type' => 'controller', 'controller' => 'OrdiniAcquistoController', 'action' => 'docx',           'auth' => true],
+    // ─── Acquisti v2 — Ordini (Purchase Orders) ────────────────────────────────────────
+    '/purchases/orders'                      => ['type' => 'controller', 'controller' => 'PurchaseOrdersController', 'action' => 'index',          'auth' => true],
+    '/purchases/orders/create'               => ['type' => 'controller', 'controller' => 'PurchaseOrdersController', 'action' => 'create',         'auth' => true],
+    '/purchases/orders/edit'                 => ['type' => 'controller', 'controller' => 'PurchaseOrdersController', 'action' => 'edit',           'auth' => true],
+    '/purchases/orders/action'               => ['type' => 'controller', 'controller' => 'PurchaseOrdersController', 'action' => 'action',         'auth' => true],
+    '/purchases/orders/pdf'                  => ['type' => 'controller', 'controller' => 'PurchaseOrdersController', 'action' => 'pdf',            'auth' => true],
+    '/purchases/orders/docx'                 => ['type' => 'controller', 'controller' => 'PurchaseOrdersController', 'action' => 'docx',           'auth' => true],
 
-    // ─── Acquisti v2 — Ricezioni ──────────────────────────────────────────────
-    '/purchases/ricezioni'                   => ['type' => 'controller', 'controller' => 'RicezioniController', 'action' => 'index',    'auth' => true],
-    '/purchases/ricezioni/create'            => ['type' => 'controller', 'controller' => 'RicezioniController', 'action' => 'create',   'auth' => true],
-    '/purchases/ricezioni/edit'              => ['type' => 'controller', 'controller' => 'RicezioniController', 'action' => 'edit',     'auth' => true],
-    '/purchases/ricezioni/conferma'          => ['type' => 'controller', 'controller' => 'RicezioniController', 'action' => 'conferma', 'auth' => true],
+    // ─── Acquisti v2 — Ricezioni (Goods Receipts) ─────────────────────────────────────
+    '/purchases/receipts'                    => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'index',    'auth' => true],
+    '/purchases/receipts/create'             => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'create',   'auth' => true],
+    '/purchases/receipts/edit'               => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'edit',     'auth' => true],
+    '/purchases/receipts/conferma'           => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'conferma', 'auth' => true],
 
     // ─── Acquisti legacy (PDF e listini rimangono su PurchasesController) ──────
 
@@ -136,10 +136,10 @@ return [
     '/adr/api/lookup'      => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'apiLookup',    'auth' => true],
 
     '/profile'          => ['type' => 'controller', 'controller' => 'ProfileController', 'action' => 'index',  'auth' => true],
-    '/utenti'           => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'index',   'auth' => true],
-    '/utenti/create'    => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'create',  'auth' => true],
-    '/utenti/edit'      => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'edit',    'auth' => true],
-    '/utenti/delete'    => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'delete',  'auth' => true],
+    '/users'            => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'index',   'auth' => true],
+    '/users/create'     => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'create',  'auth' => true],
+    '/users/edit'       => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'edit',    'auth' => true],
+    '/users/delete'     => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'delete',  'auth' => true],
 
     // Legacy URL compatibility
     '/index.php'             => ['type' => 'redirect', 'target' => '/dashboard'],
@@ -160,11 +160,27 @@ return [
     '/settings/index.php'    => ['type' => 'redirect', 'target' => '/settings'],
     '/ecommerce/sync.php'    => ['type' => 'redirect', 'target' => '/ecommerce/sync'],
     '/profile/index.php'     => ['type' => 'redirect', 'target' => '/profile'],
-    '/utenti/index.php'      => ['type' => 'redirect', 'target' => '/utenti'],
-    '/utenti/create.php'     => ['type' => 'redirect', 'target' => '/utenti/create'],
-    '/utenti/edit.php'       => ['type' => 'redirect', 'target' => '/utenti/edit'],
-    '/utenti/delete.php'     => ['type' => 'redirect', 'target' => '/utenti/delete'],
+    '/utenti/index.php'      => ['type' => 'redirect', 'target' => '/users'],
+    '/utenti/create.php'     => ['type' => 'redirect', 'target' => '/users/create'],
+    '/utenti/edit.php'       => ['type' => 'redirect', 'target' => '/users/edit'],
+    '/utenti/delete.php'     => ['type' => 'redirect', 'target' => '/users/delete'],
+
+    // Legacy Italian redirects
+    '/purchases/offerte'     => ['type' => 'redirect', 'target' => '/purchases/quotes'],
+    '/purchases/offerte/create' => ['type' => 'redirect', 'target' => '/purchases/quotes/create'],
+    '/purchases/offerte/edit' => ['type' => 'redirect', 'target' => '/purchases/quotes/edit'],
+    '/purchases/ordini'      => ['type' => 'redirect', 'target' => '/purchases/orders'],
+    '/purchases/ordini/create' => ['type' => 'redirect', 'target' => '/purchases/orders/create'],
+    '/purchases/ordini/edit' => ['type' => 'redirect', 'target' => '/purchases/orders/edit'],
+    '/purchases/ricezioni'   => ['type' => 'redirect', 'target' => '/purchases/receipts'],
+    '/purchases/ricezioni/create' => ['type' => 'redirect', 'target' => '/purchases/receipts/create'],
+    '/purchases/ricezioni/edit' => ['type' => 'redirect', 'target' => '/purchases/receipts/edit'],
+    '/utenti'                => ['type' => 'redirect', 'target' => '/users'],
+    '/utenti/create'         => ['type' => 'redirect', 'target' => '/users/create'],
+    '/utenti/edit'           => ['type' => 'redirect', 'target' => '/users/edit'],
+    '/utenti/delete'         => ['type' => 'redirect', 'target' => '/users/delete'],
+    '/warehouse/inventari'   => ['type' => 'redirect', 'target' => '/warehouse/inventories'],
+    '/warehouse/inventari/create' => ['type' => 'redirect', 'target' => '/warehouse/inventories/create'],
 
     '__404__' => ['type' => 'legacy', 'target' => '404.php', 'auth' => false],
 ];
-

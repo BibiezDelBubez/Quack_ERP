@@ -80,7 +80,7 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
           <?php foreach ($ordini_in_arrivo as $o): ?>
           <tr>
             <td>
-              <a href="<?= url('purchases/ordini/edit') . '?id=' . $o['id'] ?>" class="fw-bold">
+              <a href="<?= url('purchases/orders/edit') . '?id=' . $o['id'] ?>" class="fw-bold">
                 <?= e($o['numero']) ?>
               </a>
             </td>
@@ -94,17 +94,17 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
             </td>
             <td>
               <?php if (!empty($o['draft_ricezione_id'])): ?>
-                <a href="<?= url('purchases/ricezioni/edit') . '?id=' . $o['draft_ricezione_id'] ?>" class="btn-qk btn-qk-success btn-qk-xs fw-bold">
+                <a href="<?= url('purchases/receipts/edit') . '?id=' . $o['draft_ricezione_id'] ?>" class="btn-qk btn-qk-success btn-qk-xs fw-bold">
                   <i class="fa-solid fa-boxes-packing"></i> Apri Bozza Ricezione
                 </a>
               <?php else: ?>
-                <a href="<?= url('purchases/ricezioni/create') . '?ordine_id=' . $o['id'] ?>" class="btn-qk btn-qk-primary btn-qk-xs fw-bold">
+                <a href="<?= url('purchases/receipts/create') . '?ordine_id=' . $o['id'] ?>" class="btn-qk btn-qk-primary btn-qk-xs fw-bold">
                   <i class="fa-solid fa-truck-field"></i> Registra Ricevimento
                 </a>
               <?php endif; ?>
             </td>
             <td class="text-end">
-              <a href="<?= url('purchases/ordini/edit') . '?id=' . $o['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary" title="Vedi Dettaglio Ordine">
+              <a href="<?= url('purchases/orders/edit') . '?id=' . $o['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary" title="Vedi Dettaglio Ordine">
                 <i class="fa-solid fa-arrow-right"></i>
               </a>
             </td>

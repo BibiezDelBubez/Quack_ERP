@@ -1,14 +1,14 @@
 <?php
 declare(strict_types=1);
 /**
- * includes/acquisti_offerte.php
+ * includes/purchases_quotes.php
  * Funzioni DB per le Offerte (preventivi ricevuti dai fornitori).
  *
  * Ciclo di vita: in_valutazione → accettata | rifiutata
- * Dipende da: includes/acquisti_comune.php
+ * Dipende da: includes/purchases_common.php
  */
 
-require_once __DIR__ . '/acquisti_comune.php';
+require_once __DIR__ . '/purchases_common.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA

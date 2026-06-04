@@ -1,22 +1,22 @@
 <?php
 declare(strict_types=1);
 
-require_once INCLUDES_DIR . '/acquisti_ordini.php';
+require_once INCLUDES_DIR . '/purchases_orders.php';
 require_once INCLUDES_DIR . '/word_helper.php';
 
 /**
- * OrdiniAcquistoController — Ordini di Acquisto (ciclo acquisti v2).
+ * PurchaseOrdersController — Ordini di Acquisto (ciclo acquisti v2).
  *
  * Route   Action
  * ──────────────────────────────────────────────────────────────────────────
- * GET  /purchases/ordini              index()    Elenco ordini
- * GET  /purchases/ordini/create       create()   Genera ordine da offerta (redirect)
- * GET  /purchases/ordini/edit?id=N    edit()     Dettaglio / form modifica
- * POST /purchases/ordini/edit?id=N    edit()     Salva modifiche note/riferimenti
- * POST /purchases/ordini/action       action()   approva | invia | annulla
- * GET  /purchases/ordini/pdf?id=N     pdf()      Stampa PDF
+ * GET  /purchases/orders              index()    Elenco ordini
+ * GET  /purchases/orders/create       create()   Genera ordine da offerta (redirect)
+ * GET  /purchases/orders/edit?id=N    edit()     Dettaglio / form modifica
+ * POST /purchases/orders/edit?id=N    edit()     Salva modifiche note/riferimenti
+ * POST /purchases/orders/action       action()   approva | invia | annulla
+ * GET  /purchases/orders/pdf?id=N     pdf()      Stampa PDF
  */
-class OrdiniAcquistoController extends BaseController
+class PurchaseOrdersController extends BaseController
 {
     public function index(): void
     {
@@ -30,27 +30,27 @@ class OrdiniAcquistoController extends BaseController
             ['label' => 'Ordini di Acquisto']
         ];
 
-        $this->page(APP_ROOT_DIR . '/app/views/purchases/ordini/_list.php', get_defined_vars());
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/orders/_list.php', get_defined_vars());
     }
 
     /**
-     * GET /purchases/ordini/create?offerta_id=N
+     * GET /purchases/orders/create?offerta_id=N
      * Genera un ordine da offerta accettata e reindirizza al dettaglio.
-     * Non ha form proprio: l'ordine viene creato da OfferteController::action(accetta+genera).
+     * Non ha form proprio: l'ordine viene creato da PurchasesQuotesController::action(accetta+genera).
      * Questo metodo serve come fallback diretto.
      */
     public function create(): void
     {
         $offerta_id = (int) get_param('offerta_id', '0');
         if ($offerta_id <= 0) {
-            redirect(url('purchases/ordini'));
+            redirect(url('purchases/orders'));
         }
         try {
             $id = qk_ordine_da_offerta($this->pdo, $offerta_id, (int)current_user()['id']);
-            redirect(url('purchases/ordini/edit') . '?id=' . $id . '&saved=1');
+            redirect(url('purchases/orders/edit') . '?id=' . $id . '&saved=1');
         } catch (\Throwable $e) {
             $_SESSION['flash_error'] = $e->getMessage();
-            redirect(url('purchases/offerte/edit') . '?id=' . $offerta_id);
+            redirect(url('purchases/quotes/edit') . '?id=' . $offerta_id);
         }
     }
 
@@ -61,10 +61,10 @@ class OrdiniAcquistoController extends BaseController
     public function edit(): void
     {
         $id = (int) get_param('id', '0');
-        if ($id <= 0) redirect(url('purchases/ordini'));
+        if ($id <= 0) redirect(url('purchases/orders'));
 
         $detail = qk_ordine_detail($this->pdo, $id);
-        if (!$detail) redirect(url('purchases/ordini'));
+        if (!$detail) redirect(url('purchases/orders'));
 
         $errors = [];
 
@@ -102,21 +102,21 @@ class OrdiniAcquistoController extends BaseController
         $saved      = get_param('saved', '') === '1';
         $page_title = 'Ordine ' . $detail['ordine']['numero'];
         $breadcrumbs = [
-            ['label' => 'Acquisti', 'url' => url('purchases/ordini')],
+            ['label' => 'Acquisti', 'url' => url('purchases/orders')],
             ['label' => 'Dettaglio Ordine']
         ];
 
-        $this->page(APP_ROOT_DIR . '/app/views/purchases/ordini/_detail.php', get_defined_vars());
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/orders/_detail.php', get_defined_vars());
     }
 
     /**
-     * POST /purchases/ordini/action
+     * POST /purchases/orders/action
      * Body: id, azione ('approva' | 'invia' | 'annulla')
      */
     public function action(): void
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
-            redirect(url('purchases/ordini'));
+            redirect(url('purchases/orders'));
         }
 
         $id     = (int) post('id', '0');
@@ -138,10 +138,10 @@ class OrdiniAcquistoController extends BaseController
                     }
 
                     qk_ordine_invia($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'Ordine confermato e inviato al fornitore.';
+                    $_SESSION['flash_success'] = 'Ordine confirmed e inviato al fornitore.';
 
                     // Crea automaticamente la bozza di ricezione merce se non esiste già
-                    require_once INCLUDES_DIR . '/acquisti_ricezioni.php';
+                    require_once INCLUDES_DIR . '/purchases_receipts.php';
                     $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
                     $stCheckRec->execute([$id]);
                     if (!$stCheckRec->fetch()) {
@@ -166,7 +166,7 @@ class OrdiniAcquistoController extends BaseController
             $_SESSION['flash_error'] = $e->getMessage();
         }
 
-        redirect(url('purchases/ordini/edit') . '?id=' . $id);
+        redirect(url('purchases/orders/edit') . '?id=' . $id);
     }
 
     public function pdf(): void
@@ -174,19 +174,19 @@ class OrdiniAcquistoController extends BaseController
         // TODO: generazione PDF ordine di acquisto
         $id = (int) get_param('id', '0');
         $_SESSION['flash_error'] = 'La stampa PDF degli ordini non è ancora disponibile.';
-        redirect(url('purchases/ordini/edit') . '?id=' . $id);
+        redirect(url('purchases/orders/edit') . '?id=' . $id);
     }
 
     public function docx(): void
     {
         $id = (int) get_param('id', '0');
         if ($id <= 0) {
-            redirect(url('purchases/ordini'));
+            redirect(url('purchases/orders'));
         }
 
         $detail = qk_ordine_detail($this->pdo, $id);
         if (!$detail) {
-            redirect(url('purchases/ordini'));
+            redirect(url('purchases/orders'));
         }
 
         $ordine = $detail['ordine'];

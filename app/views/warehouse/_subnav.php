@@ -8,7 +8,7 @@ $subnav_tabs = [
     'dashboard' => ['label' => 'Panoramica',      'url' => url('warehouse')],
     'stock'     => ['label' => 'Giacenze',        'url' => url('warehouse/stock')],
     'movements' => ['label' => 'Movimenti',       'url' => url('warehouse/movements')],
-    'inventari' => ['label' => 'Inventario fis.', 'url' => url('warehouse/inventari')],
+    'inventories' => ['label' => 'Inventario fis.', 'url' => url('warehouse/inventories')],
     'reorder'   => ['label' => 'Riordino',        'url' => url('warehouse/reorder')],
 ];
 ?>

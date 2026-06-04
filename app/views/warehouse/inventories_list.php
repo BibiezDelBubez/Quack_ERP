@@ -1,19 +1,19 @@
 <?php
 /**
- * app/views/warehouse/inventari_list.php
+ * app/views/warehouse/inventories_list.php
  * Storico delle sessioni di inventario fisico.
  */
 ?>
 
 <!-- Sotto-navigazione condivisa -->
-<?php $active_tab = 'inventari'; include __DIR__ . '/_subnav.php'; ?>
+<?php $active_tab = 'inventories'; include __DIR__ . '/_subnav.php'; ?>
 
 <div class="qk-card shadow-sm mb-4">
   <div class="qk-card-header d-flex justify-content-between align-items-center">
     <span class="qk-card-title">
       <i class="fa-solid fa-clipboard-list me-2 text-primary"></i>Sessioni Inventario Fisico
     </span>
-    <a href="<?= url('warehouse/inventari/create') ?>" class="btn-qk btn-qk-primary btn-qk-sm">
+    <a href="<?= url('warehouse/inventories/create') ?>" class="btn-qk btn-qk-primary btn-qk-sm">
       <i class="fa-solid fa-plus me-1"></i>Nuovo Inventario Fisico
     </a>
   </div>
@@ -51,7 +51,7 @@
           <td><?= e($inv['note']) ?></td>
           <td class="qk-text-muted"><?= fmt_datetime($inv['created_at']) ?></td>
           <td class="text-end">
-            <a href="<?= url('warehouse/inventari/create') . '?id=' . $inv['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary">
+            <a href="<?= url('warehouse/inventories/create') . '?id=' . $inv['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary">
               <i class="fa-solid <?= $inv['stato'] === 'convalidato' ? 'fa-eye' : 'fa-pen' ?>"></i>
               <?= $inv['stato'] === 'convalidato' ? 'Visualizza' : 'Modifica' ?>
             </a>

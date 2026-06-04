@@ -1,6 +1,6 @@
 <?php
 /**
- * utenti/_list.php — Vista lista utenti.
+ * users/_list.php — Vista lista utenti.
  * Variabili attese: $utenti, $total, $search, $ruolo, $me
  */
 ?>
@@ -15,7 +15,7 @@
           <?php foreach (['admin','commerciale','magazziniere','readonly'] as $r): ?><option value="<?= $r ?>" <?= $ruolo === $r ? 'selected' : '' ?>><?= ucfirst($r) ?></option><?php endforeach; ?>
         </select>
         <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-filter"></i> Filtra</button>
-        <?php if ($search || $ruolo): ?><a href="<?= url('utenti') ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-xmark"></i> Pulisci</a><?php endif; ?>
+        <?php if ($search || $ruolo): ?><a href="<?= url('users') ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-xmark"></i> Pulisci</a><?php endif; ?>
       </form>
     </div>
     <div class="qk-table-toolbar-right"><small class="qk-text-muted"><?= $total ?> utent<?= $total === 1 ? 'e' : 'i' ?></small></div>
@@ -38,11 +38,11 @@
             <div class="dropdown">
               <button class="btn-qk btn-qk-secondary btn-qk-sm px-2" data-bs-toggle="dropdown"><i class="fa-solid fa-ellipsis-vertical"></i></button>
               <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="<?= url('utenti/edit?id=' . (int)$u['id']) ?>"><i class="fa-solid fa-pen fa-fw me-2"></i>Modifica</a></li>
+                 <li><a class="dropdown-item" href="<?= url('users/edit?id=' . (int)$u['id']) ?>"><i class="fa-solid fa-pen fa-fw me-2"></i>Modifica</a></li>
                 <?php if (!$is_me): ?>
-                <li><form method="post" action="<?= url('utenti/delete') ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="action" value="<?= $u['attivo'] ? 'disable' : 'enable' ?>"><button type="submit" class="dropdown-item"><i class="fa-solid fa-<?= $u['attivo'] ? 'ban' : 'circle-check' ?> fa-fw me-2"></i><?= $u['attivo'] ? 'Disabilita' : 'Riabilita' ?></button></form></li>
+                <li><form method="post" action="<?= url('users/delete') ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="action" value="<?= $u['attivo'] ? 'disable' : 'enable' ?>"><button type="submit" class="dropdown-item"><i class="fa-solid fa-<?= $u['attivo'] ? 'ban' : 'circle-check' ?> fa-fw me-2"></i><?= $u['attivo'] ? 'Disabilita' : 'Riabilita' ?></button></form></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><form method="post" action="<?= url('utenti/delete') ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="action" value="delete"><button type="submit" class="dropdown-item text-danger"><i class="fa-solid fa-trash fa-fw me-2"></i>Elimina</button></form></li>
+                <li><form method="post" action="<?= url('users/delete') ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="action" value="delete"><button type="submit" class="dropdown-item text-danger"><i class="fa-solid fa-trash fa-fw me-2"></i>Elimina</button></form></li>
                 <?php endif; ?>
               </ul>
             </div>

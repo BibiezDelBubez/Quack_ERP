@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once INCLUDES_DIR . '/acquisti_rfq.php';
+require_once INCLUDES_DIR . '/purchases_rfq.php';
 require_once INCLUDES_DIR . '/anagrafiche.php';
 
 /**
@@ -928,7 +928,7 @@ class RfqController extends BaseController
     public function apiProdotti(): void
     {
         ob_start();
-        require_once INCLUDES_DIR . '/acquisti_offerte.php';
+        require_once INCLUDES_DIR . '/purchases_quotes.php';
         $q           = get_param('q', '');
         $fornitore_id = (int) get_param('fornitore_id', '0');
 

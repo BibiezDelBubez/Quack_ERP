@@ -183,7 +183,7 @@ class WarehouseController extends BaseController
         $extra_css = ['warehouse.css'];
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/inventari_list.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/inventories_list.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
@@ -204,7 +204,7 @@ class WarehouseController extends BaseController
             $stmt->execute([$id]);
             $inventario = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$inventario) {
-                redirect_with('warehouse/inventari', 'error', 'Sessione inventario non trovata.');
+                redirect_with('warehouse/inventories', 'error', 'Sessione inventario non trovata.');
             }
             $values['data_inventario'] = $inventario['data_inventario'];
             $values['note'] = $inventario['note'];
@@ -360,7 +360,7 @@ class WarehouseController extends BaseController
 
                         $this->pdo->commit();
                         $msg = $azione === 'convalida' ? 'Inventario convalidato e rettifiche applicate con successo.' : 'Bozza inventario salvata con successo.';
-                        redirect_with('warehouse/inventari', 'success', $msg);
+                        redirect_with('warehouse/inventories', 'success', $msg);
 
                     } catch (\Throwable $e) {
                         $this->pdo->rollBack();
@@ -374,13 +374,13 @@ class WarehouseController extends BaseController
         $page_subtitle = 'Gestione conteggio giacenze fisiche';
         $breadcrumbs   = [
             ['label' => 'Magazzino', 'url' => url('warehouse')],
-            ['label' => 'Inventario fis.', 'url' => url('warehouse/inventari')],
+            ['label' => 'Inventario fis.', 'url' => url('warehouse/inventories')],
             ['label' => $id ? '#' . $id : 'Nuovo']
         ];
         $extra_css = ['warehouse.css'];
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/inventari_form.php';
+        require APP_ROOT_DIR . '/app/views/warehouse/inventories_form.php';
         require INCLUDES_DIR . '/footer.php';
     }
 

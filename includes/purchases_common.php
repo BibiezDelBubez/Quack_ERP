@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 /**
- * includes/acquisti_comune.php
+ * includes/purchases_common.php
  * Utility condivise dal ciclo acquisti: generazione numeri documento.
- * Incluso da acquisti_rfq.php, acquisti_offerte.php, ecc.
+ * Incluso da purchases_rfq.php, purchases_quotes.php, ecc.
  */
 
 /**

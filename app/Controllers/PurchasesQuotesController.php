@@ -1,21 +1,21 @@
 <?php
 declare(strict_types=1);
 
-require_once INCLUDES_DIR . '/acquisti_offerte.php';
+require_once INCLUDES_DIR . '/purchases_quotes.php';
 
 /**
- * OfferteController — Offerte ricevute dai fornitori (ciclo acquisti v2).
+ * PurchasesQuotesController — Offerte ricevute dai fornitori (ciclo acquisti v2).
  *
  * Route   Action
  * ──────────────────────────────────────────────────────────────────────────
- * GET  /purchases/offerte              index()    Elenco offerte
- * GET  /purchases/offerte/create       create()   Form nuova offerta
- * POST /purchases/offerte/create       create()   Salva
- * GET  /purchases/offerte/edit?id=N    edit()     Form modifica
- * POST /purchases/offerte/edit?id=N    edit()     Salva modifiche
- * POST /purchases/offerte/action       action()   accetta | rifiuta
+ * GET  /purchases/quotes              index()    Elenco offerte
+ * GET  /purchases/quotes/create       create()   Form nuova offerta
+ * POST /purchases/quotes/create       create()   Salva
+ * GET  /purchases/quotes/edit?id=N    edit()     Form modifica
+ * POST /purchases/quotes/edit?id=N    edit()     Salva modifiche
+ * POST /purchases/quotes/action       action()   accetta | rifiuta
  */
-class OfferteController extends BaseController
+class PurchasesQuotesController extends BaseController
 {
     public function index(): void
     {
@@ -29,9 +29,9 @@ class OfferteController extends BaseController
             ['label' => 'Acquisti'],
             ['label' => 'Preventivi Fornitori']
         ];
-        $page_actions = '<a href="' . url('purchases/offerte/create') . '" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Registra Preventivo Spontaneo</a>';
+        $page_actions = '<a href="' . url('purchases/quotes/create') . '" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Registra Preventivo Spontaneo</a>';
 
-        $this->page(APP_ROOT_DIR . '/app/views/purchases/offerte/_list.php', get_defined_vars());
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/quotes/_list.php', get_defined_vars());
     }
 
     public function create(): void
@@ -44,7 +44,7 @@ class OfferteController extends BaseController
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $rfq_id = (int) get_param('rfq_id', '0');
             if ($rfq_id > 0) {
-                require_once INCLUDES_DIR . '/acquisti_rfq.php';
+                require_once INCLUDES_DIR . '/purchases_rfq.php';
                 $detail = qk_rfq_detail($this->pdo, $rfq_id);
                 if ($detail) {
                     $values['rfq_id']       = (string)$rfq_id;
@@ -93,7 +93,7 @@ class OfferteController extends BaseController
                 if (empty($errors)) {
                     try {
                         $id = qk_offerta_save($this->pdo, $values, $righe, (int)current_user()['id']);
-                        redirect(url('purchases/offerte/edit') . '?id=' . $id . '&saved=1');
+                        redirect(url('purchases/quotes/edit') . '?id=' . $id . '&saved=1');
                     } catch (\Throwable $e) {
                         $errors['_global'] = $e->getMessage();
                     }
@@ -106,20 +106,20 @@ class OfferteController extends BaseController
         $anteprima_numero = qk_peek_numero_acquisto($this->pdo, 'offerta');
         $page_title       = 'Registra Preventivo';
         $breadcrumbs = [
-            ['label' => 'Acquisti', 'url' => url('purchases/offerte')],
+            ['label' => 'Acquisti', 'url' => url('purchases/quotes')],
             ['label' => 'Registra Preventivo']
         ];
 
-        $this->page(APP_ROOT_DIR . '/app/views/purchases/offerte/_form.php', get_defined_vars());
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/quotes/_form.php', get_defined_vars());
     }
 
     public function edit(): void
     {
         $id = (int) get_param('id', '0');
-        if ($id <= 0) redirect(url('purchases/offerte'));
+        if ($id <= 0) redirect(url('purchases/quotes'));
 
         $detail = qk_offerta_detail($this->pdo, $id);
-        if (!$detail) redirect(url('purchases/offerte'));
+        if (!$detail) redirect(url('purchases/quotes'));
 
         $errors = [];
         $values = $this->mapDetailToValues($detail['offerta']);
@@ -166,21 +166,21 @@ class OfferteController extends BaseController
         $saved      = get_param('saved', '') === '1';
         $page_title = 'Preventivo ' . $detail['offerta']['numero'];
         $breadcrumbs = [
-            ['label' => 'Acquisti', 'url' => url('purchases/offerte')],
+            ['label' => 'Acquisti', 'url' => url('purchases/quotes')],
             ['label' => 'Dettaglio Preventivo']
         ];
 
-        $this->page(APP_ROOT_DIR . '/app/views/purchases/offerte/_form.php', get_defined_vars());
+        $this->page(APP_ROOT_DIR . '/app/views/purchases/quotes/_form.php', get_defined_vars());
     }
 
     /**
-     * POST /purchases/offerte/action
+     * POST /purchases/quotes/action
      * Body: id, azione ('accetta' | 'rifiuta'), [genera_ordine=1]
      */
     public function action(): void
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
-            redirect(url('purchases/offerte'));
+            redirect(url('purchases/quotes'));
         }
 
         $id     = (int) post('id', '0');
@@ -194,12 +194,12 @@ class OfferteController extends BaseController
 
                     // Se richiesto, genera subito l'ordine
                     if (post('genera_ordine', '') === '1') {
-                        require_once INCLUDES_DIR . '/acquisti_ordini.php';
+                        require_once INCLUDES_DIR . '/purchases_orders.php';
                         $ordine_id = qk_ordine_da_offerta($this->pdo, $id, (int)current_user()['id']);
                         $_SESSION['flash_success'] = 'Offerta accettata e ordine generato.';
-                        redirect(url('purchases/ordini/edit') . '?id=' . $ordine_id);
+                        redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);
                     }
-                    redirect(url('purchases/offerte/edit') . '?id=' . $id);
+                    redirect(url('purchases/quotes/edit') . '?id=' . $id);
                     break;
 
                 case 'rifiuta':
@@ -209,16 +209,16 @@ class OfferteController extends BaseController
                     }
                     qk_offerta_rifiuta($this->pdo, $id, (int)current_user()['id'], $motivo);
                     $_SESSION['flash_success'] = 'Offerta rifiutata.';
-                    redirect(url('purchases/offerte/edit') . '?id=' . $id);
+                    redirect(url('purchases/quotes/edit') . '?id=' . $id);
                     break;
 
                 default:
                     $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
-                    redirect(url('purchases/offerte/edit') . '?id=' . $id);
+                    redirect(url('purchases/quotes/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
             $_SESSION['flash_error'] = $e->getMessage();
-            redirect(url('purchases/offerte/edit') . '?id=' . $id);
+            redirect(url('purchases/quotes/edit') . '?id=' . $id);
         }
     }
 
@@ -383,7 +383,7 @@ class OfferteController extends BaseController
         }
 
         // Directory di upload con sharding per anno/mese
-        $subdir = upload_dated_subdir('offerte');
+        $subdir = upload_dated_subdir('quotes');
         $upload_dir = upload_ensure_dir($subdir);
 
         $new_name = uniqid('off_', true) . '.' . $ext;

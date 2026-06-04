@@ -1,7 +1,7 @@
 <?php
 $mode = $mode ?? 'create';
 $entity_id = $entity_id ?? null;
-$action_url = $mode === 'edit' ? url('utenti/edit?id=' . (int)$entity_id) : url('utenti/create');
+$action_url = $mode === 'edit' ? url('users/edit?id=' . (int)$entity_id) : url('users/create');
 ?>
 
 <?php if (!empty($errors['_global'])): ?>
@@ -64,7 +64,7 @@ $action_url = $mode === 'edit' ? url('utenti/edit?id=' . (int)$entity_id) : url(
       </div>
     </div>
     <div class="d-flex justify-content-between pt-3 border-top">
-      <a href="<?= url('utenti') ?>" class="btn-qk btn-qk-secondary"><i class="fa-solid fa-arrow-left me-1"></i>Annulla</a>
+      <a href="<?= url('users') ?>" class="btn-qk btn-qk-secondary"><i class="fa-solid fa-arrow-left me-1"></i>Annulla</a>
       <button type="submit" class="btn-qk btn-qk-primary"><i class="fa-solid fa-floppy-disk me-1"></i><?= $mode === 'edit' ? 'Salva modifiche' : 'Crea utente' ?></button>
     </div>
   </form>

@@ -39,12 +39,12 @@ final class UsersController extends BaseController
         $page_title    = 'Utenti';
         $page_subtitle = 'Gestione accessi al sistema';
         $breadcrumbs   = [['label' => 'Sistema'], ['label' => 'Utenti']];
-        $page_actions  = '<a href="' . url('utenti/create') . '" class="btn-qk btn-qk-primary">
+        $page_actions  = '<a href="' . url('users/create') . '" class="btn-qk btn-qk-primary">
             <i class="fa-solid fa-plus"></i> Nuovo utente
         </a>';
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/utenti/_list.php';
+        require APP_ROOT_DIR . '/app/views/users/_list.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
@@ -87,7 +87,7 @@ final class UsersController extends BaseController
                             ':r' => $values['ruolo'],
                             ':a' => (int) $values['attivo'],
                         ]);
-                        redirect_with('utenti', 'success', 'Utente creato correttamente.');
+                        redirect_with('users', 'success', 'Utente creato correttamente.');
                     } catch (PDOException $ex) {
                         $errors['_global'] = str_contains($ex->getMessage(), 'UNIQUE')
                             ? 'Username o email già associati a un altro account.'
@@ -99,10 +99,10 @@ final class UsersController extends BaseController
 
         $page_title    = 'Nuovo utente';
         $page_subtitle = 'Crea un nuovo accesso al sistema';
-        $breadcrumbs   = [['label' => 'Sistema'], ['label' => 'Utenti', 'url' => url('utenti')], ['label' => 'Nuovo']];
+        $breadcrumbs   = [['label' => 'Sistema'], ['label' => 'Utenti', 'url' => url('users')], ['label' => 'Nuovo']];
 
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/utenti/_form.php';
+        require APP_ROOT_DIR . '/app/views/users/_form.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
@@ -115,7 +115,7 @@ final class UsersController extends BaseController
         $mode = 'edit';
         $id   = (int) get_param('id');
         if ($id <= 0) {
-            redirect_with('utenti', 'danger', 'Utente non trovato.');
+            redirect_with('users', 'danger', 'Utente non trovato.');
         }
 
         $stmt = $this->pdo->prepare(
@@ -127,7 +127,7 @@ final class UsersController extends BaseController
         $stmt->execute([':id' => $id]);
         $utente = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$utente) {
-            redirect_with('utenti', 'danger', 'Utente non trovato.');
+            redirect_with('users', 'danger', 'Utente non trovato.');
         }
 
         $me = current_user();
@@ -190,7 +190,7 @@ final class UsersController extends BaseController
                             $_SESSION['qk_user']['username']     = $values['username'];
                         }
 
-                        redirect_with('utenti', 'success', 'Utente aggiornato correttamente.');
+                        redirect_with('users', 'success', 'Utente aggiornato correttamente.');
                     } catch (PDOException $ex) {
                         $errors['_global'] = str_contains($ex->getMessage(), 'UNIQUE')
                             ? 'Username o email già associati a un altro account.'
@@ -203,11 +203,11 @@ final class UsersController extends BaseController
         $display_name  = trim($utente['nome'] . ' ' . $utente['cognome']);
         $page_title    = 'Modifica utente';
         $page_subtitle = $display_name;
-        $breadcrumbs   = [['label' => 'Sistema'], ['label' => 'Utenti', 'url' => url('utenti')], ['label' => $display_name]];
+        $breadcrumbs   = [['label' => 'Sistema'], ['label' => 'Utenti', 'url' => url('users')], ['label' => $display_name]];
 
         $entity_id = $id;
         require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/utenti/_form.php';
+        require APP_ROOT_DIR . '/app/views/users/_form.php';
         require INCLUDES_DIR . '/footer.php';
     }
 
@@ -218,11 +218,11 @@ final class UsersController extends BaseController
         }
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            redirect('utenti');
+            redirect('users');
         }
 
         if (!csrf_verify()) {
-            redirect_with('utenti', 'danger', 'Token di sicurezza non valido. Ricarica la pagina.');
+            redirect_with('users', 'danger', 'Token di sicurezza non valido. Ricarica la pagina.');
         }
 
         $me = current_user();
@@ -230,17 +230,17 @@ final class UsersController extends BaseController
         $action = post('action'); // disable|enable|delete
 
         if ($id <= 0) {
-            redirect_with('utenti', 'danger', 'Utente non trovato.');
+            redirect_with('users', 'danger', 'Utente non trovato.');
         }
         if ($id === (int) ($me['id'] ?? 0)) {
-            redirect_with('utenti', 'danger', 'Non puoi eseguire questa operazione sul tuo stesso account.');
+            redirect_with('users', 'danger', 'Non puoi eseguire questa operazione sul tuo stesso account.');
         }
 
         $stmt = $this->pdo->prepare('SELECT id, nome, cognome FROM utenti WHERE id=:id LIMIT 1');
         $stmt->execute([':id' => $id]);
         $utente = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$utente) {
-            redirect_with('utenti', 'danger', 'Utente non trovato.');
+            redirect_with('users', 'danger', 'Utente non trovato.');
         }
 
         $nome_completo = trim($utente['nome'] . ' ' . $utente['cognome']);
@@ -249,18 +249,18 @@ final class UsersController extends BaseController
             switch ($action) {
                 case 'disable':
                     $this->pdo->prepare('UPDATE utenti SET attivo=0 WHERE id=:id')->execute([':id' => $id]);
-                    redirect_with('utenti', 'success', "{$nome_completo} è stato disabilitato.");
+                    redirect_with('users', 'success', "{$nome_completo} è stato disabilitato.");
                 case 'enable':
                     $this->pdo->prepare('UPDATE utenti SET attivo=1 WHERE id=:id')->execute([':id' => $id]);
-                    redirect_with('utenti', 'success', "{$nome_completo} è stato riabilitato.");
+                    redirect_with('users', 'success', "{$nome_completo} è stato riabilitato.");
                 case 'delete':
                     $this->pdo->prepare('DELETE FROM utenti WHERE id=:id')->execute([':id' => $id]);
-                    redirect_with('utenti', 'success', "Utente {$nome_completo} eliminato definitivamente.");
+                    redirect_with('users', 'success', "Utente {$nome_completo} eliminato definitivamente.");
                 default:
-                    redirect_with('utenti', 'danger', 'Operazione non riconosciuta.');
+                    redirect_with('users', 'danger', 'Operazione non riconosciuta.');
             }
         } catch (PDOException) {
-            redirect_with('utenti', 'danger', 'Errore durante l\'operazione. Riprova.');
+            redirect_with('users', 'danger', 'Errore durante l\'operazione. Riprova.');
         }
     }
 

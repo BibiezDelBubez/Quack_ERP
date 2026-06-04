@@ -143,16 +143,16 @@
       </li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('purchases/offerte') ?>" title="Preventivi fornitori"
-           class="<?= nav_active('/purchases/offerte') ?>">
+        <a href="<?= url('purchases/quotes') ?>" title="Preventivi fornitori"
+           class="<?= nav_active('/purchases/quotes') ?>">
           <i class="fa-solid fa-file-invoice-dollar"></i>
           <span class="qk-nav-label">Preventivi fornitori</span>
         </a>
       </li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('purchases/ordini') ?>" title="Ordini d'acquisto"
-           class="<?= nav_active('/purchases/ordini') ?>">
+        <a href="<?= url('purchases/orders') ?>" title="Ordini d'acquisto"
+           class="<?= nav_active('/purchases/orders') ?>">
           <i class="fa-solid fa-file-contract"></i>
           <span class="qk-nav-label">Ordini d'acquisto</span>
         </a>
@@ -196,8 +196,8 @@
       </li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('warehouse/inventari') ?>" title="Inventario fis."
-           class="<?= nav_active('/warehouse/inventari') ?>">
+        <a href="<?= url('warehouse/inventories') ?>" title="Inventario fis."
+           class="<?= nav_active('/warehouse/inventories') ?>">
           <i class="fa-solid fa-clipboard-list"></i>
           <span class="qk-nav-label">Inventario fis.</span>
         </a>
@@ -212,8 +212,8 @@
       </li>
 
       <li class="qk-nav-item">
-        <a href="<?= url('purchases/ricezioni') ?>" title="Ricezione merci"
-           class="<?= nav_active('/purchases/ricezioni') ?>">
+        <a href="<?= url('purchases/receipts') ?>" title="Ricezione merci"
+           class="<?= nav_active('/purchases/receipts') ?>">
           <i class="fa-solid fa-dolly"></i>
           <span class="qk-nav-label">Ricezione merci</span>
         </a>
@@ -276,8 +276,8 @@
 
       <?php if (can('manage_users')): ?>
       <li class="qk-nav-item">
-        <a href="<?= url('utenti') ?>" title="Utenti"
-           class="<?= nav_active('/utenti') ?>">
+        <a href="<?= url('users') ?>" title="Utenti"
+           class="<?= nav_active('/users') ?>">
           <i class="fa-solid fa-users-gear"></i>
           <span class="qk-nav-label">Utenti</span>
         </a>

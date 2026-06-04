@@ -55,7 +55,7 @@ function ordine_badge_dash(string $stato): string {
     </div>
   </a>
 
-  <a href="<?= url('purchases/ordini') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
+  <a href="<?= url('purchases/orders') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon success">
       <i class="fa-solid fa-file-contract"></i>
     </div>
@@ -132,7 +132,7 @@ function ordine_badge_dash(string $stato): string {
         <span class="qk-card-title">
           <i class="fa-solid fa-file-contract me-2 text-success"></i>Ultimi ordini d'acquisto
         </span>
-        <a href="<?= url('purchases/ordini') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">Tutti gli ordini</a>
+        <a href="<?= url('purchases/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">Tutti gli ordini</a>
       </div>
       <div class="qk-table-wrap">
         <table class="qk-table">
@@ -153,7 +153,7 @@ function ordine_badge_dash(string $stato): string {
             <?php foreach ($recent_orders as $o): ?>
             <tr>
               <td>
-                <a href="<?= url('purchases/ordini/edit?id=' . $o['id']) ?>" class="fw-bold qk-text-accent">
+                <a href="<?= url('purchases/orders/edit?id=' . $o['id']) ?>" class="fw-bold qk-text-accent">
                   <?= e($o['numero']) ?>
                 </a>
               </td>

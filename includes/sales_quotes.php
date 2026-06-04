@@ -611,6 +611,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             ':note_cliente'            => qk_null_if_empty($values['note_cliente'] ?? ''),
             ':note_interne'            => qk_null_if_empty($values['note_interne'] ?? ''),
             ':oggetto'                 => qk_null_if_empty($values['oggetto'] ?? ''),
+            ':riferimento_interno'     => qk_null_if_empty($values['riferimento_interno'] ?? ''),
         ]);
 
         $pdo->prepare('DELETE FROM preventivi_righe WHERE preventivo_id = ?')->execute([$id]);

@@ -7,8 +7,8 @@
 $subnav_tabs = [
     'dashboard'  => ['label' => 'Panoramica',             'url' => url('purchases')],
     'rfq'        => ['label' => 'Richieste di preventivo', 'url' => url('purchases/rfq')],
-    'offerte'    => ['label' => 'Preventivi fornitori',   'url' => url('purchases/offerte')],
-    'ordini'     => ['label' => 'Ordini d\'acquisto',      'url' => url('purchases/ordini')],
+    'quotes'     => ['label' => 'Preventivi fornitori',   'url' => url('purchases/quotes')],
+    'orders'     => ['label' => 'Ordini d\'acquisto',      'url' => url('purchases/orders')],
     'pricelists' => ['label' => 'Listini acquisto',       'url' => url('purchases/pricelists')],
 ];
 ?>

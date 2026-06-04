@@ -1,16 +1,16 @@
 <?php
 declare(strict_types=1);
 /**
- * includes/acquisti_ordini.php
+ * includes/purchases_orders.php
  * Funzioni DB per gli Ordini di Acquisto.
  *
  * Ciclo di vita: bozza → in_approvazione → approvato → inviato
  *                → parzialmente_ricevuto → completato | annullato
  *
- * Dipende da: includes/acquisti_comune.php
+ * Dipende da: includes/purchases_common.php
  */
 
-require_once __DIR__ . '/acquisti_comune.php';
+require_once __DIR__ . '/purchases_common.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA

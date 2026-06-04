@@ -105,7 +105,7 @@ $savedOk = isset($saved) && $saved;
               <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
             </button>
           </form>
-          <a href="<?= url('purchases/offerte/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-primary" title="Registra l'offerta economica con i prezzi ricevuti dal fornitore per questa richiesta">
+          <a href="<?= url('purchases/quotes/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-primary" title="Registra l'offerta economica con i prezzi ricevuti dal fornitore per questa richiesta">
             <i class="fa-solid fa-file-invoice-dollar"></i> Registra Preventivo Ricevuto
           </a>
           <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline"
@@ -576,7 +576,7 @@ $savedOk = isset($saved) && $saved;
       <i class="fa-solid fa-file-invoice-dollar me-2"></i>Offerte ricevute
     </span>
     <?php if ($isInviata): ?>
-    <a href="<?= url('purchases/offerte/create') . '?rfq_id=' . $id ?>"
+    <a href="<?= url('purchases/quotes/create') . '?rfq_id=' . $id ?>"
        class="btn-qk btn-qk-success btn-qk-xs">
       <i class="fa-solid fa-plus"></i> Nuova offerta
     </a>
@@ -606,7 +606,7 @@ $savedOk = isset($saved) && $saved;
         ?>
         <tr>
           <td>
-            <a href="<?= url('purchases/offerte/edit') . '?id=' . $off['id'] ?>" class="qk-link-strong">
+            <a href="<?= url('purchases/quotes/edit') . '?id=' . $off['id'] ?>" class="qk-link-strong">
               <?= e($off['numero']) ?>
             </a>
           </td>
@@ -619,7 +619,7 @@ $savedOk = isset($saved) && $saved;
                 : '—' ?>
           </td>
           <td class="qk-table-actions">
-            <a href="<?= url('purchases/offerte/edit') . '?id=' . $off['id'] ?>"
+            <a href="<?= url('purchases/quotes/edit') . '?id=' . $off['id'] ?>"
                class="btn-qk btn-qk-xs btn-qk-secondary">
               <i class="fa-solid fa-pencil"></i>
             </a>
@@ -636,7 +636,7 @@ $savedOk = isset($saved) && $saved;
     <span class="qk-card-title">
       <i class="fa-solid fa-file-invoice-dollar me-2"></i>Offerte ricevute
     </span>
-    <a href="<?= url('purchases/offerte/create') . '?rfq_id=' . $id ?>"
+    <a href="<?= url('purchases/quotes/create') . '?rfq_id=' . $id ?>"
        class="btn-qk btn-qk-success btn-qk-xs">
       <i class="fa-solid fa-plus"></i> Registra offerta
     </a>
