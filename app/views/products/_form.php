@@ -501,57 +501,308 @@ $kit_componenti = $kit_componenti ?? [];
              TAB: LISTINI & SCONTI
         ─────────────────────────────────────────────────────────────────── -->
         <div class="tab-pane fade" id="ptab-listini" role="tabpanel">
+          <?php if (!$isEdit): ?>
+          <div class="qk-card mt-3">
+            <div class="qk-card-body text-center py-5">
+              <i class="fa-solid fa-floppy-disk fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
+              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter associare listini speciali e sconti per quantità.</p>
+            </div>
+          </div>
+          <?php else: ?>
           <div class="qk-card mt-3">
             <div class="qk-card-header d-flex justify-content-between align-items-center" style="border-bottom:1px solid var(--qk-border); padding:.75rem 1.25rem;">
               <div>
                 <span class="qk-card-title">Listini e regole di vendita</span>
                 <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted);">Regole di prezzo e sconti configurati per questo prodotto in tutti i listini</span>
               </div>
-              <?php if ($isEdit): ?>
-              <a href="<?= url('sales/pricelists') ?>" class="btn-qk btn-qk-secondary btn-sm" style="font-size:.8rem; padding:.25rem .6rem;">
-                <i class="fa-solid fa-gears me-1"></i>Gestisci listini
-              </a>
-              <?php endif; ?>
+              <button type="button" class="btn-qk btn-qk-primary btn-qk-sm" id="btn-add-sales-price-rule">
+                <i class="fa-solid fa-plus"></i> Aggiungi regola
+              </button>
             </div>
-            <div class="qk-card-body" style="padding:1.25rem;">
-              <?php if (empty($prezzi_vendita_regole)): ?>
-              <div class="qk-empty text-center py-5">
-                <i class="fa-solid fa-tag fa-3x mb-3 text-muted" style="opacity:.25; color:var(--qk-accent)"></i>
-                <p class="text-muted small">Nessuna regola speciale configurata per questo prodotto.<br>
-                Verrà applicato il prezzo di vendita base o il ricarico di emergenza.</p>
-              </div>
-              <?php else: ?>
+            <div class="qk-card-body p-0">
               <div class="table-responsive">
-                <table class="qk-table mt-2" style="font-size:.85rem">
+                <table class="qk-table mb-0" id="table-sales-price-rules" style="font-size:.85rem">
                   <thead>
                     <tr>
-                      <th>Listino</th>
-                      <th class="text-end">Quantità Minima</th>
-                      <th class="text-end">Prezzo Unitario</th>
-                      <th class="text-end">Sconto %</th>
+                      <th>Listino <span class="required">*</span></th>
+                      <th class="text-end" style="width: 140px;">Quantità Minima</th>
+                      <th class="text-end" style="width: 160px;">Prezzo Unitario</th>
+                      <th class="text-end" style="width: 120px;">Sconto %</th>
                       <th>Note</th>
+                      <th style="width: 100px; text-align: center;">Azioni</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <?php foreach ($prezzi_vendita_regole as $regola): ?>
-                    <tr>
-                      <td>
-                        <a href="<?= url('sales/pricelists/edit?id=' . $regola['listino_id']) ?>" style="font-weight:bold; color:var(--qk-accent-text); text-decoration:none;">
-                          <?= e($regola['listino_nome']) ?>
-                        </a>
+                  <tbody id="tbody-sales-price-rules">
+                    <?php if (empty($prezzi_vendita_regole)): ?>
+                    <tr class="empty-rules-placeholder">
+                      <td colspan="6" class="text-center py-4 text-muted">
+                        Nessuna regola speciale configurata per questo prodotto. Verrà applicato il prezzo di vendita base o il ricarico di emergenza.
                       </td>
-                      <td class="text-end"><?= number_format((float)$regola['quantita_minima'], 3, ',', '.') ?></td>
-                      <td class="text-end" style="font-family:monospace;font-weight:600;"><?= number_format((float)$regola['prezzo_unitario'], 2, ',', '.') ?> <?= e($regola['valuta']) ?></td>
-                      <td class="text-end" style="color:var(--qk-danger); font-weight:600;"><?= number_format((float)$regola['sconto_perc'], 2, ',', '.') ?>%</td>
-                      <td><span class="text-muted small"><?= e($regola['note'] ?: '—') ?></span></td>
                     </tr>
-                    <?php endforeach; ?>
+                    <?php else: ?>
+                      <?php foreach ($prezzi_vendita_regole as $regola): ?>
+                      <tr class="sales-rule-row" data-id="<?= $regola['id'] ?>" data-listino-id="<?= $regola['listino_id'] ?>">
+                        <td><strong><?= e($regola['listino_nome']) ?></strong> (<?= e($regola['valuta']) ?>)</td>
+                        <td class="text-end"><?= number_format((float)$regola['quantita_minima'], 3, ',', '.') ?></td>
+                        <td class="text-end" style="font-family:monospace;font-weight:600;"><?= number_format((float)$regola['prezzo_unitario'], 4, ',', '.') ?> <?= e($regola['valuta']) ?></td>
+                        <td class="text-end" style="color:var(--qk-danger); font-weight:600;"><?= number_format((float)$regola['sconto_perc'], 2, ',', '.') ?>%</td>
+                        <td><span class="text-muted small"><?= e($regola['note'] ?: '—') ?></span></td>
+                        <td class="text-center">
+                          <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-edit-sales-rule-row" title="Modifica">
+                            <i class="fa-solid fa-pen"></i>
+                          </button>
+                          <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-sales-rule-row" title="Elimina">
+                            <i class="fa-solid fa-trash-can"></i>
+                          </button>
+                        </td>
+                      </tr>
+                      <?php endforeach; ?>
+                    <?php endif; ?>
                   </tbody>
                 </table>
               </div>
-              <?php endif; ?>
             </div>
           </div>
+
+          <script>
+          (function() {
+            const tbody = document.getElementById('tbody-sales-price-rules');
+            const btnAdd = document.getElementById('btn-add-sales-price-rule');
+            const listini = <?= json_encode($listini) ?>;
+            const prodottoId = <?= (int)$entity_id ?>;
+            const csrfToken = <?= json_encode(csrf_token()) ?>;
+            const baseUrl = <?= json_encode(url()) ?>;
+
+            function hidePlaceholder() {
+              const p = tbody.querySelector('.empty-rules-placeholder');
+              if (p) p.remove();
+            }
+
+            function showPlaceholderIfEmpty() {
+              if (tbody.querySelectorAll('tr').length === 0) {
+                tbody.innerHTML = `
+                  <tr class="empty-rules-placeholder">
+                    <td colspan="6" class="text-center py-4 text-muted">
+                      Nessuna regola speciale configurata per questo prodotto. Verrà applicato il prezzo di vendita base o il ricarico di emergenza.
+                    </td>
+                  </tr>
+                `;
+              }
+            }
+
+            if (btnAdd) {
+              btnAdd.addEventListener('click', function() {
+                hidePlaceholder();
+                // Check if there is already an unsaved row in edit mode
+                if (tbody.querySelector('.editing-row[data-id="0"]')) return;
+
+                const tr = document.createElement('tr');
+                tr.className = 'sales-rule-row editing-row';
+                tr.dataset.id = '0';
+                tr.dataset.listinoId = '';
+
+                renderEditRow(tr, {
+                  listino_id: '',
+                  quantita_minima: '0',
+                  prezzo_unitario: '',
+                  sconto_perc: '0',
+                  note: ''
+                });
+
+                tbody.appendChild(tr);
+              });
+            }
+
+            tbody.addEventListener('click', async function(e) {
+              const btnEdit = e.target.closest('.btn-edit-sales-rule-row');
+              const btnDelete = e.target.closest('.btn-delete-sales-rule-row');
+              const btnCancel = e.target.closest('.btn-cancel-sales-rule-row');
+              const btnSave = e.target.closest('.btn-save-sales-rule-row');
+
+              if (btnEdit) {
+                const tr = btnEdit.closest('.sales-rule-row');
+                if (tr.classList.contains('editing-row')) return;
+                
+                // Get current values from text to fill inputs
+                const id = tr.dataset.id;
+                const listinoId = tr.dataset.listinoId;
+                const minQty = parseLocalFloat(tr.cells[1].textContent);
+                const price = parseLocalFloat(tr.cells[2].textContent);
+                const discount = parseLocalFloat(tr.cells[3].textContent);
+                const note = tr.cells[4].querySelector('.small')?.textContent === '—' ? '' : tr.cells[4].textContent.trim();
+
+                tr.classList.add('editing-row');
+                renderEditRow(tr, {
+                  listino_id: listinoId,
+                  quantita_minima: minQty,
+                  prezzo_unitario: price,
+                  sconto_perc: discount,
+                  note: note
+                });
+              }
+
+              if (btnCancel) {
+                const tr = btnCancel.closest('.sales-rule-row');
+                const id = tr.dataset.id;
+                if (id === '0') {
+                  tr.remove();
+                  showPlaceholderIfEmpty();
+                } else {
+                  // Reload original row by refreshing page or restoring original cells
+                  window.location.reload();
+                }
+              }
+
+              if (btnDelete) {
+                const tr = btnDelete.closest('.sales-rule-row');
+                const id = tr.dataset.id;
+                if (confirm('Sei sicuro di voler eliminare questa regola di prezzo?')) {
+                  try {
+                    const fd = new FormData();
+                    fd.append('riga_id', id);
+                    fd.append('csrf_token', csrfToken);
+
+                    const res = await fetch(`${baseUrl}/sales/pricelists/righe/delete`, {
+                      method: 'POST',
+                      body: fd
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      tr.remove();
+                      showPlaceholderIfEmpty();
+                    } else {
+                      alert(data.error || 'Errore durante la cancellazione.');
+                    }
+                  } catch (err) {
+                    alert('Errore di connessione.');
+                  }
+                }
+              }
+
+              if (btnSave) {
+                const tr = btnSave.closest('.sales-rule-row');
+                const id = tr.dataset.id;
+                const listinoSelect = tr.querySelector('.cell-listino-select');
+                const qtyInput = tr.querySelector('.cell-qty-input');
+                const priceInput = tr.querySelector('.cell-price-input');
+                const discountInput = tr.querySelector('.cell-discount-input');
+                const noteInput = tr.querySelector('.cell-note-input');
+
+                if (!listinoSelect.value) {
+                  alert('Seleziona un listino.');
+                  return;
+                }
+                if (!priceInput.value || parseFloat(priceInput.value) < 0) {
+                  alert('Inserisci un prezzo valido (>= 0).');
+                  return;
+                }
+
+                btnSave.disabled = true;
+                btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+                try {
+                  const fd = new FormData();
+                  fd.append('listino_id', listinoSelect.value);
+                  fd.append('riga_id', id === '0' ? '0' : id);
+                  fd.append('prodotto_id', prodottoId);
+                  fd.append('quantita_minima', qtyInput.value || '0');
+                  fd.append('prezzo_unitario', priceInput.value);
+                  fd.append('sconto_perc', discountInput.value || '0');
+                  fd.append('note', noteInput.value);
+                  fd.append('csrf_token', csrfToken);
+
+                  const res = await fetch(`${baseUrl}/sales/pricelists/righe/save`, {
+                    method: 'POST',
+                    body: fd
+                  });
+                  const data = await res.json();
+                  if (data.ok) {
+                    // Turn row back to read-only with new data
+                    const rule = data.riga;
+                    tr.dataset.id = rule.id;
+                    tr.dataset.listinoId = rule.listino_id;
+                    tr.classList.remove('editing-row');
+                    renderReadOnlyRow(tr, rule);
+                  } else {
+                    alert(data.error || 'Errore nel salvataggio della regola.');
+                    btnSave.disabled = false;
+                    btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>';
+                  }
+                } catch(err) {
+                  alert('Errore di connessione.');
+                  btnSave.disabled = false;
+                  btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>';
+                }
+              }
+            });
+
+            function renderEditRow(tr, values) {
+              const id = tr.dataset.id;
+              
+              let selectHtml = `<select class="qk-form-control qk-form-control-sm cell-listino-select" required ${id !== '0' ? 'disabled' : ''}>`;
+              selectHtml += '<option value="">— Seleziona —</option>';
+              listini.forEach(l => {
+                selectHtml += `<option value="${l.id}" ${String(l.id) === String(values.listino_id) ? 'selected' : ''}>${escapeHtml(l.nome)} (${escapeHtml(l.valuta)})</option>`;
+              });
+              selectHtml += '</select>';
+
+              tr.innerHTML = `
+                <td>${selectHtml}</td>
+                <td><input type="number" class="qk-form-control qk-form-control-sm text-end cell-qty-input" value="${values.quantita_minima}" step="0.001" min="0"></td>
+                <td><input type="number" class="qk-form-control qk-form-control-sm text-end cell-price-input" value="${values.prezzo_unitario}" step="0.0001" min="0" placeholder="0.00"></td>
+                <td><input type="number" class="qk-form-control qk-form-control-sm text-end cell-discount-input" value="${values.sconto_perc}" step="0.01" min="0" max="100" placeholder="0"></td>
+                <td><input type="text" class="qk-form-control qk-form-control-sm cell-note-input" value="${escapeHtml(values.note)}" placeholder="Note..."></td>
+                <td class="text-center">
+                  <button type="button" class="btn-qk btn-qk-success btn-qk-sm btn-save-sales-rule-row" title="Salva"><i class="fa-solid fa-floppy-disk"></i></button>
+                  <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-cancel-sales-rule-row" title="Annulla"><i class="fa-solid fa-xmark"></i></button>
+                </td>
+              `;
+            }
+
+            function renderReadOnlyRow(tr, rule) {
+              tr.innerHTML = `
+                <td><strong>${escapeHtml(rule.prodotto_nome || rule.listino_nome)}</strong> (${escapeHtml(rule.valuta)})</td>
+                <td class="text-end">${formatLocalQty(rule.quantita_minima)}</td>
+                <td class="text-end" style="font-family:monospace;font-weight:600;">${formatLocalPrice(rule.prezzo_unitario)} ${escapeHtml(rule.valuta)}</td>
+                <td class="text-end" style="color:var(--qk-danger); font-weight:600;">${formatLocalDiscount(rule.sconto_perc)}%</td>
+                <td><span class="text-muted small">${escapeHtml(rule.note || '—')}</span></td>
+                <td class="text-center">
+                  <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-edit-sales-rule-row" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+                  <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-sales-rule-row" title="Elimina"><i class="fa-solid fa-trash-can"></i></button>
+                </td>
+              `;
+            }
+
+            function parseLocalFloat(str) {
+              if (!str) return 0;
+              const clean = str.replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
+              return parseFloat(clean) || 0;
+            }
+
+            function formatLocalQty(val) {
+              return parseFloat(val).toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+            }
+
+            // Standardize output to 4 decimals for precision chemical sales prices
+            function formatLocalPrice(val) {
+              return parseFloat(val).toLocaleString('it-IT', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+            }
+
+            function formatLocalDiscount(val) {
+              return parseFloat(val).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+
+            function escapeHtml(str) {
+              if (!str) return '';
+              return str.replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#039;");
+            }
+          })();
+          </script>
+          <?php endif; ?>
         </div>
 
 
