@@ -100,7 +100,11 @@ function wh_tipo_badge(string $tipo): string {
           </td>
           <td><?= wh_tipo_badge($m['tipo_movimento']) ?></td>
           <td>
-            <div class="qkwh-prod-name"><?= e($m['prodotto_nome']) ?></div>
+            <div class="qkwh-prod-name">
+              <a href="<?= url('products/edit?id=' . $m['prodotto_id']) ?>" class="qk-text-accent text-decoration-none fw-semibold">
+                <?= e($m['prodotto_nome']) ?>
+              </a>
+            </div>
             <div class="qkwh-sku-small"><code><?= e($m['sku_interno']) ?></code></div>
           </td>
           <td>

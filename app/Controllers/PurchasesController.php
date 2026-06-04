@@ -37,6 +37,7 @@ final class PurchasesController extends BaseController
         $this->page(APP_ROOT_DIR . '/app/views/purchases/purchases_dashboard.php', [
             'page_title'     => 'Dashboard Acquisti',
             'page_subtitle'  => 'Panoramica operativa acquisti e approvvigionamento',
+            'breadcrumbs'    => [['label' => 'Acquisti']],
             'rfq_bozza'      => $rfq_bozza,
             'rfq_inviata'    => $rfq_inviata,
             'ordini_attivi'  => $ordini_attivi,

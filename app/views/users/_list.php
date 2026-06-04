@@ -29,7 +29,12 @@
       <tbody>
       <?php foreach ($utenti as $u): $is_me = ((int)$u['id'] === (int)($me['id'] ?? 0)); ?>
         <tr>
-          <td><span class="fw-semibold"><?= e($u['nome'] . ' ' . $u['cognome']) ?></span><?php if ($is_me): ?><span class="qk-badge ms-1" style="font-size:.65rem">Tu</span><?php endif; ?></td>
+          <td>
+            <a href="<?= url('users/edit?id=' . (int)$u['id']) ?>" class="qk-text-accent text-decoration-none fw-semibold">
+              <?= e($u['nome'] . ' ' . $u['cognome']) ?>
+            </a>
+            <?php if ($is_me): ?><span class="qk-badge ms-1" style="font-size:.65rem">Tu</span><?php endif; ?>
+          </td>
           <td><a href="mailto:<?= e($u['email']) ?>" class="qk-text-secondary text-decoration-none"><?= e($u['email']) ?></a></td>
           <td><span class="qk-badge <?= $u['ruolo'] === 'admin' ? 'confirmed' : 'draft' ?>"><?= e($u['ruolo']) ?></span></td>
           <td><?= status_badge(($u['attivo'] ?? 0) ? 'active' : 'inactive') ?></td>

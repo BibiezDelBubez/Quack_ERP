@@ -44,7 +44,11 @@
         ?>
         <tr>
           <td><code><?= e($p['sku_interno']) ?></code></td>
-          <td class="fw-semibold"><?= e($p['nome']) ?></td>
+          <td class="fw-semibold">
+            <a href="<?= url('products/edit?id=' . $p['id']) ?>" class="qk-text-accent text-decoration-none">
+              <?= e($p['nome']) ?>
+            </a>
+          </td>
           <td class="text-end"><?= number_format((float)$p['qta_disponibile'], 3, ',', '.') ?> <?= e($p['uom']) ?></td>
           <td class="text-end text-muted"><?= number_format((float)$p['qta_riservata'], 3, ',', '.') ?> <?= e($p['uom']) ?></td>
           <td class="text-end text-success"><?= number_format((float)$p['qta_in_arrivo'], 3, ',', '.') ?> <?= e($p['uom']) ?></td>
@@ -53,7 +57,13 @@
           <td class="text-end fw-bold text-primary"><?= number_format((float)$qtaConsigliata, 3, ',', '.') ?> <?= e($p['uom']) ?></td>
           <td>
             <?php if ($p['fornitore_nome']): ?>
-              <?= e($p['fornitore_nome']) ?>
+              <?php if ($p['fornitore_id']): ?>
+                <a href="<?= url('suppliers/edit?id=' . $p['fornitore_id']) ?>" class="qk-text-accent text-decoration-none fw-medium">
+                  <?= e($p['fornitore_nome']) ?>
+                </a>
+              <?php else: ?>
+                <?= e($p['fornitore_nome']) ?>
+              <?php endif; ?>
             <?php else: ?>
               <span class="qk-text-muted">— non impostato —</span>
             <?php endif; ?>

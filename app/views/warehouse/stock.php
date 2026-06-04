@@ -149,7 +149,9 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
           <tr class="<?= $rowClass ?>">
             <td class="qkwh-sku"><code><?= e($r['sku_interno']) ?></code></td>
             <td>
-              <?= e($r['nome']) ?>
+              <a href="<?= url('products/edit?id=' . $r['id']) ?>" class="qk-text-accent text-decoration-none fw-semibold">
+                <?= e($r['nome']) ?>
+              </a>
               <?php if ($r['traccia_lotti']): ?>
               <span class="qkwh-badge-lotti" title="Tracciatura lotti attiva">
                 <i class="fa-solid fa-tag"></i> lotti

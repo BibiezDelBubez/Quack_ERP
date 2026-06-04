@@ -50,7 +50,11 @@
       <?php foreach ($products as $p): ?>
         <tr>
           <td><code class="qk-text-secondary" style="font-size:.8rem"><?= e($p['sku_interno'] ?? '') ?></code></td>
-          <td class="fw-semibold"><?= e($p['nome'] ?? '') ?></td>
+          <td class="fw-semibold">
+            <a href="<?= url('products/edit?id=' . $p['id']) ?>" class="qk-text-accent text-decoration-none">
+              <?= e($p['nome'] ?? '') ?>
+            </a>
+          </td>
           <td><?php if ($p['categoria']): ?><span class="qk-badge draft"><?= e($p['categoria']) ?></span><?php else: ?><span class="qk-text-muted">—</span><?php endif; ?></td>
           <td class="text-center"><?= $p['quantita_disponibile'] !== null ? (int)$p['quantita_disponibile'] : '<span class="qk-text-muted">—</span>' ?></td>
           <td class="text-end"><?php if (!empty($p['prezzo_min'])) { echo e(number_format($p['prezzo_min'], 2, ',', '.')); } else { echo '—'; } ?></td>
