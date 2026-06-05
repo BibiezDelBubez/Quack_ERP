@@ -600,6 +600,7 @@ final class SalesQuotesController extends BaseController
             'sconto_globale_perc'     => post('sconto_globale_perc', '0'),
             'note_cliente'            => post('note_cliente'),
             'note_interne'            => post('note_interne'),
+            'oggetto'                 => post('oggetto'),
             'riferimento_interno'     => post('riferimento_interno'),
             'listino_id'              => post('listino_id'),
         ];
@@ -793,10 +794,6 @@ final class SalesQuotesController extends BaseController
                         <strong style="font-size:11pt; color:#1a5276;">Dettagli Documento</strong>
                         <table class="info-table">
                             <tr>
-                                <td class="lbl">Preventivo N°:</td>
-                                <td><strong>' . e($quota['numero_preventivo']) . '</strong></td>
-                            </tr>
-                            <tr>
                                 <td class="lbl">Rif. Interno:</td>
                                 <td><strong>' . e($quota['riferimento_interno'] ?: '—') . '</strong></td>
                             </tr>
@@ -837,13 +834,11 @@ final class SalesQuotesController extends BaseController
             </tr>
         </table>';
 
-        if (!empty($quota['oggetto'])) {
-            $html .= '<div style="margin-bottom:4mm; font-size:10pt;"><strong>Oggetto:</strong> ' . e($quota['oggetto']) . '</div>';
-        }
+        $titoloRighe = !empty($quota['oggetto']) ? $quota['oggetto'] : 'Articoli Richiesti';
 
         // BLOCK 2: Righe Articoli
         $html .= '
-        <h2>Righe Preventivo</h2>
+        <h2>' . e($titoloRighe) . '</h2>
         <table class="righe-table">
             <thead>
                 <tr>
@@ -968,7 +963,7 @@ final class SalesQuotesController extends BaseController
                     </td>
                     <td style="width:10%;"></td>
                     <td style="width:45%; vertical-align:bottom; padding-bottom:6px; text-align:right;">
-                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">Quack ERP</span><br>
+                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">' . e(!empty($azienda['ragione_sociale']) ? $azienda['ragione_sociale'] : 'Azienda') . '</span><br>
                         <span style="font-size:7.5pt; color:#777777;">Firma Direzione Commerciale</span>
                     </td>
                 </tr>
@@ -1050,8 +1045,6 @@ final class SalesQuotesController extends BaseController
         $textRunLeft = $leftCell->addTextRun();
         $textRunLeft->addText('Dettagli Documento', $fontTitle);
         $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Preventivo N°: ' . $quota['numero_preventivo'], $fontNormal);
-        $textRunLeft->addTextBreak(1);
         $textRunLeft->addText('Rif. Interno: ' . ($quota['riferimento_interno'] ?: '—'), $fontNormal);
         $textRunLeft->addTextBreak(1);
         $textRunLeft->addText('Data Offerta: ' . fmt_date($quota['data_offerta']), $fontNormal);
@@ -1088,8 +1081,10 @@ final class SalesQuotesController extends BaseController
 
         $section->addTextBreak(1);
 
+        $titoloRighe = !empty($quota['oggetto']) ? $quota['oggetto'] : 'Articoli Richiesti';
+
         // BLOCK 2: Righe Articoli
-        $section->addText('Righe Preventivo', $fontTitle, ['spaceBefore' => 100, 'spaceAfter' => 100]);
+        $section->addText($titoloRighe, $fontTitle, ['spaceBefore' => 100, 'spaceAfter' => 100]);
         
         $tableGrid = $section->addTable(['cellMargin' => 80]);
         $thStyle = ['bgColor' => '1A5276', 'borderSize' => 6, 'borderColor' => '1A5276'];
@@ -1190,6 +1185,43 @@ final class SalesQuotesController extends BaseController
             $condTable->addCell(2500)->addText('Note aggiuntive:', $fontBold);
             $condTable->addCell(8040)->addText($quota['note_cliente'], $fontNormal);
         }
+
+        // BLOCK 4: Riquadri firma/timbro
+        $section->addTextBreak(2);
+        $firmaTable = $section->addTable(['cellMargin' => 120]);
+        
+        // Row 1: Labels
+        $firmaTable->addRow();
+        $cellLabelLeft = $firmaTable->addCell(4770);
+        $cellLabelLeft->addText('ACCETTAZIONE PER ORDINE', ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => '444444']);
+        $cellLabelLeft->addText('Timbro e Firma leggibile del Cliente', ['name' => 'Arial', 'size' => 7.5, 'color' => '777777']);
+        
+        $firmaTable->addCell(1000); // spacer
+        
+        $cellLabelRight = $firmaTable->addCell(4770);
+        $aziendaNome = !empty($azienda['ragione_sociale']) ? $azienda['ragione_sociale'] : 'Azienda';
+        $cellLabelRight->addText(mb_strtoupper($aziendaNome, 'UTF-8'), ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => '444444'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
+        $cellLabelRight->addText('Firma Direzione Commerciale', ['name' => 'Arial', 'size' => 7.5, 'color' => '777777'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
+
+        // Row 2: Stamp/Signature Boxes
+        $firmaTable->addRow(1700, ['exactHeight' => true, 'cantSplit' => true]);
+        
+        $cellStyle = [
+            'borderSize' => 6,
+            'borderColor' => 'CCCCCC',
+            'bgColor' => 'FAFAFA',
+            'valign' => 'bottom',
+        ];
+        
+        $cellBoxLeft = $firmaTable->addCell(4770, $cellStyle);
+        $cellBoxLeft->addTextBreak(2);
+        $cellBoxLeft->addText('____________________________', ['name' => 'Arial', 'size' => 8, 'color' => 'BBBBBB']);
+        
+        $firmaTable->addCell(1000); // spacer
+        
+        $cellBoxRight = $firmaTable->addCell(4770, $cellStyle);
+        $cellBoxRight->addTextBreak(2);
+        $cellBoxRight->addText('____________________________', ['name' => 'Arial', 'size' => 8, 'color' => 'BBBBBB'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
 
         $filename = "Preventivo_" . str_replace('/', '_', $quota['numero_preventivo']) . ".docx";
         $wordHelper->streamDownload($filename);

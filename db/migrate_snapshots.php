@@ -22,7 +22,7 @@ try {
 
     echo "Inizio migrazione dati snapshot...\n";
 
-    // 1. Migrazione indirizzi di consegna per RFQ storiche
+    // 1. Migrazione indirizzi di consegna per RFQ storiche (Purchases)
     $stRfqAddr = $pdo->query("SELECT id, indirizzo_consegna_id FROM rfq_testata WHERE (consegna_via IS NULL OR consegna_via = '') AND indirizzo_consegna_id IS NOT NULL");
     $rfqAddrRows = $stRfqAddr->fetchAll(PDO::FETCH_ASSOC);
     echo "Trovate " . count($rfqAddrRows) . " RFQ con indirizzo di consegna da storicizzare.\n";
@@ -59,7 +59,7 @@ try {
     }
     echo "Storicizzati $updatedAddrCount indirizzi di consegna su $updatedAddrCount RFQ.\n";
 
-    // 2. Migrazione referenti (contatti) per RFQ storiche
+    // 2. Migrazione referenti (contatti) per RFQ storiche (Purchases)
     $stRfqCont = $pdo->query("SELECT id, contatto_id FROM rfq_testata WHERE (contatto_nome IS NULL OR contatto_nome = '') AND contatto_id IS NOT NULL");
     $rfqContRows = $stRfqCont->fetchAll(PDO::FETCH_ASSOC);
     echo "Trovate " . count($rfqContRows) . " RFQ con referente da storicizzare.\n";
@@ -94,7 +94,7 @@ try {
     }
     echo "Storicizzati $updatedRfqContCount referenti su $updatedRfqContCount RFQ.\n";
 
-    // 3. Migrazione referenti (contatti) per Preventivi Fornitore (offerte_testata) storici
+    // 3. Migrazione referenti (contatti) per Preventivi Fornitore storici (offerte_testata - Purchases)
     $stOffCont = $pdo->query("SELECT id, contatto_id FROM offerte_testata WHERE (contatto_nome IS NULL OR contatto_nome = '') AND contatto_id IS NOT NULL");
     $offContRows = $stOffCont->fetchAll(PDO::FETCH_ASSOC);
     echo "Trovate " . count($offContRows) . " offerte con referente da storicizzare.\n";
@@ -122,6 +122,71 @@ try {
         }
     }
     echo "Storicizzati $updatedOffContCount referenti su $updatedOffContCount offerte.\n";
+
+    // 4. Migrazione indirizzi di consegna per Preventivi Vendita storici (preventivi - Sales)
+    $stPrevAddr = $pdo->query("SELECT id, indirizzo_spedizione_id FROM preventivi WHERE (consegna_via IS NULL OR consegna_via = '') AND indirizzo_spedizione_id IS NOT NULL");
+    $prevAddrRows = $stPrevAddr->fetchAll(PDO::FETCH_ASSOC);
+    echo "Trovate " . count($prevAddrRows) . " preventivi vendita con indirizzo di spedizione da storicizzare.\n";
+
+    $stUpdatePrevAddr = $pdo->prepare("
+        UPDATE preventivi SET
+            consegna_via = ?, consegna_civico = ?, consegna_cap = ?, consegna_citta = ?,
+            consegna_provincia = ?, consegna_nazione = ?, consegna_presso = ?,
+            consegna_referente = ?, consegna_telefono = ?, consegna_note = ?
+         WHERE id = ?
+    ");
+
+    $updatedPrevAddrCount = 0;
+    foreach ($prevAddrRows as $row) {
+        $stGetInd->execute([(int)$row['indirizzo_spedizione_id']]);
+        $ind = $stGetInd->fetch(PDO::FETCH_ASSOC);
+        if ($ind) {
+            $stUpdatePrevAddr->execute([
+                $ind['via'] ?? '',
+                $ind['civico'] ?? '',
+                $ind['cap'] ?? '',
+                $ind['citta'] ?? '',
+                $ind['provincia'] ?? '',
+                $ind['nazione'] ?? 'IT',
+                $ind['nome_sede'] ?? '',
+                $ind['referente_consegna'] ?? '',
+                $ind['telefono_consegna'] ?? '',
+                $ind['note_consegna'] ?? '',
+                (int)$row['id']
+            ]);
+            $updatedPrevAddrCount++;
+        }
+    }
+    echo "Storicizzati $updatedPrevAddrCount indirizzi di spedizione su $updatedPrevAddrCount preventivi vendita.\n";
+
+    // 5. Migrazione referenti (contatti) per Preventivi Vendita storici (preventivi - Sales)
+    $stPrevCont = $pdo->query("SELECT id, contatto_id FROM preventivi WHERE (contatto_nome IS NULL OR contatto_nome = '') AND contatto_id IS NOT NULL");
+    $prevContRows = $stPrevCont->fetchAll(PDO::FETCH_ASSOC);
+    echo "Trovate " . count($prevContRows) . " preventivi vendita con referente da storicizzare.\n";
+
+    $stUpdatePrevCont = $pdo->prepare("
+        UPDATE preventivi SET
+            contatto_nome = ?, contatto_telefono = ?, contatto_email = ?
+         WHERE id = ?
+    ");
+
+    $updatedPrevContCount = 0;
+    foreach ($prevContRows as $row) {
+        $stGetCont->execute([(int)$row['contatto_id']]);
+        $cont = $stGetCont->fetch(PDO::FETCH_ASSOC);
+        if ($cont) {
+            $nomeCompleto = $cont['nome_completo'] ?? '';
+            $tel = $cont['telefono'] ?: $cont['cellulare'] ?: '';
+            $stUpdatePrevCont->execute([
+                trim($nomeCompleto),
+                $tel,
+                $cont['email'] ?? '',
+                (int)$row['id']
+            ]);
+            $updatedPrevContCount++;
+        }
+    }
+    echo "Storicizzati $updatedPrevContCount referenti su $updatedPrevContCount preventivi vendita.\n";
 
     echo "Migrazione completata con successo!\n";
 

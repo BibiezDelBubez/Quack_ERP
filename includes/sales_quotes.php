@@ -415,7 +415,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             numero_preventivo, riferimento_interno, cliente_id, azienda_interna_id, listino_id, alla_ca, contatto_id, contatto_nome, contatto_email, contatto_telefono, indirizzo_spedizione_id, data_offerta, data_scadenza, data_consegna_richiesta,
             canale_vendita_id, stato, sconto_globale_perc, condizioni_pagamento, trasporto, valuta,
             imponibile, totale_iva, totale, totale_costo, margine_euro, margine_perc,
-            note_cliente, note_interne, creato_da, created_at, updated_at,
+            note_cliente, note_interne, oggetto, creato_da, created_at, updated_at,
             azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
             cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
             consegna_via, consegna_civico, consegna_cap, consegna_citta, consegna_provincia, consegna_nazione, consegna_presso, consegna_referente, consegna_telefono, consegna_note
@@ -423,7 +423,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             :numero_preventivo, :riferimento_interno, :cliente_id, :azienda_interna_id, :listino_id, :alla_ca, :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono, :indirizzo_spedizione_id, :data_offerta, :data_scadenza, :data_consegna_richiesta,
             :canale_vendita_id, :stato, :sconto_globale_perc, :condizioni_pagamento, :trasporto, :valuta,
             :imponibile, :totale_iva, :totale, :totale_costo, :margine_euro, :margine_perc,
-            :note_cliente, :note_interne, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+            :note_cliente, :note_interne, :oggetto, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
             :azienda_ragione_sociale, :azienda_partita_iva, :azienda_codice_fiscale, :azienda_indirizzo, :azienda_telefono, :azienda_email, :azienda_iban,
             :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
             :consegna_via, :consegna_civico, :consegna_cap, :consegna_citta, :consegna_provincia, :consegna_nazione, :consegna_presso, :consegna_referente, :consegna_telefono, :consegna_note
@@ -459,6 +459,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             ':margine_perc'            => $margine_perc,
             ':note_cliente'            => qk_null_if_empty($values['note_cliente'] ?? ''),
             ':note_interne'            => qk_null_if_empty($values['note_interne'] ?? ''),
+            ':oggetto'                 => qk_null_if_empty($values['oggetto'] ?? ''),
             ':creato_da'               => $user_id,
             ':azienda_ragione_sociale' => $denorm['azienda_ragione_sociale'],
             ':azienda_partita_iva'     => $denorm['azienda_partita_iva'],
