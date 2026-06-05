@@ -1464,7 +1464,7 @@ function syncAddressUI() {
 
   const ind = getOriginalAddress();
   const isNewForm = !inpConsegnaVia.value;
-  if (isNewForm && ind.via) {
+  if (isNewForm && ind.via && quoteStato === 'bozza') {
     copyAddressToFields(ind);
   }
   

@@ -262,6 +262,7 @@ $savedOk = isset($saved) && $saved;
               <div class="qk-form-group">
                 <label class="qk-form-label">Azienda acquirente</label>
                 <select name="azienda_interna_id" id="rfq-azienda-interna-id" class="qk-form-control" <?= $disabled ?>>
+                  <option value="">— Seleziona azienda —</option>
                   <?php foreach ($aziende as $az): ?>
                     <option value="<?= $az['id'] ?>" <?= (string)($values['azienda_interna_id'] ?? '') === (string)$az['id'] ? 'selected' : '' ?>>
                       <?= e($az['ragione_sociale']) ?>
@@ -1529,7 +1530,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!inpVia) return;
 
     const isNewForm = !inpVia.value;
-    if (isNewForm && ind.via) {
+    if (isNewForm && ind.via && CAN_EDIT) {
       copyAddressToFields(ind);
     }
 
@@ -1650,6 +1651,16 @@ document.addEventListener('DOMContentLoaded', function () {
       const selectedId = indSelect.dataset.selectedId;
       let matched = false;
 
+      // Aggiungi opzione vuota di default
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = '— Nessun indirizzo selezionato —';
+      if (!selectedId) {
+        defaultOpt.selected = true;
+        matched = true;
+      }
+      indSelect.appendChild(defaultOpt);
+
       loadedAddresses.forEach(ind => {
         const option = document.createElement('option');
         option.value = ind.id;
@@ -1668,8 +1679,9 @@ document.addEventListener('DOMContentLoaded', function () {
         indSelect.appendChild(option);
       });
 
-      if (!matched && loadedAddresses.length > 0) {
-        indSelect.options[0].selected = true;
+      if (!matched && loadedAddresses.length > 0 && CAN_EDIT) {
+        // Se non trova corrispondenza ma siamo in modifica, seleziona il primo indirizzo reale
+        indSelect.options[1].selected = true; 
       }
       syncAddressUI();
     } catch (err) {
