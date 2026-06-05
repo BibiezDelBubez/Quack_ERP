@@ -75,24 +75,8 @@ class RfqController extends BaseController
             } else {
                 $values = $this->readPostValues();
                 
-                // Popola indirizzo di consegna denormalizzato per integrità storica (Oracle style)
-                if (!empty($values['indirizzo_consegna_id'])) {
-                    $stInd = $this->pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
-                    $stInd->execute([(int)$values['indirizzo_consegna_id']]);
-                    $ind = $stInd->fetch(PDO::FETCH_ASSOC);
-                    if ($ind) {
-                        $values['consegna_via'] = $ind['via'];
-                        $values['consegna_civico'] = $ind['civico'];
-                        $values['consegna_cap'] = $ind['cap'];
-                        $values['consegna_citta'] = $ind['citta'];
-                        $values['consegna_provincia'] = $ind['provincia'];
-                        $values['consegna_nazione'] = $ind['nazione'];
-                        $values['consegna_presso'] = $ind['presso'];
-                        $values['consegna_referente'] = $ind['referente_consegna'];
-                        $values['consegna_telefono'] = $ind['telefono_consegna'];
-                        $values['consegna_note'] = $ind['note_consegna'];
-                    }
-                }
+                // L'indirizzo di consegna viene inviato direttamente in POST per supportare gli override
+
 
                 $righe  = $this->readPostRighe();
                 $errors = $this->validate($values, $righe);
@@ -148,24 +132,21 @@ class RfqController extends BaseController
             } else {
                 $values = $this->readPostValues();
                 
-                // Popola indirizzo di consegna denormalizzato per integrità storica (Oracle style)
-                if (!empty($values['indirizzo_consegna_id'])) {
-                    $stInd = $this->pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
-                    $stInd->execute([(int)$values['indirizzo_consegna_id']]);
-                    $ind = $stInd->fetch(PDO::FETCH_ASSOC);
-                    if ($ind) {
-                        $values['consegna_via'] = $ind['via'];
-                        $values['consegna_civico'] = $ind['civico'];
-                        $values['consegna_cap'] = $ind['cap'];
-                        $values['consegna_citta'] = $ind['citta'];
-                        $values['consegna_provincia'] = $ind['provincia'];
-                        $values['consegna_nazione'] = $ind['nazione'];
-                        $values['consegna_presso'] = $ind['presso'];
-                        $values['consegna_referente'] = $ind['referente_consegna'];
-                        $values['consegna_telefono'] = $ind['telefono_consegna'];
-                        $values['consegna_note'] = $ind['note_consegna'];
+                // Enforce read-only lock for address and contact overrides if the RFQ status is not 'bozza'
+                $currentStatus = $detail['rfq']['stato'];
+                if ($currentStatus !== 'bozza') {
+                    $originalValues = $this->mapDetailToValues($detail['rfq']);
+                    foreach ([
+                        'indirizzo_consegna_id', 'consegna_via', 'consegna_civico', 'consegna_cap',
+                        'consegna_citta', 'consegna_provincia', 'consegna_nazione', 'consegna_presso',
+                        'consegna_referente', 'consegna_telefono', 'consegna_note',
+                        'contatto_id', 'contatto_nome', 'contatto_telefono', 'contatto_email',
+                        'fornitore_telefono', 'fornitore_email'
+                    ] as $fld) {
+                        $values[$fld] = $originalValues[$fld];
                     }
                 }
+
 
                 $righe  = $this->readPostRighe();
                 $errors = $this->validate($values, $righe);
@@ -1128,6 +1109,16 @@ class RfqController extends BaseController
             'listino_acquisto_id'     => '',
             'metodo_pagamento_id'     => '',
             'resa_porto'              => '',
+            'consegna_via'            => '',
+            'consegna_civico'         => '',
+            'consegna_cap'            => '',
+            'consegna_citta'          => '',
+            'consegna_provincia'      => '',
+            'consegna_nazione'        => 'IT',
+            'consegna_presso'         => '',
+            'consegna_referente'      => '',
+            'consegna_telefono'       => '',
+            'consegna_note'           => '',
         ];
     }
 
@@ -1156,6 +1147,16 @@ class RfqController extends BaseController
             'listino_acquisto_id'     => (string)($rfq['listino_acquisto_id'] ?? ''),
             'metodo_pagamento_id'     => (string)($rfq['metodo_pagamento_id'] ?? ''),
             'resa_porto'              => $rfq['resa_porto'] ?? '',
+            'consegna_via'            => $rfq['consegna_via'] ?? '',
+            'consegna_civico'         => $rfq['consegna_civico'] ?? '',
+            'consegna_cap'            => $rfq['consegna_cap'] ?? '',
+            'consegna_citta'          => $rfq['consegna_citta'] ?? '',
+            'consegna_provincia'      => $rfq['consegna_provincia'] ?? '',
+            'consegna_nazione'        => $rfq['consegna_nazione'] ?? 'IT',
+            'consegna_presso'         => $rfq['consegna_presso'] ?? '',
+            'consegna_referente'      => $rfq['consegna_referente'] ?? '',
+            'consegna_telefono'       => $rfq['consegna_telefono'] ?? '',
+            'consegna_note'           => $rfq['consegna_note'] ?? '',
         ];
     }
 
@@ -1184,6 +1185,16 @@ class RfqController extends BaseController
             'listino_acquisto_id'     => post('listino_acquisto_id', ''),
             'metodo_pagamento_id'     => post('metodo_pagamento_id', ''),
             'resa_porto'              => post('resa_porto', ''),
+            'consegna_via'            => post('consegna_via', ''),
+            'consegna_civico'         => post('consegna_civico', ''),
+            'consegna_cap'            => post('consegna_cap', ''),
+            'consegna_citta'          => post('consegna_citta', ''),
+            'consegna_provincia'      => post('consegna_provincia', ''),
+            'consegna_nazione'        => post('consegna_nazione', 'IT'),
+            'consegna_presso'         => post('consegna_presso', ''),
+            'consegna_referente'      => post('consegna_referente', ''),
+            'consegna_telefono'       => post('consegna_telefono', ''),
+            'consegna_note'           => post('consegna_note', ''),
         ];
     }
 

@@ -132,6 +132,17 @@ class PurchasesQuotesController extends BaseController
                 $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
             } else {
                 $values = $this->readPostValues();
+                
+                // Enforce read-only lock for contact details if the quote status is not 'in_valutazione'
+                $currentStatus = $detail['offerta']['stato'];
+                if ($currentStatus !== 'in_valutazione') {
+                    $originalValues = $this->mapDetailToValues($detail['offerta']);
+                    foreach (['contatto_id', 'contatto_nome', 'contatto_telefono', 'contatto_email',
+                              'fornitore_telefono', 'fornitore_email'] as $fld) {
+                        $values[$fld] = $originalValues[$fld];
+                    }
+                }
+                
                 $righe  = $this->readPostRighe();
                 
                 if (post('rimuovi_allegato', '') === '1') {

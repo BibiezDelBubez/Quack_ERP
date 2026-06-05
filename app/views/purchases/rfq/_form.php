@@ -57,6 +57,12 @@ $savedOk = isset($saved) && $saved;
 <?php unset($_SESSION['flash_error']); endif; ?>
 
 <style>
+/* Override visual indicators */
+.is-overridden {
+  border-color: #f59e0b !important;
+  background-color: #fef3c7 !important;
+}
+
 /* Miglioramento UX per righe RFQ */
 #tbl-righe tbody tr {
   border-bottom: 1px solid var(--qk-border);
@@ -327,8 +333,13 @@ $savedOk = isset($saved) && $saved;
             </button>
           </li>
           <li class="nav-item">
-            <button class="nav-link" id="tab-altre-info-btn" type="button" onclick="switchRfqTab('altre-info')">
-              <i class="fa-solid fa-info-circle me-1"></i> Altre informazioni
+            <button class="nav-link" id="tab-spedizione-contatti-btn" type="button" onclick="switchRfqTab('spedizione-contatti')">
+              <i class="fa-solid fa-truck-fast me-1"></i> Spedizione & Contatti
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" id="tab-condizioni-commerciali-btn" type="button" onclick="switchRfqTab('condizioni-commerciali')">
+              <i class="fa-solid fa-file-invoice-dollar me-1"></i> Condizioni Commerciali
             </button>
           </li>
           <li class="nav-item">
@@ -453,18 +464,133 @@ $savedOk = isset($saved) && $saved;
             </div>
           </div>
 
-          <!-- Pane: Altre info -->
-          <div class="tab-pane d-none" id="pane-altre-info">
+          <!-- Pane: Spedizione & Contatti -->
+          <div class="tab-pane d-none" id="pane-spedizione-contatti">
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
-              <!-- Colonna 1: Spedizione & Resa -->
+              <!-- Colonna 1: Spedizione -->
               <div>
-                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Spedizione & Resa</h4>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Indirizzo di Consegna</h4>
                 <div class="qk-form-group">
-                  <label class="qk-form-label">Indirizzo di consegna</label>
+                  <label class="qk-form-label">Seleziona sede di consegna</label>
                   <select name="indirizzo_consegna_id" id="rfq-indirizzo-consegna-id" class="qk-form-control" data-selected-id="<?= e($values['indirizzo_consegna_id'] ?? '') ?>" <?= $disabled ?>>
                     <option value="">Caricamento indirizzi...</option>
                   </select>
                 </div>
+
+                <!-- Dettagli Indirizzo di Consegna (Snapshot/Override) -->
+                <div id="sped-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                      <i class="fa-solid fa-truck-ramp-box me-1"></i>Dettagli Consegna
+                      <span id="sped-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
+                    </h6>
+                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-sped" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
+                  </div>
+
+                  <div class="qk-form-group mb-2">
+                    <label class="qk-form-label">Presso (c/o)</label>
+                    <input type="text" name="consegna_presso" id="consegna_presso" class="qk-form-control" value="<?= e($values['consegna_presso'] ?? '') ?>" placeholder="Es. Magazzino logistica, Cantiere B">
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group" style="flex:3">
+                      <label class="qk-form-label">Via/Piazza</label>
+                      <input type="text" name="consegna_via" id="consegna_via" class="qk-form-control" value="<?= e($values['consegna_via'] ?? '') ?>">
+                    </div>
+                    <div class="qk-form-group" style="flex:1">
+                      <label class="qk-form-label">Civico</label>
+                      <input type="text" name="consegna_civico" id="consegna_civico" class="qk-form-control" value="<?= e($values['consegna_civico'] ?? '') ?>">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group" style="flex:2">
+                      <label class="qk-form-label">CAP</label>
+                      <input type="text" name="consegna_cap" id="consegna_cap" class="qk-form-control" value="<?= e($values['consegna_cap'] ?? '') ?>">
+                    </div>
+                    <div class="qk-form-group" style="flex:4">
+                      <label class="qk-form-label">Città</label>
+                      <input type="text" name="consegna_citta" id="consegna_citta" class="qk-form-control" value="<?= e($values['consegna_citta'] ?? '') ?>">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Provincia</label>
+                      <input type="text" name="consegna_provincia" id="consegna_provincia" class="qk-form-control" maxlength="2" placeholder="MI" value="<?= e($values['consegna_provincia'] ?? '') ?>">
+                    </div>
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Nazione</label>
+                      <input type="text" name="consegna_nazione" id="consegna_nazione" class="qk-form-control" maxlength="2" placeholder="IT" value="<?= e($values['consegna_nazione'] ?? 'IT') ?>">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Referente Consegna</label>
+                      <input type="text" name="consegna_referente" id="consegna_referente" class="qk-form-control" value="<?= e($values['consegna_referente'] ?? '') ?>" placeholder="Persona sul posto">
+                    </div>
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Tel. Consegna</label>
+                      <input type="text" name="consegna_telefono" id="consegna_telefono" class="qk-form-control" value="<?= e($values['consegna_telefono'] ?? '') ?>">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-group mb-2">
+                    <label class="qk-form-label">Note Consegna</label>
+                    <input type="text" name="consegna_note" id="consegna_note" class="qk-form-control" value="<?= e($values['consegna_note'] ?? '') ?>" placeholder="Es. Consegnare al mattino">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Colonna 2: Referente & Recapiti -->
+              <div>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
+                  <select name="contatto_id" id="rfq-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
+                    <option value="">Seleziona fornitore prima...</option>
+                  </select>
+                  
+                  <input type="hidden" id="rfq-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
+                  <input type="hidden" id="rfq-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
+                </div>
+
+                <!-- Dettagli Referente sul Documento -->
+                <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                      <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
+                      <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
+                    </h6>
+                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
+                  </div>
+                  
+                  <div class="qk-form-group mb-2">
+                    <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
+                    <input type="text" name="contatto_nome" id="rfq-contatto-nome" class="qk-form-control" value="<?= e($values['contatto_nome'] ?? '') ?>" placeholder="Es. Ing. Mario Rossi">
+                  </div>
+
+                  <div class="qk-form-group mb-2">
+                    <label class="qk-form-label">Telefono di contatto</label>
+                    <input type="text" name="contatto_telefono" id="rfq-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($values['contatto_telefono'] ?? '') ?>">
+                  </div>
+
+                  <div class="qk-form-group mb-2">
+                    <label class="qk-form-label">Email di contatto</label>
+                    <input type="email" name="contatto_email" id="rfq-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@fornitore.com" value="<?= e($values['contatto_email'] ?? '') ?>">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pane: Condizioni Commerciali -->
+          <div class="tab-pane d-none" id="pane-condizioni-commerciali">
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+              <!-- Colonna 1: Incoterms & Trasporto -->
+              <div>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Resa & Trasporto</h4>
                 <div class="qk-form-group">
                   <label class="qk-form-label">Termine di resa (Incoterms)</label>
                   <select name="incoterm_codice" id="rfq-incoterm-codice" class="qk-form-control" <?= $disabled ?>>
@@ -493,43 +619,15 @@ $savedOk = isset($saved) && $saved;
                 </div>
               </div>
 
-              <!-- Colonna 2: Referente & Recapiti -->
+              <!-- Colonna 2: Listino & Riferimenti -->
               <div>
-                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
-                  <select name="contatto_id" id="rfq-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
-                    <option value="">Seleziona fornitore prima...</option>
-                  </select>
-                  <input type="hidden" name="contatto_nome" id="rfq-contatto-nome" value="<?= e($values['contatto_nome'] ?? '') ?>">
-                </div>
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Telefono di contatto</label>
-                  <input type="text" name="contatto_telefono" id="rfq-contatto-telefono" class="qk-form-control"
-                         placeholder="Es. +39 02 123456"
-                         value="<?= e($values['contatto_telefono'] ?? $values['fornitore_telefono'] ?? '') ?>"
-                         <?= $readonly ?>>
-                  <input type="hidden" name="fornitore_telefono" id="rfq-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
-                </div>
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Email di contatto</label>
-                  <input type="email" name="contatto_email" id="rfq-contatto-email" class="qk-form-control"
-                         placeholder="Es. info@fornitore.com"
-                         value="<?= e($values['contatto_email'] ?? $values['fornitore_email'] ?? '') ?>"
-                         <?= $readonly ?>>
-                  <input type="hidden" name="fornitore_email" id="rfq-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
-                </div>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Commerciali & Listini</h4>
                 <div class="qk-form-group">
                   <label class="qk-form-label">Listino di Acquisto di riferimento</label>
                   <select name="listino_acquisto_id" id="rfq-listino-acquisto-id" class="qk-form-control" data-selected-id="<?= e($values['listino_acquisto_id'] ?? '') ?>" <?= $disabled ?>>
                     <option value="">Nessun listino specifico...</option>
                   </select>
                 </div>
-              </div>
-
-              <!-- Colonna 3: Fatturazione & Riferimenti -->
-              <div>
-                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Fatturazione & Riferimenti</h4>
                 <div class="qk-form-group">
                   <label class="qk-form-label">Valuta</label>
                   <select name="valuta" id="rfq-valuta" class="qk-form-control" <?= $disabled ?>>
@@ -538,6 +636,11 @@ $savedOk = isset($saved) && $saved;
                     <option value="GBP" <?= ($values['valuta'] ?? '') === 'GBP' ? 'selected' : '' ?>>GBP (£)</option>
                   </select>
                 </div>
+              </div>
+
+              <!-- Colonna 3: Pagamento -->
+              <div>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Pagamento</h4>
                 <div class="qk-form-group">
                   <label class="qk-form-label">Metodo di Pagamento</label>
                   <select name="metodo_pagamento_id" id="rfq-metodo-pagamento-id" class="qk-form-control" <?= $disabled ?>>
@@ -651,8 +754,8 @@ $savedOk = isset($saved) && $saved;
           <td><span class="qk-badge <?= $offBadge[0] ?>"><?= e($offBadge[1]) ?></span></td>
           <td><?= e($off['data_offerta'] ?? '—') ?></td>
           <td class="qk-text-right">
-            <?= $off['totale_imponibile'] !== null
-                ? '€ ' . number_format((float)$off['totale_imponibile'], 2, ',', '.')
+            <?= $off['totale'] !== null
+                ? '€ ' . number_format((float)$off['totale'], 2, ',', '.')
                 : '—' ?>
           </td>
           <td class="qk-table-actions">
@@ -1392,6 +1495,137 @@ document.addEventListener('DOMContentLoaded', function () {
   const indSelect = document.getElementById('rfq-indirizzo-consegna-id');
   const API_AZIENDA_INDIRIZZI = <?= json_encode(url('purchases/rfq/api/azienda-indirizzi')) ?>;
 
+  let loadedAddresses = [];
+
+  function getOriginalAddress() {
+    const val = indSelect.value;
+    if (!val) {
+      return loadedAddresses[0] || {};
+    }
+    return loadedAddresses.find(i => String(i.id) === String(val)) || {};
+  }
+
+  function clearOverrideStylesSped() {
+    [
+      document.getElementById('consegna_via'),
+      document.getElementById('consegna_civico'),
+      document.getElementById('consegna_cap'),
+      document.getElementById('consegna_citta'),
+      document.getElementById('consegna_provincia'),
+      document.getElementById('consegna_nazione'),
+      document.getElementById('consegna_presso'),
+      document.getElementById('consegna_referente'),
+      document.getElementById('consegna_telefono'),
+      document.getElementById('consegna_note')
+    ].forEach(inp => {
+      if (inp) inp.classList.remove('is-overridden');
+    });
+  }
+
+  function syncAddressUI() {
+    const val = indSelect.value;
+    const ind = getOriginalAddress();
+    const inpVia = document.getElementById('consegna_via');
+    if (!inpVia) return;
+
+    const isNewForm = !inpVia.value;
+    if (isNewForm && ind.via) {
+      copyAddressToFields(ind);
+    }
+
+    let hasOverride = false;
+    const checkField = (inputEl, origValue) => {
+      if (!inputEl) return;
+      const cur = inputEl.value.trim();
+      const ref = (origValue ?? '').trim();
+      if (cur !== ref) {
+        inputEl.classList.add('is-overridden');
+        hasOverride = true;
+      } else {
+        inputEl.classList.remove('is-overridden');
+      }
+    };
+
+    checkField(document.getElementById('consegna_via'), ind.via);
+    checkField(document.getElementById('consegna_civico'), ind.civico);
+    checkField(document.getElementById('consegna_cap'), ind.cap);
+    checkField(document.getElementById('consegna_citta'), ind.citta);
+    checkField(document.getElementById('consegna_provincia'), ind.provincia);
+    checkField(document.getElementById('consegna_nazione'), ind.nazione || 'IT');
+    checkField(document.getElementById('consegna_presso'), ind.presso);
+    checkField(document.getElementById('consegna_referente'), ind.referente_consegna);
+    checkField(document.getElementById('consegna_telefono'), ind.telefono_consegna);
+    checkField(document.getElementById('consegna_note'), ind.note_consegna);
+
+    const badge = document.getElementById('sped-state-badge');
+    const resetBtn = document.getElementById('btn-cancel-edit-sped');
+    if (hasOverride) {
+      badge.textContent = 'Modificato localmente (override)';
+      badge.className = 'badge bg-warning text-dark ms-2';
+      if (resetBtn) resetBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = '✓ Sincronizzato con anagrafica';
+      badge.className = 'badge bg-success text-white ms-2';
+      if (resetBtn) resetBtn.style.display = 'none';
+    }
+  }
+
+  function copyAddressToFields(ind) {
+    const elVia = document.getElementById('consegna_via');
+    const elCiv = document.getElementById('consegna_civico');
+    const elCap = document.getElementById('consegna_cap');
+    const elCit = document.getElementById('consegna_citta');
+    const elPrv = document.getElementById('consegna_provincia');
+    const elNaz = document.getElementById('consegna_nazione');
+    const elPre = document.getElementById('consegna_presso');
+    const elRef = document.getElementById('consegna_referente');
+    const elTel = document.getElementById('consegna_telefono');
+    const elNot = document.getElementById('consegna_note');
+
+    if (elVia) elVia.value = ind.via || '';
+    if (elCiv) elCiv.value = ind.civico || '';
+    if (elCap) elCap.value = ind.cap || '';
+    if (elCit) elCit.value = ind.citta || '';
+    if (elPrv) elPrv.value = ind.provincia || '';
+    if (elNaz) elNaz.value = ind.nazione || 'IT';
+    if (elPre) elPre.value = ind.presso || '';
+    if (elRef) elRef.value = ind.referente_consegna || '';
+    if (elTel) elTel.value = ind.telefono_consegna || '';
+    if (elNot) elNot.value = ind.note_consegna || '';
+  }
+
+  function clearAddressFields() {
+    [
+      'consegna_via', 'consegna_civico', 'consegna_cap', 'consegna_citta',
+      'consegna_provincia', 'consegna_presso', 'consegna_referente',
+      'consegna_telefono', 'consegna_note'
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const elNaz = document.getElementById('consegna_nazione');
+    if (elNaz) elNaz.value = 'IT';
+  }
+
+  // Bind input changes to sync override indicator
+  [
+    'consegna_via', 'consegna_civico', 'consegna_cap', 'consegna_citta',
+    'consegna_provincia', 'consegna_nazione', 'consegna_presso',
+    'consegna_referente', 'consegna_telefono', 'consegna_note'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', syncAddressUI);
+  });
+
+  const btnCancelEditSped = document.getElementById('btn-cancel-edit-sped');
+  if (btnCancelEditSped) {
+    btnCancelEditSped.addEventListener('click', () => {
+      const ind = getOriginalAddress();
+      if (ind) copyAddressToFields(ind);
+      syncAddressUI();
+    });
+  }
+
   async function loadAziendaAddresses() {
     if (!azSelect || !indSelect) return;
     const aziendaId = azSelect.value;
@@ -1406,8 +1640,9 @@ document.addEventListener('DOMContentLoaded', function () {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Errore recupero indirizzi');
 
+      loadedAddresses = data.indirizzi || [];
       indSelect.innerHTML = '';
-      if (!data.indirizzi || data.indirizzi.length === 0) {
+      if (loadedAddresses.length === 0) {
         indSelect.innerHTML = '<option value="">Nessun indirizzo spedizione/magazzino trovato</option>';
         return;
       }
@@ -1415,22 +1650,15 @@ document.addEventListener('DOMContentLoaded', function () {
       const selectedId = indSelect.dataset.selectedId;
       let matched = false;
 
-      data.indirizzi.forEach(ind => {
+      loadedAddresses.forEach(ind => {
         const option = document.createElement('option');
         option.value = ind.id;
         
-        // Costruisci una label leggibile: Nome sede, Via e Città
+        // Costruisci una label leggibile compatta: Nome sede · Città
         const labelParts = [];
         if (ind.nome_sede) labelParts.push(`[${ind.nome_sede}]`);
-        
-        let addrStr = `${ind.via || ''} ${ind.civico || ''}`.trim();
-        if (ind.cap || ind.citta) {
-          addrStr += `, ${ind.cap || ''} ${ind.citta || ''}`.trim();
-        }
-        if (addrStr) labelParts.push(addrStr);
-        if (ind.referente_consegna) labelParts.push(`(Ref: ${ind.referente_consegna})`);
-        
-        option.textContent = labelParts.join(' ');
+        if (ind.citta) labelParts.push(ind.citta);
+        option.textContent = labelParts.join(' · ') || (ind.via + ' ' + (ind.civico || ''));
         
         if (selectedId && String(ind.id) === String(selectedId)) {
           option.selected = true;
@@ -1440,10 +1668,10 @@ document.addEventListener('DOMContentLoaded', function () {
         indSelect.appendChild(option);
       });
 
-      // Se non c'è corrispondenza o non c'è un id selezionato in precedenza, auto-seleziona il primo
-      if (!matched && data.indirizzi.length > 0) {
+      if (!matched && loadedAddresses.length > 0) {
         indSelect.options[0].selected = true;
       }
+      syncAddressUI();
     } catch (err) {
       indSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
     }
@@ -1456,12 +1684,24 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  if (indSelect) {
+    indSelect.addEventListener('change', () => {
+      clearAddressFields();
+      const val = indSelect.value;
+      if (val) {
+        const ind = loadedAddresses.find(i => String(i.id) === String(val));
+        if (ind) copyAddressToFields(ind);
+      }
+      syncAddressUI();
+    });
+  }
+
   // Carica gli indirizzi subito all'avvio
   loadAziendaAddresses();
 
   /* ── Caricamento dinamico dettagli fornitore (contatti, listini) ────── */
   const contSelect = document.getElementById('rfq-contatto-id');
-  const contNomeHidden = document.getElementById('rfq-contatto-nome');
+  const contNomeInput = document.getElementById('rfq-contatto-nome');
   const contTelInput = document.getElementById('rfq-contatto-telefono');
   const contEmailInput = document.getElementById('rfq-contatto-email');
   const fornTelHidden = document.getElementById('rfq-fornitore-telefono');
@@ -1470,6 +1710,75 @@ document.addEventListener('DOMContentLoaded', function () {
   const API_FORNITORE_DETTAGLI = <?= json_encode(url('purchases/rfq/api/fornitore-dettagli')) ?>;
 
   let loadedContacts = [];
+
+  function getOriginalContact() {
+    const val = contSelect.value;
+    if (!val) return {};
+    return loadedContacts.find(c => String(c.id) === String(val)) || {};
+  }
+
+  function syncContactUI() {
+    const val = contSelect.value;
+    const orig = getOriginalContact();
+
+    let hasOverride = false;
+    const checkField = (inputEl, origValue) => {
+      if (!inputEl) return;
+      const cur = inputEl.value.trim();
+      const ref = (origValue ?? '').trim();
+      if (cur !== ref) {
+        inputEl.classList.add('is-overridden');
+        hasOverride = true;
+      } else {
+        inputEl.classList.remove('is-overridden');
+      }
+    };
+
+    checkField(contNomeInput, orig.nome_completo || '');
+    checkField(contTelInput, orig.telefono || orig.cellulare || fornTelHidden?.value || '');
+    checkField(contEmailInput, orig.email || fornEmailHidden?.value || '');
+
+    const badge = document.getElementById('cont-state-badge');
+    const resetBtn = document.getElementById('btn-cancel-edit-cont');
+
+    if (!val) {
+      badge.textContent = 'Recapiti manuali / una tantum';
+      badge.className = 'badge bg-info text-dark ms-2';
+      if (resetBtn) resetBtn.style.display = 'none';
+      [contNomeInput, contTelInput, contEmailInput].forEach(inp => {
+        if (inp) inp.classList.remove('is-overridden');
+      });
+    } else if (hasOverride) {
+      badge.textContent = 'Modificato localmente (override)';
+      badge.className = 'badge bg-warning text-dark ms-2';
+      if (resetBtn) resetBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = '✓ Sincronizzato con anagrafica';
+      badge.className = 'badge bg-success text-white ms-2';
+      if (resetBtn) resetBtn.style.display = 'none';
+    }
+  }
+
+  [contNomeInput, contTelInput, contEmailInput].forEach(inp => {
+    if (inp) inp.addEventListener('input', syncContactUI);
+  });
+
+  const btnCancelEditCont = document.getElementById('btn-cancel-edit-cont');
+  if (btnCancelEditCont) {
+    btnCancelEditCont.addEventListener('click', () => {
+      const contact = getOriginalContact();
+      if (contact && contact.nome_completo) {
+        if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
+        if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || fornTelHidden?.value || '';
+        if (contEmailInput) contEmailInput.value = contact.email || fornEmailHidden?.value || '';
+      } else {
+        if (contNomeInput) contNomeInput.value = '';
+        if (contTelInput) contTelInput.value = fornTelHidden?.value || '';
+        if (contEmailInput) contEmailInput.value = fornEmailHidden?.value || '';
+      }
+      syncContactUI();
+    });
+  }
 
   async function loadFornitoreDettagli() {
     if (!contSelect || !listiniSelect) return;
@@ -1525,6 +1834,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         listiniSelect.appendChild(option);
       });
+
+      syncContactUI();
     } catch (err) {
       contSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
       listiniSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
@@ -1539,15 +1850,16 @@ document.addEventListener('DOMContentLoaded', function () {
         // Fallback su recapiti generali dell'azienda
         if (contTelInput) contTelInput.value = fornTelHidden?.value || '';
         if (contEmailInput) contEmailInput.value = fornEmailHidden?.value || '';
-        if (contNomeHidden) contNomeHidden.value = '';
+        if (contNomeInput) contNomeInput.value = '';
       } else {
         const contact = loadedContacts.find(c => String(c.id) === String(selectedId));
         if (contact) {
           if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || fornTelHidden?.value || '';
           if (contEmailInput) contEmailInput.value = contact.email || fornEmailHidden?.value || '';
-          if (contNomeHidden) contNomeHidden.value = contact.nome_completo || '';
+          if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
         }
       }
+      syncContactUI();
     });
   }
 
@@ -1563,6 +1875,34 @@ document.addEventListener('DOMContentLoaded', function () {
         resaPortoSelect.value = 'porto_franco';
       }
     });
+  }
+
+  // Implement Read-only Lock for status not 'bozza'
+  const rfqStato = <?= json_encode($values['stato'] ?? 'bozza') ?>;
+  if (rfqStato !== 'bozza') {
+    [
+      azSelect, indSelect, contSelect,
+      document.getElementById('consegna_via'),
+      document.getElementById('consegna_civico'),
+      document.getElementById('consegna_cap'),
+      document.getElementById('consegna_citta'),
+      document.getElementById('consegna_provincia'),
+      document.getElementById('consegna_nazione'),
+      document.getElementById('consegna_presso'),
+      document.getElementById('consegna_referente'),
+      document.getElementById('consegna_telefono'),
+      document.getElementById('consegna_note'),
+      document.getElementById('rfq-contatto-nome'),
+      document.getElementById('rfq-contatto-telefono'),
+      document.getElementById('rfq-contatto-email')
+    ].forEach(el => {
+      if (el) {
+        el.disabled = true;
+        el.readOnly = true;
+      }
+    });
+    if (btnCancelEditSped) btnCancelEditSped.style.display = 'none';
+    if (btnCancelEditCont) btnCancelEditCont.style.display = 'none';
   }
 
   // Carica i dettagli del fornitore subito all'avvio (se già selezionato in modifica)

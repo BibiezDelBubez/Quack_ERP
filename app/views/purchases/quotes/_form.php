@@ -32,6 +32,14 @@ $statoLabel = [
 ][$stato] ?? ['draft', $stato];
 ?>
 
+<style>
+/* Override visual indicators */
+.is-overridden {
+  border-color: #f59e0b !important;
+  background-color: #fef3c7 !important;
+}
+</style>
+
   <?php if ($isEdit && $stato === 'rifiutata' && !empty($offerta['motivo_rifiuto'])): ?>
   <div class="qk-alert qk-alert-danger mb-3">
     <i class="fa-solid fa-ban"></i>
@@ -231,8 +239,13 @@ $statoLabel = [
       </button>
     </li>
     <li class="nav-item">
-      <button class="nav-link" id="tab-altre-info-btn" type="button" onclick="switchOffertaTab('altre-info')">
-        <i class="fa-solid fa-info-circle me-1"></i> Altre informazioni
+      <button class="nav-link" id="tab-spedizione-contatti-btn" type="button" onclick="switchOffertaTab('spedizione-contatti')">
+        <i class="fa-solid fa-id-card-clip me-1"></i> Contatti
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="tab-condizioni-commerciali-btn" type="button" onclick="switchOffertaTab('condizioni-commerciali')">
+        <i class="fa-solid fa-file-invoice-dollar me-1"></i> Condizioni Commerciali
       </button>
     </li>
     <li class="nav-item">
@@ -466,48 +479,66 @@ $statoLabel = [
       <?php endif; ?>
     </div> <!-- Fine pane-articoli -->
 
-    <!-- Pane: Altre Informazioni -->
-    <div class="tab-pane d-none" id="pane-altre-info">
+    <!-- Pane: Spedizione & Contatti -->
+    <div class="tab-pane d-none" id="pane-spedizione-contatti">
+      <div class="qk-card mb-4">
+        <div class="qk-card-body">
+          <div style="max-width: 600px;">
+            <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
+            <div class="qk-form-group">
+              <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
+              <select name="contatto_id" id="off-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
+                <option value="">Seleziona fornitore prima...</option>
+              </select>
+              
+              <input type="hidden" id="off-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
+              <input type="hidden" id="off-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
+            </div>
+
+            <!-- Dettagli Referente sul Documento -->
+            <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                  <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
+                  <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
+                </h6>
+                <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
+              </div>
+              
+              <div class="qk-form-group mb-2">
+                <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
+                <input type="text" name="contatto_nome" id="off-contatto-nome" class="qk-form-control" value="<?= e($values['contatto_nome'] ?? '') ?>" placeholder="Es. Ing. Mario Rossi">
+              </div>
+
+              <div class="qk-form-group mb-2">
+                <label class="qk-form-label">Telefono di contatto</label>
+                <input type="text" name="contatto_telefono" id="off-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($values['contatto_telefono'] ?? '') ?>">
+              </div>
+
+              <div class="qk-form-group mb-2">
+                <label class="qk-form-label">Email di contatto</label>
+                <input type="email" name="contatto_email" id="off-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@fornitore.com" value="<?= e($values['contatto_email'] ?? '') ?>">
+              </div>
+            </div>
+            <div class="qk-form-group">
+              <label class="qk-form-label">Listino di Acquisto di riferimento</label>
+              <select name="listino_acquisto_id" id="off-listino-acquisto-id" class="qk-form-control" data-selected-id="<?= e($values['listino_acquisto_id'] ?? '') ?>" <?= $disabled ?>>
+                <option value="">Nessun listino specifico...</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div> <!-- Fine pane-spedizione-contatti -->
+
+    <!-- Pane: Condizioni Commerciali -->
+    <div class="tab-pane d-none" id="pane-condizioni-commerciali">
       <div class="qk-card mb-4">
         <div class="qk-card-body">
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
-            <!-- Colonna: Referente & Recapiti -->
-            <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
-                <select name="contatto_id" id="off-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
-                  <option value="">Seleziona fornitore prima...</option>
-                </select>
-                <input type="hidden" name="contatto_nome" id="off-contatto-nome" value="<?= e($values['contatto_nome'] ?? '') ?>">
-              </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Telefono di contatto</label>
-                <input type="text" name="contatto_telefono" id="off-contatto-telefono" class="qk-form-control"
-                       placeholder="Es. +39 02 123456"
-                       value="<?= e($values['contatto_telefono'] ?? $values['fornitore_telefono'] ?? '') ?>"
-                       <?= $readonly ?>>
-                <input type="hidden" name="fornitore_telefono" id="off-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
-              </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Email di contatto</label>
-                <input type="email" name="contatto_email" id="off-contatto-email" class="qk-form-control"
-                       placeholder="Es. info@fornitore.com"
-                       value="<?= e($values['contatto_email'] ?? $values['fornitore_email'] ?? '') ?>"
-                       <?= $readonly ?>>
-                <input type="hidden" name="fornitore_email" id="off-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
-              </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Listino di Acquisto di riferimento</label>
-                <select name="listino_acquisto_id" id="off-listino-acquisto-id" class="qk-form-control" data-selected-id="<?= e($values['listino_acquisto_id'] ?? '') ?>" <?= $disabled ?>>
-                  <option value="">Nessun listino specifico...</option>
-                </select>
-              </div>
-            </div>
-
             <!-- Colonna: Date & Condizioni -->
             <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Date & Condizioni</h4>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Date & Riferimenti</h4>
               <div class="qk-form-group">
                 <label class="qk-form-label">Data Ricezione Preventivo</label>
                 <input type="date" name="data_offerta" class="qk-form-control"
@@ -520,6 +551,18 @@ $statoLabel = [
                        value="<?= e($values['data_scadenza_offerta'] ?? '') ?>" <?= $readonly ?>>
               </div>
 
+              <div class="qk-form-group">
+                <label class="qk-form-label">Valuta</label>
+                <select name="valuta" class="qk-form-control" <?= $disabled ?>>
+                  <option value="EUR" <?= ($values['valuta'] ?? 'EUR') === 'EUR' ? 'selected' : '' ?>>EUR (€)</option>
+                  <option value="USD" <?= ($values['valuta'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Colonna: Pagamento & Trasporto -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Pagamento & Trasporto</h4>
               <div class="qk-form-group">
                 <label class="qk-form-label">Metodo di Pagamento</label>
                 <select name="metodo_pagamento_id" id="off-metodo-pagamento-id" class="qk-form-control" <?= $disabled ?>>
@@ -540,14 +583,6 @@ $statoLabel = [
               </div>
 
               <div class="qk-form-group">
-                <label class="qk-form-label">Valuta</label>
-                <select name="valuta" class="qk-form-control" <?= $disabled ?>>
-                  <option value="EUR" <?= ($values['valuta'] ?? 'EUR') === 'EUR' ? 'selected' : '' ?>>EUR (€)</option>
-                  <option value="USD" <?= ($values['valuta'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
-                </select>
-              </div>
-
-              <div class="qk-form-group">
                 <label class="qk-form-label">Resa Porto (Trasporto)</label>
                 <select name="resa_porto" id="off-resa-porto" class="qk-form-control" <?= $disabled ?>>
                   <option value="">Seleziona resa porto...</option>
@@ -559,7 +594,7 @@ $statoLabel = [
           </div>
         </div>
       </div>
-    </div> <!-- Fine pane-altre-info -->
+    </div> <!-- Fine pane-condizioni-commerciali -->
 
     <!-- Pane: Note -->
     <div class="tab-pane d-none" id="pane-note">
@@ -977,7 +1012,7 @@ $statoLabel = [
 
   /* ── Caricamento dinamico dettagli fornitore (contatti, listini) ────── */
   const contSelect = document.getElementById('off-contatto-id');
-  const contNomeHidden = document.getElementById('off-contatto-nome');
+  const contNomeInput = document.getElementById('off-contatto-nome');
   const contTelInput = document.getElementById('off-contatto-telefono');
   const contEmailInput = document.getElementById('off-contatto-email');
   const fornTelHidden = document.getElementById('off-fornitore-telefono');
@@ -986,6 +1021,75 @@ $statoLabel = [
   const API_FORNITORE_DETTAGLI = <?= json_encode(url('purchases/rfq/api/fornitore-dettagli')) ?>;
 
   let loadedContacts = [];
+
+  function getOriginalContact() {
+    const val = contSelect.value;
+    if (!val) return {};
+    return loadedContacts.find(c => String(c.id) === String(val)) || {};
+  }
+
+  function syncContactUI() {
+    const val = contSelect.value;
+    const orig = getOriginalContact();
+
+    let hasOverride = false;
+    const checkField = (inputEl, origValue) => {
+      if (!inputEl) return;
+      const cur = inputEl.value.trim();
+      const ref = (origValue ?? '').trim();
+      if (cur !== ref) {
+        inputEl.classList.add('is-overridden');
+        hasOverride = true;
+      } else {
+        inputEl.classList.remove('is-overridden');
+      }
+    };
+
+    checkField(contNomeInput, orig.nome_completo || '');
+    checkField(contTelInput, orig.telefono || orig.cellulare || fornTelHidden?.value || '');
+    checkField(contEmailInput, orig.email || fornEmailHidden?.value || '');
+
+    const badge = document.getElementById('cont-state-badge');
+    const resetBtn = document.getElementById('btn-cancel-edit-cont');
+
+    if (!val) {
+      badge.textContent = 'Recapiti manuali / una tantum';
+      badge.className = 'badge bg-info text-dark ms-2';
+      if (resetBtn) resetBtn.style.display = 'none';
+      [contNomeInput, contTelInput, contEmailInput].forEach(inp => {
+        if (inp) inp.classList.remove('is-overridden');
+      });
+    } else if (hasOverride) {
+      badge.textContent = 'Modificato localmente (override)';
+      badge.className = 'badge bg-warning text-dark ms-2';
+      if (resetBtn) resetBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = '✓ Sincronizzato con anagrafica';
+      badge.className = 'badge bg-success text-white ms-2';
+      if (resetBtn) resetBtn.style.display = 'none';
+    }
+  }
+
+  [contNomeInput, contTelInput, contEmailInput].forEach(inp => {
+    if (inp) inp.addEventListener('input', syncContactUI);
+  });
+
+  const btnCancelEditCont = document.getElementById('btn-cancel-edit-cont');
+  if (btnCancelEditCont) {
+    btnCancelEditCont.addEventListener('click', () => {
+      const contact = getOriginalContact();
+      if (contact && contact.nome_completo) {
+        if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
+        if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || fornTelHidden?.value || '';
+        if (contEmailInput) contEmailInput.value = contact.email || fornEmailHidden?.value || '';
+      } else {
+        if (contNomeInput) contNomeInput.value = '';
+        if (contTelInput) contTelInput.value = fornTelHidden?.value || '';
+        if (contEmailInput) contEmailInput.value = fornEmailHidden?.value || '';
+      }
+      syncContactUI();
+    });
+  }
 
   async function loadFornitoreDettagli() {
     if (!contSelect || !listiniSelect) return;
@@ -1036,6 +1140,8 @@ $statoLabel = [
         }
         listiniSelect.appendChild(option);
       });
+
+      syncContactUI();
     } catch (err) {
       contSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
       listiniSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
@@ -1048,16 +1154,29 @@ $statoLabel = [
       if (!selectedId) {
         if (contTelInput) contTelInput.value = fornTelHidden?.value || '';
         if (contEmailInput) contEmailInput.value = fornEmailHidden?.value || '';
-        if (contNomeHidden) contNomeHidden.value = '';
+        if (contNomeInput) contNomeInput.value = '';
       } else {
         const contact = loadedContacts.find(c => String(c.id) === String(selectedId));
         if (contact) {
           if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || fornTelHidden?.value || '';
           if (contEmailInput) contEmailInput.value = contact.email || fornEmailHidden?.value || '';
-          if (contNomeHidden) contNomeHidden.value = contact.nome_completo || '';
+          if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
         }
       }
+      syncContactUI();
     });
+  }
+
+  // Implement Read-only Lock for status not 'in_valutazione'
+  const quoteStato = <?= json_encode($values['stato'] ?? 'in_valutazione') ?>;
+  if (quoteStato !== 'in_valutazione') {
+    [contSelect, contNomeInput, contTelInput, contEmailInput].forEach(el => {
+      if (el) {
+        el.disabled = true;
+        el.readOnly = true;
+      }
+    });
+    if (btnCancelEditCont) btnCancelEditCont.style.display = 'none';
   }
 
   loadFornitoreDettagli();
@@ -1175,6 +1294,25 @@ $statoLabel = [
       prevDefaultDate = newDefaultDate;
     });
   }
+
+  /* ── Switcher Tab Odoo-Style ───────────────────────────────────────── */
+  window.switchOffertaTab = function(tabId) {
+    document.querySelectorAll('.qk-nav-tabs .nav-link').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    const activeBtn = document.getElementById('tab-' + tabId + '-btn');
+    if (activeBtn) activeBtn.classList.add('active');
+
+    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+      pane.classList.add('d-none');
+      pane.classList.remove('active');
+    });
+    const activePane = document.getElementById('pane-' + tabId);
+    if (activePane) {
+      activePane.classList.remove('d-none');
+      activePane.classList.add('active');
+    }
+  };
 })();
 </script>
 

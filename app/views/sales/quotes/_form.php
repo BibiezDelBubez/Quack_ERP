@@ -1611,6 +1611,9 @@ function syncContactUI() {
     badge.textContent = 'Recapiti manuali / una tantum';
     badge.className = 'badge bg-info text-dark ms-2';
     if (resetBtn) resetBtn.style.display = 'none';
+    [contNomeInput, contTelInput, contEmailInput].forEach(inp => {
+      if (inp) inp.classList.remove('is-overridden');
+    });
   } else if (hasOverride) {
     badge.textContent = 'Modificato localmente (override)';
     badge.className = 'badge bg-warning text-dark ms-2';
