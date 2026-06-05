@@ -1,0 +1,16 @@
+2) clienti | listini
+Posso associare solo 1 listino per cliente. rivedere questa cosa. studia come fa sga
+Sga vedo che per 1 listino 1 solo cliente, ma 1 cliente può avere più listini (di solito con periodi di valitida diversi)
+
+
+
+3) preventivi clienti
+errore ${data, prezzo_sorgente} quando inserisco prezzo su preventivo cliente
+
+SPEDIZIONI
+Aggiungere possibilità di caricare foto del pallet prima di spedire.
+
+PRODOTTI E ADR
+Manca ancora controller di associazione Prodtti - Sostanze ADR - Codici ONU
+
+Controlla ordine di precursori di esplosivo

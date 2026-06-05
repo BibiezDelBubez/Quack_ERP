@@ -183,6 +183,28 @@ final class SalesQuotesController extends BaseController
                 $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
             } else {
                 $values = $this->readPostValues();
+                
+                // Freeze address and contact overrides if current status is not bozza
+                $oldStato = $detail['offerta']['stato'] ?? 'bozza';
+                if ($oldStato !== 'bozza') {
+                    $values['indirizzo_spedizione_id'] = $detail['offerta']['indirizzo_spedizione_id'] ?? '';
+                    $values['consegna_via']            = $detail['offerta']['consegna_via'] ?? '';
+                    $values['consegna_civico']         = $detail['offerta']['consegna_civico'] ?? '';
+                    $values['consegna_cap']            = $detail['offerta']['consegna_cap'] ?? '';
+                    $values['consegna_citta']          = $detail['offerta']['consegna_citta'] ?? '';
+                    $values['consegna_provincia']      = $detail['offerta']['consegna_provincia'] ?? '';
+                    $values['consegna_nazione']        = $detail['offerta']['consegna_nazione'] ?? '';
+                    $values['consegna_presso']         = $detail['offerta']['consegna_presso'] ?? '';
+                    $values['consegna_referente']      = $detail['offerta']['consegna_referente'] ?? '';
+                    $values['consegna_telefono']       = $detail['offerta']['consegna_telefono'] ?? '';
+                    $values['consegna_note']           = $detail['offerta']['consegna_note'] ?? '';
+                    $values['contatto_id']             = $detail['offerta']['contatto_id'] ?? '';
+                    $values['contatto_nome']           = $detail['offerta']['contatto_nome'] ?? '';
+                    $values['contatto_telefono']       = $detail['offerta']['contatto_telefono'] ?? '';
+                    $values['contatto_email']          = $detail['offerta']['contatto_email'] ?? '';
+                    $values['salva_in_anagrafica_indirizzo'] = '';
+                }
+
                 $righe  = $this->readPostRighe();
                 $errors = qk_offerta_validate($values, $righe);
 

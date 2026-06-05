@@ -48,6 +48,11 @@ $v = $values;
 #tbl-righe .col-tot    { width: 100px; }
 #tbl-righe .col-del    { width: 36px; }
 .riga-sku { font-size: .72rem; color: var(--qk-text-muted); font-family: monospace; }
+/* Override visual indicators */
+.is-overridden {
+  border-color: #f59e0b !important;
+  background-color: #fef3c7 !important;
+}
 </style>
 
 <?php if (!empty($errors['_global'])): ?>
@@ -352,27 +357,14 @@ $v = $values;
                 </select>
               </div>
 
-              <!-- Box Preview dell'indirizzo selezionato -->
-              <div id="sped-preview-box" class="border rounded p-3 mb-3 bg-light" style="display:none; position:relative; border-color: var(--qk-border) !important;">
-                <div class="d-flex justify-content-between align-items-start">
-                  <div>
-                    <strong id="sp-nome-sede" class="text-primary" style="font-size: 0.9rem;">Magazzino</strong>
-                    <div id="sp-dettagli" class="mt-1 text-muted" style="font-size:0.85rem; line-height: 1.4;"></div>
-                    <div id="sp-recapiti" class="mt-1 fw-semibold" style="font-size:0.8rem; color:var(--qk-text-secondary);"></div>
-                    <div id="sp-note" class="mt-1" style="font-size:0.8rem; font-style:italic; color:var(--qk-text-muted);"></div>
-                  </div>
-                  <div class="d-flex gap-1" style="flex-shrink: 0;">
-                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-primary" id="btn-edit-sped" title="Modifica per questo documento"><i class="fa-solid fa-pen"></i></button>
-                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-clear-sped" title="Rimuovi"><i class="fa-solid fa-xmark"></i></button>
-                  </div>
-                </div>
-              </div>
-
               <!-- Campi dettagli indirizzo (Snapshot/Override) -->
               <div id="sped-fields-box" class="border rounded p-3 mb-3" style="display:none; background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;"><i class="fa-solid fa-map-location-dot me-1"></i>Dettagli Spedizione</h6>
-                  <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-sped" title="Annulla modifiche"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
+                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                    <i class="fa-solid fa-map-location-dot me-1"></i>Dettagli Spedizione
+                    <span id="sped-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
+                  </h6>
+                  <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-sped" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
                 </div>
                 
                 <input type="hidden" name="consegna_nome_sede" id="consegna_nome_sede" value="">
@@ -466,19 +458,30 @@ $v = $values;
                 <input type="hidden" id="customer-generale-email" value="">
               </div>
 
-              <div class="qk-form-group">
-                <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
-                <input type="text" name="contatto_nome" id="quote-contatto-nome" class="qk-form-control" value="<?= e($v['contatto_nome'] ?? $v['alla_ca'] ?? '') ?>" placeholder="Es. Dott. Mario Rossi">
-              </div>
-
-              <div class="qk-form-row">
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Telefono referente</label>
-                  <input type="text" name="contatto_telefono" id="quote-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($v['contatto_telefono']) ?>">
+              <!-- Dettagli Referente sul Documento -->
+              <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                    <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
+                    <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
+                  </h6>
+                  <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
                 </div>
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Email referente</label>
-                  <input type="email" name="contatto_email" id="quote-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@cliente.com" value="<?= e($v['contatto_email']) ?>">
+                
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
+                  <input type="text" name="contatto_nome" id="quote-contatto-nome" class="qk-form-control" value="<?= e($v['contatto_nome'] ?? $v['alla_ca'] ?? '') ?>" placeholder="Es. Dott. Mario Rossi">
+                </div>
+
+                <div class="qk-form-row">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Telefono referente</label>
+                    <input type="text" name="contatto_telefono" id="quote-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($v['contatto_telefono']) ?>">
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Email referente</label>
+                    <input type="email" name="contatto_email" id="quote-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@cliente.com" value="<?= e($v['contatto_email']) ?>">
+                  </div>
                 </div>
               </div>
             </div>
@@ -1308,10 +1311,7 @@ const custEmailHidden = document.getElementById('customer-generale-email');
 const condPagInput = document.getElementById('quote-condizioni-pagamento');
 
 // Elementi Address Preview / Override
-const elSpedPreviewBox    = document.getElementById('sped-preview-box');
 const elSpedFieldsBox     = document.getElementById('sped-fields-box');
-const elBtnEditSped       = document.getElementById('btn-edit-sped');
-const elBtnClearSped       = document.getElementById('btn-clear-sped');
 const elBtnCancelEditSped = document.getElementById('btn-cancel-edit-sped');
 
 const inpConsegnaVia       = document.getElementById('consegna_via');
@@ -1387,12 +1387,8 @@ async function loadClienteDettagli() {
       
       const labelParts = [];
       if (ind.nome_sede) labelParts.push(`[${ind.nome_sede}]`);
-      let addrStr = `${ind.via || ''} ${ind.civico || ''}`.trim();
-      if (ind.cap || ind.citta) {
-        addrStr += `, ${ind.cap || ''} ${ind.citta || ''}`.trim();
-      }
-      if (addrStr) labelParts.push(addrStr);
-      option.textContent = labelParts.join(' ');
+      if (ind.citta) labelParts.push(ind.citta);
+      option.textContent = labelParts.join(' · ');
 
       if (selectedSpedId && String(ind.id) === String(selectedSpedId)) {
         option.selected = true;
@@ -1424,6 +1420,8 @@ async function loadClienteDettagli() {
       }
       contSelect.appendChild(option);
     });
+    
+    syncContactUI();
 
   } catch (err) {
     spedSelect.innerHTML = `<option value="">Errore: ${err.message}</option>`;
@@ -1431,58 +1429,86 @@ async function loadClienteDettagli() {
   }
 }
 
-function syncAddressUI() {
+function getOriginalAddress() {
   const val = spedSelect.value;
   if (!val) {
-    // Sede legale / Empty
-    if (elSpedPreviewBox) elSpedPreviewBox.style.display = 'none';
-    if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'none';
-  } else if (val === 'custom') {
-    // Custom address mode
-    if (elSpedPreviewBox) elSpedPreviewBox.style.display = 'none';
-    if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'block';
+    // Sede legale fallback
+    return loadedAddresses.find(i => i.tipo === 'sede_legale') || loadedAddresses[0] || {};
+  }
+  if (val === 'custom') {
+    return {};
+  }
+  return loadedAddresses.find(i => String(i.id) === String(val)) || {};
+}
+
+function clearOverrideStylesSped() {
+  [inpConsegnaVia, inpConsegnaCivico, inpConsegnaCap, inpConsegnaCitta, inpConsegnaProvincia,
+   inpConsegnaNazione, inpConsegnaPresso, inpConsegnaReferente, inpConsegnaTelefono, inpConsegnaNote]
+  .forEach(inp => {
+    if (inp) inp.classList.remove('is-overridden');
+  });
+}
+
+function syncAddressUI() {
+  const val = spedSelect.value;
+  if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'block';
+
+  if (val === 'custom') {
+    if (divSalvaAnagrafica) divSalvaAnagrafica.style.display = 'flex';
+    document.getElementById('sped-state-badge').textContent = 'Recapiti manuali / una tantum';
+    document.getElementById('sped-state-badge').className = 'badge bg-info text-dark ms-2';
+    if (elBtnCancelEditSped) elBtnCancelEditSped.style.display = 'none';
+    clearOverrideStylesSped();
+    return;
+  }
+
+  const ind = getOriginalAddress();
+  const isNewForm = !inpConsegnaVia.value;
+  if (isNewForm && ind.via) {
+    copyAddressToFields(ind);
+  }
+  
+  let hasOverride = false;
+  const checkField = (inputEl, origValue) => {
+    if (!inputEl) return;
+    const cur = inputEl.value.trim();
+    const ref = (origValue ?? '').trim();
+    if (cur !== ref) {
+      inputEl.classList.add('is-overridden');
+      hasOverride = true;
+    } else {
+      inputEl.classList.remove('is-overridden');
+    }
+  };
+
+  checkField(inpConsegnaVia, ind.via);
+  checkField(inpConsegnaCivico, ind.civico);
+  checkField(inpConsegnaCap, ind.cap);
+  checkField(inpConsegnaCitta, ind.citta);
+  checkField(inpConsegnaProvincia, ind.provincia);
+  checkField(inpConsegnaNazione, ind.nazione || 'IT');
+  checkField(inpConsegnaPresso, ind.presso);
+  checkField(inpConsegnaReferente, ind.referente_consegna);
+  checkField(inpConsegnaTelefono, ind.telefono_consegna);
+  checkField(inpConsegnaNote, ind.note_consegna);
+
+  const badge = document.getElementById('sped-state-badge');
+  if (hasOverride) {
+    badge.textContent = 'Modificato localmente (override)';
+    badge.className = 'badge bg-warning text-dark ms-2';
+    if (elBtnCancelEditSped) elBtnCancelEditSped.style.display = 'inline-block';
     if (divSalvaAnagrafica) divSalvaAnagrafica.style.display = 'flex';
   } else {
-    // Existing address
-    const ind = loadedAddresses.find(i => String(i.id) === String(val));
-    if (ind) {
-      const isNewForm = !inpConsegnaVia.value;
-      if (isNewForm) {
-        copyAddressToFields(ind);
-      }
-      
-      const isOverridden = inpConsegnaVia.value !== (ind.via || '') ||
-                           inpConsegnaCivico.value !== (ind.civico || '') ||
-                           inpConsegnaCap.value !== (ind.cap || '') ||
-                           inpConsegnaCitta.value !== (ind.citta || '') ||
-                           inpConsegnaProvincia.value !== (ind.provincia || '') ||
-                           inpConsegnaNazione.value !== (ind.nazione || 'IT') ||
-                           inpConsegnaPresso.value !== (ind.presso || '') ||
-                           inpConsegnaReferente.value !== (ind.referente_consegna || '') ||
-                           inpConsegnaTelefono.value !== (ind.telefono_consegna || '') ||
-                           inpConsegnaNote.value !== (ind.note_consegna || '');
-      
-      document.getElementById('sp-nome-sede').textContent = (ind.nome_sede || 'Magazzino') + (isOverridden ? ' (Modificato per questo documento)' : '');
-      document.getElementById('sp-dettagli').textContent = `${inpConsegnaVia.value || ''} ${inpConsegnaCivico.value || ''}, ${inpConsegnaCap.value || ''} ${inpConsegnaCitta.value || ''} (${inpConsegnaProvincia.value || ''}) - ${inpConsegnaNazione.value || 'IT'}`;
-      
-      const recParts = [];
-      if (inpConsegnaReferente.value) recParts.push(`Ref: ${inpConsegnaReferente.value}`);
-      if (inpConsegnaTelefono.value) recParts.push(`Tel: ${inpConsegnaTelefono.value}`);
-      document.getElementById('sp-recapiti').textContent = recParts.join(' · ');
-      document.getElementById('sp-note').textContent = inpConsegnaNote.value ? `Note: ${inpConsegnaNote.value}` : '';
-
-      if (elSpedPreviewBox) elSpedPreviewBox.style.display = 'block';
-      if (elSpedFieldsBox) {
-        elSpedFieldsBox.style.display = isOverridden ? 'block' : 'none';
-      }
-      if (divSalvaAnagrafica) {
-        divSalvaAnagrafica.style.display = isOverridden ? 'flex' : 'none';
-      }
-    }
+    badge.textContent = val ? '✓ Sincronizzato con anagrafica' : '— Usa sede legale —';
+    badge.className = val ? 'badge bg-success text-white ms-2' : 'badge bg-secondary text-white ms-2';
+    if (elBtnCancelEditSped) elBtnCancelEditSped.style.display = 'none';
+    if (divSalvaAnagrafica) divSalvaAnagrafica.style.display = 'none';
   }
 }
 
 function copyAddressToFields(ind) {
+  const elNomeSede = document.getElementById('consegna_nome_sede');
+  if (elNomeSede) elNomeSede.value = ind.nome_sede || '';
   if (inpConsegnaVia) inpConsegnaVia.value = ind.via || '';
   if (inpConsegnaCivico) inpConsegnaCivico.value = ind.civico || '';
   if (inpConsegnaCap) inpConsegnaCap.value = ind.cap || '';
@@ -1496,6 +1522,8 @@ function copyAddressToFields(ind) {
 }
 
 function clearAddressFields() {
+  const elNomeSede = document.getElementById('consegna_nome_sede');
+  if (elNomeSede) elNomeSede.value = '';
   [inpConsegnaVia, inpConsegnaCivico, inpConsegnaCap, inpConsegnaCitta, inpConsegnaProvincia, inpConsegnaPresso, inpConsegnaReferente, inpConsegnaTelefono, inpConsegnaNote].forEach(inp => {
     if (inp) inp.value = '';
   });
@@ -1506,37 +1534,25 @@ function clearAddressFields() {
 // Bind input change listeners to keep preview in sync
 [inpConsegnaVia, inpConsegnaCivico, inpConsegnaCap, inpConsegnaCitta, inpConsegnaProvincia, inpConsegnaNazione, inpConsegnaPresso, inpConsegnaReferente, inpConsegnaTelefono, inpConsegnaNote].forEach(inp => {
   if (inp) {
-    inp.addEventListener('input', () => {
-      if (spedSelect.value && spedSelect.value !== 'custom') {
-        syncAddressUI();
-      }
-    });
+    inp.addEventListener('input', syncAddressUI);
   }
 });
 
 if (spedSelect) {
   spedSelect.addEventListener('change', () => {
     clearAddressFields();
-    if (spedSelect.value && spedSelect.value !== 'custom') {
-      const ind = loadedAddresses.find(i => String(i.id) === String(spedSelect.value));
+    const val = spedSelect.value;
+    if (val && val !== 'custom') {
+      const ind = loadedAddresses.find(i => String(i.id) === String(val));
       if (ind) {
         copyAddressToFields(ind);
       }
+    } else if (!val) {
+      const ind = getOriginalAddress();
+      if (ind && ind.via) {
+        copyAddressToFields(ind);
+      }
     }
-    syncAddressUI();
-  });
-}
-
-if (elBtnEditSped) {
-  elBtnEditSped.addEventListener('click', () => {
-    if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'block';
-  });
-}
-
-if (elBtnClearSped) {
-  elBtnClearSped.addEventListener('click', () => {
-    spedSelect.value = '';
-    clearAddressFields();
     syncAddressUI();
   });
 }
@@ -1546,15 +1562,72 @@ if (elBtnCancelEditSped) {
     const val = spedSelect.value;
     if (val && val !== 'custom') {
       const ind = loadedAddresses.find(i => String(i.id) === String(val));
-      if (ind) {
-        copyAddressToFields(ind);
-      }
+      if (ind) copyAddressToFields(ind);
     } else {
-      clearAddressFields();
+      const ind = getOriginalAddress();
+      if (ind && ind.via) {
+        copyAddressToFields(ind);
+      } else {
+        clearAddressFields();
+      }
     }
     syncAddressUI();
   });
 }
+
+function getOriginalContact() {
+  const val = contSelect.value;
+  if (!val) {
+    return {};
+  }
+  return loadedContacts.find(c => String(c.id) === String(val)) || {};
+}
+
+function syncContactUI() {
+  const val = contSelect.value;
+  const orig = getOriginalContact();
+  
+  let hasOverride = false;
+  const checkField = (inputEl, origValue) => {
+    if (!inputEl) return;
+    const cur = inputEl.value.trim();
+    const ref = (origValue ?? '').trim();
+    if (cur !== ref) {
+      inputEl.classList.add('is-overridden');
+      hasOverride = true;
+    } else {
+      inputEl.classList.remove('is-overridden');
+    }
+  };
+  
+  checkField(contNomeInput, orig.nome_completo || '');
+  checkField(contTelInput, orig.telefono || orig.cellulare || custTelHidden?.value || '');
+  checkField(contEmailInput, orig.email || custEmailHidden?.value || '');
+  
+  const badge = document.getElementById('cont-state-badge');
+  const resetBtn = document.getElementById('btn-cancel-edit-cont');
+  
+  if (!val) {
+    badge.textContent = 'Recapiti manuali / una tantum';
+    badge.className = 'badge bg-info text-dark ms-2';
+    if (resetBtn) resetBtn.style.display = 'none';
+  } else if (hasOverride) {
+    badge.textContent = 'Modificato localmente (override)';
+    badge.className = 'badge bg-warning text-dark ms-2';
+    if (resetBtn) resetBtn.style.display = 'inline-block';
+  } else {
+    badge.textContent = '✓ Sincronizzato con anagrafica';
+    badge.className = 'badge bg-success text-white ms-2';
+    if (resetBtn) resetBtn.style.display = 'none';
+  }
+}
+
+// Bind input change listeners for contact
+[contNomeInput, contTelInput, contEmailInput].forEach(inp => {
+  if (inp) {
+    inp.addEventListener('input', syncContactUI);
+  }
+});
 
 if (contSelect) {
   contSelect.addEventListener('change', () => {
@@ -1571,6 +1644,41 @@ if (contSelect) {
         if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
       }
     }
+    syncContactUI();
+  });
+}
+
+const btnCancelEditCont = document.getElementById('btn-cancel-edit-cont');
+if (btnCancelEditCont) {
+  btnCancelEditCont.addEventListener('click', () => {
+    const contact = getOriginalContact();
+    if (contact && contact.nome_completo) {
+      if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
+      if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || custTelHidden?.value || '';
+      if (contEmailInput) contEmailInput.value = contact.email || custEmailHidden?.value || '';
+    } else {
+      if (contNomeInput) contNomeInput.value = '';
+      if (contTelInput) contTelInput.value = custTelHidden?.value || '';
+      if (contEmailInput) contEmailInput.value = custEmailHidden?.value || '';
+    }
+    syncContactUI();
+  });
+}
+
+// Implement Read-only Lock for status not 'bozza'
+const quoteStato = <?= json_encode($v['stato'] ?? 'bozza') ?>;
+if (quoteStato !== 'bozza') {
+  [spedSelect, contSelect, inpConsegnaVia, inpConsegnaCivico, inpConsegnaCap, inpConsegnaCitta, 
+   inpConsegnaProvincia, inpConsegnaNazione, inpConsegnaPresso, inpConsegnaReferente, 
+   inpConsegnaTelefono, inpConsegnaNote, contNomeInput, contTelInput, contEmailInput, chkSalvaAnagrafica]
+  .forEach(el => {
+    if (el) {
+      el.disabled = true;
+      el.readOnly = true;
+    }
+  });
+  [elBtnCancelEditSped, btnCancelEditCont].forEach(el => {
+    if (el) el.style.display = 'none';
   });
 }
 
