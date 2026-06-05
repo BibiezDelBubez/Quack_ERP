@@ -48,11 +48,6 @@ $can_edit = ($stato === 'bozza');
 #tbl-righe .col-iva    { width: 60px; }
 #tbl-righe .col-tot    { width: 100px; }
 #tbl-righe .col-del    { width: 36px; }
-#tbl-righe .qk-form-control {
-  padding-left: 0.25rem;
-  padding-right: 0.25rem;
-  font-size: 0.82rem;
-}
 #tbl-righe .col-costo   { width: 90px; }
 #tbl-righe .col-range   { width: 120px; }
 #tbl-righe .col-delta   { width: 90px; }
@@ -61,6 +56,84 @@ $can_edit = ($stato === 'bozza');
 .is-overridden {
   border-color: #f59e0b !important;
   background-color: #fef3c7 !important;
+}
+
+/* Compact the table cells */
+#tbl-righe th, #tbl-righe td {
+  padding: 0.5rem 0.4rem !important;
+  font-size: 0.85rem;
+}
+#tbl-righe th {
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: var(--qk-text-secondary, #4b5563);
+  font-weight: 600;
+  border-bottom: 2px solid var(--qk-border, #e5e7eb) !important;
+}
+/* Sleek, borderless-look inputs in the table */
+#tbl-righe .qk-form-control {
+  border: 1px solid var(--qk-border, #d1d5db);
+  background-color: var(--qk-bg-card, #fff);
+  padding: 4px 6px;
+  font-size: 0.82rem;
+  border-radius: var(--qk-radius-sm, 4px);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  height: 31px;
+}
+#tbl-righe .qk-form-control:focus {
+  border-color: var(--qk-accent, #3b82f6);
+  box-shadow: 0 0 0 2px var(--qk-accent-muted, rgba(59, 130, 246, 0.15));
+}
+#tbl-righe textarea.inp-desc {
+  min-height: 38px;
+  height: 38px;
+  resize: vertical;
+  line-height: 1.3;
+  padding: 4px 6px;
+  font-size: 0.82rem;
+  overflow-y: auto;
+}
+/* Read-only styles: transparent background and no borders */
+#tbl-righe.is-readonly .col-del {
+  display: none !important;
+}
+#tbl-righe.is-readonly .qk-form-control:disabled,
+fieldset[disabled] #tbl-righe.is-readonly .qk-form-control,
+#pane-spedizione-contatti .qk-form-control:disabled,
+fieldset[disabled] #pane-spedizione-contatti .qk-form-control,
+#pane-condizioni-commerciali .qk-form-control:disabled,
+fieldset[disabled] #pane-condizioni-commerciali .qk-form-control,
+#pane-note .qk-form-control:disabled,
+fieldset[disabled] #pane-note .qk-form-control {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: var(--qk-text-primary) !important;
+  cursor: default !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+#tbl-righe.is-readonly textarea.inp-desc:disabled,
+fieldset[disabled] #tbl-righe.is-readonly textarea.inp-desc {
+  resize: none !important;
+  overflow: hidden !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  line-height: 1.4 !important;
+}
+#tbl-righe.is-readonly .col-del,
+#tbl-righe.is-readonly .qk-ac-clear,
+#tbl-righe.is-readonly .price-origin-badge,
+#tbl-righe.is-readonly .col-costo,
+#tbl-righe.is-readonly .col-range,
+#tbl-righe.is-readonly .col-delta {
+  display: none !important;
 }
 
 /* Stili Catalogo Prodotti */
@@ -223,12 +296,13 @@ $can_edit = ($stato === 'bozza');
 </div>
 
 <form method="post" id="form-offerta" action="">
-  <fieldset style="border:none; padding:0; margin:0;"<?= !$can_edit ? ' disabled' : '' ?>>
   <?= csrf_field() ?>
 
   <!-- Cliente nascosto -->
   <input type="hidden" name="cliente_id"    id="cliente_id"    value="<?= e($v['cliente_id']) ?>">
   <input type="hidden" name="cliente_label" id="cliente_label" value="<?= e($v['cliente_label']) ?>">
+
+  <fieldset style="border:none; padding:0; margin:0;"<?= !$can_edit ? ' disabled' : '' ?>>
 
   <!-- Top Primary Fields Grid -->
   <div class="qk-card mb-3">
@@ -344,6 +418,7 @@ $can_edit = ($stato === 'bozza');
       </div>
     </div>
   </div>
+  </fieldset>
 
   <!-- Odoo-style Navigation Tabs -->
   <div class="qk-card mb-3">
@@ -377,6 +452,7 @@ $can_edit = ($stato === 'bozza');
         <!-- Tab Prodotti -->
         <div class="tab-pane active" id="pane-prodotti">
           
+          <?php if ($can_edit): ?>
           <!-- Catalogo Prodotti Widget -->
           <div class="qk-card mb-3 p-3 bg-light border-0 shadow-xs" style="border-radius: var(--qk-border-radius-lg, 8px);">
             <div class="d-flex align-items-center justify-content-between mb-2">
@@ -397,6 +473,7 @@ $can_edit = ($stato === 'bozza');
               </div>
             </div>
           </div>
+          <?php endif; ?>
 
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
             <h4 style="font-size:1rem; margin:0;"><i class="fa-solid fa-list me-2"></i>Righe preventivo</h4>
@@ -408,12 +485,14 @@ $can_edit = ($stato === 'bozza');
                   <option value="stock" <?= ($v['uom_mode'] ?? 'commercial') === 'stock' ? 'selected' : '' ?>>Unità di stock</option>
                 </select>
               </div>
+              <?php if ($can_edit): ?>
               <button type="button" id="btn-nuovo-prodotto" class="btn-qk btn-qk-secondary btn-qk-sm">
                 <i class="fa-solid fa-box-open"></i> Nuovo prodotto
               </button>
+              <?php endif; ?>
               
               <div class="qk-dropdown-container" style="position:relative; display:inline-block; line-height:1;">
-                <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-col-settings" title="Mostra/Nascondi colonne">
+                <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-col-settings" title="Mostra/Nascondi colonne" style="display: inline-flex; align-items: center; gap: 0.25rem;">
                   <i class="fa-solid fa-sliders"></i> Colonne
                 </button>
                 <div class="qk-dropdown-menu shadow-sm" id="col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.6rem .8rem; min-width:180px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
@@ -422,6 +501,12 @@ $can_edit = ($stato === 'bozza');
                       <input type="checkbox" id="chk-show-conf" style="transform:scale(1.15);" checked>
                       <span>Confezione</span>
                     </label>
+                    <?php if ($can_edit): ?>
+                    <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                      <input type="checkbox" id="chk-show-range" style="transform:scale(1.15);" checked>
+                      <span>Range RRP</span>
+                    </label>
+                    <?php endif; ?>
                     <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
                       <input type="checkbox" id="chk-show-sconto" style="transform:scale(1.15);">
                       <span>Sconto</span>
@@ -434,14 +519,17 @@ $can_edit = ($stato === 'bozza');
                 </div>
               </div>
 
+              <?php if ($can_edit): ?>
               <button type="button" id="btn-aggiungi-riga" class="btn-qk btn-qk-primary btn-qk-sm">
                 <i class="fa-solid fa-plus"></i> Aggiungi riga
               </button>
+              <?php endif; ?>
             </div>
           </div>
           
+          <fieldset style="border:none; padding:0; margin:0;"<?= !$can_edit ? ' disabled' : '' ?>>
           <div class="qk-table-wrap">
-            <table class="qk-table" id="tbl-righe">
+            <table class="qk-table <?= !$can_edit ? 'is-readonly' : '' ?>" id="tbl-righe">
               <thead>
                 <tr>
                   <th class="col-search">Cerca prodotto</th>
@@ -491,6 +579,7 @@ $can_edit = ($stato === 'bozza');
               </div>
             </div>
 
+            <?php if ($can_edit): ?>
             <!-- Margins Summary Row (Mockup Style) -->
             <div class="row g-3 mt-3 pt-3 border-top">
               <div class="col-6 col-md-3">
@@ -518,11 +607,14 @@ $can_edit = ($stato === 'bozza');
                 </div>
               </div>
             </div>
+            <?php endif; ?>
           </div>
+          </fieldset>
         </div>
 
         <!-- Tab Spedizione & Contatti -->
         <div class="tab-pane d-none" id="pane-spedizione-contatti">
+          <fieldset style="border:none; padding:0; margin:0; width:100%;"<?= !$can_edit ? ' disabled' : '' ?>>
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem;">
             
             <!-- Destinatario & Spedizione -->
@@ -666,10 +758,12 @@ $can_edit = ($stato === 'bozza');
             </div>
 
           </div>
+          </fieldset>
         </div>
 
         <!-- Tab Condizioni Commerciali -->
         <div class="tab-pane d-none" id="pane-condizioni-commerciali">
+          <fieldset style="border:none; padding:0; margin:0; width:100%;"<?= !$can_edit ? ' disabled' : '' ?>>
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
             
             <!-- Fatturazione & Canali -->
@@ -704,10 +798,12 @@ $can_edit = ($stato === 'bozza');
             </div>
 
           </div>
+          </fieldset>
         </div>
 
         <!-- Tab Note -->
         <div class="tab-pane d-none" id="pane-note">
+          <fieldset style="border:none; padding:0; margin:0; width:100%;"<?= !$can_edit ? ' disabled' : '' ?>>
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
             <div class="qk-form-group">
               <label class="qk-form-label"><i class="fa-solid fa-note-sticky me-1"></i>Note per il cliente (in offerta)</label>
@@ -720,6 +816,7 @@ $can_edit = ($stato === 'bozza');
                         placeholder="Memo o note per il team interno..."><?= e($v['note_interne']) ?></textarea>
             </div>
           </div>
+          </fieldset>
         </div>
 
       </div>
@@ -743,7 +840,6 @@ $can_edit = ($stato === 'bozza');
     </a>
   </div>
 
-  </fieldset>
 </form><!-- /form-offerta -->
 
 
@@ -874,6 +970,14 @@ document.addEventListener('DOMContentLoaded', function () {
 const CSRF   = <?= json_encode(csrf_token()) ?>;
 const BASE   = (typeof QK_BASE !== 'undefined') ? QK_BASE : '';
 const PRELOADED_RIGHE = <?= json_encode($preloadedRighe ?? []) ?>;
+
+// Global settings references
+const btnColSettings = document.getElementById('btn-col-settings');
+const colSettingsDropdown = document.getElementById('col-settings-dropdown');
+const chkShowConf = document.getElementById('chk-show-conf');
+const chkShowSconto = document.getElementById('chk-show-sconto');
+const chkShowIva = document.getElementById('chk-show-iva');
+const chkShowRange = document.getElementById('chk-show-range');
 
 /* ─────────────────────────────────────────────────────────────────────────
    UTILITÀ & AC FETCH
@@ -1084,7 +1188,7 @@ function buildRiga(prefill = {}) {
     </td>
     <td class="col-desc">
       <textarea name="righe[${idx}][descrizione]" class="qk-form-control inp-desc"
-                placeholder="Descrizione prodotto" rows="1" style="min-height:31px; height:31px; resize:vertical; padding-top:4px; padding-bottom:4px; line-height:1.2; font-size:0.85rem;">${esc(prefill.descrizione || '')}</textarea>
+                placeholder="Descrizione prodotto" rows="1">${esc(prefill.descrizione || '')}</textarea>
     </td>
     <td class="col-conf">
       <input type="text" name="righe[${idx}][quantita_confezione]" class="qk-form-control riga-conf inp-quantita-confezione"
@@ -1212,6 +1316,19 @@ function buildRiga(prefill = {}) {
 
   document.getElementById('tbody-righe').appendChild(tr);
   calcTotali();
+  
+  // auto-resize height for description textarea
+  const descTextarea = tr.querySelector('.inp-desc');
+  if (descTextarea) {
+    const autoResizeTextarea = (el) => {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    };
+    descTextarea.addEventListener('input', () => autoResizeTextarea(descTextarea));
+    // Run after appending to DOM
+    setTimeout(() => autoResizeTextarea(descTextarea), 0);
+  }
+
   if (typeof updateColumnVisibility === 'function') {
     updateColumnVisibility();
   }
@@ -1360,8 +1477,8 @@ if (elUomMode) {
   });
 }
 
-document.getElementById('btn-aggiungi-riga').addEventListener('click', () => buildRiga());
-document.getElementById('sconto_globale').addEventListener('input', calcTotali);
+document.getElementById('btn-aggiungi-riga')?.addEventListener('click', () => buildRiga());
+document.getElementById('sconto_globale')?.addEventListener('input', calcTotali);
 
 // Load preloaded rows if any exist
 if (PRELOADED_RIGHE && PRELOADED_RIGHE.length > 0) {
@@ -1556,7 +1673,7 @@ document.getElementById('btn-salva-cliente').addEventListener('click', async () 
    SALVA NUOVO PRODOTTO (AJAX)
  ───────────────────────────────────────────────────────────────────────── */
 
-document.getElementById('btn-nuovo-prodotto').addEventListener('click', () => openModal('modal-nuovo-prodotto', null));
+document.getElementById('btn-nuovo-prodotto')?.addEventListener('click', () => openModal('modal-nuovo-prodotto', null));
 
 document.getElementById('btn-salva-prodotto').addEventListener('click', async () => {
   hideModalError('mnp');
@@ -2185,11 +2302,6 @@ if (elClienteId && elClienteId.value) {
 refetchAllRowPrices();
 
 /* ── Mostra/Nascondi Colonne Odoo-Style ────────────────────────────── */
-const btnColSettings = document.getElementById('btn-col-settings');
-const colSettingsDropdown = document.getElementById('col-settings-dropdown');
-const chkShowConf = document.getElementById('chk-show-conf');
-const chkShowSconto = document.getElementById('chk-show-sconto');
-const chkShowIva = document.getElementById('chk-show-iva');
 
 if (btnColSettings && colSettingsDropdown) {
   btnColSettings.addEventListener('click', (e) => {
@@ -2209,6 +2321,7 @@ function updateColumnVisibility() {
   const showConf = chkShowConf ? chkShowConf.checked : true;
   const showSconto = chkShowSconto ? chkShowSconto.checked : false;
   const showIva = chkShowIva ? chkShowIva.checked : false;
+  const showRange = chkShowRange ? chkShowRange.checked : true;
 
   document.querySelectorAll('.col-conf').forEach(el => {
     el.style.display = showConf ? '' : 'none';
@@ -2219,9 +2332,12 @@ function updateColumnVisibility() {
   document.querySelectorAll('.col-iva').forEach(el => {
     el.style.display = showIva ? '' : 'none';
   });
+  document.querySelectorAll('.col-range').forEach(el => {
+    el.style.display = showRange ? '' : 'none';
+  });
 }
 
-[chkShowConf, chkShowSconto, chkShowIva].forEach(chk => {
+[chkShowConf, chkShowSconto, chkShowIva, chkShowRange].forEach(chk => {
   if (chk) {
     chk.addEventListener('change', updateColumnVisibility);
   }
