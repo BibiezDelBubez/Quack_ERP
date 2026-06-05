@@ -1,0 +1,8 @@
+creazione preventivo
+Che senso ha avere una select per i listini sia nel pannello delle info principali, sia nelle condizioni commerciali?
+Le unità di misura non si leggono completamente. Oltre a trovare una soluzione, verifica che tra i vari campi input di una riga non ci siano spazi eccessivi che rubano spazio, e prevedi che dove possibile il testo possa andare in autowrap.
+
+Inoltre manca un bottone per nascondere le colonne, come nelle rfq. Nascondi automaticamente sconto e iva
+Perché l'header della colonna "Qtà *	" ha un asterisco?
+
+C'è un campo di note aggiuntive per il cliente e un campo di note consegna. Al momento viene stampato nei vari documenti solo il campo di note aggiuntive

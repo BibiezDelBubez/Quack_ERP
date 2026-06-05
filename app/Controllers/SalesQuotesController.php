@@ -1001,6 +1001,14 @@ final class SalesQuotesController extends BaseController
                 <td>' . $consegnaIndirizzo . '</td>
             </tr>';
 
+        if (!empty($quota['consegna_note'])) {
+            $html .= '
+            <tr>
+                <td class="lbl">Note Consegna:</td>
+                <td>' . e($quota['consegna_note']) . '</td>
+            </tr>';
+        }
+
         if (!empty($quota['note_cliente'])) {
             $html .= '
             <tr>
@@ -1238,6 +1246,12 @@ final class SalesQuotesController extends BaseController
         $condTable->addRow();
         $condTable->addCell(2500)->addText('Luogo di Destinazione:', $fontBold);
         $condTable->addCell(8040)->addText($consegnaIndirizzo, $fontNormal);
+
+        if (!empty($quota['consegna_note'])) {
+            $condTable->addRow();
+            $condTable->addCell(2500)->addText('Note Consegna:', $fontBold);
+            $condTable->addCell(8040)->addText($quota['consegna_note'], $fontNormal);
+        }
 
         if (!empty($quota['note_cliente'])) {
             $condTable->addRow();

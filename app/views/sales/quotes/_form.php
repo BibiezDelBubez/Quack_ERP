@@ -38,7 +38,6 @@ $can_edit = ($stato === 'bozza');
   .qk-form-sticky-actions { flex-wrap: wrap; }
 }
 
-/* Specific table layouts */
 #tbl-righe .col-search { min-width: 180px; width: 22%; }
 #tbl-righe .col-desc   { min-width: 200px; width: 28%; }
 #tbl-righe .col-conf   { width: 90px; }
@@ -49,6 +48,11 @@ $can_edit = ($stato === 'bozza');
 #tbl-righe .col-iva    { width: 60px; }
 #tbl-righe .col-tot    { width: 100px; }
 #tbl-righe .col-del    { width: 36px; }
+#tbl-righe .qk-form-control {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  font-size: 0.82rem;
+}
 #tbl-righe .col-costo   { width: 90px; }
 #tbl-righe .col-range   { width: 120px; }
 #tbl-righe .col-delta   { width: 90px; }
@@ -91,6 +95,22 @@ $can_edit = ($stato === 'bozza');
   <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
 </div>
 <?php endif; ?>
+
+<?php if (!empty($_SESSION['flash_success'])): ?>
+<div class="qk-alert qk-alert-success" data-auto-dismiss="7000">
+  <i class="fa-solid fa-circle-check"></i>
+  <span><?= e($_SESSION['flash_success']) ?></span>
+  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
+</div>
+<?php unset($_SESSION['flash_success']); endif; ?>
+
+<?php if (!empty($_SESSION['flash_error'])): ?>
+<div class="qk-alert qk-alert-danger" data-auto-dismiss="7000">
+  <i class="fa-solid fa-circle-xmark"></i>
+  <span><?= e($_SESSION['flash_error']) ?></span>
+  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
+</div>
+<?php unset($_SESSION['flash_error']); endif; ?>
 
 <!-- Barra Azioni e Stato (Odoo style) -->
 <div class="d-flex justify-content-between align-items-center mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
@@ -391,6 +411,29 @@ $can_edit = ($stato === 'bozza');
               <button type="button" id="btn-nuovo-prodotto" class="btn-qk btn-qk-secondary btn-qk-sm">
                 <i class="fa-solid fa-box-open"></i> Nuovo prodotto
               </button>
+              
+              <div class="qk-dropdown-container" style="position:relative; display:inline-block; line-height:1;">
+                <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-col-settings" title="Mostra/Nascondi colonne">
+                  <i class="fa-solid fa-sliders"></i> Colonne
+                </button>
+                <div class="qk-dropdown-menu shadow-sm" id="col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.6rem .8rem; min-width:180px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                  <div style="display:flex; flex-direction:column; gap:.5rem;">
+                    <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                      <input type="checkbox" id="chk-show-conf" style="transform:scale(1.15);" checked>
+                      <span>Confezione</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                      <input type="checkbox" id="chk-show-sconto" style="transform:scale(1.15);">
+                      <span>Sconto</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                      <input type="checkbox" id="chk-show-iva" style="transform:scale(1.15);">
+                      <span>IVA</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <button type="button" id="btn-aggiungi-riga" class="btn-qk btn-qk-primary btn-qk-sm">
                 <i class="fa-solid fa-plus"></i> Aggiungi riga
               </button>
@@ -631,37 +674,7 @@ $can_edit = ($stato === 'bozza');
             
             <!-- Fatturazione & Canali -->
             <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-file-invoice-dollar me-1"></i>Fatturazione</h4>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Azienda venditrice</label>
-                <select name="azienda_interna_id" id="quote-azienda-interna-id" class="qk-form-control">
-                  <?php foreach ($aziende as $az): ?>
-                    <option value="<?= $az['id'] ?>" <?= (string)($v['azienda_interna_id'] ?? '') === (string)$az['id'] ? 'selected' : '' ?>>
-                      <?= e($az['ragione_sociale']) ?>
-                    </option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Listino prezzi</label>
-                <select name="listino_id" id="quote-listino-id" class="qk-form-control">
-                  <option value="">— Nessuno (Prezzi liberi) —</option>
-                  <?php foreach ($listini as $lst): ?>
-                    <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>>
-                      <?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)
-                    </option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-            </div>
-
-            <!-- Condizioni Pagamento -->
-            <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-credit-card me-1"></i>Pagamento & Valuta</h4>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Condizioni di pagamento</label>
-                <input type="text" name="condizioni_pagamento" id="quote-condizioni-pagamento" class="qk-form-control" value="<?= e($v['condizioni_pagamento']) ?>" placeholder="Es. 30 gg d.f.f.m.">
-              </div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-file-invoice-dollar me-1"></i>Vendita & Canali</h4>
               <div class="qk-form-row">
                 <div class="qk-form-group">
                   <label class="qk-form-label">Canale vendita</label>
@@ -678,6 +691,15 @@ $can_edit = ($stato === 'bozza');
                     <option value="USD" <?= ($v['valuta'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
                   </select>
                 </div>
+              </div>
+            </div>
+
+            <!-- Condizioni Pagamento -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-credit-card me-1"></i>Pagamento</h4>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Condizioni di pagamento</label>
+                <input type="text" name="condizioni_pagamento" id="quote-condizioni-pagamento" class="qk-form-control" value="<?= e($v['condizioni_pagamento']) ?>" placeholder="Es. 30 gg d.f.f.m.">
               </div>
             </div>
 
@@ -1061,8 +1083,8 @@ function buildRiga(prefill = {}) {
       <input type="hidden" name="righe[${idx}][sku]" class="inp-sku" value="${esc(prefill.sku || '')}">
     </td>
     <td class="col-desc">
-      <input type="text" name="righe[${idx}][descrizione]" class="qk-form-control inp-desc"
-             placeholder="Descrizione prodotto" value="${esc(prefill.descrizione || '')}">
+      <textarea name="righe[${idx}][descrizione]" class="qk-form-control inp-desc"
+                placeholder="Descrizione prodotto" rows="1" style="min-height:31px; height:31px; resize:vertical; padding-top:4px; padding-bottom:4px; line-height:1.2; font-size:0.85rem;">${esc(prefill.descrizione || '')}</textarea>
     </td>
     <td class="col-conf">
       <input type="text" name="righe[${idx}][quantita_confezione]" class="qk-form-control riga-conf inp-quantita-confezione"
@@ -1190,6 +1212,9 @@ function buildRiga(prefill = {}) {
 
   document.getElementById('tbody-righe').appendChild(tr);
   calcTotali();
+  if (typeof updateColumnVisibility === 'function') {
+    updateColumnVisibility();
+  }
   return tr;
 }
 
@@ -2158,6 +2183,52 @@ if (elClienteId && elClienteId.value) {
 
 // Unconditionally refetch pricing origins for existing rows on page load
 refetchAllRowPrices();
+
+/* ── Mostra/Nascondi Colonne Odoo-Style ────────────────────────────── */
+const btnColSettings = document.getElementById('btn-col-settings');
+const colSettingsDropdown = document.getElementById('col-settings-dropdown');
+const chkShowConf = document.getElementById('chk-show-conf');
+const chkShowSconto = document.getElementById('chk-show-sconto');
+const chkShowIva = document.getElementById('chk-show-iva');
+
+if (btnColSettings && colSettingsDropdown) {
+  btnColSettings.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isVisible = colSettingsDropdown.style.display === 'block';
+    colSettingsDropdown.style.display = isVisible ? 'none' : 'block';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!colSettingsDropdown.contains(e.target) && e.target !== btnColSettings) {
+      colSettingsDropdown.style.display = 'none';
+    }
+  });
+}
+
+function updateColumnVisibility() {
+  const showConf = chkShowConf ? chkShowConf.checked : true;
+  const showSconto = chkShowSconto ? chkShowSconto.checked : false;
+  const showIva = chkShowIva ? chkShowIva.checked : false;
+
+  document.querySelectorAll('.col-conf').forEach(el => {
+    el.style.display = showConf ? '' : 'none';
+  });
+  document.querySelectorAll('.col-sc').forEach(el => {
+    el.style.display = showSconto ? '' : 'none';
+  });
+  document.querySelectorAll('.col-iva').forEach(el => {
+    el.style.display = showIva ? '' : 'none';
+  });
+}
+
+[chkShowConf, chkShowSconto, chkShowIva].forEach(chk => {
+  if (chk) {
+    chk.addEventListener('change', updateColumnVisibility);
+  }
+});
+
+// Run initial visibility check
+updateColumnVisibility();
 
 });
 </script>
