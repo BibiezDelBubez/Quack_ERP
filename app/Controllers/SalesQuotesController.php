@@ -86,6 +86,29 @@ final class SalesQuotesController extends BaseController
                     if (empty($errors)) {
                         try {
                             $user_id = (int) (current_user()['id'] ?? 0);
+                            
+                            if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
+                                $newAddrId = qk_insert_indirizzo_cliente($this->pdo, (int)$values['cliente_id'], [
+                                    'tipo' => 'spedizione',
+                                    'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
+                                    'predefinito' => false,
+                                    'referente_consegna' => $values['consegna_referente'],
+                                    'telefono_consegna' => $values['consegna_telefono'],
+                                    'presso' => $values['consegna_presso'],
+                                    'via' => $values['consegna_via'],
+                                    'civico' => $values['consegna_civico'],
+                                    'cap' => $values['consegna_cap'],
+                                    'citta' => $values['consegna_citta'],
+                                    'provincia' => $values['consegna_provincia'],
+                                    'nazione' => $values['consegna_nazione'] ?: 'IT',
+                                    'note_consegna' => $values['consegna_note'],
+                                ]);
+                                $values['indirizzo_spedizione_id'] = $newAddrId;
+                            }
+                            if ($values['indirizzo_spedizione_id'] === 'custom' || !is_numeric($values['indirizzo_spedizione_id'])) {
+                                $values['indirizzo_spedizione_id'] = '';
+                            }
+
                             $id      = qk_insert_offerta($this->pdo, $values, $righe, $user_id);
                             
                             // If order was generated / accepted, we log compliance transactions if any
@@ -187,6 +210,29 @@ final class SalesQuotesController extends BaseController
                     if (empty($errors)) {
                         try {
                             $user_id = (int) (current_user()['id'] ?? 0);
+                            
+                            if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
+                                $newAddrId = qk_insert_indirizzo_cliente($this->pdo, (int)$values['cliente_id'], [
+                                    'tipo' => 'spedizione',
+                                    'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
+                                    'predefinito' => false,
+                                    'referente_consegna' => $values['consegna_referente'],
+                                    'telefono_consegna' => $values['consegna_telefono'],
+                                    'presso' => $values['consegna_presso'],
+                                    'via' => $values['consegna_via'],
+                                    'civico' => $values['consegna_civico'],
+                                    'cap' => $values['consegna_cap'],
+                                    'citta' => $values['consegna_citta'],
+                                    'provincia' => $values['consegna_provincia'],
+                                    'nazione' => $values['consegna_nazione'] ?: 'IT',
+                                    'note_consegna' => $values['consegna_note'],
+                                ]);
+                                $values['indirizzo_spedizione_id'] = $newAddrId;
+                            }
+                            if ($values['indirizzo_spedizione_id'] === 'custom' || !is_numeric($values['indirizzo_spedizione_id'])) {
+                                $values['indirizzo_spedizione_id'] = '';
+                            }
+
                             qk_update_offerta($this->pdo, $id, $values, $righe, $user_id);
                             
                             if (($values['stato'] ?? '') === 'accettata') {
@@ -242,6 +288,16 @@ final class SalesQuotesController extends BaseController
             'contatto_email'          => $quote['contatto_email'] ?? '',
             'contatto_telefono'       => $quote['contatto_telefono'] ?? '',
             'indirizzo_spedizione_id' => $quote['indirizzo_spedizione_id'] ?? '',
+            'consegna_via'            => $quote['consegna_via'] ?? '',
+            'consegna_civico'         => $quote['consegna_civico'] ?? '',
+            'consegna_cap'            => $quote['consegna_cap'] ?? '',
+            'consegna_citta'          => $quote['consegna_citta'] ?? '',
+            'consegna_provincia'      => $quote['consegna_provincia'] ?? '',
+            'consegna_nazione'        => $quote['consegna_nazione'] ?? '',
+            'consegna_presso'         => $quote['consegna_presso'] ?? '',
+            'consegna_referente'      => $quote['consegna_referente'] ?? '',
+            'consegna_telefono'       => $quote['consegna_telefono'] ?? '',
+            'consegna_note'           => $quote['consegna_note'] ?? '',
             'data_offerta'            => $quote['data_offerta'] ?? '',
             'data_scadenza'           => $quote['data_scadenza'] ?? '',
             'data_consegna_richiesta' => $quote['data_consegna_richiesta'] ?? '',
@@ -459,6 +515,17 @@ final class SalesQuotesController extends BaseController
             'contatto_email'          => '',
             'contatto_telefono'       => '',
             'indirizzo_spedizione_id' => '',
+            'consegna_via'            => '',
+            'consegna_civico'         => '',
+            'consegna_cap'            => '',
+            'consegna_citta'          => '',
+            'consegna_provincia'      => '',
+            'consegna_nazione'        => 'IT',
+            'consegna_presso'         => '',
+            'consegna_referente'      => '',
+            'consegna_telefono'       => '',
+            'consegna_note'           => '',
+            'salva_in_anagrafica_indirizzo' => '',
             'data_offerta'            => date('Y-m-d'),
             'data_scadenza'           => date('Y-m-d', strtotime('+6 months')),
             'data_consegna_richiesta' => '',
@@ -488,6 +555,18 @@ final class SalesQuotesController extends BaseController
             'contatto_email'          => post('contatto_email'),
             'contatto_telefono'       => post('contatto_telefono'),
             'indirizzo_spedizione_id' => post('indirizzo_spedizione_id'),
+            'consegna_nome_sede'      => post('consegna_nome_sede'),
+            'consegna_via'            => post('consegna_via'),
+            'consegna_civico'         => post('consegna_civico'),
+            'consegna_cap'            => post('consegna_cap'),
+            'consegna_citta'          => post('consegna_citta'),
+            'consegna_provincia'      => post('consegna_provincia'),
+            'consegna_nazione'        => post('consegna_nazione'),
+            'consegna_presso'         => post('consegna_presso'),
+            'consegna_referente'      => post('consegna_referente'),
+            'consegna_telefono'       => post('consegna_telefono'),
+            'consegna_note'           => post('consegna_note'),
+            'salva_in_anagrafica_indirizzo' => post('salva_in_anagrafica_indirizzo'),
             'data_offerta'            => post('data_offerta'),
             'data_scadenza'           => post('data_scadenza'),
             'data_consegna_richiesta' => post('data_consegna_richiesta'),

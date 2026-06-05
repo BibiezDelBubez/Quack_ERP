@@ -229,7 +229,20 @@ function qk_denormalize_offerta_details(PDO $pdo, array $values): array
     }
 
     $consegna = null;
-    if (!empty($values['indirizzo_spedizione_id'])) {
+    if (!empty($values['consegna_via'])) {
+        $consegna = [
+            'via'                => $values['consegna_via'] ?? null,
+            'civico'             => $values['consegna_civico'] ?? null,
+            'cap'                => $values['consegna_cap'] ?? null,
+            'citta'              => $values['consegna_citta'] ?? null,
+            'provincia'          => $values['consegna_provincia'] ?? null,
+            'nazione'            => $values['consegna_nazione'] ?? null,
+            'presso'             => $values['consegna_presso'] ?? null,
+            'referente_consegna' => $values['consegna_referente'] ?? null,
+            'telefono_consegna'  => $values['consegna_telefono'] ?? null,
+            'note_consegna'      => $values['consegna_note'] ?? null,
+        ];
+    } elseif (!empty($values['indirizzo_spedizione_id']) && is_numeric($values['indirizzo_spedizione_id'])) {
         $stInd = $pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
         $stInd->execute([(int)$values['indirizzo_spedizione_id']]);
         $consegna = $stInd->fetch(PDO::FETCH_ASSOC);

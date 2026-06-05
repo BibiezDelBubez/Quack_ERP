@@ -247,8 +247,13 @@ $v = $values;
           </button>
         </li>
         <li class="nav-item">
-          <button class="nav-link" id="tab-altre-info-btn" type="button" onclick="switchQuoteTab('altre-info')">
-            <i class="fa-solid fa-circle-info me-1"></i> Altre Info
+          <button class="nav-link" id="tab-spedizione-contatti-btn" type="button" onclick="switchQuoteTab('spedizione-contatti')">
+            <i class="fa-solid fa-truck-fast me-1"></i> Spedizione & Contatti
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="tab-condizioni-commerciali-btn" type="button" onclick="switchQuoteTab('condizioni-commerciali')">
+            <i class="fa-solid fa-file-invoice-dollar me-1"></i> Condizioni Commerciali
           </button>
         </li>
         <li class="nav-item">
@@ -332,80 +337,208 @@ $v = $values;
           </div>
         </div>
 
-        <!-- Tab Altre Info -->
-        <div class="tab-pane d-none" id="pane-altre-info">
-          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+        <!-- Tab Spedizione & Contatti -->
+        <div class="tab-pane d-none" id="pane-spedizione-contatti">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem;">
             
-            <!-- Spedizione & Consegna -->
+            <!-- Destinatario & Spedizione -->
             <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Spedizione & Consegna</h4>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-truck-ramp-box me-1"></i>Spedizione & Destinazione</h4>
+              
               <div class="qk-form-group">
-                <label class="qk-form-label">Indirizzo di consegna</label>
+                <label class="qk-form-label">Seleziona indirizzo di consegna</label>
                 <select name="indirizzo_spedizione_id" id="quote-indirizzo-spedizione-id" class="qk-form-control" data-selected-id="<?= e($v['indirizzo_spedizione_id'] ?? '') ?>">
                   <option value="">Seleziona cliente prima...</option>
                 </select>
               </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Data consegna richiesta</label>
-                <input type="date" name="data_consegna_richiesta" class="qk-form-control"
-                       value="<?= e($v['data_consegna_richiesta']) ?>">
+
+              <!-- Box Preview dell'indirizzo selezionato -->
+              <div id="sped-preview-box" class="border rounded p-3 mb-3 bg-light" style="display:none; position:relative; border-color: var(--qk-border) !important;">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <strong id="sp-nome-sede" class="text-primary" style="font-size: 0.9rem;">Magazzino</strong>
+                    <div id="sp-dettagli" class="mt-1 text-muted" style="font-size:0.85rem; line-height: 1.4;"></div>
+                    <div id="sp-recapiti" class="mt-1 fw-semibold" style="font-size:0.8rem; color:var(--qk-text-secondary);"></div>
+                    <div id="sp-note" class="mt-1" style="font-size:0.8rem; font-style:italic; color:var(--qk-text-muted);"></div>
+                  </div>
+                  <div class="d-flex gap-1" style="flex-shrink: 0;">
+                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-primary" id="btn-edit-sped" title="Modifica per questo documento"><i class="fa-solid fa-pen"></i></button>
+                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-clear-sped" title="Rimuovi"><i class="fa-solid fa-xmark"></i></button>
+                  </div>
+                </div>
               </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Trasporto (Resa)</label>
-                <input type="text" name="trasporto" class="qk-form-control"
-                       value="<?= e($v['trasporto']) ?>" placeholder="Es. Franco destino">
+
+              <!-- Campi dettagli indirizzo (Snapshot/Override) -->
+              <div id="sped-fields-box" class="border rounded p-3 mb-3" style="display:none; background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;"><i class="fa-solid fa-map-location-dot me-1"></i>Dettagli Spedizione</h6>
+                  <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-sped" title="Annulla modifiche"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
+                </div>
+                
+                <input type="hidden" name="consegna_nome_sede" id="consegna_nome_sede" value="">
+                
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group flex-grow-1">
+                    <label class="qk-form-label">Via / Piazza <span class="required">*</span></label>
+                    <input type="text" name="consegna_via" id="consegna_via" class="qk-form-control" value="<?= e($v['consegna_via'] ?? '') ?>">
+                  </div>
+                  <div class="qk-form-group" style="flex: 0 0 80px;">
+                    <label class="qk-form-label">Civico</label>
+                    <input type="text" name="consegna_civico" id="consegna_civico" class="qk-form-control" value="<?= e($v['consegna_civico'] ?? '') ?>">
+                  </div>
+                </div>
+
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group" style="flex: 0 0 100px;">
+                    <label class="qk-form-label">CAP <span class="required">*</span></label>
+                    <input type="text" name="consegna_cap" id="consegna_cap" class="qk-form-control" value="<?= e($v['consegna_cap'] ?? '') ?>">
+                  </div>
+                  <div class="qk-form-group flex-grow-1">
+                    <label class="qk-form-label">Città <span class="required">*</span></label>
+                    <input type="text" name="consegna_citta" id="consegna_citta" class="qk-form-control" value="<?= e($v['consegna_citta'] ?? '') ?>">
+                  </div>
+                </div>
+                
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Provincia</label>
+                    <input type="text" name="consegna_provincia" id="consegna_provincia" class="qk-form-control" maxlength="2" placeholder="Es. MI" value="<?= e($v['consegna_provincia'] ?? '') ?>">
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Nazione</label>
+                    <input type="text" name="consegna_nazione" id="consegna_nazione" class="qk-form-control" maxlength="2" placeholder="IT" value="<?= e($v['consegna_nazione'] ?? 'IT') ?>">
+                  </div>
+                </div>
+
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Presso (c/o)</label>
+                  <input type="text" name="consegna_presso" id="consegna_presso" class="qk-form-control" value="<?= e($v['consegna_presso'] ?? '') ?>" placeholder="Es. Magazzino logistica, Cantiere B">
+                </div>
+
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Referente Consegna</label>
+                    <input type="text" name="consegna_referente" id="consegna_referente" class="qk-form-control" value="<?= e($v['consegna_referente'] ?? '') ?>" placeholder="Persona sul posto">
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Tel. Consegna</label>
+                    <input type="text" name="consegna_telefono" id="consegna_telefono" class="qk-form-control" value="<?= e($v['consegna_telefono'] ?? '') ?>">
+                  </div>
+                </div>
+
+                <div class="qk-form-group mb-3">
+                  <label class="qk-form-label">Note Consegna</label>
+                  <input type="text" name="consegna_note" id="consegna_note" class="qk-form-control" value="<?= e($v['consegna_note'] ?? '') ?>" placeholder="Es. Consegnare solo al mattino, citofono 2">
+                </div>
+
+                <!-- Checkbox salva in anagrafica -->
+                <div id="div-salva-in-anagrafica-addr" style="display:none; align-items: center; gap: 0.5rem; padding-top: 0.25rem;">
+                  <input type="checkbox" name="salva_in_anagrafica_indirizzo" id="salva_in_anagrafica_indirizzo" value="1" style="transform: scale(1.1);">
+                  <label class="qk-form-label mb-0" for="salva_in_anagrafica_indirizzo" style="cursor:pointer; color: var(--qk-accent);">
+                    Salva in anagrafica per usi futuri
+                  </label>
+                </div>
+              </div>
+
+              <div class="qk-form-row">
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Data consegna richiesta</label>
+                  <input type="date" name="data_consegna_richiesta" class="qk-form-control" value="<?= e($v['data_consegna_richiesta']) ?>">
+                </div>
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Trasporto (Resa)</label>
+                  <input type="text" name="trasporto" class="qk-form-control" value="<?= e($v['trasporto']) ?>" placeholder="Es. Franco destino">
+                </div>
               </div>
             </div>
 
             <!-- Referente & Recapiti -->
             <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-address-card me-1"></i>Referente Cliente</h4>
+              
               <div class="qk-form-group">
-                <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
+                <label class="qk-form-label">Seleziona referente da anagrafica</label>
                 <select name="contatto_id" id="quote-contatto-id" class="qk-form-control" data-selected-id="<?= e($v['contatto_id'] ?? '') ?>">
                   <option value="">Seleziona cliente prima...</option>
                 </select>
-                <input type="hidden" name="contatto_nome" id="quote-contatto-nome" value="<?= e($v['contatto_nome'] ?? '') ?>">
                 <!-- Fallback info -->
                 <input type="hidden" id="customer-generale-telefono" value="">
                 <input type="hidden" id="customer-generale-email" value="">
               </div>
+
               <div class="qk-form-group">
-                <label class="qk-form-label">Telefono di contatto</label>
-                <input type="text" name="contatto_telefono" id="quote-contatto-telefono" class="qk-form-control"
-                       placeholder="Es. +39 02 123456"
-                       value="<?= e($v['contatto_telefono']) ?>">
+                <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
+                <input type="text" name="contatto_nome" id="quote-contatto-nome" class="qk-form-control" value="<?= e($v['contatto_nome'] ?? $v['alla_ca'] ?? '') ?>" placeholder="Es. Dott. Mario Rossi">
               </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Email di contatto</label>
-                <input type="email" name="contatto_email" id="quote-contatto-email" class="qk-form-control"
-                       placeholder="Es. mario.rossi@cliente.com"
-                       value="<?= e($v['contatto_email']) ?>">
+
+              <div class="qk-form-row">
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Telefono referente</label>
+                  <input type="text" name="contatto_telefono" id="quote-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($v['contatto_telefono']) ?>">
+                </div>
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Email referente</label>
+                  <input type="email" name="contatto_email" id="quote-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@cliente.com" value="<?= e($v['contatto_email']) ?>">
+                </div>
               </div>
             </div>
 
-            <!-- Condizioni & Fatturazione -->
+          </div>
+        </div>
+
+        <!-- Tab Condizioni Commerciali -->
+        <div class="tab-pane d-none" id="pane-condizioni-commerciali">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+            
+            <!-- Fatturazione & Canali -->
             <div>
-              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Fatturazione & Canali</h4>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-file-invoice-dollar me-1"></i>Fatturazione</h4>
               <div class="qk-form-group">
-                <label class="qk-form-label">Condizioni di pagamento</label>
-                <input type="text" name="condizioni_pagamento" id="quote-condizioni-pagamento" class="qk-form-control"
-                       value="<?= e($v['condizioni_pagamento']) ?>" placeholder="Es. 30 gg d.f.f.m.">
-              </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Canale vendita</label>
-                <select name="canale_vendita" class="qk-form-control">
-                  <?php foreach (['email_diretta'=>'Email diretta','dropshipping'=>'Dropshipping','agente'=>'Agente','sito'=>'Sito web'] as $kk => $lbl): ?>
-                  <option value="<?= e($kk) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $kk ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                <label class="qk-form-label">Azienda venditrice</label>
+                <select name="azienda_interna_id" id="quote-azienda-interna-id" class="qk-form-control">
+                  <?php foreach ($aziende as $az): ?>
+                    <option value="<?= $az['id'] ?>" <?= (string)($v['azienda_interna_id'] ?? '') === (string)$az['id'] ? 'selected' : '' ?>>
+                      <?= e($az['ragione_sociale']) ?>
+                    </option>
                   <?php endforeach; ?>
                 </select>
               </div>
               <div class="qk-form-group">
-                <label class="qk-form-label">Valuta</label>
-                <select name="valuta" class="qk-form-control">
-                  <option value="EUR" <?= ($v['valuta'] ?? 'EUR') === 'EUR' ? 'selected' : '' ?>>EUR (€)</option>
-                  <option value="USD" <?= ($v['valuta'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
+                <label class="qk-form-label">Listino prezzi</label>
+                <select name="listino_id" id="quote-listino-id" class="qk-form-control">
+                  <option value="">— Nessuno (Prezzi liberi) —</option>
+                  <?php foreach ($listini as $lst): ?>
+                    <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>>
+                      <?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)
+                    </option>
+                  <?php endforeach; ?>
                 </select>
+              </div>
+            </div>
+
+            <!-- Condizioni Pagamento -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;"><i class="fa-solid fa-credit-card me-1"></i>Pagamento & Valuta</h4>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Condizioni di pagamento</label>
+                <input type="text" name="condizioni_pagamento" id="quote-condizioni-pagamento" class="qk-form-control" value="<?= e($v['condizioni_pagamento']) ?>" placeholder="Es. 30 gg d.f.f.m.">
+              </div>
+              <div class="qk-form-row">
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Canale vendita</label>
+                  <select name="canale_vendita" class="qk-form-control">
+                    <?php foreach (['email_diretta'=>'Email diretta','dropshipping'=>'Dropshipping','agente'=>'Agente','sito'=>'Sito web'] as $kk => $lbl): ?>
+                    <option value="<?= e($kk) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $kk ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Valuta</label>
+                  <select name="valuta" class="qk-form-control">
+                    <option value="EUR" <?= ($v['valuta'] ?? 'EUR') === 'EUR' ? 'selected' : '' ?>>EUR (€)</option>
+                    <option value="USD" <?= ($v['valuta'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1167,14 +1300,35 @@ window.switchQuoteTab = function(tabId) {
 
 const spedSelect = document.getElementById('quote-indirizzo-spedizione-id');
 const contSelect = document.getElementById('quote-contatto-id');
-const contNomeHidden = document.getElementById('quote-contatto-nome');
+const contNomeInput = document.getElementById('quote-contatto-nome');
 const contTelInput = document.getElementById('quote-contatto-telefono');
 const contEmailInput = document.getElementById('quote-contatto-email');
 const custTelHidden = document.getElementById('customer-generale-telefono');
 const custEmailHidden = document.getElementById('customer-generale-email');
 const condPagInput = document.getElementById('quote-condizioni-pagamento');
 
+// Elementi Address Preview / Override
+const elSpedPreviewBox    = document.getElementById('sped-preview-box');
+const elSpedFieldsBox     = document.getElementById('sped-fields-box');
+const elBtnEditSped       = document.getElementById('btn-edit-sped');
+const elBtnClearSped       = document.getElementById('btn-clear-sped');
+const elBtnCancelEditSped = document.getElementById('btn-cancel-edit-sped');
+
+const inpConsegnaVia       = document.getElementById('consegna_via');
+const inpConsegnaCivico    = document.getElementById('consegna_civico');
+const inpConsegnaCap       = document.getElementById('consegna_cap');
+const inpConsegnaCitta     = document.getElementById('consegna_citta');
+const inpConsegnaProvincia = document.getElementById('consegna_provincia');
+const inpConsegnaNazione   = document.getElementById('consegna_nazione');
+const inpConsegnaPresso    = document.getElementById('consegna_presso');
+const inpConsegnaReferente = document.getElementById('consegna_referente');
+const inpConsegnaTelefono  = document.getElementById('consegna_telefono');
+const inpConsegnaNote      = document.getElementById('consegna_note');
+const divSalvaAnagrafica   = document.getElementById('div-salva-in-anagrafica-addr');
+const chkSalvaAnagrafica   = document.getElementById('salva_in_anagrafica_indirizzo');
+
 let loadedContacts = [];
+let loadedAddresses = [];
 
 async function loadClienteDettagli() {
   if (!spedSelect || !contSelect) return;
@@ -1194,6 +1348,7 @@ async function loadClienteDettagli() {
     if (!data.ok) throw new Error(data.error || 'Errore recupero dettagli');
 
     loadedContacts = data.contatti || [];
+    loadedAddresses = data.indirizzi || [];
     
     // Save general info for fallback
     if (custTelHidden) custTelHidden.value = data.cliente?.telefono || '';
@@ -1225,7 +1380,8 @@ async function loadClienteDettagli() {
     // Populate Addresses
     spedSelect.innerHTML = '<option value="">— Nessun indirizzo specifico (Usa sede legale) —</option>';
     const selectedSpedId = spedSelect.dataset.selectedId;
-    data.indirizzi.forEach(ind => {
+    
+    loadedAddresses.forEach(ind => {
       const option = document.createElement('option');
       option.value = ind.id;
       
@@ -1236,7 +1392,6 @@ async function loadClienteDettagli() {
         addrStr += `, ${ind.cap || ''} ${ind.citta || ''}`.trim();
       }
       if (addrStr) labelParts.push(addrStr);
-      if (ind.referente_consegna) labelParts.push(`(Ref: ${ind.referente_consegna})`);
       option.textContent = labelParts.join(' ');
 
       if (selectedSpedId && String(ind.id) === String(selectedSpedId)) {
@@ -1244,6 +1399,18 @@ async function loadClienteDettagli() {
       }
       spedSelect.appendChild(option);
     });
+
+    // Option for custom address
+    const customOption = document.createElement('option');
+    customOption.value = 'custom';
+    customOption.textContent = '+ Inserisci indirizzo personalizzato (una tantum)...';
+    if (selectedSpedId === 'custom' || (!selectedSpedId && inpConsegnaVia && inpConsegnaVia.value)) {
+      customOption.selected = true;
+    }
+    spedSelect.appendChild(customOption);
+
+    // Initial sync of address UI on edit load
+    syncAddressUI();
 
     // Populate Contacts
     contSelect.innerHTML = '<option value="">— Nessuno (Usa recapiti generali azienda) —</option>';
@@ -1264,19 +1431,144 @@ async function loadClienteDettagli() {
   }
 }
 
+function syncAddressUI() {
+  const val = spedSelect.value;
+  if (!val) {
+    // Sede legale / Empty
+    if (elSpedPreviewBox) elSpedPreviewBox.style.display = 'none';
+    if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'none';
+  } else if (val === 'custom') {
+    // Custom address mode
+    if (elSpedPreviewBox) elSpedPreviewBox.style.display = 'none';
+    if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'block';
+    if (divSalvaAnagrafica) divSalvaAnagrafica.style.display = 'flex';
+  } else {
+    // Existing address
+    const ind = loadedAddresses.find(i => String(i.id) === String(val));
+    if (ind) {
+      const isNewForm = !inpConsegnaVia.value;
+      if (isNewForm) {
+        copyAddressToFields(ind);
+      }
+      
+      const isOverridden = inpConsegnaVia.value !== (ind.via || '') ||
+                           inpConsegnaCivico.value !== (ind.civico || '') ||
+                           inpConsegnaCap.value !== (ind.cap || '') ||
+                           inpConsegnaCitta.value !== (ind.citta || '') ||
+                           inpConsegnaProvincia.value !== (ind.provincia || '') ||
+                           inpConsegnaNazione.value !== (ind.nazione || 'IT') ||
+                           inpConsegnaPresso.value !== (ind.presso || '') ||
+                           inpConsegnaReferente.value !== (ind.referente_consegna || '') ||
+                           inpConsegnaTelefono.value !== (ind.telefono_consegna || '') ||
+                           inpConsegnaNote.value !== (ind.note_consegna || '');
+      
+      document.getElementById('sp-nome-sede').textContent = (ind.nome_sede || 'Magazzino') + (isOverridden ? ' (Modificato per questo documento)' : '');
+      document.getElementById('sp-dettagli').textContent = `${inpConsegnaVia.value || ''} ${inpConsegnaCivico.value || ''}, ${inpConsegnaCap.value || ''} ${inpConsegnaCitta.value || ''} (${inpConsegnaProvincia.value || ''}) - ${inpConsegnaNazione.value || 'IT'}`;
+      
+      const recParts = [];
+      if (inpConsegnaReferente.value) recParts.push(`Ref: ${inpConsegnaReferente.value}`);
+      if (inpConsegnaTelefono.value) recParts.push(`Tel: ${inpConsegnaTelefono.value}`);
+      document.getElementById('sp-recapiti').textContent = recParts.join(' · ');
+      document.getElementById('sp-note').textContent = inpConsegnaNote.value ? `Note: ${inpConsegnaNote.value}` : '';
+
+      if (elSpedPreviewBox) elSpedPreviewBox.style.display = 'block';
+      if (elSpedFieldsBox) {
+        elSpedFieldsBox.style.display = isOverridden ? 'block' : 'none';
+      }
+      if (divSalvaAnagrafica) {
+        divSalvaAnagrafica.style.display = isOverridden ? 'flex' : 'none';
+      }
+    }
+  }
+}
+
+function copyAddressToFields(ind) {
+  if (inpConsegnaVia) inpConsegnaVia.value = ind.via || '';
+  if (inpConsegnaCivico) inpConsegnaCivico.value = ind.civico || '';
+  if (inpConsegnaCap) inpConsegnaCap.value = ind.cap || '';
+  if (inpConsegnaCitta) inpConsegnaCitta.value = ind.citta || '';
+  if (inpConsegnaProvincia) inpConsegnaProvincia.value = ind.provincia || '';
+  if (inpConsegnaNazione) inpConsegnaNazione.value = ind.nazione || 'IT';
+  if (inpConsegnaPresso) inpConsegnaPresso.value = ind.presso || '';
+  if (inpConsegnaReferente) inpConsegnaReferente.value = ind.referente_consegna || '';
+  if (inpConsegnaTelefono) inpConsegnaTelefono.value = ind.telefono_consegna || '';
+  if (inpConsegnaNote) inpConsegnaNote.value = ind.note_consegna || '';
+}
+
+function clearAddressFields() {
+  [inpConsegnaVia, inpConsegnaCivico, inpConsegnaCap, inpConsegnaCitta, inpConsegnaProvincia, inpConsegnaPresso, inpConsegnaReferente, inpConsegnaTelefono, inpConsegnaNote].forEach(inp => {
+    if (inp) inp.value = '';
+  });
+  if (inpConsegnaNazione) inpConsegnaNazione.value = 'IT';
+  if (chkSalvaAnagrafica) chkSalvaAnagrafica.checked = false;
+}
+
+// Bind input change listeners to keep preview in sync
+[inpConsegnaVia, inpConsegnaCivico, inpConsegnaCap, inpConsegnaCitta, inpConsegnaProvincia, inpConsegnaNazione, inpConsegnaPresso, inpConsegnaReferente, inpConsegnaTelefono, inpConsegnaNote].forEach(inp => {
+  if (inp) {
+    inp.addEventListener('input', () => {
+      if (spedSelect.value && spedSelect.value !== 'custom') {
+        syncAddressUI();
+      }
+    });
+  }
+});
+
+if (spedSelect) {
+  spedSelect.addEventListener('change', () => {
+    clearAddressFields();
+    if (spedSelect.value && spedSelect.value !== 'custom') {
+      const ind = loadedAddresses.find(i => String(i.id) === String(spedSelect.value));
+      if (ind) {
+        copyAddressToFields(ind);
+      }
+    }
+    syncAddressUI();
+  });
+}
+
+if (elBtnEditSped) {
+  elBtnEditSped.addEventListener('click', () => {
+    if (elSpedFieldsBox) elSpedFieldsBox.style.display = 'block';
+  });
+}
+
+if (elBtnClearSped) {
+  elBtnClearSped.addEventListener('click', () => {
+    spedSelect.value = '';
+    clearAddressFields();
+    syncAddressUI();
+  });
+}
+
+if (elBtnCancelEditSped) {
+  elBtnCancelEditSped.addEventListener('click', () => {
+    const val = spedSelect.value;
+    if (val && val !== 'custom') {
+      const ind = loadedAddresses.find(i => String(i.id) === String(val));
+      if (ind) {
+        copyAddressToFields(ind);
+      }
+    } else {
+      clearAddressFields();
+    }
+    syncAddressUI();
+  });
+}
+
 if (contSelect) {
   contSelect.addEventListener('change', () => {
     const selectedId = contSelect.value;
     if (!selectedId) {
       if (contTelInput) contTelInput.value = custTelHidden?.value || '';
       if (contEmailInput) contEmailInput.value = custEmailHidden?.value || '';
-      if (contNomeHidden) contNomeHidden.value = '';
+      if (contNomeInput) contNomeInput.value = '';
     } else {
       const contact = loadedContacts.find(c => String(c.id) === String(selectedId));
       if (contact) {
         if (contTelInput) contTelInput.value = contact.telefono || contact.cellulare || custTelHidden?.value || '';
         if (contEmailInput) contEmailInput.value = contact.email || custEmailHidden?.value || '';
-        if (contNomeHidden) contNomeHidden.value = contact.nome_completo || '';
+        if (contNomeInput) contNomeInput.value = contact.nome_completo || '';
       }
     }
   });
