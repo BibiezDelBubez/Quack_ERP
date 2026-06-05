@@ -277,29 +277,32 @@
   ──────────────────────────────────────────────────────────────────────── */
   window.qkConvertUom = function ({ value, price, qFactor, targetMode }) {
     qFactor = parseFloat(qFactor) || 1;
-    let convertedValue = parseFloat(value) || 0;
-    let convertedPrice = parseFloat(price) || 0;
+    const hasValue = (value !== undefined && value !== null && value !== '');
+    const hasPrice = (price !== undefined && price !== null && price !== '');
+    
+    let convertedValue = hasValue ? parseFloat(value) : null;
+    let convertedPrice = hasPrice ? parseFloat(price) : null;
 
     if (qFactor <= 0 || qFactor === 1) {
       return {
-        value: value ? convertedValue : null,
-        price: price ? convertedPrice : null
+        value: convertedValue,
+        price: convertedPrice
       };
     }
 
     if (targetMode === 'commercial') {
       // Stock -> Commercial (Quantity multiplied by content factor, Price divided)
-      if (value) convertedValue = convertedValue * qFactor;
-      if (price) convertedPrice = convertedPrice / qFactor;
+      if (hasValue && !isNaN(convertedValue)) convertedValue = convertedValue * qFactor;
+      if (hasPrice && !isNaN(convertedPrice)) convertedPrice = convertedPrice / qFactor;
     } else if (targetMode === 'stock') {
       // Commercial -> Stock (Quantity divided, Price multiplied)
-      if (value) convertedValue = convertedValue / qFactor;
-      if (price) convertedPrice = convertedPrice * qFactor;
+      if (hasValue && !isNaN(convertedValue)) convertedValue = convertedValue / qFactor;
+      if (hasPrice && !isNaN(convertedPrice)) convertedPrice = convertedPrice * qFactor;
     }
 
     return {
-      value: value ? parseFloat(convertedValue.toFixed(3)) : null,
-      price: price ? parseFloat(convertedPrice.toFixed(4)) : null
+      value: (hasValue && !isNaN(convertedValue)) ? parseFloat(convertedValue.toFixed(3)) : null,
+      price: (hasPrice && !isNaN(convertedPrice)) ? parseFloat(convertedPrice.toFixed(4)) : null
     };
   };
 

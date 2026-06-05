@@ -229,8 +229,8 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                 (ordine_id, offerta_riga_id, posizione_riga, prodotto_id, descrizione, sku_fornitore,
                  quantita_ordinata, quantita_ricevuta, unita_misura_id,
                  prezzo_unitario, sconto_perc, iva_perc, imponibile_riga, iva_riga,
-                 tolleranza_esubero_perc, data_consegna_prevista, quantita_stock, unita_misura_stock_id, note)
-             VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,0,?,?,?,?)"
+                 tolleranza_esubero_perc, data_consegna_prevista, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot, note)
+             VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,0,?,?,?,?,?)"
         );
         $stPian = $pdo->prepare(
             "INSERT INTO ordini_righe_pianificazione
@@ -243,21 +243,23 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $um_id = $r['unita_misura_id'];
             $qta = (float)$r['quantita_offerta'];
 
-            // Convert to stock UoM
+            // Convert to stock UoM with high-precision architecture
             $quantita_stock = $qta;
             $unita_misura_stock_id = $um_id;
+            $quantita_contenuto_snapshot = 1.0;
             if ($prodotto_id && $um_id) {
-                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
+                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
                 $stProdUm->execute([$prodotto_id]);
                 $prodUm = $stProdUm->fetch();
                 if ($prodUm) {
                     $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                     $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                    $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodotto_id);
+                    $quantita_contenuto_snapshot = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
                     if ((int)$um_id === $unita_misura_stock_id) {
                         $quantita_stock = $qta;
-                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
-                        $quantita_stock = round($qta / $factor, 3);
+                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
+                        // Stock quantity calculation using BCMath to avoid float precision issues in supply chain
+                        $quantita_stock = (float)bcdiv((string)$qta, (string)$quantita_contenuto_snapshot, 3);
                     }
                 }
             }
@@ -269,7 +271,7 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                 $r['prezzo_unitario'], $r['sconto_perc'], $r['iva_perc'],
                 $r['imponibile_riga'], $r['iva_riga'],
                 $r['data_consegna_prevista'],
-                $quantita_stock, $unita_misura_stock_id,
+                $quantita_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot,
                 $r['note'],
             ]);
             $riga_id = (int) $pdo->lastInsertId();

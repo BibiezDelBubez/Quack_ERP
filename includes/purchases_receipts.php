@@ -156,7 +156,7 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
         // Pre-compila righe con le rimanenze
         $righe = $pdo->prepare(
             'SELECT id AS ordine_riga_id, prodotto_id,
-                    quantita_ordinata, quantita_ricevuta, tolleranza_esubero_perc
+                    quantita_ordinata, quantita_ricevuta, tolleranza_esubero_perc, quantita_contenuto_snapshot
                FROM ordini_righe WHERE ordine_id = ?'
         );
         $righe->execute([$ordine_id]);
@@ -164,8 +164,8 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
         $stRiga = $pdo->prepare(
             'INSERT INTO ricezioni_righe
                 (ricezione_id, ordine_riga_id, prodotto_id,
-                 quantita_ricevuta, quantita_accettata, quantita_rifiutata)
-             VALUES (?,?,?,?,?,0)'
+                 quantita_ricevuta, quantita_accettata, quantita_rifiutata, quantita_contenuto_snapshot)
+             VALUES (?,?,?,?,?,0,?)'
         );
         foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $massimo   = (float)$r['quantita_ordinata'] * (1 + (float)$r['tolleranza_esubero_perc'] / 100);
@@ -178,6 +178,7 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
                 $r['prodotto_id'],
                 $rimanente,
                 $rimanente,
+                $r['quantita_contenuto_snapshot'] ?? 1.0,
             ]);
         }
 
@@ -247,7 +248,7 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 : 0.0;
             $motivoRifiuto = $input['motivo_rifiuto'] ?? '';
 
-            // Convert to stock UoM
+            // Convert to stock UoM using the transaction's conversion factor snapshot
             $quantita_stock = $qtaAccettata;
             $unita_misura_stock_id = null;
             
@@ -255,31 +256,34 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
             $stProdUm->execute([$prodottoId]);
             $prodUm = $stProdUm->fetch();
             
-            $stOrderUm = $pdo->prepare('SELECT unita_misura_id FROM ordini_righe WHERE id = ?');
+            $stOrderUm = $pdo->prepare('SELECT unita_misura_id, quantita_contenuto_snapshot FROM ordini_righe WHERE id = ?');
             $stOrderUm->execute([$ordineRigaId]);
-            $um_id = $stOrderUm->fetchColumn();
+            $orderRiga = $stOrderUm->fetch(PDO::FETCH_ASSOC);
+            
+            $um_id = $orderRiga ? $orderRiga['unita_misura_id'] : null;
+            $quantita_contenuto_snapshot = $orderRiga ? (float)$orderRiga['quantita_contenuto_snapshot'] : 1.0;
             
             if ($prodUm && $um_id) {
                 $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                 $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodottoId);
                 
                 if ((int)$um_id === $unita_misura_stock_id) {
                     $quantita_stock = $qtaAccettata;
-                } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
-                    $quantita_stock = round($qtaAccettata / $factor, 3);
+                } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
+                    // High-precision division using BCMath to maintain consistency with historical order UoM factor
+                    $quantita_stock = (float)bcdiv((string)$qtaAccettata, (string)$quantita_contenuto_snapshot, 3);
                 }
             } elseif ($prodUm) {
                 $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
             }
 
-            // Salva valori definitivi sulla riga ricezione
+            // Salva valori definitivi sulla riga ricezione (incluso lo snapshot per scopi di auditing storico)
             $pdo->prepare(
                 'UPDATE ricezioni_righe
                     SET quantita_accettata = ?, quantita_rifiutata = ?, motivo_rifiuto = ?,
-                        quantita_stock = ?, unita_misura_stock_id = ?
+                        quantita_stock = ?, unita_misura_stock_id = ?, quantita_contenuto_snapshot = ?
                   WHERE id = ?'
-            )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $quantita_stock, $unita_misura_stock_id, $rigaId]);
+            )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $quantita_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot, $rigaId]);
 
             if ($qtaAccettata <= 0) continue;
 

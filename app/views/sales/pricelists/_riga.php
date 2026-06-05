@@ -6,7 +6,8 @@
  * Lo stato è controllato dalla classe .is-editing sul <tr>.
  *
  * Variabili: $item (array con id, prodotto_id, prodotto_nome, sku_interno,
- *            unita_misura, quantita_minima, prezzo_unitario, sconto_perc, note)
+ *            unita_misura, quantita_minima, prezzo_unitario, sconto_perc, note,
+ *            uom_stock_id, uom_stock_code, uom_commercial_id, uom_commercial_code, unita_misura_id)
  */
 $_id     = $item['id']              ?? '';
 $_pid    = $item['prodotto_id']     ?? '';
@@ -21,9 +22,14 @@ $_note   = $item['note']            ?? '';
 <tr class="pl-riga"
     data-riga-id="<?= e($_id) ?>"
     data-prodotto-id="<?= e($_pid) ?>"
-    data-prodotto-nome="<?= e($_nome) ?>"
+    data-prodotto-name="<?= e($_nome) ?>"
     data-sku="<?= e($_sku) ?>"
     data-um="<?= e($_um) ?>"
+    data-uom-stock-id="<?= e($item['uom_stock_id'] ?? '') ?>"
+    data-uom-stock-code="<?= e($item['uom_stock_code'] ?? '') ?>"
+    data-uom-commercial-id="<?= e($item['uom_commercial_id'] ?? '') ?>"
+    data-uom-commercial-code="<?= e($item['uom_commercial_code'] ?? '') ?>"
+    data-uom-selected-id="<?= e($item['unita_misura_id'] ?? '') ?>"
     data-qmin="<?= $_qmin ?>"
     data-prezzo="<?= $_prezzo ?>"
     data-sconto="<?= $_sconto ?>"
@@ -46,7 +52,17 @@ $_note   = $item['note']            ?? '';
 
   <!-- ── UM ── -->
   <td class="pl-td-um">
-    <span class="pl-um-label"><?= e($_um) ?></span>
+    <span class="pl-view pl-um-label"><?= e($_um) ?></span>
+    <select class="pl-edit pl-input r-unita-misura-id" style="padding: .2rem .35rem; font-size: .8rem; text-align: left;">
+      <option value="<?= e($item['uom_stock_id'] ?? '') ?>" <?= (int)($item['unita_misura_id'] ?? $item['uom_stock_id'] ?? 0) === (int)($item['uom_stock_id'] ?? 0) ? 'selected' : '' ?>>
+        <?= e($item['uom_stock_code'] ?? 'pz') ?>
+      </option>
+      <?php if (!empty($item['uom_commercial_id'])): ?>
+        <option value="<?= e($item['uom_commercial_id']) ?>" <?= (int)($item['unita_misura_id'] ?? 0) === (int)$item['uom_commercial_id'] ? 'selected' : '' ?>>
+          <?= e($item['uom_commercial_code']) ?>
+        </option>
+      <?php endif; ?>
+    </select>
   </td>
 
   <!-- ── Q.tà minima ── -->

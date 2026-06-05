@@ -204,12 +204,19 @@ final class SalesPricelistsController extends BaseController
             }
         }
 
-        // Righe prodotto
+        // Righe prodotto (con UoM nativa del prezzo o fallback UoM stock)
         $stmtItems = $this->pdo->prepare(
-            "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, um.codice AS unita_misura
+            "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, 
+                    COALESCE(um_p.codice, um_stock.codice) AS unita_misura,
+                    p.unita_misura_stock_id AS uom_stock_id,
+                    um_stock.codice AS uom_stock_code,
+                    p.unita_contenuto_id AS uom_commercial_id,
+                    um_comm.codice AS uom_commercial_code
              FROM listini_prezzi lp
              JOIN prodotti p ON p.id = lp.prodotto_id
-             LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+             LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
+             LEFT JOIN unita_misura um_p ON um_p.id = lp.unita_misura_id
+             LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
              WHERE lp.listino_id = :lid
              ORDER BY p.nome ASC, lp.quantita_minima ASC"
         );
@@ -297,6 +304,7 @@ final class SalesPricelistsController extends BaseController
         $qMin        = filter_input(INPUT_POST, 'quantita_minima', FILTER_VALIDATE_FLOAT);
         $prezzo      = filter_input(INPUT_POST, 'prezzo_unitario', FILTER_VALIDATE_FLOAT);
         $sconto      = filter_input(INPUT_POST, 'sconto_perc', FILTER_VALIDATE_FLOAT);
+        $unitaMisuraId = filter_input(INPUT_POST, 'unita_misura_id', FILTER_VALIDATE_INT);
         $note        = trim(post('note') ?? '');
 
         if (!$listinoId || !$prodottoId || $prezzo === false || $prezzo === null) {
@@ -324,6 +332,7 @@ final class SalesPricelistsController extends BaseController
                         quantita_minima = :qmin,
                         prezzo_unitario = :prezzo,
                         sconto_perc     = :sconto,
+                        unita_misura_id = :unita_misura_id,
                         note            = :note
                      WHERE id = :id AND listino_id = :listino_id"
                 )->execute([
@@ -331,6 +340,7 @@ final class SalesPricelistsController extends BaseController
                     ':qmin'        => $qMin,
                     ':prezzo'      => $prezzo,
                     ':sconto'      => $sconto,
+                    ':unita_misura_id' => $unitaMisuraId ?: null,
                     ':note'        => $note ?: null,
                     ':id'          => $rigaId,
                     ':listino_id'  => $listinoId,
@@ -339,25 +349,33 @@ final class SalesPricelistsController extends BaseController
             } else {
                 // INSERT
                 $this->pdo->prepare(
-                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, note)
-                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :note)"
+                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note)
+                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :unita_misura_id, :note)"
                 )->execute([
                     ':listino_id'  => $listinoId,
                     ':prodotto_id' => $prodottoId,
                     ':qmin'        => $qMin,
                     ':prezzo'      => $prezzo,
                     ':sconto'      => $sconto,
+                    ':unita_misura_id' => $unitaMisuraId ?: null,
                     ':note'        => $note ?: null,
                 ]);
                 $newId = (int)$this->pdo->lastInsertId();
             }
 
-            // Restituisce la riga aggiornata con nome prodotto
+            // Restituisce la riga aggiornata con nome prodotto e UoM
             $stmtRow = $this->pdo->prepare(
-                "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, um.codice AS unita_misura
+                "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, 
+                        COALESCE(um_p.codice, um_stock.codice) AS unita_misura,
+                        p.unita_misura_stock_id AS uom_stock_id,
+                        um_stock.codice AS uom_stock_code,
+                        p.unita_contenuto_id AS uom_commercial_id,
+                        um_comm.codice AS uom_commercial_code
                  FROM listini_prezzi lp
                  JOIN prodotti p ON p.id = lp.prodotto_id
-                 LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+                 LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
+                 LEFT JOIN unita_misura um_p ON um_p.id = lp.unita_misura_id
+                 LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
                  WHERE lp.id = :id"
             );
             $stmtRow->execute([':id' => $newId]);
@@ -410,9 +428,12 @@ final class SalesPricelistsController extends BaseController
 
         $stmt = $this->pdo->prepare(
             "SELECT p.id, p.nome AS label, p.sku_interno AS sku, um.codice AS unita_misura,
+                    p.unita_misura_stock_id, um_c.codice AS unita_misura_commerciale,
+                    p.unita_contenuto_id, p.quantita_contenuto,
                     pf.rrp_min, pf.rrp_max
              FROM prodotti p
              LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+             LEFT JOIN unita_misura um_c ON um_c.id = p.unita_contenuto_id
              LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.attivo = 1
                 AND pf.ordine_preferenza_fornitore = (
                     SELECT MIN(pf2.ordine_preferenza_fornitore)
@@ -463,7 +484,7 @@ final class SalesPricelistsController extends BaseController
 
             foreach ($clientPricelists as $clientListino) {
                 $stmtP = $this->pdo->prepare(
-                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima
+                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
                      FROM listini_prezzi
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
@@ -493,6 +514,7 @@ final class SalesPricelistsController extends BaseController
                         'listino_nome'    => $clientListino['nome'],
                         'prezzo_sorgente' => $sorgente,
                         'origine'         => 'dedicato',
+                        'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
                     ];
                 }
             }
@@ -511,7 +533,7 @@ final class SalesPricelistsController extends BaseController
 
             if ($listino) {
                 $stmtP = $this->pdo->prepare(
-                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima
+                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
                      FROM listini_prezzi
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
@@ -541,6 +563,7 @@ final class SalesPricelistsController extends BaseController
                         'listino_nome'    => $listino['nome'],
                         'prezzo_sorgente' => $sorgente,
                         'origine'         => 'dedicato',
+                        'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
                     ];
                 }
             }
@@ -560,7 +583,7 @@ final class SalesPricelistsController extends BaseController
 
             if ($listino) {
                 $stmtP = $this->pdo->prepare(
-                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima
+                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
                      FROM listini_prezzi
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
@@ -590,6 +613,7 @@ final class SalesPricelistsController extends BaseController
                         'listino_nome'    => $listino['nome'],
                         'prezzo_sorgente' => $sorgente,
                         'origine'         => 'standard',
+                        'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
                     ];
                 }
             }
@@ -617,6 +641,7 @@ final class SalesPricelistsController extends BaseController
                 'listino_nome'    => 'Ricarico Emergenza Costo',
                 'prezzo_sorgente' => 'Ricarico emergenza su costo (+20%)',
                 'origine'         => 'costo',
+                'unita_misura_id' => null,
             ];
         }
 
@@ -629,6 +654,7 @@ final class SalesPricelistsController extends BaseController
             'listino_nome'    => 'Manuale',
             'prezzo_sorgente' => 'Nessun prezzo configurato',
             'origine'         => 'manuale',
+            'unita_misura_id' => null,
         ];
     }
 
@@ -689,6 +715,7 @@ final class SalesPricelistsController extends BaseController
                 'costo_unitario'  => $costo_unitario,
                 'rrp_min'         => $rrp_min,
                 'rrp_max'         => $rrp_max,
+                'unita_misura_id' => $priceInfo['unita_misura_id'],
             ]);
         } else {
             echo json_encode([
@@ -698,6 +725,7 @@ final class SalesPricelistsController extends BaseController
                 'valuta'          => 'EUR',
                 'prezzo_sorgente' => 'Nessun prezzo configurato',
                 'origine'         => 'manuale',
+                'unita_misura_id' => null,
             ]);
         }
         exit;

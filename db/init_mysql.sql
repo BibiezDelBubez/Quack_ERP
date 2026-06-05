@@ -507,8 +507,9 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori (
     lead_time_giorni        INTEGER,                    -- override del lead_time del fornitore per questo specifico prodotto
     attivo                  BOOLEAN       NOT NULL DEFAULT 1,
     note                    TEXT,
-    rrp_min                 DECIMAL(10,4),              -- prezzo di vendita MINIMO consigliato dal fornitore (in unita_misura_acquisto_id)
-    rrp_max                 DECIMAL(10,4),              -- prezzo di vendita MASSIMO consigliato dal fornitore (in unita_misura_acquisto_id)
+    rrp_min                 DECIMAL(10,4),              -- prezzo di vendita MINIMO consigliato dal fornitore
+    rrp_max                 DECIMAL(10,4),              -- prezzo di vendita MASSIMO consigliato dal fornitore
+    rrp_unita_misura_id     INTEGER       REFERENCES unita_misura(id), -- UoM associata a rrp_min/rrp_max
     created_at              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );
@@ -528,7 +529,8 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
     id                    INT AUTO_INCREMENT PRIMARY KEY,
     prodotto_fornitore_id INTEGER       NOT NULL REFERENCES prodotti_fornitori(id) ON DELETE CASCADE,
     quantita_minima       DECIMAL(10,3) NOT NULL DEFAULT 0,  -- 0 = prezzo base; >0 = prezzo a scaglione
-    prezzo                DECIMAL(10,4) NOT NULL,             -- sempre per unita_misura_stock_id del prodotto
+    prezzo                DECIMAL(10,4) NOT NULL,             -- prezzo unitario negoziato
+    unita_misura_id       INTEGER       REFERENCES unita_misura(id), -- UoM a cui si riferisce il prezzo
     sconto_perc           DECIMAL(5,2)  NOT NULL DEFAULT 0,  -- alternativo al prezzo già scontato
     valido_dal            DATE,                               -- NULL = sempre valido
     valido_al             DATE,                               -- NULL = senza scadenza
@@ -547,6 +549,7 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
     prodotto_id     INTEGER       NOT NULL REFERENCES prodotti(id),
     quantita_minima DECIMAL(10,3) NOT NULL DEFAULT 0,  -- scaglione quantità
     prezzo_unitario DECIMAL(10,4) NOT NULL,             -- imponibile
+    unita_misura_id INTEGER       REFERENCES unita_misura(id), -- UoM nativa del prezzo
     sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
     note            TEXT,
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -602,6 +605,7 @@ CREATE TABLE IF NOT EXISTS ordini_acquisto_righe (
     data_consegna_prevista DATE,                               -- override per la singola riga; NULL = usa la data dell'ordine
     quantita_stock         DECIMAL(10,3),                      -- quantità in unità stock
     unita_misura_stock_id  INTEGER       REFERENCES unita_misura(id), -- UoM di stock
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
     note                   TEXT
 );
 
@@ -660,6 +664,7 @@ CREATE TABLE IF NOT EXISTS ricevimento_merce_righe (
     quantita_ricevuta DECIMAL(10,3) NOT NULL,                              -- quantità fisicamente ricevuta
     quantita_stock    DECIMAL(10,3),                                  -- quantità in unità stock
     unita_misura_stock_id INTEGER    REFERENCES unita_misura(id),      -- UoM di stock
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
     note              TEXT
 );
 
@@ -818,6 +823,7 @@ CREATE TABLE IF NOT EXISTS preventivi_righe (
     is_adr          BOOLEAN       NOT NULL DEFAULT 0, -- riga contiene prodotto ADR
     quantita_stock  DECIMAL(10,3),                   -- quantità convertita in unità di stock
     unita_misura_stock_id INTEGER REFERENCES unita_misura(id), -- UoM di stock del prodotto
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
     posizione_riga  INTEGER       NOT NULL DEFAULT 0, -- ordine di visualizzazione
     note_riga       TEXT
 );
@@ -852,6 +858,7 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     costo_unitario     DECIMAL(10,4),                                  -- costo d'acquisto al momento dell'ordine
     quantita_stock     DECIMAL(10,3),                                  -- quantità in unità stock
     unita_misura_stock_id INTEGER    REFERENCES unita_misura(id),      -- UoM di stock
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
     note               TEXT
 );
 
@@ -1483,26 +1490,65 @@ CREATE TABLE IF NOT EXISTS ordini_righe (
     iva_riga                    DECIMAL(10,2),
     tolleranza_esubero_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
     data_consegna_prevista      DATE,         -- Override data di consegna della riga
-    data_consegna_richiesta      DATE,         -- Data di consegna originariamente richiesta (Arrivo previsto)
+    data_consegna_richiesta     DATE,         -- Data di consegna originariamente richiesta
+    quantita_stock              DECIMAL(10,3),                      -- quantità in unità stock
+    unita_misura_stock_id       INTEGER       REFERENCES unita_misura(id), -- UoM di stock
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
     note                        TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ricezioni_testata (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. RIC/2026/0001
+    ordine_id               INTEGER      NOT NULL REFERENCES ordini_testata(id),
+    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comodità
+    stato                   VARCHAR(20)  NOT NULL DEFAULT 'bozza',
+    data_attesa             DATE,         -- data attesa di arrivo
+    data_effettiva          DATETIME,     -- data/ora effettiva di ricezione
+    ddt_numero              VARCHAR(50),  -- numero DDT fornitore
+    ddt_data                DATE,
+    note                    TEXT,
+    creato_da               INTEGER      REFERENCES utenti(id),
+    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ricezioni_righe (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    ricezione_id            INTEGER       NOT NULL REFERENCES ricezioni_testata(id) ON DELETE CASCADE,
+    ordine_riga_id          INTEGER       REFERENCES ordini_righe(id),
+    pianificazione_id       INTEGER       REFERENCES ordini_righe_pianificazione(id),
+    prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
+    lotto_id                INTEGER       REFERENCES lotti(id),
+    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantità fisicamente conteggiata all'arrivo
+    quantita_accettata      DECIMAL(10,3),             -- quantità approvata per il magazzino
+    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,
+    motivo_rifiuto          TEXT,
+    ubicazione_stoccaggio   VARCHAR(50),
+    quantita_stock          DECIMAL(10,3),
+    unita_misura_stock_id   INTEGER       REFERENCES unita_misura(id),
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    note                    TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Indici per le nuove tabelle v2
-CREATE INDEX IF NOT EXISTS idx_rfq_testata_fornitore    ON rfq_testata(fornitore_id);
-CREATE INDEX IF NOT EXISTS idx_rfq_testata_stato        ON rfq_testata(stato);
-CREATE INDEX IF NOT EXISTS idx_rfq_testata_padre        ON rfq_testata(rfq_padre_id);
-CREATE INDEX IF NOT EXISTS idx_rfq_righe_rfq            ON rfq_righe(rfq_id);
-CREATE INDEX IF NOT EXISTS idx_rfq_righe_prodotto       ON rfq_righe(prodotto_id);
-CREATE INDEX IF NOT EXISTS idx_offerte_testata_rfq      ON offerte_testata(rfq_id);
-CREATE INDEX IF NOT EXISTS idx_offerte_testata_fornitore ON offerte_testata(fornitore_id);
-CREATE INDEX IF NOT EXISTS idx_offerte_testata_stato    ON offerte_testata(stato);
-CREATE INDEX IF NOT EXISTS idx_offerte_righe_offerta    ON offerte_righe(offerta_id);
-CREATE INDEX IF NOT EXISTS idx_offerte_righe_rfq_riga   ON offerte_righe(rfq_riga_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_testata_fornitore ON ordini_testata(fornitore_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_testata_stato     ON ordini_testata(stato);
-CREATE INDEX IF NOT EXISTS idx_ordini_testata_offerta   ON ordini_testata(offerta_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_righe_ordine      ON ordini_righe(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_righe_prodotto    ON ordini_righe(prodotto_id);
+CREATE INDEX idx_rfq_testata_fornitore    ON rfq_testata(fornitore_id);
+CREATE INDEX idx_rfq_testata_stato        ON rfq_testata(stato);
+CREATE INDEX idx_rfq_testata_padre        ON rfq_testata(rfq_padre_id);
+CREATE INDEX idx_rfq_righe_rfq            ON rfq_righe(rfq_id);
+CREATE INDEX idx_rfq_righe_prodotto       ON rfq_righe(prodotto_id);
+CREATE INDEX idx_offerte_testata_rfq      ON offerte_testata(rfq_id);
+CREATE INDEX idx_offerte_testata_fornitore ON offerte_testata(fornitore_id);
+CREATE INDEX idx_offerte_testata_stato    ON offerte_testata(stato);
+CREATE INDEX idx_offerte_righe_offerta    ON offerte_righe(offerta_id);
+CREATE INDEX idx_offerte_righe_rfq_riga   ON offerte_righe(rfq_riga_id);
+CREATE INDEX idx_ordini_testata_fornitore ON ordini_testata(fornitore_id);
+CREATE INDEX idx_ordini_testata_stato     ON ordini_testata(stato);
+CREATE INDEX idx_ordini_testata_offerta   ON ordini_testata(offerta_id);
+CREATE INDEX idx_ordini_righe_ordine      ON ordini_righe(ordine_id);
+CREATE INDEX idx_ordini_righe_prodotto    ON ordini_righe(prodotto_id);
+CREATE INDEX idx_ricezioni_testata_ordine  ON ricezioni_testata(ordine_id);
+CREATE INDEX idx_ricezioni_righe_ricezione ON ricezioni_righe(ricezione_id);
 
 -- Trigger per updated_at delle nuove tabelle v2
 

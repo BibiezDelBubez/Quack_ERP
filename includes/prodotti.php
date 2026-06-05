@@ -522,8 +522,8 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario) VALUES (1, ?, 0, ?)')
-                ->execute([$id, $prezzo_base]);
+            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES (1, ?, 0, ?, ?)')
+                ->execute([$id, $prezzo_base, $um_id]);
         }
 
         $pdo->commit();
@@ -544,6 +544,24 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
     $umStmt = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = :c');
     $umStmt->execute([':c' => $v['unita_misura'] ?? 'pz']);
     $um_id = $umStmt->fetchColumn() ?: null;
+
+    // Recupera la Stock UoM attuale per verificare se l'utente la sta cambiando
+    $stCurrent = $pdo->prepare('SELECT unita_misura_stock_id FROM prodotti WHERE id = ?');
+    $stCurrent->execute([$id]);
+    $currentUmId = $stCurrent->fetchColumn();
+
+    if ($currentUmId && (int)$currentUmId !== (int)$um_id) {
+        // Verifica se ci sono già stati movimenti fisici a magazzino per questo prodotto
+        $stMov = $pdo->prepare('SELECT COUNT(*) FROM movimenti_magazzino WHERE prodotto_id = ?');
+        $stMov->execute([$id]);
+        $hasMovements = (int)$stMov->fetchColumn() > 0;
+
+        if ($hasMovements) {
+            throw new \RuntimeException(
+                "Impossibile modificare l'unità di misura di stock: sono già presenti movimenti fisici di magazzino per questo prodotto nel sistema logistico."
+            );
+        }
+    }
 
     $pdo->beginTransaction();
     try {
@@ -605,11 +623,11 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
             $stmtCheckRule->execute([$id]);
             $ruleId = $stmtCheckRule->fetchColumn();
             if ($ruleId) {
-                $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ? WHERE id = ?')
-                    ->execute([$prezzo_base, $ruleId]);
+                $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ? WHERE id = ?')
+                    ->execute([$prezzo_base, $um_id, $ruleId]);
             } else {
-                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario) VALUES (1, ?, 0, ?)')
-                    ->execute([$id, $prezzo_base]);
+                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES (1, ?, 0, ?, ?)')
+                    ->execute([$id, $prezzo_base, $um_id]);
             }
         }
 

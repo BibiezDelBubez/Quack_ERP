@@ -2086,12 +2086,17 @@ async function fetchQuotePrice(tr) {
     if (data.ok) {
       let computedPrice = parseFloat(data.prezzo_unitario) || 0;
       
-      // Factoring in active UoM mode conversions (engine returns price in commercial/standard unit)
-      if (currentUomMode === 'stock') {
-        const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
-        if (qFactor > 0 && qFactor !== 1) {
-          computedPrice = computedPrice * qFactor;
-        }
+      // Convert list price from its native UoM to current visual UoM mode
+      const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
+      const nativeUomId = data.unita_misura_id ? parseInt(data.unita_misura_id) : null;
+      const isNativeCommercial = (nativeUomId && nativeUomId === parseInt(tr.dataset.uomCommercialId));
+      
+      if (isNativeCommercial && currentUomMode === 'stock' && qFactor > 0) {
+        // Price was configured in Commercial (e.g. KG) but we view in Stock (e.g. pz) -> multiply price by content factor
+        computedPrice = computedPrice * qFactor;
+      } else if (!isNativeCommercial && currentUomMode === 'commercial' && qFactor > 0) {
+        // Price was configured in Stock (e.g. pz) but we view in Commercial (e.g. KG) -> divide price by content factor
+        computedPrice = computedPrice / qFactor;
       }
       
       priceInput.value = parseFloat(computedPrice.toFixed(4));

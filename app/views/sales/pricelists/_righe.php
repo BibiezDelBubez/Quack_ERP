@@ -195,7 +195,11 @@
       </div>
     </td>
 
-    <td class="pl-td-um"><span class="pl-um-label">—</span></td>
+    <td class="pl-td-um">
+      <span class="pl-view pl-um-label">—</span>
+      <select class="pl-edit pl-input r-unita-misura-id" style="padding: .2rem .35rem; font-size: .8rem; text-align: left; display: none;">
+      </select>
+    </td>
 
     <td class="pl-td-num">
       <input class="pl-edit pl-input r-qmin" type="number" min="0" step="0.001" value="0" placeholder="0">
@@ -302,6 +306,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setInput(tr, '.r-prezzo', tr.dataset.prezzo ?? '');
     setInput(tr, '.r-sconto', tr.dataset.sconto ?? '0');
     setInput(tr, '.r-note',   tr.dataset.note   ?? '');
+    setInput(tr, '.r-unita-misura-id', tr.dataset.uomSelectedId || tr.dataset.uomStockId || '');
     tr.classList.add('is-editing');
     tr.querySelector('.r-qmin')?.focus();
     scrollToRow(tr);
@@ -332,6 +337,7 @@ document.addEventListener('DOMContentLoaded', function () {
         prezzo_unitario:  prezzo,
         quantita_minima:  getInput(tr, '.r-qmin')   || '0',
         sconto_perc:      getInput(tr, '.r-sconto')  || '0',
+        unita_misura_id:  getInput(tr, '.r-unita-misura-id') || null,
         note:             getInput(tr, '.r-note')    || '',
       });
 
@@ -382,6 +388,11 @@ document.addEventListener('DOMContentLoaded', function () {
     tr.dataset.prodottoNome = r.prodotto_nome;
     tr.dataset.sku         = r.sku_interno;
     tr.dataset.um          = r.unita_misura ?? '';
+    tr.dataset.uomStockId  = r.uom_stock_id ?? '';
+    tr.dataset.uomStockCode = r.uom_stock_code ?? '';
+    tr.dataset.uomCommercialId = r.uom_commercial_id ?? '';
+    tr.dataset.uomCommercialCode = r.uom_commercial_code ?? '';
+    tr.dataset.uomSelectedId = r.unita_misura_id ?? '';
     tr.dataset.qmin        = r.quantita_minima;
     tr.dataset.prezzo      = r.prezzo_unitario;
     tr.dataset.sconto      = r.sconto_perc;
@@ -394,6 +405,30 @@ document.addEventListener('DOMContentLoaded', function () {
     if (sku)  sku.textContent = r.sku_interno;
 
     setText(tr, '.pl-um-label', r.unita_misura ?? '—');
+    
+    // Aggiorna UoM select
+    const selectEl = tr.querySelector('.r-unita-misura-id');
+    if (selectEl) {
+      selectEl.innerHTML = '';
+      const optStock = document.createElement('option');
+      optStock.value = r.uom_stock_id;
+      optStock.textContent = r.uom_stock_code;
+      if (parseInt(r.unita_misura_id || r.uom_stock_id) === parseInt(r.uom_stock_id)) {
+        optStock.selected = true;
+      }
+      selectEl.appendChild(optStock);
+      
+      if (r.uom_commercial_id) {
+        const optComm = document.createElement('option');
+        optComm.value = r.uom_commercial_id;
+        optComm.textContent = r.uom_commercial_code;
+        if (parseInt(r.unita_misura_id) === parseInt(r.uom_commercial_id)) {
+          optComm.selected = true;
+        }
+        selectEl.appendChild(optComm);
+      }
+    }
+
     setText(tr, '.pl-td-num:nth-child(3) .pl-num',  fmt(r.quantita_minima, 3));
     setText(tr, '.pl-td-num:nth-child(4) .pl-num',  fmt(r.prezzo_unitario, 4));
     setText(tr, '.pl-td-num:nth-child(5) .pl-num',  fmt(r.sconto_perc, 2) + ' %');
@@ -460,6 +495,33 @@ document.addEventListener('DOMContentLoaded', function () {
       labelKey: 'label',
       columns: [{ key: 'label', label: 'Prodotto' }, { key: 'sku', label: 'SKU' }],
       onSelect: (item) => {
+        const selectEl = tr.querySelector('.r-unita-misura-id');
+        if (selectEl) {
+          selectEl.innerHTML = '';
+          if (item) {
+            tr.dataset.uomStockId = item.unita_misura_stock_id || '';
+            tr.dataset.uomStockCode = item.unita_misura || '';
+            tr.dataset.uomCommercialId = item.unita_contenuto_id || '';
+            tr.dataset.uomCommercialCode = item.unita_misura_commerciale || '';
+            
+            // Add stock option
+            const optStock = document.createElement('option');
+            optStock.value = item.unita_misura_stock_id;
+            optStock.textContent = item.unita_misura;
+            selectEl.appendChild(optStock);
+            
+            // Add commercial option if defined
+            if (item.unita_contenuto_id) {
+              const optComm = document.createElement('option');
+              optComm.value = item.unita_contenuto_id;
+              optComm.textContent = item.unita_misura_commerciale;
+              selectEl.appendChild(optComm);
+            }
+            selectEl.style.display = 'block';
+          } else {
+            selectEl.style.display = 'none';
+          }
+        }
         if (!item) {
           if (umLabel) umLabel.textContent = '—';
           return;
