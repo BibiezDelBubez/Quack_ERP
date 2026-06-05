@@ -14,3 +14,16 @@ PRODOTTI E ADR
 Manca ancora controller di associazione Prodtti - Sostanze ADR - Codici ONU
 
 Controlla ordine di precursori di esplosivo
+
+Tutte le liste e i contenitori di righe:
+c'è possibilità di ordinare gli elementi cliccando su una qualche colonna?
+per preventivi o oggetti per cui è importante la data: posso ordinare o filtrare per data?
+
+
+MAGAZZINO E LOTTI
+Al momento le giacenze sono per prodotto. Ma quale e è la ux prevista dei best ERP per i prodotti traccciati in lotti? Come mostrano quanti ne ho di ogni lotto? Devo cliccare su un prodotto e si apre il dettaglio? come funziona?
+
+PER TUTTI I DOCUMENTI PDF E DOCX
+Controlla se la best practice è
+A) aspettarsi che l'utente prima salvi e poi stampi il pdf/docx
+B) stampare i pdf/docx non usando i dati dell'ultimo salvataggio ma usando i dati inseriti in quel momento nei form
