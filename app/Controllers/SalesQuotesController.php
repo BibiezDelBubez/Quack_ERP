@@ -174,37 +174,25 @@ final class SalesQuotesController extends BaseController
             redirect_with('sales/quotes', 'danger', 'Preventivo non trovato.');
         }
 
+        // Get linked order if accepted
+        $stOrder = $this->pdo->prepare("SELECT id, numero_ordine FROM ordini_clienti WHERE preventivo_id = ? LIMIT 1");
+        $stOrder->execute([$id]);
+        $linkedOrder = $stOrder->fetch(PDO::FETCH_ASSOC) ?: null;
+
         $errors = [];
         $values = $this->mapDetailToValues($detail['offerta']);
         $preloadedRighe = $detail['righe'];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $oldStato = $detail['offerta']['stato'] ?? 'bozza';
+            if ($oldStato !== 'bozza') {
+                $_SESSION['flash_danger'] = 'Impossibile salvare modifiche: questo preventivo non è più in stato bozza ed è bloccato.';
+                redirect(url('sales/quotes/edit?id=' . $id));
+            }
             if (!csrf_verify()) {
                 $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
             } else {
                 $values = $this->readPostValues();
-                
-                // Freeze address and contact overrides if current status is not bozza
-                $oldStato = $detail['offerta']['stato'] ?? 'bozza';
-                if ($oldStato !== 'bozza') {
-                    $values['indirizzo_spedizione_id'] = $detail['offerta']['indirizzo_spedizione_id'] ?? '';
-                    $values['consegna_via']            = $detail['offerta']['consegna_via'] ?? '';
-                    $values['consegna_civico']         = $detail['offerta']['consegna_civico'] ?? '';
-                    $values['consegna_cap']            = $detail['offerta']['consegna_cap'] ?? '';
-                    $values['consegna_citta']          = $detail['offerta']['consegna_citta'] ?? '';
-                    $values['consegna_provincia']      = $detail['offerta']['consegna_provincia'] ?? '';
-                    $values['consegna_nazione']        = $detail['offerta']['consegna_nazione'] ?? '';
-                    $values['consegna_presso']         = $detail['offerta']['consegna_presso'] ?? '';
-                    $values['consegna_referente']      = $detail['offerta']['consegna_referente'] ?? '';
-                    $values['consegna_telefono']       = $detail['offerta']['consegna_telefono'] ?? '';
-                    $values['consegna_note']           = $detail['offerta']['consegna_note'] ?? '';
-                    $values['contatto_id']             = $detail['offerta']['contatto_id'] ?? '';
-                    $values['contatto_nome']           = $detail['offerta']['contatto_nome'] ?? '';
-                    $values['contatto_telefono']       = $detail['offerta']['contatto_telefono'] ?? '';
-                    $values['contatto_email']          = $detail['offerta']['contatto_email'] ?? '';
-                    $values['salva_in_anagrafica_indirizzo'] = '';
-                }
-
                 $righe  = $this->readPostRighe();
                 $errors = qk_offerta_validate($values, $righe);
 
@@ -288,6 +276,51 @@ final class SalesQuotesController extends BaseController
         require INCLUDES_DIR . '/header.php';
         require APP_ROOT_DIR . '/app/views/sales/quotes/_form.php';
         require INCLUDES_DIR . '/footer.php';
+    }
+
+    public function action(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            redirect(url('sales/quotes'));
+        }
+
+        $id     = (int) post('id', '0');
+        $azione = post('azione', '');
+
+        try {
+            switch ($azione) {
+                case 'invia':
+                    $this->pdo->prepare("UPDATE preventivi SET stato = 'inviata', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Preventivo segnato come Inviato.';
+                    redirect(url('sales/quotes/edit') . '?id=' . $id);
+                    break;
+
+                case 'conferma_ordine':
+                    $nuovoOrderId = qk_preventivo_conferma_ordine($this->pdo, $id, (int)current_user()['id']);
+                    $_SESSION['flash_success'] = 'Preventivo accettato e Ordine di Vendita creato.';
+                    redirect(url('sales/quotes/edit') . '?id=' . $id);
+                    break;
+
+                case 'nuova_versione':
+                    $nuovoId = qk_preventivo_nuova_versione($this->pdo, $id, (int)current_user()['id']);
+                    $_SESSION['flash_success'] = 'Nuova versione creata.';
+                    redirect(url('sales/quotes/edit') . '?id=' . $nuovoId);
+                    break;
+
+                case 'rifiuta':
+                    $this->pdo->prepare("UPDATE preventivi SET stato = 'rifiutata', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Preventivo segnato come Rifiutato.';
+                    redirect(url('sales/quotes/edit') . '?id=' . $id);
+                    break;
+
+                default:
+                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+                    redirect(url('sales/quotes/edit') . '?id=' . $id);
+            }
+        } catch (\Throwable $e) {
+            $_SESSION['flash_error'] = $e->getMessage();
+            redirect(url('sales/quotes/edit') . '?id=' . $id);
+        }
     }
 
     private function mapDetailToValues(array $quote): array

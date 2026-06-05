@@ -1,9 +1,11 @@
 <?php
 /**
  * sales/quotes/_form.php — Form creazione/modifica offerta.
- * Variabili attese: $values (array), $errors (array), $numero_offerta (string)
+ * Variabili attese: $values (array), $errors (array), $numero_offerta (string), $linkedOrder (array|null)
  */
 $v = $values;
+$stato = $v['stato'] ?? 'bozza';
+$can_edit = ($stato === 'bozza');
 ?>
 
 <!-- ── Stili specifici offerta ──────────────────────────────────────────── -->
@@ -71,6 +73,47 @@ $v = $values;
       <i class="fa-solid fa-arrow-left"></i> Torna alla lista
     </a>
     <?php if (isset($id) && $id > 0): ?>
+      <?php if ($stato === 'bozza'): ?>
+        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= $id ?>">
+          <input type="hidden" name="azione" value="invia">
+          <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm" title="Segna come inviato al cliente">
+            <i class="fa-solid fa-paper-plane"></i> Invia al Cliente
+          </button>
+        </form>
+      <?php elseif ($stato === 'inviata'): ?>
+        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= $id ?>">
+          <input type="hidden" name="azione" value="nuova_versione">
+          <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Crea una nuova versione di questo preventivo">
+            <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
+          </button>
+        </form>
+        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Confermare l\'accettazione del preventivo e creare l\'ordine cliente?')">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= $id ?>">
+          <input type="hidden" name="azione" value="conferma_ordine">
+          <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm" title="Accetta il preventivo e genera l'ordine di vendita">
+            <i class="fa-solid fa-circle-check"></i> Accetta e Crea Ordine
+          </button>
+        </form>
+        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Segnare il preventivo come rifiutato?')">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= $id ?>">
+          <input type="hidden" name="azione" value="rifiuta">
+          <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm text-danger" title="Segna come rifiutato">
+            <i class="fa-solid fa-ban"></i> Rifiuta
+          </button>
+        </form>
+      <?php elseif ($stato === 'accettata' && !empty($linkedOrder)): ?>
+        <span class="qk-badge qk-badge-success py-2 px-3 fw-bold d-inline-flex align-items-center" style="font-size: 0.85rem; height: 31px;">
+          <i class="fa-solid fa-check-double me-1"></i> Ordine Generato: 
+          <a href="<?= url('sales/orders/edit?id=' . $linkedOrder['id']) ?>" class="fw-bold text-white text-decoration-underline ms-1"><?= e($linkedOrder['numero_ordine']) ?></a>
+        </span>
+      <?php endif; ?>
+      
       <a href="<?= url('sales/quotes/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank" title="Stampa o scarica il preventivo in formato PDF">
         <i class="fa-solid fa-file-pdf text-danger"></i> PDF
       </a>
@@ -83,7 +126,6 @@ $v = $values;
   <!-- Pipeline visivo stati -->
   <ul class="qk-status-path d-none d-sm-flex">
     <?php
-    $stato = $v['stato'] ?? 'bozza';
     $steps = [
       ['bozza',     'Bozza'],
       ['inviata',   'Inviata'],
@@ -121,6 +163,7 @@ $v = $values;
 </div>
 
 <form method="post" id="form-offerta" action="">
+  <fieldset style="border:none; padding:0; margin:0;"<?= !$can_edit ? ' disabled' : '' ?>>
   <?= csrf_field() ?>
 
   <!-- Cliente nascosto -->
@@ -570,17 +613,22 @@ $v = $values;
 
   <!-- Sticky Actions -->
   <div class="qk-form-sticky-actions">
-    <button type="submit" name="stato" value="bozza" class="btn-qk btn-qk-secondary">
-      <i class="fa-solid fa-floppy-disk"></i> Salva bozza
-    </button>
-    <button type="submit" name="stato" value="inviata" class="btn-qk btn-qk-primary">
-      <i class="fa-solid fa-paper-plane"></i> Salva e invia
-    </button>
+    <?php if ($can_edit): ?>
+      <button type="submit" name="stato" value="bozza" class="btn-qk btn-qk-secondary">
+        <i class="fa-solid fa-floppy-disk"></i> Salva bozza
+      </button>
+      <button type="submit" name="stato" value="inviata" class="btn-qk btn-qk-primary">
+        <i class="fa-solid fa-paper-plane"></i> Salva e invia
+      </button>
+    <?php else: ?>
+      <span class="qk-text-muted"><i class="fa-solid fa-lock me-1"></i> Questo preventivo non è più in stato bozza ed è bloccato in sola lettura.</span>
+    <?php endif; ?>
     <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary" style="margin-left:auto">
-      <i class="fa-solid fa-xmark"></i> Annulla
+      <i class="fa-solid fa-xmark"></i> Torna alla lista
     </a>
   </div>
 
+  </fieldset>
 </form><!-- /form-offerta -->
 
 

@@ -32,6 +32,7 @@ return [
     '/sales/quotes'              => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'index',    'auth' => true],
     '/sales/quotes/create'       => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'create',   'auth' => true],
     '/sales/quotes/edit'         => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'edit',     'auth' => true],
+    '/sales/quotes/action'       => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'action',   'auth' => true],
     '/sales/quotes/pdf'          => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'pdf',      'auth' => true],
     '/sales/quotes/docx'         => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'docx',     'auth' => true],
     '/sales/quotes/api/clienti'  => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiClienti', 'auth' => true],

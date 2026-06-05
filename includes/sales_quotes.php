@@ -842,3 +842,213 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         throw $e;
     }
 }
+
+/**
+ * Genera il prossimo numero progressivo per l'ordine cliente.
+ */
+function qk_next_numero_ordine_cliente(PDO $pdo): string
+{
+    $anno = (int) date('Y');
+
+    $st = $pdo->prepare(
+        'SELECT id, prefisso, anno, numero_corrente, padding
+           FROM sequenze WHERE tipo = ? LIMIT 1'
+    );
+    $st->execute(['ordine_cliente']);
+    $seq = $st->fetch(PDO::FETCH_ASSOC);
+
+    if (!$seq) {
+        throw new \RuntimeException("Sequenza 'ordine_cliente' non trovata nella tabella sequenze.");
+    }
+
+    if ((int) $seq['anno'] !== $anno) {
+        $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
+            ->execute([$anno, $seq['id']]);
+        $seq['numero_corrente'] = 0;
+    }
+
+    $next = (int) $seq['numero_corrente'] + 1;
+    $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
+        ->execute([$next, $seq['id']]);
+
+    $pad = (int) $seq['padding'];
+    return $seq['prefisso'] . $anno . '/' . str_pad((string) $next, $pad, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Crea una nuova versione (revisione) del preventivo.
+ */
+function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
+{
+    $pdo->beginTransaction();
+    try {
+        // 1. Get original quote
+        $st = $pdo->prepare("SELECT * FROM preventivi WHERE id = ?");
+        $st->execute([$id]);
+        $orig = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$orig) {
+            throw new Exception("Preventivo originale non trovato.");
+        }
+
+        // 2. Mark original quote as storico = 1, stato = 'annullata'
+        $stUp = $pdo->prepare("UPDATE preventivi SET storico = 1, stato = 'annullata', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
+        $stUp->execute([$id]);
+
+        // 3. Compute new revision number
+        $origNum = $orig['numero_preventivo'];
+        if (preg_match('/-(\d+)$/', $origNum, $matches)) {
+            $rev = (int)$matches[1] + 1;
+            $newNum = preg_replace('/-\d+$/', '-' . sprintf('%02d', $rev), $origNum);
+        } else {
+            $newNum = $origNum . '-02';
+        }
+
+        // 4. Create new quote record in Bozza status (storico = 0, stato = 'bozza')
+        $columns = [];
+        $stmtCol = $pdo->query("PRAGMA table_info(preventivi)");
+        while ($col = $stmtCol->fetch(PDO::FETCH_ASSOC)) {
+            if ($col['name'] === 'id') continue;
+            $columns[] = $col['name'];
+        }
+
+        $colList = implode(", ", $columns);
+        $insertSql = "INSERT INTO preventivi ($colList) SELECT $colList FROM preventivi WHERE id = :orig_id";
+        $pdo->prepare($insertSql)->execute([':orig_id' => $id]);
+        $newId = (int)$pdo->lastInsertId();
+
+        // 5. Update new quote specifics
+        $stUpNew = $pdo->prepare("
+            UPDATE preventivi SET
+                numero_preventivo = :newNum,
+                stato = 'bozza',
+                storico = 0,
+                creato_da = :userId,
+                created_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :newId
+        ");
+        $stUpNew->execute([
+            ':newNum' => $newNum,
+            ':userId' => $userId,
+            ':newId'  => $newId
+        ]);
+
+        // 6. Copy righe items from original quote
+        $righeCols = [];
+        $stmtRigheCol = $pdo->query("PRAGMA table_info(preventivi_righe)");
+        while ($col = $stmtRigheCol->fetch(PDO::FETCH_ASSOC)) {
+            if ($col['name'] === 'id') continue;
+            $righeCols[] = $col['name'];
+        }
+
+        $righeColsWithoutPrev = array_filter($righeCols, fn($c) => $c !== 'preventivo_id');
+        $colListRighe = implode(", ", $righeColsWithoutPrev);
+        
+        $insertRigheSql = "
+            INSERT INTO preventivi_righe (preventivo_id, $colListRighe)
+            SELECT :newId, $colListRighe FROM preventivi_righe WHERE preventivo_id = :orig_id
+        ";
+        $pdo->prepare($insertRigheSql)->execute([
+            ':newId'   => $newId,
+            ':orig_id' => $id
+        ]);
+
+        $pdo->commit();
+        return $newId;
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * Accetta un preventivo e crea il relativo ordine cliente.
+ */
+function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
+{
+    $pdo->beginTransaction();
+    try {
+        $detail = qk_get_offerta($pdo, $id);
+        if (!$detail) {
+            throw new Exception("Preventivo non trovato.");
+        }
+        $quota = $detail['offerta'];
+        $righe = $detail['righe'];
+
+        if ($quota['stato'] === 'accettata') {
+            throw new Exception("Il preventivo è già stato accettato.");
+        }
+
+        // 1. Update preventivo status to 'accettata'
+        $stUp = $pdo->prepare("UPDATE preventivi SET stato = 'accettata', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
+        $stUp->execute([$id]);
+
+        // 2. Generate ODC number
+        $numeroOrdine = qk_next_numero_ordine_cliente($pdo);
+
+        // 3. Create ordini_clienti head
+        $sqlHead = "INSERT INTO ordini_clienti (
+            numero_ordine, preventivo_id, cliente_id, data_ordine, data_consegna_prevista, stato, note, creato_da, created_at, updated_at
+        ) VALUES (
+            :numero_ordine, :preventivo_id, :cliente_id, CURRENT_DATE, :data_consegna_prevista, 'in_lavorazione', :note, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )";
+        $stHead = $pdo->prepare($sqlHead);
+        $stHead->execute([
+            ':numero_ordine'           => $numeroOrdine,
+            ':preventivo_id'           => $id,
+            ':cliente_id'              => $quota['cliente_id'],
+            ':data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
+            ':note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),
+            ':creato_da'               => $userId
+        ]);
+        $ordineId = (int)$pdo->lastInsertId();
+
+        // 4. Create ordini_clienti_righe and reserve stock quantities
+        $sqlLine = "INSERT INTO ordini_clienti_righe (
+            ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata, quantita_spedita, unita_misura_id, prezzo_unitario, costo_unitario, quantita_stock, unita_misura_stock_id, note
+        ) VALUES (
+            :ordine_id, :preventivo_riga_id, :prodotto_id, :descrizione, :quantita_ordinata, 0, :unita_misura_id, :prezzo_unitario, :costo_unitario, :quantita_stock, :unita_misura_stock_id, :note
+        )";
+        $stLine = $pdo->prepare($sqlLine);
+
+        $stRes = $pdo->prepare("
+            UPDATE giacenze 
+            SET quantita_riservata = COALESCE(quantita_riservata, 0) + ? 
+            WHERE prodotto_id = ?
+        ");
+
+        foreach ($righe as $r) {
+            $stLine->execute([
+                ':ordine_id'          => $ordineId,
+                ':preventivo_riga_id' => $r['id'],
+                ':prodotto_id'        => $r['prodotto_id'] ?: null,
+                ':descrizione'        => $r['descrizione'],
+                ':quantita_ordinata'  => $r['quantita'],
+                ':unita_misura_id'    => $r['unita_misura_id'] ?: null,
+                ':prezzo_unitario'    => $r['prezzo_unitario'],
+                ':costo_unitario'     => $r['costo_unitario'],
+                ':quantita_stock'     => $r['quantita_stock'],
+                ':unita_misura_stock_id' => $r['unita_misura_stock_id'] ?: null,
+                ':note'               => $r['note_riga'] ?? ''
+            ]);
+
+            // Reserve stock
+            if (!empty($r['prodotto_id']) && (float)$r['quantita_stock'] > 0) {
+                // Ensure giacenze row exists
+                $stCheckGia = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE prodotto_id = ?");
+                $stCheckGia->execute([$r['prodotto_id']]);
+                if ((int)$stCheckGia->fetchColumn() === 0) {
+                    $pdo->prepare("INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, updated_at) VALUES (?, 0, 0, 0, CURRENT_TIMESTAMP)")
+                        ->execute([$r['prodotto_id']]);
+                }
+                $stRes->execute([(float)$r['quantita_stock'], (int)$r['prodotto_id']]);
+            }
+        }
+
+        $pdo->commit();
+        return $ordineId;
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
