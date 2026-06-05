@@ -1637,12 +1637,74 @@ h3, .qk-title-h3 { font-size: 1.1rem; font-weight: 600; color: var(--qk-text-pri
   color: var(--qk-text-muted);
 }
 
+/* 8. Autocomplete Dropdown & Table Overflow Fixes */
+.qk-ac-wrap {
+  position: relative;
+}
+.qk-ac-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 9999 !important;
+  background: var(--qk-card-bg, #ffffff);
+  border: 1px solid var(--qk-border, #e2e8f0);
+  border-radius: var(--qk-radius, 8px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  max-height: 260px;
+  overflow-y: auto;
+  display: none;
+}
+.qk-ac-dropdown.open,
+.qk-ac-dropdown[style*="display: block"] {
+  display: block !important;
+}
+.qk-ac-item {
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--qk-border, #e2e8f0);
+  transition: background-color 0.15s ease, color 0.15s ease;
+  font-size: 0.875rem;
+  color: var(--qk-text-primary);
+  text-align: left;
+}
+.qk-ac-item:last-child {
+  border-bottom: none;
+}
+.qk-ac-item:hover,
+.qk-ac-item.active,
+.qk-ac-item.focused {
+  background-color: var(--qk-accent-light, #eff6ff) !important;
+  color: var(--qk-accent-text, #1e40af) !important;
+}
+.qk-ac-create {
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--qk-accent, #3b82f6) !important;
+  border-top: 1px solid var(--qk-border, #e2e8f0);
+}
+.qk-ac-create:hover {
+  background-color: var(--qk-accent-light, #eff6ff);
+}
 
+@media (min-width: 768px) {
+  .qk-table-wrap {
+    overflow: visible !important;
+  }
+}
 
-
-
-
-
-
-
+/* Numeric input alignments inside standard tbl-righe */
+#tbl-righe .inp-qta,
+#tbl-righe .inp-pu,
+#tbl-righe .inp-sc,
+#tbl-righe .inp-iva {
+  text-align: right;
+}
 

@@ -8,26 +8,6 @@ $v = $values;
 
 <!-- ── Stili specifici offerta ──────────────────────────────────────────── -->
 <style>
-/* Autocomplete dropdown */
-.qk-ac-wrap        { position: relative; }
-.qk-ac-dropdown    { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 500;
-                     background: var(--qk-card-bg); border: 1px solid var(--qk-border);
-                     border-radius: var(--qk-radius); box-shadow: 0 8px 24px rgba(0,0,0,.18);
-                     max-height: 260px; overflow-y: auto; display: none; }
-.qk-ac-dropdown.open { display: block; }
-.qk-ac-item        { padding: .5rem .85rem; cursor: pointer; display: flex; flex-direction: column;
-                     border-bottom: 1px solid var(--qk-border); transition: background .12s; }
-.qk-ac-item:last-child { border-bottom: none; }
-.qk-ac-item:hover,
-.qk-ac-item.focused { background: var(--qk-accent-muted, rgba(var(--qk-accent-rgb,.1))); }
-.qk-ac-item-label  { font-weight: 600; font-size: .88rem; }
-.qk-ac-item-sub    { font-size: .78rem; color: var(--qk-text-muted); }
-.qk-ac-empty       { padding: .75rem 1rem; font-size: .85rem; color: var(--qk-text-muted); text-align: center; }
-.qk-ac-create      { padding: .55rem .85rem; cursor: pointer; display: flex; align-items: center; gap: .4rem;
-                     font-size: .85rem; font-weight: 600; color: var(--qk-accent-text);
-                     border-top: 1px solid var(--qk-border); }
-.qk-ac-create:hover { background: var(--qk-accent-muted); }
-
 /* Cliente selezionato */
 .qk-cliente-preview { background: var(--qk-accent-muted, rgba(0,100,60,.06));
                       border: 1px solid var(--qk-border); border-radius: var(--qk-radius-sm);
@@ -37,46 +17,6 @@ $v = $values;
 .qk-cliente-preview .info { font-size: .82rem; color: var(--qk-text-muted); }
 .qk-cliente-preview .btn-clear { margin-left: auto; background: none; border: none;
                                   cursor: pointer; color: var(--qk-text-muted); padding: .1rem .3rem; }
-
-/* Tabella righe offerta */
-#tbl-righe       { width: 100%; border-collapse: collapse; font-size: .875rem; }
-#tbl-righe thead th { padding: .75rem .5rem; font-weight: 600; font-size: .78rem;
-                      text-transform: uppercase; letter-spacing: .05em;
-                      color: var(--qk-text-muted); border-bottom: 2px solid var(--qk-border);
-                      white-space: nowrap; }
-#tbl-righe tbody td { padding: .65rem .5rem; vertical-align: middle; }
-#tbl-righe tbody tr { border-bottom: 1px solid var(--qk-border); transition: background-color 0.12s ease; }
-#tbl-righe tbody tr:nth-child(even) { background-color: #f8fafc; }
-#tbl-righe tbody tr:hover { background-color: #f1f5f9 !important; }
-#tbl-righe tbody tr:last-child { border-bottom: none; }
-#tbl-righe .col-search { min-width: 180px; width: 22%; }
-#tbl-righe .col-desc   { min-width: 200px; width: 28%; }
-#tbl-righe .col-conf   { width: 90px; }
-#tbl-righe .col-qta    { width: 80px; }
-#tbl-righe .col-um     { width: 60px; }
-#tbl-righe .col-pu     { width: 100px; }
-#tbl-righe .col-sc     { width: 65px; }
-#tbl-righe .col-iva    { width: 60px; }
-#tbl-righe .col-tot    { width: 100px; }
-#tbl-righe .col-del    { width: 36px; }
-
-.riga-input { width: 100%; background: transparent; border: 1px solid transparent;
-              border-radius: var(--qk-radius-sm); padding: .25rem .4rem;
-              color: var(--qk-text-primary); font-size: .875rem;
-              outline: none; transition: all 0.12s ease; }
-.riga-input:focus { border-color: var(--qk-accent); background: var(--qk-input-bg, var(--qk-card-bg));
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-.riga-input[readonly] { cursor: not-allowed; color: var(--qk-text-muted); opacity: 0.85; }
-.riga-input.text-end { text-align: right; font-family: monospace; }
-.riga-total { font-weight: 600; text-align: right; padding: .25rem .4rem;
-              color: var(--qk-text-primary); font-family: monospace; }
-.riga-del   { background: none; border: none; cursor: pointer; color: var(--qk-text-muted);
-              font-size: .9rem; padding: .3rem; border-radius: var(--qk-radius-sm);
-              transition: color .12s, background .12s; }
-.riga-del:hover { color: #ef4444; background: rgba(239,68,68,.1); }
-
-/* SKU badge in riga */
-.riga-sku { font-size: .72rem; color: var(--qk-text-muted); font-family: monospace; }
 
 /* Totali */
 .qk-totali-grid { display: grid; grid-template-columns: 1fr auto; gap: .25rem .75rem;
@@ -95,6 +35,19 @@ $v = $values;
 @media (max-width: 768px) {
   .qk-form-sticky-actions { flex-wrap: wrap; }
 }
+
+/* Specific table layouts */
+#tbl-righe .col-search { min-width: 180px; width: 22%; }
+#tbl-righe .col-desc   { min-width: 200px; width: 28%; }
+#tbl-righe .col-conf   { width: 90px; }
+#tbl-righe .col-qta    { width: 80px; }
+#tbl-righe .col-um     { width: 60px; }
+#tbl-righe .col-pu     { width: 100px; }
+#tbl-righe .col-sc     { width: 65px; }
+#tbl-righe .col-iva    { width: 60px; }
+#tbl-righe .col-tot    { width: 100px; }
+#tbl-righe .col-del    { width: 36px; }
+.riga-sku { font-size: .72rem; color: var(--qk-text-muted); font-family: monospace; }
 </style>
 
 <?php if (!empty($errors['_global'])): ?>
@@ -191,16 +144,20 @@ $v = $values;
             <div class="qk-form-group flex-grow-1">
               <label class="qk-form-label">Cliente <span class="required">*</span></label>
               <div class="d-flex gap-2 align-items-start">
-                <div class="qk-ac-wrap flex-grow-1">
+                <div class="qk-ac-wrap flex-grow-1" style="position:relative;">
                   <input type="text" id="cliente_search" class="qk-form-control <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
                          placeholder="Cerca cliente per nome, ragione sociale, email…"
-                         value="<?= e($v['cliente_label']) ?>" autocomplete="off">
+                         value="<?= e($v['cliente_label']) ?>" autocomplete="off" style="padding-right: 28px;">
+                  <button type="button" class="qk-ac-clear <?= $v['cliente_id'] ? '' : 'd-none' ?>" id="btn-clear-cliente-inline" title="Rimuovi cliente">&times;</button>
                   <div class="qk-ac-dropdown" id="ac-clienti-drop"></div>
                 </div>
                 <button type="button" class="btn-qk btn-qk-secondary" id="btn-nuovo-cliente"
                         title="Crea nuovo cliente" style="white-space:nowrap">
                   <i class="fa-solid fa-plus"></i> Nuovo
                 </button>
+              </div>
+              <div id="cliente-helper-text" class="text-muted small mt-1" style="display:none;">
+                <i class="fa-solid fa-circle-info me-1"></i><span id="cliente-helper-content"></span>
               </div>
               <?php if (isset($errors['cliente_id'])): ?>
               <span class="qk-form-error mt-1"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['cliente_id']) ?></span>
@@ -229,18 +186,6 @@ $v = $values;
                 <?php endforeach; ?>
               </select>
             </div>
-          </div>
-          
-          <!-- Cliente Preview -->
-          <div id="cliente-preview" class="qk-cliente-preview mb-3" style="<?= $v['cliente_id'] ? '' : 'display:none' ?>">
-            <i class="fa-solid fa-building fa-lg" style="color:var(--qk-accent);margin-top:.1rem"></i>
-            <div>
-              <div class="name" id="cp-nome"><?= e($v['cliente_label']) ?></div>
-              <div class="info" id="cp-info"></div>
-            </div>
-            <button type="button" class="btn-clear" id="btn-clear-cliente" title="Rimuovi cliente">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
           </div>
           
           <!-- Oggetto dell'offerta -->
@@ -295,16 +240,22 @@ $v = $values;
   <!-- Odoo-style Navigation Tabs -->
   <div class="qk-card mb-3">
     <div class="qk-card-body">
-      <ul class="nav qk-nav-tabs" role="tablist" style="border-bottom: 1px solid var(--qk-border); padding-bottom: 0.5rem; display: flex; gap: 1rem; list-style: none; margin: 0 0 1rem 0;">
-        <button class="nav-link active" id="tab-prodotti-btn" type="button" onclick="switchQuoteTab('prodotti')" style="background: none; border: none; border-bottom: 2px solid var(--qk-accent); color: var(--qk-accent-text); padding: 0.5rem 1rem; font-weight: 600; cursor: pointer;">
-          <i class="fa-solid fa-list me-1"></i> Prodotti
-        </button>
-        <button class="nav-link" id="tab-altre-info-btn" type="button" onclick="switchQuoteTab('altre-info')" style="background: none; border: none; border-bottom: 2px solid transparent; color: var(--qk-text-muted); padding: 0.5rem 1rem; font-weight: 600; cursor: pointer;">
-          <i class="fa-solid fa-circle-info me-1"></i> Altre Info
-        </button>
-        <button class="nav-link" id="tab-note-btn" type="button" onclick="switchQuoteTab('note')" style="background: none; border: none; border-bottom: 2px solid transparent; color: var(--qk-text-muted); padding: 0.5rem 1rem; font-weight: 600; cursor: pointer;">
-          <i class="fa-solid fa-pen me-1"></i> Note
-        </button>
+      <ul class="nav qk-nav-tabs" role="tablist">
+        <li class="nav-item">
+          <button class="nav-link active" id="tab-prodotti-btn" type="button" onclick="switchQuoteTab('prodotti')">
+            <i class="fa-solid fa-list me-1"></i> Prodotti
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="tab-altre-info-btn" type="button" onclick="switchQuoteTab('altre-info')">
+            <i class="fa-solid fa-circle-info me-1"></i> Altre Info
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="tab-note-btn" type="button" onclick="switchQuoteTab('note')">
+            <i class="fa-solid fa-pen me-1"></i> Note
+          </button>
+        </li>
       </ul>
 
       <!-- Tab Content Panes -->
@@ -331,8 +282,8 @@ $v = $values;
             </div>
           </div>
           
-          <div class="qk-table-wrap" style="overflow-x:auto">
-            <table id="tbl-righe">
+          <div class="qk-table-wrap">
+            <table class="qk-table" id="tbl-righe">
               <thead>
                 <tr>
                   <th class="col-search">Cerca prodotto</th>
@@ -646,22 +597,28 @@ async function fetchProdotti(q) {
    GESTIONE CLIENTE
  ───────────────────────────────────────────────────────────────────────── */
 
-const elClienteSearch  = document.getElementById('cliente_search');
-const elClienteId      = document.getElementById('cliente_id');
-const elClienteLabel   = document.getElementById('cliente_label');
-const elClienteDrop    = document.getElementById('ac-clienti-drop');
-const elClientePreview = document.getElementById('cliente-preview');
-const elCpNome         = document.getElementById('cp-nome');
-const elCpInfo         = document.getElementById('cp-info');
+const elClienteSearch       = document.getElementById('cliente_search');
+const elClienteId           = document.getElementById('cliente_id');
+const elClienteLabel        = document.getElementById('cliente_label');
+const elClienteDrop         = document.getElementById('ac-clienti-drop');
+const elBtnClearInline      = document.getElementById('btn-clear-cliente-inline');
+const elHelperText          = document.getElementById('cliente-helper-text');
+const elHelperContent       = document.getElementById('cliente-helper-content');
 
 function selectCliente(item) {
   elClienteId.value    = item.id;
   elClienteLabel.value = item.label;
   elClienteSearch.value = item.label;
-  elCpNome.textContent = item.label;
+  if (elBtnClearInline) elBtnClearInline.classList.remove('d-none');
+  
   const parts = [item.email, item.telefono].filter(Boolean);
-  elCpInfo.textContent = parts.join(' · ');
-  elClientePreview.style.display = '';
+  if (elHelperText && elHelperContent && parts.length > 0) {
+    elHelperContent.textContent = parts.join(' · ');
+    elHelperText.style.display = '';
+  } else if (elHelperText) {
+    elHelperText.style.display = 'none';
+  }
+
   checkAllRowsCompliance();
   loadClienteDettagli();
 }
@@ -670,9 +627,13 @@ function clearCliente() {
   elClienteId.value    = '';
   elClienteLabel.value = '';
   elClienteSearch.value = '';
-  elClientePreview.style.display = 'none';
-  elCpNome.textContent = '';
-  elCpInfo.textContent = '';
+  if (elBtnClearInline) elBtnClearInline.classList.add('d-none');
+  
+  if (elHelperText && elHelperContent) {
+    elHelperContent.textContent = '';
+    elHelperText.style.display = 'none';
+  }
+
   checkAllRowsCompliance();
   
   const spedSelect = document.getElementById('quote-indirizzo-spedizione-id');
@@ -681,7 +642,9 @@ function clearCliente() {
   if (contSelect) contSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
 }
 
-document.getElementById('btn-clear-cliente').addEventListener('click', clearCliente);
+if (elBtnClearInline) {
+  elBtnClearInline.addEventListener('click', clearCliente);
+}
 
 elClienteSearch.addEventListener('input', () => {
   // Se svuota il campo, rimuovi la selezione
@@ -793,7 +756,7 @@ function buildRiga(prefill = {}) {
   tr.innerHTML = `
     <td class="col-search">
       <div class="qk-ac-wrap">
-        <input type="text" class="riga-input riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione || '')}">
+        <input type="text" class="qk-form-control riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione || '')}">
         <div class="qk-ac-dropdown riga-ac-drop"></div>
       </div>
       <div class="riga-sku" data-sku="">${prefill.sku ? 'SKU: ' + esc(prefill.sku) : ''}</div>
@@ -809,24 +772,24 @@ function buildRiga(prefill = {}) {
       <input type="hidden" name="righe[${idx}][sku]" class="inp-sku" value="${esc(prefill.sku || '')}">
     </td>
     <td class="col-desc">
-      <input type="text" name="righe[${idx}][descrizione]" class="riga-input inp-desc"
+      <input type="text" name="righe[${idx}][descrizione]" class="qk-form-control inp-desc"
              placeholder="Descrizione prodotto" value="${esc(prefill.descrizione || '')}">
     </td>
     <td class="col-conf">
-      <input type="text" name="righe[${idx}][quantita_confezione]" class="riga-input riga-conf inp-quantita-confezione"
+      <input type="text" name="righe[${idx}][quantita_confezione]" class="qk-form-control riga-conf inp-quantita-confezione"
              value="${esc(prefill.quantita_confezione || '')}" placeholder="—" title="Confezione">
     </td>
     <td class="col-qta">
-      <input type="number" name="righe[${idx}][quantita]" class="riga-input text-end inp-qta"
+      <input type="number" name="righe[${idx}][quantita]" class="qk-form-control text-end inp-qta"
              placeholder="0" min="0" step="0.001" value="${prefill.quantita || ''}">
     </td>
     <td class="col-um">
-      <input type="text" name="righe[${idx}][unita_misura]" class="riga-input inp-um"
+      <input type="text" name="righe[${idx}][unita_misura]" class="qk-form-control inp-um"
              placeholder="pz" maxlength="5" value="${esc(prefill.unita_misura || '')}">
     </td>
     <td class="col-pu">
       <div style="position:relative; display:flex; align-items:center; width:100%;">
-        <input type="number" name="righe[${idx}][prezzo_unitario]" class="riga-input text-end inp-pu"
+        <input type="number" name="righe[${idx}][prezzo_unitario]" class="qk-form-control text-end inp-pu"
                placeholder="0,00" min="0" step="0.0001" value="${prefill.prezzo_unitario || ''}" style="padding-right:20px; width:100%;">
         <span class="price-origin-badge" style="position:absolute; right:4px; font-size:0.75rem; cursor:pointer;" title="Nessun prezzo configurato">
           <i class="fa-solid fa-triangle-exclamation" style="color:var(--qk-danger)"></i>
@@ -834,18 +797,18 @@ function buildRiga(prefill = {}) {
       </div>
     </td>
     <td class="col-sc">
-      <input type="number" name="righe[${idx}][sconto_perc]" class="riga-input text-end inp-sc"
+      <input type="number" name="righe[${idx}][sconto_perc]" class="qk-form-control text-end inp-sc"
              placeholder="0" min="0" max="100" step="0.01" value="${prefill.sconto_perc || '0'}">
     </td>
     <td class="col-iva">
-      <input type="number" name="righe[${idx}][iva_perc]" class="riga-input text-end inp-iva"
+      <input type="number" name="righe[${idx}][iva_perc]" class="qk-form-control text-end inp-iva"
              placeholder="22" min="0" max="100" step="1" value="${prefill.iva_perc || '22'}">
     </td>
     <td class="col-tot">
       <div class="riga-total">€ 0,00</div>
     </td>
     <td class="col-del">
-      <button type="button" class="riga-del" title="Rimuovi riga"><i class="fa-solid fa-trash-can"></i></button>
+      <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger riga-del" title="Rimuovi riga"><i class="fa-solid fa-trash-can"></i></button>
     </td>
   `;
 
@@ -1235,6 +1198,17 @@ async function loadClienteDettagli() {
     // Save general info for fallback
     if (custTelHidden) custTelHidden.value = data.cliente?.telefono || '';
     if (custEmailHidden) custEmailHidden.value = data.cliente?.email || data.cliente?.cellulare || '';
+
+    // Update compact helper text under input
+    if (elHelperText && elHelperContent) {
+      const parts = [data.cliente?.email || data.cliente?.cellulare, data.cliente?.telefono].filter(Boolean);
+      if (parts.length > 0) {
+        elHelperContent.textContent = parts.join(' · ');
+        elHelperText.style.display = '';
+      } else {
+        elHelperText.style.display = 'none';
+      }
+    }
 
     // Propose default payment terms
     if (condPagInput && !condPagInput.value && data.cliente?.condizioni_pagamento) {
