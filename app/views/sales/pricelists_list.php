@@ -14,37 +14,26 @@
 </div>
 <?php unset($_SESSION['flash']); endif; ?>
 
+<?php $base = url('sales/pricelists'); $sort = $pag['sort']; $dir = $pag['dir']; ?>
 <!-- ── LISTA PRINCIPALE ── -->
 <div class="qk-card">
   <div class="qk-table-toolbar">
-    <div class="qk-table-toolbar-left d-flex align-items-center gap-3">
-      <a href="<?= url('sales/pricelists/create') ?>" class="btn-qk btn-qk-primary btn-qk-sm">
-        <i class="fa-solid fa-plus"></i> Nuovo
-      </a>
-      <h2 class="mb-0 text-nowrap">Listini vendita</h2>
-    </div>
-
-    <!-- Ricerca & Filtri -->
+    <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <div class="qk-filter-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" name="q" class="qk-filter-input" placeholder="Cerca per nome…" value="<?= e($search ?? '') ?>" autocomplete="off">
+      </div>
+      <?php if ($sort !== 'nome'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'asc'):  ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Cerca"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <?php if (!empty($search)): ?><a href="<?= $base ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri"><i class="fa-solid fa-xmark"></i></a><?php endif; ?>
+    </form>
     <div class="qk-table-toolbar-right">
-      <form action="<?= url('sales/pricelists') ?>" method="get" class="d-flex align-items-center gap-2">
-
-        <select name="attivo" class="qk-form-control qk-form-control-sm" onchange="this.form.submit()" style="width:auto">
-          <option value=""  <?= ($filtro_attivo ?? '') === ''  ? 'selected' : '' ?>>Tutti</option>
-          <option value="1" <?= ($filtro_attivo ?? '') === '1' ? 'selected' : '' ?>>Attivi</option>
-          <option value="0" <?= ($filtro_attivo ?? '') === '0' ? 'selected' : '' ?>>Non attivi</option>
-        </select>
-
-        <div class="qk-search-input">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" name="q" placeholder="Cerca per nome..." value="<?= e($search ?? '') ?>">
-        </div>
-
-        <?php if (!empty($search) || ($filtro_attivo ?? '') !== ''): ?>
-          <a href="<?= url('sales/pricelists') ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Pulisci filtri">
-            <i class="fa-solid fa-xmark"></i>
-          </a>
-        <?php endif; ?>
-      </form>
+      <div class="qk-filter-pills">
+        <a href="<?= e(qk_list_url($base, ['attivo' => null])) ?>" class="qk-filter-pill <?= ($filtro_attivo ?? '') === '' ? 'active' : '' ?>">Tutti</a>
+        <a href="<?= e(qk_list_url($base, ['attivo' => '1'])) ?>" class="qk-filter-pill <?= ($filtro_attivo ?? '') === '1' ? 'active' : '' ?>">Attivi</a>
+        <a href="<?= e(qk_list_url($base, ['attivo' => '0'])) ?>" class="qk-filter-pill <?= ($filtro_attivo ?? '') === '0' ? 'active' : '' ?>">Non attivi</a>
+      </div>
     </div>
   </div>
 
@@ -58,12 +47,12 @@
     <table class="qk-table">
       <thead>
         <tr>
-          <th>Nome Listino</th>
-          <th style="width:60px">Valuta</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'nome', $sort, $dir)) ?>">Nome Listino<?= qk_sort_icon('nome', $sort, $dir) ?></a></th>
+          <th class="qk-sortable" style="width:60px"><a href="<?= e(qk_sort_url($base, 'valuta', $sort, $dir)) ?>">Valuta<?= qk_sort_icon('valuta', $sort, $dir) ?></a></th>
           <th style="width:80px" class="text-center">Stato</th>
-          <th style="width:160px">Valido Dal</th>
-          <th style="width:160px">Valido Al</th>
-          <th style="width:90px" class="text-end">Articoli</th>
+          <th class="qk-sortable" style="width:160px"><a href="<?= e(qk_sort_url($base, 'dal', $sort, $dir)) ?>">Valido Dal<?= qk_sort_icon('dal', $sort, $dir) ?></a></th>
+          <th class="qk-sortable" style="width:160px"><a href="<?= e(qk_sort_url($base, 'al', $sort, $dir)) ?>">Valido Al<?= qk_sort_icon('al', $sort, $dir) ?></a></th>
+          <th class="qk-sortable" style="width:90px" class="text-end"><a href="<?= e(qk_sort_url($base, 'articoli', $sort, $dir)) ?>">Articoli<?= qk_sort_icon('articoli', $sort, $dir) ?></a></th>
           <th class="col-actions" style="width:100px"></th>
         </tr>
       </thead>

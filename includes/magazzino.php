@@ -20,46 +20,69 @@ declare(strict_types=1);
  *
  * @return list<array<string, mixed>>
  */
-function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all'): array
+/** @internal */
+function _qk_stock_where(string $search, string $filter): array
 {
-    $where  = ['p.attivo = 1'];
-    $params = [];
-
+    $where = ['p.attivo = 1']; $params = [];
     if ($search !== '') {
-        $where[]  = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
-        $like     = '%' . $search . '%';
-        $params[] = $like;
-        $params[] = $like;
+        $where[] = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like; $params[] = $like;
     }
-
     if ($filter === 'in_stock') {
-        $where[] = 'g.quantita_disponibile > 0'; // solo prodotti con giacenza effettiva (JOIN non NULL)
+        $where[] = 'COALESCE(g.quantita_disponibile, 0) > 0';
     } elseif ($filter === 'sottoscorta') {
-        $where[] = 'p.scorta_minima > 0
-                    AND (COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0)) < p.scorta_minima';
+        $where[] = 'p.scorta_minima > 0 AND (COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0)) < p.scorta_minima';
     } elseif ($filter === 'esauriti') {
         $where[] = 'COALESCE(g.quantita_disponibile, 0) <= 0';
+    } elseif ($filter === 'in_arrivo') {
+        $where[] = 'COALESCE(g.quantita_in_arrivo, 0) > 0';
     }
-    // filter === 'all': nessun filtro aggiuntivo
+    return [$where, $params];
+}
+
+function qk_stock_count(PDO $pdo, string $search = '', string $filter = 'all'): int
+{
+    [$where, $params] = _qk_stock_where($search, $filter);
+    $st = $pdo->prepare('SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id WHERE ' . implode(' AND ', $where));
+    $st->execute($params);
+    return (int) $st->fetchColumn();
+}
+
+function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all', string $sort = 'nome', string $dir = 'asc', int $limit = 50, int $offset = 0): array
+{
+    $sortMap = [
+        'nome'       => 'p.nome COLLATE NOCASE',
+        'sku'        => 'p.sku_interno COLLATE NOCASE',
+        'disponibile'=> 'qta_disponibile',
+        'libera'     => 'qta_libera',
+        'riservata'  => 'qta_riservata',
+        'in_arrivo'  => 'qta_in_arrivo',
+        'scorta'     => 'p.scorta_minima',
+    ];
+    $orderCol = $sortMap[$sort] ?? 'p.nome COLLATE NOCASE';
+    $orderDir = $dir === 'desc' ? 'DESC' : 'ASC';
+
+    [$where, $params] = _qk_stock_where($search, $filter);
+    $params[] = $limit;
+    $params[] = $offset;
 
     $sql = 'SELECT
-                p.id,
-                p.sku_interno,
-                p.nome,
-                p.traccia_lotti,
-                u.codice           AS uom,
-                COALESCE(g.quantita_disponibile, 0)                       AS qta_disponibile,
-                COALESCE(g.quantita_riservata, 0)                         AS qta_riservata,
-                COALESCE(g.quantita_in_arrivo, 0)                         AS qta_in_arrivo,
+                p.id, p.sku_interno, p.nome, p.traccia_lotti,
+                u.codice AS uom,
+                COALESCE(g.quantita_disponibile, 0)                   AS qta_disponibile,
+                COALESCE(g.quantita_riservata, 0)                     AS qta_riservata,
+                COALESCE(g.quantita_in_arrivo, 0)                     AS qta_in_arrivo,
                 COALESCE(g.quantita_disponibile, 0)
-                  - COALESCE(g.quantita_riservata, 0)                     AS qta_libera,
-                COALESCE(p.scorta_minima, 0)                              AS scorta_minima,
-                g.updated_at       AS giacenza_updated_at
+                  - COALESCE(g.quantita_riservata, 0)                 AS qta_libera,
+                COALESCE(p.scorta_minima, 0)                          AS scorta_minima,
+                g.updated_at AS giacenza_updated_at
             FROM prodotti p
             LEFT JOIN giacenze g ON g.prodotto_id = p.id
             LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
             WHERE ' . implode(' AND ', $where) . '
-            ORDER BY p.nome COLLATE NOCASE';
+            ORDER BY ' . $orderCol . ' ' . $orderDir . '
+            LIMIT ? OFFSET ?';
 
     $st = $pdo->prepare($sql);
     $st->execute($params);
@@ -76,7 +99,7 @@ function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all'): a
             'qta_in_arrivo'       => (float)  $r['qta_in_arrivo'],
             'qta_libera'          => (float)  $r['qta_libera'],
             'scorta_minima'       => (float)  $r['scorta_minima'],
-            'sottoscorta'         => (float) $r['qta_libera'] < (float) $r['scorta_minima']
+            'sottoscorta'         => (float)  $r['qta_libera'] < (float) $r['scorta_minima']
                                         && (float) $r['scorta_minima'] > 0,
             'giacenza_updated_at' => (string) ($r['giacenza_updated_at'] ?? ''),
         ];

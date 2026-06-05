@@ -16,14 +16,12 @@ final class ProductsController extends BaseController
         $adr_only = get_param('adr') === '1';
         $supplierRaw = get_param('fornitore');
         $supplier    = ($supplierRaw !== null && $supplierRaw !== '') ? (int) $supplierRaw : null;
-        $page        = (int) get_param('page', '1');
-        if ($page < 1) {
-            $page = 1;
-        }
-        $limit       = 50;
-        $offset      = ($page - 1) * $limit;
+        $pag    = qk_pagination_params(['nome','sku','categoria','giacenza','prezzo','tipo'], 'nome', 'asc');
+        $limit  = $pag['limit'];
+        $offset = $pag['offset'];
+        $page   = $pag['page'];
 
-        $list       = qk_prodotti_list($this->pdo, $search, $category, $adr_only, $supplier, $limit, $offset);
+        $list       = qk_prodotti_list($this->pdo, $search, $category, $adr_only, $supplier, $limit, $offset, $pag['sort'], $pag['dir']);
         $products   = $list['rows'];
         $total      = $list['total'];
         $pages      = (int) ceil($total / $limit);

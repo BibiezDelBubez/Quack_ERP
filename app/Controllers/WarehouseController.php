@@ -97,7 +97,7 @@ class WarehouseController extends BaseController
 
         $stock = [];
         $ordini_in_arrivo = [];
-        
+
         $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_acquisto WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
 
         if ($filter === 'in_arrivo') {
@@ -112,8 +112,12 @@ class WarehouseController extends BaseController
             $st = $this->pdo->prepare($sql);
             $st->execute(['q' => '%' . $search . '%']);
             $ordini_in_arrivo = $st->fetchAll(PDO::FETCH_ASSOC);
+            $total = count($ordini_in_arrivo);
+            $pag   = ['page' => 1, 'limit' => 9999, 'offset' => 0, 'sort' => 'data', 'dir' => 'asc'];
         } else {
-            $stock = qk_stock_list($this->pdo, $search, $filter);
+            $pag   = qk_pagination_params(['nome','sku','disponibile','libera','riservata','in_arrivo','scorta'], 'nome', 'asc');
+            $total = qk_stock_count($this->pdo, $search, $filter);
+            $stock = qk_stock_list($this->pdo, $search, $filter, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
         }
 
         $page_title    = 'Giacenze Magazzino';

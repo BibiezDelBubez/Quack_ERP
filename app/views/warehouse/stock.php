@@ -12,8 +12,11 @@ $filterLabels = [
     'in_arrivo'   => 'Merce in arrivo',
 ];
 
-$nSottoscorta = !empty($stock) ? count(array_filter($stock, fn($r) => $r['sottoscorta'])) : 0;
-$nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_disponibile'] <= 0)) : 0;
+// Contatori calcolati lato DB nel controller (in $total per filter attivo)
+// Per le pill sottoscorta/esauriti usiamo query separate leggere
+$nSottoscorta = (int) $pdo->query("SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id WHERE p.attivo = 1 AND p.scorta_minima > 0 AND (COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0)) < p.scorta_minima")->fetchColumn();
+$nEsauriti    = (int) $pdo->query("SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id WHERE p.attivo = 1 AND COALESCE(g.quantita_disponibile, 0) <= 0")->fetchColumn();
+$base = url('warehouse/stock');
 ?>
 
 <!-- Sotto-navigazione condivisa -->
@@ -122,17 +125,18 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
         <p>Nessun prodotto trovato.</p>
       </div>
       <?php else: ?>
+      <?php $sort = $pag['sort']; $dir = $pag['dir']; ?>
       <table class="qk-table">
         <thead>
           <tr>
-            <th>SKU</th>
-            <th>Prodotto</th>
+            <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'sku', $sort, $dir)) ?>">SKU<?= qk_sort_icon('sku', $sort, $dir) ?></a></th>
+            <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'nome', $sort, $dir)) ?>">Prodotto<?= qk_sort_icon('nome', $sort, $dir) ?></a></th>
             <th>UoM</th>
-            <th class="text-end">Disponibile</th>
-            <th class="text-end">Riservata</th>
-            <th class="text-end">In arrivo</th>
-            <th class="text-end">Libera</th>
-            <th class="text-end">Scorta min.</th>
+            <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'disponibile', $sort, $dir)) ?>">Disponibile<?= qk_sort_icon('disponibile', $sort, $dir) ?></a></th>
+            <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'riservata', $sort, $dir)) ?>">Riservata<?= qk_sort_icon('riservata', $sort, $dir) ?></a></th>
+            <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'in_arrivo', $sort, $dir)) ?>">In arrivo<?= qk_sort_icon('in_arrivo', $sort, $dir) ?></a></th>
+            <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'libera', $sort, $dir)) ?>">Libera<?= qk_sort_icon('libera', $sort, $dir) ?></a></th>
+            <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'scorta', $sort, $dir)) ?>">Scorta min.<?= qk_sort_icon('scorta', $sort, $dir) ?></a></th>
             <th></th>
           </tr>
         </thead>
@@ -190,14 +194,11 @@ $nEsauriti    = !empty($stock) ? count(array_filter($stock, fn($r) => $r['qta_di
   </div>
 </div>
 
+<?php if ($filter !== 'in_arrivo'): ?>
+<?php qk_paginate($total, $pag['page'], $pag['limit'], $base); ?>
+<?php endif; ?>
+
 <div class="qk-table-footer mt-2">
-  <span class="qkwh-count-label">
-    <?php if ($filter === 'in_arrivo'): ?>
-      <?= count($ordini_in_arrivo) ?> ordin<?= count($ordini_in_arrivo) === 1 ? 'e' : 'i' ?> in attesa
-    <?php else: ?>
-      <?= count($stock) ?> prodott<?= count($stock) === 1 ? 'o' : 'i' ?>
-    <?php endif; ?>
-  </span>
   <a href="<?= url('warehouse/movements') ?>" class="qkwh-link-movimenti">
     <i class="fa-solid fa-clock-rotate-left"></i> Vedi storico movimenti
   </a>

@@ -45,7 +45,16 @@
     </div>
     <?php else: ?>
     <table class="qk-table">
-      <thead><tr><th>SKU</th><th>Nome prodotto</th><th>Categoria</th><th class="text-center">Giacenza</th><th class="text-end">Prezzo</th><th>ADR</th><th class="col-actions"></th></tr></thead>
+      <?php $base = url('products'); $sort = $pag['sort']; $dir = $pag['dir']; ?>
+      <thead><tr>
+        <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'sku', $sort, $dir)) ?>">SKU<?= qk_sort_icon('sku', $sort, $dir) ?></a></th>
+        <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'nome', $sort, $dir)) ?>">Nome prodotto<?= qk_sort_icon('nome', $sort, $dir) ?></a></th>
+        <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'categoria', $sort, $dir)) ?>">Categoria<?= qk_sort_icon('categoria', $sort, $dir) ?></a></th>
+        <th class="qk-sortable text-center"><a href="<?= e(qk_sort_url($base, 'giacenza', $sort, $dir)) ?>">Giacenza<?= qk_sort_icon('giacenza', $sort, $dir) ?></a></th>
+        <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'prezzo', $sort, $dir)) ?>">Prezzo<?= qk_sort_icon('prezzo', $sort, $dir) ?></a></th>
+        <th>ADR</th>
+        <th class="col-actions"></th>
+      </tr></thead>
       <tbody>
       <?php foreach ($products as $p): ?>
         <tr>

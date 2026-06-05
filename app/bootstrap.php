@@ -8,6 +8,7 @@ if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
 }
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/pagination.php';
 require_once __DIR__ . '/../includes/word_helper.php';
 require_once __DIR__ . '/Core/Router.php';
 require_once __DIR__ . '/Core/PurchaseOrderStateMachine.php';

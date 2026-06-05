@@ -49,6 +49,11 @@
           </div>
         </div>
 
+        <div class="qk-form-group d-none" id="mr-rrp-container" style="background:var(--qk-accent-light, rgba(37,99,235,0.05));padding:.5rem .75rem;border-radius:var(--qk-radius-sm);margin-top:-.5rem;margin-bottom:1rem">
+          <span style="font-size:.78rem;color:var(--qk-text-muted)">RRP Consigliato (Fornitore Preferito):</span>
+          <strong id="mr-rrp-range" style="color:var(--qk-accent);margin-left:.25rem">—</strong>
+        </div>
+
         <div class="qk-form-group mb-0">
           <label class="qk-form-label">Note</label>
           <input type="text" id="mr-note" class="qk-form-control" placeholder="Note aggiuntive…">
@@ -63,6 +68,52 @@
           <i class="fa-solid fa-floppy-disk me-1"></i>Salva
         </button>
       </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const inputEl = document.getElementById('mr-prodotto-label');
+  const hiddenEl = document.getElementById('mr-prodotto-id');
+  const dropdownEl = document.getElementById('mr-prodotto-dropdown');
+  const clearBtn = document.getElementById('mr-prodotto-clear');
+  const rrpContainer = document.getElementById('mr-rrp-container');
+  const rrpRange = document.getElementById('mr-rrp-range');
+
+  if (!inputEl) return;
+
+  new QkM2O({
+    inputEl,
+    hiddenEl,
+    dropdownEl,
+    clearBtn,
+    apiUrl: (typeof QK_BASE !== 'undefined' ? QK_BASE : '') + '/sales/pricelists/api/prodotti',
+    labelKey: 'label',
+    columns: [
+      { key: 'label', label: 'Prodotto' },
+      { key: 'sku', label: 'SKU' }
+    ],
+    onSelect: (item) => {
+      if (!item) {
+        if (rrpContainer) rrpContainer.classList.add('d-none');
+        if (rrpRange) rrpRange.textContent = '—';
+        return;
+      }
+      if (item.rrp_min !== null || item.rrp_max !== null) {
+        const rrpMinFmt = item.rrp_min !== null ? parseFloat(item.rrp_min).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' €' : '—';
+        const rrpMaxFmt = item.rrp_max !== null ? parseFloat(item.rrp_max).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' €' : '—';
+        if (rrpRange) rrpRange.textContent = `${rrpMinFmt} - ${rrpMaxFmt}`;
+        if (rrpContainer) rrpContainer.classList.remove('d-none');
+      } else {
+        if (rrpContainer) rrpContainer.classList.add('d-none');
+        if (rrpRange) rrpRange.textContent = '—';
+      }
+    },
+    onClear: () => {
+      if (rrpContainer) rrpContainer.classList.add('d-none');
+      if (rrpRange) rrpRange.textContent = '—';
+    }
+  });
+});
+</script>
 
     </div>
   </div>

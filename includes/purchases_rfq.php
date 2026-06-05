@@ -19,21 +19,46 @@ require_once __DIR__ . '/purchases_common.php';
  * @param string $search  Testo libero su numero o ragione sociale fornitore
  * @param string $stato   '' = tutti | 'bozza' | 'inviata' | 'revisionata' | 'chiusa'
  */
-function qk_rfq_list(PDO $pdo, string $search = '', string $stato = ''): array
+/** @internal costruisce WHERE + params per qk_rfq_list / qk_rfq_count */
+function _qk_rfq_where(string $search, string $stato, string $dal, string $al): array
 {
-    $where  = ['1=1'];
-    $params = [];
-
+    $where = ['1=1']; $params = [];
     if ($search !== '') {
-        $where[]  = '(r.numero LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ?)';
-        $like     = '%' . $search . '%';
-        $params[] = $like;
-        $params[] = $like;
+        $where[] = '(r.numero LIKE ? OR r.riferimento_rfq_interno LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like; $params[] = $like; $params[] = $like;
     }
-    if ($stato !== '') {
-        $where[]  = 'r.stato = ?';
-        $params[] = $stato;
-    }
+    if ($stato !== '') { $where[] = 'r.stato = ?'; $params[] = $stato; }
+    if ($dal  !== '') { $where[] = 'r.data_emissione >= ?'; $params[] = $dal; }
+    if ($al   !== '') { $where[] = 'r.data_emissione <= ?'; $params[] = $al; }
+    return [$where, $params];
+}
+
+function qk_rfq_count(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = ''): int
+{
+    [$where, $params] = _qk_rfq_where($search, $stato, $dal, $al);
+    $st = $pdo->prepare('SELECT COUNT(*) FROM rfq_testata r LEFT JOIN clienti_fornitori cf ON cf.id = r.fornitore_id WHERE ' . implode(' AND ', $where));
+    $st->execute($params);
+    return (int) $st->fetchColumn();
+}
+
+function qk_rfq_list(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = '', string $sort = 'data', string $dir = 'desc', int $limit = 50, int $offset = 0): array
+{
+    $sortMap = [
+        'data'      => 'r.data_emissione',
+        'numero'    => 'r.numero',
+        'rif'       => 'r.riferimento_rfq_interno',
+        'fornitore' => 'fornitore_nome',
+        'stato'     => 'r.stato',
+        'scadenza'  => 'r.data_scadenza',
+        'totale'    => 'r.totale',
+    ];
+    $orderCol = $sortMap[$sort] ?? 'r.data_emissione';
+    $orderDir = $dir === 'asc' ? 'ASC' : 'DESC';
+
+    [$where, $params] = _qk_rfq_where($search, $stato, $dal, $al);
+    $params[] = $limit;
+    $params[] = $offset;
 
     $st = $pdo->prepare(
         'SELECT r.*,
@@ -41,7 +66,8 @@ function qk_rfq_list(PDO $pdo, string $search = '', string $stato = ''): array
            FROM rfq_testata r
       LEFT JOIN clienti_fornitori cf ON cf.id = r.fornitore_id
           WHERE ' . implode(' AND ', $where) . '
-          ORDER BY r.created_at DESC'
+          ORDER BY ' . $orderCol . ' ' . $orderDir . ', r.id DESC
+          LIMIT ? OFFSET ?'
     );
     $st->execute($params);
     return $st->fetchAll(PDO::FETCH_ASSOC);

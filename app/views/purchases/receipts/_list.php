@@ -1,109 +1,90 @@
 <?php
 /**
  * purchases/receipts/_list.php
- * Elenco ricezioni merci.
- * Variabili attese: $ricezioni_list (array), $stato (string)
+ * Variabili: $ricezioni_list, $search, $stato, $dal, $al, $pag, $total
  */
-
 function ricezione_badge(string $stato): string {
-    $map = [
-        'bozza'      => ['draft',     'Bozza'],
-        'completata' => ['confirmed', 'Completata'],
-    ];
+    $map = ['bozza' => ['draft','Bozza'], 'completata' => ['confirmed','Completata']];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
 }
-
-$statiLabels = [
-    ''           => 'Tutti',
-    'bozza'      => 'Bozze',
-    'completata' => 'Completate',
-];
+$statiLabels = ['' => 'Tutti', 'bozza' => 'Bozze', 'completata' => 'Completate'];
+$base = url('purchases/receipts');
+$sort = $pag['sort']; $dir = $pag['dir'];
+$hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
+
+<?php $active_tab = 'receipts'; include __DIR__ . '/../_subnav.php'; ?>
 
 <?php if (!empty($_SESSION['flash_success'])): ?>
 <div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
+  <i class="fa-solid fa-circle-check"></i> <span><?= e($_SESSION['flash_success']) ?></span>
   <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
-
+</div><?php unset($_SESSION['flash_success']); endif; ?>
 <?php if (!empty($_SESSION['flash_error'])): ?>
 <div class="qk-alert qk-alert-danger mb-3" data-auto-dismiss="6000">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
+  <i class="fa-solid fa-circle-xmark"></i> <span><?= e($_SESSION['flash_error']) ?></span>
   <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_error']); endif; ?>
-
-
+</div><?php unset($_SESSION['flash_error']); endif; ?>
 
 <div class="qk-card">
-  <!-- Toolbar: ricerca + filtri -->
+
   <div class="qk-table-toolbar">
-    <div class="qk-filter-pills">
-      <?php foreach ($statiLabels as $k => $lbl): ?>
-      <a href="<?= url('purchases/receipts') . ($k !== '' ? '?' . http_build_query(['stato' => $k]) : '') ?>"
-         class="qk-filter-pill <?= $stato === $k ? 'active' : '' ?>">
-        <?= e($lbl) ?>
-      </a>
-      <?php endforeach; ?>
+    <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <div class="qk-filter-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" name="q" class="qk-filter-input" placeholder="Numero, ordine, fornitore…" value="<?= e($search) ?>" autocomplete="off">
+      </div>
+      <input type="date" name="dal" class="qk-filter-input qk-filter-date" value="<?= e($dal) ?>" title="Da data">
+      <input type="date" name="al"  class="qk-filter-input qk-filter-date" value="<?= e($al) ?>"  title="A data">
+      <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <?php if ($hasFilters): ?><a href="<?= $base ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri"><i class="fa-solid fa-xmark"></i></a><?php endif; ?>
+    </form>
+    <div class="qk-table-toolbar-right">
+      <div class="qk-filter-pills">
+        <?php foreach ($statiLabels as $k => $lbl): ?>
+        <a href="<?= e(qk_list_url($base, ['stato' => $k ?: null])) ?>"
+           class="qk-filter-pill <?= $stato === $k ? 'active' : '' ?>"><?= e($lbl) ?></a>
+        <?php endforeach; ?>
+      </div>
     </div>
   </div>
 
-  <!-- Tabella -->
   <div class="qk-table-wrap">
     <table class="qk-table">
       <thead>
         <tr>
-          <th>Numero Ricezione</th>
-          <th>Ordine Collegato</th>
-          <th>Fornitore</th>
-          <th>Stato</th>
-          <th>Data Creazione</th>
-          <th>Data Ricezione</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'data', $sort, $dir)) ?>">Data ricezione<?= qk_sort_icon('data', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'stato', $sort, $dir)) ?>">Stato<?= qk_sort_icon('stato', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'numero', $sort, $dir)) ?>">Numero<?= qk_sort_icon('numero', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'ordine', $sort, $dir)) ?>">Ordine<?= qk_sort_icon('ordine', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'fornitore', $sort, $dir)) ?>">Fornitore<?= qk_sort_icon('fornitore', $sort, $dir) ?></a></th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         <?php if (empty($ricezioni_list)): ?>
+        <tr><td colspan="6" class="qk-table-empty"><i class="fa-solid fa-inbox"></i> Nessuna ricezione trovata.</td></tr>
+        <?php else: foreach ($ricezioni_list as $r): ?>
         <tr>
-          <td colspan="7" class="qk-table-empty">
-            <i class="fa-solid fa-inbox"></i> Nessuna ricezione trovata.
-          </td>
-        </tr>
-        <?php else: ?>
-        <?php foreach ($ricezioni_list as $r): ?>
-        <tr>
-          <td>
-            <a href="<?= url('purchases/receipts/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong">
-              <?= e($r['numero']) ?>
-            </a>
-          </td>
-          <td>
-            <?php if (!empty($r['ordine_numero'])): ?>
-              <a href="<?= url('purchases/orders/edit') . '?id=' . $r['ordine_id'] ?>" class="qk-link-strong">
-                <?= e($r['ordine_numero']) ?>
-              </a>
-            <?php else: ?>
-              <span class="qk-text-muted">—</span>
-            <?php endif; ?>
-          </td>
-          <td><?= e($r['fornitore_nome'] ?? '—') ?></td>
+          <td><?= $r['data_effettiva'] ? e(fmt_date($r['data_effettiva'])) : '<span class="qk-text-muted">In attesa</span>' ?></td>
           <td><?= ricezione_badge($r['stato']) ?></td>
-          <td><?= e($r['created_at']) ?></td>
-          <td><?= e($r['data_effettiva'] ?? '—') ?></td>
+          <td><a href="<?= url('purchases/receipts/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong"><?= e($r['numero']) ?></a></td>
+          <td><?php if (!empty($r['ordine_numero'])): ?>
+            <a href="<?= url('purchases/orders/edit') . '?id=' . $r['ordine_id'] ?>" class="qk-text-muted" style="font-size:.82rem"><?= e($r['ordine_numero']) ?></a>
+          <?php else: ?><span class="qk-text-muted">—</span><?php endif; ?></td>
+          <td><?= e($r['fornitore_nome'] ?? '—') ?></td>
           <td class="qk-table-actions">
-            <a href="<?= url('purchases/receipts/edit') . '?id=' . $r['id'] ?>"
-               class="btn-qk btn-qk-xs btn-qk-secondary" title="Apri / Conferma">
-              <i class="fa-solid fa-pencil"></i>
-            </a>
+            <a href="<?= url('purchases/receipts/edit') . '?id=' . $r['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary" title="Apri"><i class="fa-solid fa-pencil"></i></a>
           </td>
         </tr>
-        <?php endforeach; ?>
-        <?php endif; ?>
+        <?php endforeach; endif; ?>
       </tbody>
     </table>
   </div>
+
+  <?php qk_paginate($total, $pag['page'], $pag['limit'], $base); ?>
+
 </div>

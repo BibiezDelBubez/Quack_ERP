@@ -49,11 +49,38 @@ $can_edit = ($stato === 'bozza');
 #tbl-righe .col-iva    { width: 60px; }
 #tbl-righe .col-tot    { width: 100px; }
 #tbl-righe .col-del    { width: 36px; }
+#tbl-righe .col-costo   { width: 90px; }
+#tbl-righe .col-range   { width: 120px; }
+#tbl-righe .col-delta   { width: 90px; }
 .riga-sku { font-size: .72rem; color: var(--qk-text-muted); font-family: monospace; }
 /* Override visual indicators */
 .is-overridden {
   border-color: #f59e0b !important;
   background-color: #fef3c7 !important;
+}
+
+/* Stili Catalogo Prodotti */
+.qk-card-prod-catalogo {
+  background: var(--qk-card-bg, #fff);
+  border: 1px solid var(--qk-border) !important;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.qk-card-prod-catalogo:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+  border-color: var(--qk-accent) !important;
+}
+.badge-rrp-min {
+  background-color: rgba(40, 167, 69, 0.1) !important;
+  color: #28a745 !important;
+}
+.badge-rrp-max {
+  background-color: rgba(0, 123, 255, 0.1) !important;
+  color: #007bff !important;
+}
+.badge-costo {
+  background-color: var(--qk-bg-subtle) !important;
+  color: var(--qk-text-secondary) !important;
 }
 </style>
 
@@ -82,37 +109,50 @@ $can_edit = ($stato === 'bozza');
             <i class="fa-solid fa-paper-plane"></i> Invia al Cliente
           </button>
         </form>
-      <?php elseif ($stato === 'inviata'): ?>
-        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
-          <?= csrf_field() ?>
-          <input type="hidden" name="id" value="<?= $id ?>">
-          <input type="hidden" name="azione" value="nuova_versione">
-          <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Crea una nuova versione di questo preventivo">
-            <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
-          </button>
-        </form>
-        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Confermare l\'accettazione del preventivo e creare l\'ordine cliente?')">
-          <?= csrf_field() ?>
-          <input type="hidden" name="id" value="<?= $id ?>">
-          <input type="hidden" name="azione" value="conferma_ordine">
-          <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm" title="Accetta il preventivo e genera l'ordine di vendita">
-            <i class="fa-solid fa-circle-check"></i> Accetta e Crea Ordine
-          </button>
-        </form>
-        <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Segnare il preventivo come rifiutato?')">
-          <?= csrf_field() ?>
-          <input type="hidden" name="id" value="<?= $id ?>">
-          <input type="hidden" name="azione" value="rifiuta">
-          <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm text-danger" title="Segna come rifiutato">
-            <i class="fa-solid fa-ban"></i> Rifiuta
-          </button>
-        </form>
-      <?php elseif ($stato === 'accettata' && !empty($linkedOrder)): ?>
-        <span class="qk-badge qk-badge-success py-2 px-3 fw-bold d-inline-flex align-items-center" style="font-size: 0.85rem; height: 31px;">
-          <i class="fa-solid fa-check-double me-1"></i> Ordine Generato: 
-          <a href="<?= url('sales/orders/edit?id=' . $linkedOrder['id']) ?>" class="fw-bold text-white text-decoration-underline ms-1"><?= e($linkedOrder['numero_ordine']) ?></a>
-        </span>
+      <?php else: ?>
+        <?php if (in_array($stato, ['inviata', 'rifiutata', 'scaduta', 'annullata'])): ?>
+          <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= $id ?>">
+            <input type="hidden" name="azione" value="nuova_versione">
+            <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Crea una nuova versione di questo preventivo">
+              <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
+            </button>
+          </form>
+        <?php endif; ?>
+        <?php if ($stato === 'inviata'): ?>
+          <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Confermare l\'accettazione del preventivo e creare l\'ordine cliente?')">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= $id ?>">
+            <input type="hidden" name="azione" value="conferma_ordine">
+            <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm" title="Accetta il preventivo e genera l'ordine di vendita">
+              <i class="fa-solid fa-circle-check"></i> Accetta e Crea Ordine
+            </button>
+          </form>
+          <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Segnare il preventivo come rifiutato?')">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= $id ?>">
+            <input type="hidden" name="azione" value="rifiuta">
+            <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm text-danger" title="Segna come rifiutato">
+              <i class="fa-solid fa-ban"></i> Rifiuta
+            </button>
+          </form>
+        <?php elseif ($stato === 'accettata' && !empty($linkedOrder)): ?>
+          <span class="qk-badge qk-badge-success py-2 px-3 fw-bold d-inline-flex align-items-center" style="font-size: 0.85rem; height: 31px;">
+            <i class="fa-solid fa-check-double me-1"></i> Ordine Generato: 
+            <a href="<?= url('sales/orders/edit?id=' . $linkedOrder['id']) ?>" class="fw-bold text-white text-decoration-underline ms-1"><?= e($linkedOrder['numero_ordine']) ?></a>
+          </span>
+        <?php endif; ?>
       <?php endif; ?>
+      <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="duplica">
+        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Duplica questo preventivo in una nuova bozza indipendente">
+          <i class="fa-regular fa-copy text-success"></i> Duplica
+        </button>
+      </form>
+
       
       <a href="<?= url('sales/quotes/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank" title="Stampa o scarica il preventivo in formato PDF">
         <i class="fa-solid fa-file-pdf text-danger"></i> PDF
@@ -316,6 +356,28 @@ $can_edit = ($stato === 'bozza');
         
         <!-- Tab Prodotti -->
         <div class="tab-pane active" id="pane-prodotti">
+          
+          <!-- Catalogo Prodotti Widget -->
+          <div class="qk-card mb-3 p-3 bg-light border-0 shadow-xs" style="border-radius: var(--qk-border-radius-lg, 8px);">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="fw-bold text-dark" style="font-size:0.95rem;">
+                <i class="fa-solid fa-cubes me-1 text-primary"></i> Catalogo Prodotti — clicca per aggiungere
+              </span>
+            </div>
+            
+            <div class="qk-filter-wrap mb-3" style="max-width: 100%;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="catalogo-search" class="qk-filter-input w-100" placeholder="Cerca prodotto, codice, confezione..." autocomplete="off">
+            </div>
+
+            <!-- Grid di Card Prodotti -->
+            <div id="catalogo-grid" class="row g-2 mb-2" style="max-height: 250px; overflow-y: auto;">
+              <div class="col-12 text-center text-muted py-3 small">
+                Digita nella barra di ricerca per visualizzare i prodotti
+              </div>
+            </div>
+          </div>
+
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
             <h4 style="font-size:1rem; margin:0;"><i class="fa-solid fa-list me-2"></i>Righe preventivo</h4>
             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -344,10 +406,13 @@ $can_edit = ($stato === 'bozza');
                   <th class="col-conf">Confezione <i class="fa-solid fa-circle-info" data-bs-toggle="tooltip" title="Es. secchio 5 kg" style="cursor:help; font-size:0.8rem; opacity:0.8;"></i></th>
                   <th class="col-qta">Qtà <span class="required">*</span></th>
                   <th class="col-um">U.M.</th>
+                  <th class="col-costo">Costo</th>
+                  <th class="col-range">Range RRP</th>
                   <th class="col-pu">Prezzo unit.</th>
                   <th class="col-sc">Sc. %</th>
                   <th class="col-iva">IVA %</th>
                   <th class="col-tot">Totale</th>
+                  <th class="col-delta">Delta</th>
                   <th class="col-del"></th>
                 </tr>
               </thead>
@@ -363,7 +428,7 @@ $can_edit = ($stato === 'bozza');
           </div>
 
           <div style="padding:1rem 1.25rem; border-top: 1px solid var(--qk-border); margin-top:1rem;">
-            <div class="d-flex justify-content-between align-items-start gap-3">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
               <div style="max-width:260px">
                 <div class="qk-form-group mb-0">
                   <label class="qk-form-label">Sconto globale %</label>
@@ -380,6 +445,34 @@ $can_edit = ($stato === 'bozza');
                 <hr class="qk-totali-sep">
                 <span class="lbl lbl-total">Totale IVA inclusa</span>
                 <span class="val val-total" id="tot-totale">€ 0,00</span>
+              </div>
+            </div>
+
+            <!-- Margins Summary Row (Mockup Style) -->
+            <div class="row g-3 mt-3 pt-3 border-top">
+              <div class="col-6 col-md-3">
+                <div class="p-3 rounded border bg-light shadow-xs text-center">
+                  <div class="text-muted small fw-bold text-uppercase" style="font-size:0.75rem;">Totale Cliente</div>
+                  <div class="fs-4 fw-bold text-dark mt-1" id="box-tot-cliente">€ 0,00</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="p-3 rounded border bg-light shadow-xs text-center">
+                  <div class="text-muted small fw-bold text-uppercase" style="font-size:0.75rem;">Totale Costo</div>
+                  <div class="fs-4 fw-bold text-dark mt-1" id="box-tot-costo">€ 0,00</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="p-3 rounded border shadow-xs text-center" id="box-margine-euro-container" style="background-color: rgba(40,167,69,0.06); border-color: rgba(40,167,69,0.2);">
+                  <div class="text-muted small fw-bold text-uppercase" style="font-size:0.75rem;">Margine €</div>
+                  <div class="fs-4 fw-bold text-success mt-1" id="box-margine-euro">€ 0,00</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="p-3 rounded border shadow-xs text-center" id="box-margine-perc-container" style="background-color: rgba(40,167,69,0.06); border-color: rgba(40,167,69,0.2);">
+                  <div class="text-muted small fw-bold text-uppercase" style="font-size:0.75rem;">Margine %</div>
+                  <div class="fs-4 fw-bold text-success mt-1" id="box-margine-perc">0,00%</div>
+                </div>
               </div>
             </div>
           </div>
@@ -882,6 +975,15 @@ function syncRowMetadata(tr, metadata) {
     const confInput = tr.querySelector('.riga-conf');
     if (confInput) confInput.value = metadata.quantitaConfezione;
   }
+  if (metadata.costoBase !== undefined) {
+    tr.dataset.costoBase = metadata.costoBase;
+  }
+  if (metadata.rrpMin !== undefined) {
+    tr.dataset.rrpMin = metadata.rrpMin;
+  }
+  if (metadata.rrpMax !== undefined) {
+    tr.dataset.rrpMax = metadata.rrpMax;
+  }
 }
 
 function setRowUomMode(tr, targetMode, currentMode) {
@@ -936,6 +1038,9 @@ function buildRiga(prefill = {}) {
   tr.dataset.uomCommercial = prefill.uom_commercial || prefill.unita_misura || '';
   tr.dataset.uomCommercialId = prefill.uom_commercial_id || '';
   tr.dataset.quantitaContenuto = prefill.quantita_contenuto || '1';
+  tr.dataset.costoBase = prefill.costo_unitario || prefill.costo_base || '0';
+  tr.dataset.rrpMin = prefill.rrp_min !== undefined && prefill.rrp_min !== null ? prefill.rrp_min : '';
+  tr.dataset.rrpMax = prefill.rrp_max !== undefined && prefill.rrp_max !== null ? prefill.rrp_max : '';
 
   tr.innerHTML = `
     <td class="col-search">
@@ -971,6 +1076,12 @@ function buildRiga(prefill = {}) {
       <input type="text" name="righe[${idx}][unita_misura]" class="qk-form-control inp-um"
              placeholder="pz" maxlength="5" value="${esc(prefill.unita_misura || '')}">
     </td>
+    <td class="col-costo text-end" style="font-weight: 500;">
+      <span class="riga-costo-val">—</span>
+    </td>
+    <td class="col-range text-center small text-muted">
+      <span class="riga-range-val">—</span>
+    </td>
     <td class="col-pu">
       <div style="position:relative; display:flex; align-items:center; width:100%;">
         <input type="number" name="righe[${idx}][prezzo_unitario]" class="qk-form-control text-end inp-pu"
@@ -990,6 +1101,9 @@ function buildRiga(prefill = {}) {
     </td>
     <td class="col-tot">
       <div class="riga-total">€ 0,00</div>
+    </td>
+    <td class="col-delta text-end" style="font-weight: 600;">
+      <span class="riga-delta-val">—</span>
     </td>
     <td class="col-del">
       <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger riga-del" title="Rimuovi riga"><i class="fa-solid fa-trash-can"></i></button>
@@ -1043,7 +1157,10 @@ function buildRiga(prefill = {}) {
         uomCommercialId: item.unita_contenuto_id || item.unita_misura_stock_id || '',
         quantitaContenuto: item.quantita_contenuto || '1',
         sku: item.sku || '',
-        quantitaConfezione: item.quantita_confezione || ''
+        quantitaConfezione: item.quantita_confezione || '',
+        costoBase: item.costo_base || '0',
+        rrpMin: item.rrp_min !== undefined && item.rrp_min !== null ? item.rrp_min : '',
+        rrpMax: item.rrp_max !== undefined && item.rrp_max !== null ? item.rrp_max : ''
       });
 
       // Apply currently active UoM mode (starting from default Stock values)
@@ -1079,6 +1196,7 @@ function buildRiga(prefill = {}) {
 function calcTotali() {
   let imponibile = 0;
   let totIva     = 0;
+  let totaleCosto = 0;
 
   document.querySelectorAll('#tbody-righe tr').forEach(tr => {
     const qta  = parseFloat(tr.querySelector('.inp-qta')?.value)  || 0;
@@ -1093,6 +1211,52 @@ function calcTotali() {
     if (tr.querySelector('.riga-total')) {
       tr.querySelector('.riga-total').textContent = window.qkFormatEuro(tot);
     }
+
+    // UoM factor and Cost/RRP math
+    const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
+    const costoBase = parseFloat(tr.dataset.costoBase) || 0;
+    const rrpMinRaw = tr.dataset.rrpMin ? parseFloat(tr.dataset.rrpMin) : null;
+    const rrpMaxRaw = tr.dataset.rrpMax ? parseFloat(tr.dataset.rrpMax) : null;
+
+    let costoConvertito = costoBase;
+    let rrpMinConvertito = rrpMinRaw;
+    let rrpMaxConvertito = rrpMaxRaw;
+
+    if (currentUomMode === 'commercial' && qFactor > 1) {
+      costoConvertito = costoBase / qFactor;
+      if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw / qFactor;
+      if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw / qFactor;
+    }
+
+    const rowCostTotal = Math.round(costoConvertito * qta * 100) / 100;
+    totaleCosto += rowCostTotal;
+
+    const rowDelta = tot - rowCostTotal;
+
+    // Display values
+    const elCosto = tr.querySelector('.riga-costo-val');
+    if (elCosto) {
+      elCosto.textContent = costoBase > 0 ? window.qkFormatEuro(costoConvertito) : '—';
+    }
+
+    const elRange = tr.querySelector('.riga-range-val');
+    if (elRange) {
+      if (rrpMinConvertito !== null && rrpMaxConvertito !== null) {
+        elRange.textContent = `€ ${rrpMinConvertito.toFixed(2)} → € ${rrpMaxConvertito.toFixed(2)}`;
+      } else {
+        elRange.textContent = '—';
+      }
+    }
+
+    const elDelta = tr.querySelector('.riga-delta-val');
+    if (elDelta) {
+      elDelta.textContent = window.qkFormatEuro(rowDelta);
+      if (rowDelta >= 0) {
+        elDelta.style.color = '#28a745';
+      } else {
+        elDelta.style.color = 'var(--qk-danger)';
+      }
+    }
   });
 
   const scGlob = parseFloat(document.getElementById('sconto_globale')?.value) || 0;
@@ -1103,6 +1267,59 @@ function calcTotali() {
   document.getElementById('tot-imponibile').textContent = window.qkFormatEuro(impSc);
   document.getElementById('tot-iva').textContent        = window.qkFormatEuro(ivaSc);
   document.getElementById('tot-totale').textContent     = window.qkFormatEuro(totale);
+
+  // Update summary boxes
+  const boxTotCliente = document.getElementById('box-tot-cliente');
+  if (boxTotCliente) boxTotCliente.textContent = window.qkFormatEuro(impSc);
+
+  const boxTotCosto = document.getElementById('box-tot-costo');
+  if (boxTotCosto) boxTotCosto.textContent = window.qkFormatEuro(totaleCosto);
+
+  const boxMargineEuro = document.getElementById('box-margine-euro');
+  const boxMargineEuroCont = document.getElementById('box-margine-euro-container');
+  const marginEuro = impSc - totaleCosto;
+  if (boxMargineEuro) {
+    boxMargineEuro.textContent = window.qkFormatEuro(marginEuro);
+    if (marginEuro >= 0) {
+      boxMargineEuro.className = 'fs-4 fw-bold text-success mt-1';
+      if (boxMargineEuroCont) {
+        boxMargineEuroCont.style.backgroundColor = 'rgba(40,167,69,0.06)';
+        boxMargineEuroCont.style.borderColor = 'rgba(40,167,69,0.2)';
+      }
+    } else {
+      boxMargineEuro.className = 'fs-4 fw-bold text-danger mt-1';
+      if (boxMargineEuroCont) {
+        boxMargineEuroCont.style.backgroundColor = 'rgba(220,53,69,0.06)';
+        boxMargineEuroCont.style.borderColor = 'rgba(220,53,69,0.2)';
+      }
+    }
+  }
+
+  const boxMarginePerc = document.getElementById('box-margine-perc');
+  const boxMarginePercCont = document.getElementById('box-margine-perc-container');
+  const marginPerc = impSc > 0 ? (marginEuro / impSc) * 100 : 0;
+  if (boxMarginePerc) {
+    boxMarginePerc.textContent = marginPerc.toFixed(2) + '%';
+    if (marginPerc >= 20) {
+      boxMarginePerc.className = 'fs-4 fw-bold text-success mt-1';
+      if (boxMarginePercCont) {
+        boxMarginePercCont.style.backgroundColor = 'rgba(40,167,69,0.06)';
+        boxMarginePercCont.style.borderColor = 'rgba(40,167,69,0.2)';
+      }
+    } else if (marginPerc >= 10) {
+      boxMarginePerc.className = 'fs-4 fw-bold text-warning mt-1';
+      if (boxMarginePercCont) {
+        boxMarginePercCont.style.backgroundColor = 'rgba(255,193,7,0.06)';
+        boxMarginePercCont.style.borderColor = 'rgba(255,193,7,0.2)';
+      }
+    } else {
+      boxMarginePerc.className = 'fs-4 fw-bold text-danger mt-1';
+      if (boxMarginePercCont) {
+        boxMarginePercCont.style.backgroundColor = 'rgba(220,53,69,0.06)';
+        boxMarginePercCont.style.borderColor = 'rgba(220,53,69,0.2)';
+      }
+    }
+  }
 }
 
 // UoM Toggling Listener
@@ -1126,6 +1343,123 @@ if (PRELOADED_RIGHE && PRELOADED_RIGHE.length > 0) {
   PRELOADED_RIGHE.forEach(r => buildRiga(r));
 } else {
   buildRiga();
+}
+
+// Catalogo Prodotti Logic
+const elCatSearch = document.getElementById('catalogo-search');
+const elCatGrid = document.getElementById('catalogo-grid');
+
+let catalogoProdottiData = [];
+
+async function renderCatalogo(q = '') {
+  if (q.trim().length === 0) {
+    elCatGrid.innerHTML = `
+      <div class="col-12 text-center text-muted py-3 small">
+        Digita nella barra di ricerca per visualizzare i prodotti
+      </div>
+    `;
+    return;
+  }
+  
+  try {
+    const res = await fetchProdotti(q);
+    catalogoProdottiData = res;
+    if (!res || res.length === 0) {
+      elCatGrid.innerHTML = `
+        <div class="col-12 text-center text-muted py-3 small">
+          Nessun prodotto trovato
+        </div>
+      `;
+      return;
+    }
+    
+    let html = '';
+    res.forEach((prod, index) => {
+      const label = prod.label || prod.nome || '';
+      const sku = prod.sku || prod.sku_interno || '';
+      const confezione = prod.quantita_confezione || prod.descrizione_confezione || '—';
+      const costo = parseFloat(prod.costo_base) || 0;
+      const rrpMin = prod.rrp_min !== null && prod.rrp_min !== undefined ? parseFloat(prod.rrp_min) : null;
+      const rrpMax = prod.rrp_max !== null && prod.rrp_max !== undefined ? parseFloat(prod.rrp_max) : null;
+      
+      const badgeCostoHtml = costo > 0 ? `<span class="px-1 badge-costo rounded">Costo: ${window.qkFormatEuro(costo)}</span>` : '';
+      const badgeMinHtml = rrpMin !== null ? `<span class="px-1 badge-rrp-min rounded fw-bold">Min: ${window.qkFormatEuro(rrpMin)}</span>` : '';
+      const badgeMaxHtml = rrpMax !== null ? `<span class="px-1 badge-rrp-max rounded fw-bold">Max: ${window.qkFormatEuro(rrpMax)}</span>` : '';
+
+      html += `
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+          <div class="qk-card-prod-catalogo p-2 border rounded shadow-xs h-100" style="cursor:pointer;" onclick="aggiungiProdottoDaCatalogo(${index})">
+            <div class="fw-bold small text-truncate" title="${window.qkEscapeHtml(label)}">${window.qkEscapeHtml(label)}</div>
+            <div class="text-muted font-monospace" style="font-size:0.75rem;">${window.qkEscapeHtml(sku)}</div>
+            <div class="text-muted" style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Conf: ${window.qkEscapeHtml(confezione)}</div>
+            <div class="d-flex gap-1 flex-wrap mt-1" style="font-size:0.72rem;">
+              ${badgeCostoHtml}
+              ${badgeMinHtml}
+              ${badgeMaxHtml}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    elCatGrid.innerHTML = html;
+  } catch (err) {
+    console.error(err);
+    elCatGrid.innerHTML = `<div class="col-12 text-center text-danger py-3 small">Errore durante la ricerca</div>`;
+  }
+}
+
+window.aggiungiProdottoDaCatalogo = function (index) {
+  const prod = catalogoProdottiData[index];
+  if (!prod) return;
+  
+  // Trova una riga vuota o creane una nuova
+  let targetTr = null;
+  const rows = document.querySelectorAll('#tbody-righe tr');
+  for (let tr of rows) {
+    const prodId = tr.querySelector('.inp-prodotto-id').value;
+    const searchVal = tr.querySelector('.riga-search').value;
+    if (!prodId && !searchVal) {
+      targetTr = tr;
+      break;
+    }
+  }
+  
+  if (!targetTr) {
+    targetTr = buildRiga();
+  }
+  
+  // Popola la riga
+  targetTr.querySelector('.inp-prodotto-id').value  = prod.id;
+  targetTr.querySelector('.inp-desc').value         = prod.label;
+  targetTr.querySelector('.inp-qta').value          = '1';
+  targetTr.querySelector('.inp-pu').value           = '';
+  
+  syncRowMetadata(targetTr, {
+    uomStock: prod.unita_misura || 'pz',
+    uomStockId: prod.unita_misura_stock_id || '',
+    uomCommercial: prod.unita_misura_commerciale || prod.unita_misura || 'pz',
+    uomCommercialId: prod.unita_contenuto_id || prod.unita_misura_stock_id || '',
+    quantitaContenuto: prod.quantita_contenuto || '1',
+    sku: prod.sku || '',
+    quantitaConfezione: prod.quantita_confezione || '',
+    costoBase: prod.costo_base || '0',
+    rrpMin: prod.rrp_min !== null && prod.rrp_min !== undefined ? prod.rrp_min : '',
+    rrpMax: prod.rrp_max !== null && prod.rrp_max !== undefined ? prod.rrp_max : ''
+  });
+
+  setRowUomMode(targetTr, currentUomMode, 'stock');
+
+  targetTr.querySelector('.riga-search').value = prod.label;
+  calcTotali();
+  checkRowCompliance(targetTr);
+  fetchQuotePrice(targetTr);
+  window.qkToast('Prodotto aggiunto al preventivo!', 'success');
+};
+
+if (elCatSearch) {
+  elCatSearch.addEventListener('input', window.qkDebounce(() => {
+    renderCatalogo(elCatSearch.value);
+  }, 250));
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1766,6 +2100,17 @@ async function fetchQuotePrice(tr) {
       if (discountInput && data.sconto_perc !== undefined) {
         discountInput.value = parseFloat(data.sconto_perc) || 0;
       }
+
+      if (data.costo_unitario !== undefined) {
+        tr.dataset.costoBase = data.costo_unitario;
+      }
+      if (data.rrp_min !== undefined) {
+        tr.dataset.rrpMin = data.rrp_min !== null ? data.rrp_min : '';
+      }
+      if (data.rrp_max !== undefined) {
+        tr.dataset.rrpMax = data.rrp_max !== null ? data.rrp_max : '';
+      }
+      calcTotali();
     }
 
     // Update source badge

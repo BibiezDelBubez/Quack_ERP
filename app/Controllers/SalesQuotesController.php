@@ -10,29 +10,49 @@ final class SalesQuotesController extends BaseController
 
     public function index(): void
     {
-        $search = get_param('q');
-        $status = get_param('status');
+        $search = get_param('q', '');
+        $status = get_param('status', '');
+        $dal    = get_param('dal', '');
+        $al     = get_param('al', '');
 
+        $sortMap = ['data' => 'o.data_offerta', 'numero' => 'o.numero_preventivo',
+                    'cliente' => 'cliente_nome', 'stato' => 'o.stato',
+                    'scadenza' => 'o.data_scadenza', 'totale' => 'o.totale'];
+        $pag      = qk_pagination_params(array_keys($sortMap), 'data', 'desc');
+        $orderCol = $sortMap[$pag['sort']] ?? 'o.data_offerta';
+        $orderDir = $pag['dir'] === 'asc' ? 'ASC' : 'DESC';
+
+        $where = ['1=1']; $params = [];
+        if ($search) {
+            $where[] = "(o.numero_preventivo LIKE :q OR o.riferimento_interno LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)";
+            $params[':q'] = '%' . $search . '%';
+        }
+        if ($status) { $where[] = "o.stato = :stato"; $params[':stato'] = $status; }
+        if ($dal)    { $where[] = "o.data_offerta >= :dal"; $params[':dal'] = $dal; }
+        if ($al)     { $where[] = "o.data_offerta <= :al";  $params[':al']  = $al; }
+
+        $whereStr = implode(' AND ', $where);
+
+        $stCount = $this->pdo->prepare("SELECT COUNT(*) FROM preventivi o JOIN clienti_fornitori cf ON cf.id = o.cliente_id WHERE $whereStr");
+        $stCount->execute($params);
+        $total = (int) $stCount->fetchColumn();
+
+        $params[':limit']  = $pag['limit'];
+        $params[':offset'] = $pag['offset'];
         $stmt = $this->pdo->prepare(
             "SELECT o.id, o.numero_preventivo, o.stato, o.data_offerta, o.data_scadenza,
-                    o.imponibile, o.totale, o.note_cliente,
+                    o.imponibile, o.totale, o.note_cliente, o.riferimento_interno,
                     COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
                     cv.nome AS canale_vendita
              FROM preventivi o
              JOIN clienti_fornitori cf ON cf.id = o.cliente_id
              LEFT JOIN canali_vendita cv ON cv.id = o.canale_vendita_id
-             WHERE 1=1
-               " . ($search ? "AND (o.numero_preventivo LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)" : '') . "
-               " . ($status ? "AND o.stato = :stato" : '') . "
-             ORDER BY o.created_at DESC"
+             WHERE $whereStr
+             ORDER BY $orderCol $orderDir, o.id DESC
+             LIMIT :limit OFFSET :offset"
         );
-        $params = [];
-        if ($search) $params[':q']     = '%' . $search . '%';
-        if ($status) $params[':stato'] = $status;
         $stmt->execute($params);
-
         $offers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $total  = count($offers);
 
         $active_tab    = 'quotes';
         $page_title    = 'Preventivi';
@@ -304,6 +324,12 @@ final class SalesQuotesController extends BaseController
                 case 'nuova_versione':
                     $nuovoId = qk_preventivo_nuova_versione($this->pdo, $id, (int)current_user()['id']);
                     $_SESSION['flash_success'] = 'Nuova versione creata.';
+                    redirect(url('sales/quotes/edit') . '?id=' . $nuovoId);
+                    break;
+
+                case 'duplica':
+                    $nuovoId = qk_preventivo_duplica($this->pdo, $id, (int)current_user()['id']);
+                    $_SESSION['flash_success'] = 'Preventivo duplicato correttamente in una nuova bozza.';
                     redirect(url('sales/quotes/edit') . '?id=' . $nuovoId);
                     break;
 

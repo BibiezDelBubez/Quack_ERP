@@ -1,140 +1,110 @@
 <?php
 /**
  * purchases/rfq/_list.php
- * Elenco Richieste di Offerta.
- * Variabili: $rfq_list (array), $search (string), $stato (string)
+ * Variabili: $rfq_list, $search, $stato, $dal, $al, $pag, $total
  */
-
-// Mappa stato → badge CSS + etichetta
 function rfq_badge(string $stato): string {
-    $map = [
-        'bozza'      => ['draft',     'Bozza'],
-        'inviata'    => ['confirmed', 'Inviata'],
-        'revisionata'=> ['pending',   'Revisionata'],
-        'chiusa'     => ['delivered', 'Chiusa'],
-    ];
+    $map = ['bozza' => ['draft','Bozza'], 'inviata' => ['confirmed','Inviata'],
+            'revisionata' => ['pending','Revisionata'], 'chiusa' => ['delivered','Chiusa']];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
 }
-
 $statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviata' => 'Inviate',
                 'revisionata' => 'Revisionate', 'chiusa' => 'Chiuse'];
+$base = url('purchases/rfq');
+$sort = $pag['sort']; $dir = $pag['dir'];
+$hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
 
-<!-- Sotto-navigazione condivisa -->
 <?php $active_tab = 'rfq'; include __DIR__ . '/../_subnav.php'; ?>
 
 <?php if (!empty($_SESSION['flash_success'])): ?>
 <div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
+  <i class="fa-solid fa-circle-check"></i> <span><?= e($_SESSION['flash_success']) ?></span>
   <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
-
+</div><?php unset($_SESSION['flash_success']); endif; ?>
 <?php if (!empty($_SESSION['flash_error'])): ?>
 <div class="qk-alert qk-alert-danger mb-3" data-auto-dismiss="6000">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
+  <i class="fa-solid fa-circle-xmark"></i> <span><?= e($_SESSION['flash_error']) ?></span>
   <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_error']); endif; ?>
-
-
+</div><?php unset($_SESSION['flash_error']); endif; ?>
 
 <div class="qk-card">
-  <!-- Toolbar: ricerca + filtro stato -->
+
   <div class="qk-table-toolbar">
-    <form method="get" action="<?= url('purchases/rfq') ?>" class="qk-search-form">
-      <div class="qk-search-wrap">
-        <i class="fa-solid fa-magnifying-glass qk-search-icon"></i>
-        <input type="text" name="q" class="qk-form-control qk-search-input"
-               placeholder="Cerca per numero o fornitore…"
-               value="<?= e($search) ?>" autocomplete="off">
+    <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <div class="qk-filter-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" name="q" class="qk-filter-input" placeholder="Numero, riferimento, fornitore…" value="<?= e($search) ?>" autocomplete="off">
       </div>
-      <?php if ($stato !== ''): ?>
-        <input type="hidden" name="stato" value="<?= e($stato) ?>">
+      <input type="date" name="dal" class="qk-filter-input qk-filter-date" value="<?= e($dal) ?>" title="Da data">
+      <input type="date" name="al"  class="qk-filter-input qk-filter-date" value="<?= e($al) ?>"  title="A data">
+      <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+      <?php if ($hasFilters): ?>
+      <a href="<?= $base ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri">
+        <i class="fa-solid fa-xmark"></i>
+      </a>
       <?php endif; ?>
     </form>
-
-    <div class="qk-filter-pills">
-      <?php foreach ($statiLabels as $k => $lbl): ?>
-      <a href="<?= url('purchases/rfq') . ($k !== '' || $search !== '' ? '?' . http_build_query(array_filter(['q' => $search, 'stato' => $k])) : '') ?>"
-         class="qk-filter-pill <?= $stato === $k ? 'active' : '' ?>">
-        <?= e($lbl) ?>
-      </a>
-      <?php endforeach; ?>
+    <div class="qk-table-toolbar-right">
+      <div class="qk-filter-pills">
+        <?php foreach ($statiLabels as $k => $lbl): ?>
+        <a href="<?= e(qk_list_url($base, ['stato' => $k ?: null])) ?>"
+           class="qk-filter-pill <?= $stato === $k ? 'active' : '' ?>"><?= e($lbl) ?></a>
+        <?php endforeach; ?>
+      </div>
     </div>
   </div>
 
-  <!-- Tabella -->
   <div class="qk-table-wrap">
     <table class="qk-table">
       <thead>
         <tr>
-          <th>Numero</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'rif', $sort, $dir)) ?>">Rif. interno<?= qk_sort_icon('rif', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'data', $sort, $dir)) ?>">Data<?= qk_sort_icon('data', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'stato', $sort, $dir)) ?>">Stato<?= qk_sort_icon('stato', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'numero', $sort, $dir)) ?>">Numero<?= qk_sort_icon('numero', $sort, $dir) ?></a></th>
           <th>Ver.</th>
-          <th>Fornitore</th>
-          <th>Stato</th>
-          <th>Data emissione</th>
-          <th>Scadenza</th>
-          <th>Totale</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'fornitore', $sort, $dir)) ?>">Fornitore<?= qk_sort_icon('fornitore', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'scadenza', $sort, $dir)) ?>">Scadenza<?= qk_sort_icon('scadenza', $sort, $dir) ?></a></th>
+          <th class="qk-sortable qk-text-right"><a href="<?= e(qk_sort_url($base, 'totale', $sort, $dir)) ?>">Totale<?= qk_sort_icon('totale', $sort, $dir) ?></a></th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         <?php if (empty($rfq_list)): ?>
+        <tr><td colspan="9" class="qk-table-empty"><i class="fa-solid fa-inbox"></i> Nessuna RFQ trovata.</td></tr>
+        <?php else: foreach ($rfq_list as $r): ?>
         <tr>
-          <td colspan="8" class="qk-table-empty">
-            <i class="fa-solid fa-inbox"></i> Nessuna RFQ trovata.
-          </td>
-        </tr>
-        <?php else: ?>
-        <?php foreach ($rfq_list as $r): ?>
-        <tr>
-          <td>
-            <a href="<?= url('purchases/rfq/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong">
-              <?= e($r['numero']) ?>
-            </a>
-          </td>
+          <td><a href="<?= url('purchases/rfq/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong"><?= e($r['riferimento_rfq_interno'] ?: '—') ?></a></td>
+          <td><?= e(fmt_date($r['data_emissione'] ?? '')) ?: '—' ?></td>
+          <td><?= rfq_badge($r['stato']) ?></td>
+          <td class="qk-text-muted" style="font-size:.85rem"><?= e($r['numero']) ?></td>
           <td class="qk-text-muted">v<?= (int)$r['versione'] ?></td>
           <td><?= e($r['fornitore_nome'] ?? '—') ?></td>
-          <td><?= rfq_badge($r['stato']) ?></td>
-          <td><?= e($r['data_emissione'] ?? '—') ?></td>
           <td><?php
             if ($r['data_scadenza']) {
-                $scad  = new DateTime($r['data_scadenza']);
-                $oggi  = new DateTime();
-                $diff  = $oggi->diff($scad);
-                $scaduta = $scad < $oggi;
-                echo '<span' . ($scaduta ? ' class="qk-text-danger"' : '') . '>';
-                echo e($r['data_scadenza']);
-                echo '</span>';
+                $scaduta = new DateTime($r['data_scadenza']) < new DateTime();
+                echo '<span' . ($scaduta ? ' class="qk-text-danger"' : '') . '>' . e(fmt_date($r['data_scadenza'])) . '</span>';
             } else { echo '—'; }
           ?></td>
-          <td class="qk-text-right">
-            <?= $r['totale'] !== null ? '€ ' . number_format((float)$r['totale'], 2, ',', '.') : '—' ?>
-          </td>
+          <td class="qk-text-right"><?= $r['totale'] !== null ? '€ ' . number_format((float)$r['totale'], 2, ',', '.') : '—' ?></td>
           <td class="qk-table-actions">
-            <a href="<?= url('purchases/rfq/edit') . '?id=' . $r['id'] ?>"
-               class="btn-qk btn-qk-xs btn-qk-secondary" title="Apri">
-              <i class="fa-solid fa-pencil"></i>
-            </a>
+            <a href="<?= url('purchases/rfq/edit') . '?id=' . $r['id'] ?>" class="btn-qk btn-qk-xs btn-qk-secondary" title="Apri"><i class="fa-solid fa-pencil"></i></a>
             <?php if ($r['stato'] === 'bozza'): ?>
-            <form method="post" action="<?= url('purchases/rfq/delete') ?>" class="d-inline"
-                  onsubmit="return confirm('Eliminare la RFQ <?= e($r['numero']) ?>?')">
-              <?= csrf_field() ?>
-              <input type="hidden" name="id" value="<?= $r['id'] ?>">
-              <button type="submit" class="btn-qk btn-qk-xs btn-qk-ghost" title="Elimina">
-                <i class="fa-solid fa-trash"></i>
-              </button>
-            </form>
+            <form method="post" action="<?= url('purchases/rfq/delete') ?>" class="d-inline" onsubmit="return confirm('Eliminare la RFQ <?= e($r['numero']) ?>?')"><?= csrf_field() ?><input type="hidden" name="id" value="<?= $r['id'] ?>"><button type="submit" class="btn-qk btn-qk-xs btn-qk-ghost" title="Elimina"><i class="fa-solid fa-trash"></i></button></form>
             <?php endif; ?>
           </td>
         </tr>
-        <?php endforeach; ?>
-        <?php endif; ?>
+        <?php endforeach; endif; ?>
       </tbody>
     </table>
   </div>
+
+  <?php qk_paginate($total, $pag['page'], $pag['limit'], $base); ?>
+
 </div>

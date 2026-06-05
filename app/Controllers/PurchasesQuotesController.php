@@ -21,9 +21,13 @@ class PurchasesQuotesController extends BaseController
     {
         $search = get_param('q', '');
         $stato  = get_param('stato', '');
+        $dal    = get_param('dal', '');
+        $al     = get_param('al', '');
         $rfq_id = (int) get_param('rfq_id', '0');
 
-        $offerte_list = qk_offerte_list($this->pdo, $search, $stato, $rfq_id);
+        $pag          = qk_pagination_params(['data','numero','fornitore','stato','scadenza','totale'], 'data', 'desc');
+        $total        = qk_offerte_count($this->pdo, $search, $stato, $dal, $al, $rfq_id);
+        $offerte_list = qk_offerte_list($this->pdo, $search, $stato, $dal, $al, $rfq_id, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
         $page_title   = 'Preventivi Fornitori';
         $breadcrumbs = [
             ['label' => 'Acquisti'],

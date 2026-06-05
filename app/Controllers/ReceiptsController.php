@@ -17,10 +17,15 @@ class ReceiptsController extends BaseController
 {
     public function index(): void
     {
-        $ordine_id = (int) get_param('ordine_id', '0');
+        $search    = get_param('q', '');
         $stato     = get_param('stato', '');
+        $dal       = get_param('dal', '');
+        $al        = get_param('al', '');
+        $ordine_id = (int) get_param('ordine_id', '0');
 
-        $ricezioni_list = qk_ricezioni_list($this->pdo, $ordine_id, $stato);
+        $pag            = qk_pagination_params(['data','numero','fornitore','ordine','stato'], 'data', 'desc');
+        $total          = qk_ricezioni_count($this->pdo, $search, $stato, $dal, $al, $ordine_id);
+        $ricezioni_list = qk_ricezioni_list($this->pdo, $search, $stato, $dal, $al, $ordine_id, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
         $page_title     = 'Ricezioni Merce';
         $breadcrumbs = [
             ['label' => 'Acquisti'],

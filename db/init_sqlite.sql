@@ -499,8 +499,11 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori (
     lead_time_giorni        INTEGER,                    -- override del lead_time del fornitore per questo specifico prodotto
     attivo                  BOOLEAN       NOT NULL DEFAULT 1,
     note                    TEXT,
-    rrp_min                 DECIMAL(10,4),              -- prezzo di vendita MINIMO consigliato dal fornitore (in unita_misura_acquisto_id)
-    rrp_max                 DECIMAL(10,4),              -- prezzo di vendita MASSIMO consigliato dal fornitore (in unita_misura_acquisto_id)
+    rrp_min                 DECIMAL(10,4),              -- prezzo di vendita MINIMO consigliato dal fornitore (in unita_misura_stock_id)
+    rrp_max                 DECIMAL(10,4),              -- prezzo di vendita MASSIMO consigliato dal fornitore (in unita_misura_stock_id)
+    rrp_valido_dal          DATE,
+    rrp_valido_al           DATE,
+    rrp_valuta              CHAR(3) DEFAULT 'EUR',
     created_at              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME
 );
@@ -990,6 +993,7 @@ CREATE INDEX IF NOT EXISTS idx_prodotto_adr_prodotto          ON prodotto_classi
 CREATE INDEX IF NOT EXISTS idx_prodotto_adr_codice_onu        ON prodotto_classificazioni_adr(codice_onu_id);
 CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prodotto    ON prodotti_fornitori(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_fornitore   ON prodotti_fornitori(fornitore_id);
+CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_rrp_validita ON prodotti_fornitori(prodotto_id, fornitore_id, rrp_valido_dal, rrp_valido_al);
 CREATE INDEX IF NOT EXISTS idx_ordini_acquisto_stato          ON ordini_acquisto(stato);
 CREATE INDEX IF NOT EXISTS idx_ordini_acquisto_fornitore      ON ordini_acquisto(fornitore_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);

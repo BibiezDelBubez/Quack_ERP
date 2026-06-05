@@ -29,8 +29,12 @@ class RfqController extends BaseController
     {
         $search = get_param('q', '');
         $stato  = get_param('stato', '');
+        $dal    = get_param('dal', '');
+        $al     = get_param('al', '');
 
-        $rfq_list  = qk_rfq_list($this->pdo, $search, $stato);
+        $pag      = qk_pagination_params(['data','numero','rif','fornitore','stato','scadenza','totale'], 'data', 'desc');
+        $total    = qk_rfq_count($this->pdo, $search, $stato, $dal, $al);
+        $rfq_list = qk_rfq_list($this->pdo, $search, $stato, $dal, $al, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
         $page_title = 'Richieste di Offerta';
         $breadcrumbs = [
             ['label' => 'Acquisti'],

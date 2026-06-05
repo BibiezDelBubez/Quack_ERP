@@ -25,19 +25,45 @@ require_once __DIR__ . '/prodotti.php';
 /**
  * Elenco ricezioni, opzionalmente filtrate per ordine o stato.
  */
-function qk_ricezioni_list(PDO $pdo, int $ordine_id = 0, string $stato = ''): array
+/** @internal */
+function _qk_ricezioni_where(string $search, string $stato, string $dal, string $al, int $ordine_id): array
 {
-    $where  = ['1=1'];
-    $params = [];
+    $where = ['1=1']; $params = [];
+    if ($search !== '') {
+        $where[] = '(rt.numero LIKE ? OR ot.numero LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like; $params[] = $like; $params[] = $like;
+    }
+    if ($stato     !== '') { $where[] = 'rt.stato = ?';          $params[] = $stato; }
+    if ($dal       !== '') { $where[] = 'rt.data_effettiva >= ?'; $params[] = $dal; }
+    if ($al        !== '') { $where[] = 'rt.data_effettiva <= ?'; $params[] = $al; }
+    if ($ordine_id > 0)   { $where[] = 'rt.ordine_id = ?';       $params[] = $ordine_id; }
+    return [$where, $params];
+}
 
-    if ($ordine_id > 0) {
-        $where[]  = 'rt.ordine_id = ?';
-        $params[] = $ordine_id;
-    }
-    if ($stato !== '') {
-        $where[]  = 'rt.stato = ?';
-        $params[] = $stato;
-    }
+function qk_ricezioni_count(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = '', int $ordine_id = 0): int
+{
+    [$where, $params] = _qk_ricezioni_where($search, $stato, $dal, $al, $ordine_id);
+    $st = $pdo->prepare('SELECT COUNT(*) FROM ricezioni_testata rt LEFT JOIN ordini_testata ot ON ot.id = rt.ordine_id LEFT JOIN clienti_fornitori cf ON cf.id = rt.fornitore_id WHERE ' . implode(' AND ', $where));
+    $st->execute($params);
+    return (int) $st->fetchColumn();
+}
+
+function qk_ricezioni_list(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = '', int $ordine_id = 0, string $sort = 'data', string $dir = 'desc', int $limit = 50, int $offset = 0): array
+{
+    $sortMap = [
+        'data'      => 'rt.data_effettiva',
+        'numero'    => 'rt.numero',
+        'fornitore' => 'fornitore_nome',
+        'ordine'    => 'ot.numero',
+        'stato'     => 'rt.stato',
+    ];
+    $orderCol = $sortMap[$sort] ?? 'rt.data_effettiva';
+    $orderDir = $dir === 'asc' ? 'ASC' : 'DESC';
+
+    [$where, $params] = _qk_ricezioni_where($search, $stato, $dal, $al, $ordine_id);
+    $params[] = $limit;
+    $params[] = $offset;
 
     $st = $pdo->prepare(
         'SELECT rt.*,
@@ -47,7 +73,8 @@ function qk_ricezioni_list(PDO $pdo, int $ordine_id = 0, string $stato = ''): ar
       LEFT JOIN ordini_testata    ot ON ot.id = rt.ordine_id
       LEFT JOIN clienti_fornitori cf ON cf.id = rt.fornitore_id
           WHERE ' . implode(' AND ', $where) . '
-          ORDER BY rt.created_at DESC'
+          ORDER BY ' . $orderCol . ' ' . $orderDir . ', rt.id DESC
+          LIMIT ? OFFSET ?'
     );
     $st->execute($params);
     return $st->fetchAll(PDO::FETCH_ASSOC);

@@ -34,18 +34,24 @@ final class SalesPricelistsController extends BaseController
             $params[':attivo'] = (int)$filtro_attivo;
         }
 
-        $sql .= " ORDER BY l.id DESC";
+        $sortMap = ['nome' => 'l.nome', 'valuta' => 'l.valuta', 'dal' => 'l.valido_dal', 'al' => 'l.valido_al', 'articoli' => 'nr_articoli'];
+        $pag = qk_pagination_params(array_keys($sortMap), 'nome', 'asc');
+        $orderCol = $sortMap[$pag['sort']] ?? 'l.nome';
+        $sql .= " ORDER BY " . $orderCol . " " . ($pag['dir'] === 'asc' ? 'ASC' : 'DESC');
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         $pricelists = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $total = count($pricelists);
 
         $this->page(APP_ROOT_DIR . '/app/views/sales/pricelists_list.php', [
             'page_title'    => 'Listini vendita',
             'page_subtitle' => 'Gestione dei listini prezzi di vendita',
             'breadcrumbs'   => [['label' => 'Vendite', 'url' => url('sales')], ['label' => 'Listini vendita']],
             'pricelists'    => $pricelists,
-            'search'        => $search,
+            'total'         => $total,
+            'pag'           => $pag,
+            'search'        => $search ?? '',
             'filtro_attivo' => $filtro_attivo ?? '',
         ]);
     }
@@ -403,9 +409,16 @@ final class SalesPricelistsController extends BaseController
         }
 
         $stmt = $this->pdo->prepare(
-            "SELECT p.id, p.nome AS label, p.sku_interno AS sku, um.codice AS unita_misura
+            "SELECT p.id, p.nome AS label, p.sku_interno AS sku, um.codice AS unita_misura,
+                    pf.rrp_min, pf.rrp_max
              FROM prodotti p
              LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+             LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.attivo = 1
+                AND pf.ordine_preferenza_fornitore = (
+                    SELECT MIN(pf2.ordine_preferenza_fornitore)
+                    FROM prodotti_fornitori pf2
+                    WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
+                )
              WHERE p.attivo = 1
                AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.codice_erp LIKE :q)
              ORDER BY p.nome ASC
@@ -641,6 +654,29 @@ final class SalesPricelistsController extends BaseController
 
         $priceInfo = $this->getSalePrice($prodottoId, $listinoId, $quantita, $data, $clienteId);
 
+        $costo_unitario = 0.0;
+        $rrp_min = null;
+        $rrp_max = null;
+
+        $stRrp = $this->pdo->prepare('
+            SELECT pf.rrp_min, pf.rrp_max,
+                   (SELECT MIN(pfp.prezzo) 
+                    FROM prodotti_fornitori_prezzi pfp 
+                    WHERE pfp.prodotto_fornitore_id = pf.id 
+                      AND pfp.quantita_minima = 0) AS costo_unitario
+            FROM prodotti_fornitori pf
+            WHERE pf.prodotto_id = ? AND pf.attivo = 1
+            ORDER BY pf.ordine_preferenza_fornitore ASC
+            LIMIT 1
+        ');
+        $stRrp->execute([$prodottoId]);
+        $rrpData = $stRrp->fetch(PDO::FETCH_ASSOC);
+        if ($rrpData) {
+            $costo_unitario = (float)($rrpData['costo_unitario'] ?? 0.0);
+            $rrp_min = $rrpData['rrp_min'] !== null ? (float)$rrpData['rrp_min'] : null;
+            $rrp_max = $rrpData['rrp_max'] !== null ? (float)$rrpData['rrp_max'] : null;
+        }
+
         if ($priceInfo) {
             echo json_encode([
                 'ok'              => true,
@@ -650,6 +686,9 @@ final class SalesPricelistsController extends BaseController
                 'listino_id'      => $priceInfo['listino_id'],
                 'prezzo_sorgente' => $priceInfo['prezzo_sorgente'],
                 'origine'         => $priceInfo['origine'],
+                'costo_unitario'  => $costo_unitario,
+                'rrp_min'         => $rrp_min,
+                'rrp_max'         => $rrp_max,
             ]);
         } else {
             echo json_encode([

@@ -20,21 +20,45 @@ require_once __DIR__ . '/prodotti.php';
 /**
  * Elenco ordini con filtri.
  */
-function qk_ordini_list(PDO $pdo, string $search = '', string $stato = ''): array
+/** @internal */
+function _qk_ordini_where(string $search, string $stato, string $dal, string $al): array
 {
-    $where  = ['1=1'];
-    $params = [];
-
+    $where = ['1=1']; $params = [];
     if ($search !== '') {
-        $where[]  = '(ot.numero LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ?)';
-        $like     = '%' . $search . '%';
-        $params[] = $like;
-        $params[] = $like;
+        $where[] = '(ot.numero LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ? OR r.numero LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like; $params[] = $like; $params[] = $like;
     }
-    if ($stato !== '') {
-        $where[]  = 'ot.stato = ?';
-        $params[] = $stato;
-    }
+    if ($stato !== '') { $where[] = 'ot.stato = ?'; $params[] = $stato; }
+    if ($dal  !== '') { $where[] = 'ot.data_ordine >= ?'; $params[] = $dal; }
+    if ($al   !== '') { $where[] = 'ot.data_ordine <= ?'; $params[] = $al; }
+    return [$where, $params];
+}
+
+function qk_ordini_count(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = ''): int
+{
+    [$where, $params] = _qk_ordini_where($search, $stato, $dal, $al);
+    $st = $pdo->prepare('SELECT COUNT(*) FROM ordini_testata ot LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id LEFT JOIN rfq_testata r ON r.id = ot.rfq_id WHERE ' . implode(' AND ', $where));
+    $st->execute($params);
+    return (int) $st->fetchColumn();
+}
+
+function qk_ordini_list(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = '', string $sort = 'data', string $dir = 'desc', int $limit = 50, int $offset = 0): array
+{
+    $sortMap = [
+        'data'      => 'ot.data_ordine',
+        'numero'    => 'ot.numero',
+        'fornitore' => 'fornitore_nome',
+        'stato'     => 'ot.stato',
+        'consegna'  => 'ot.data_consegna_prevista',
+        'totale'    => 'ot.totale',
+    ];
+    $orderCol = $sortMap[$sort] ?? 'ot.data_ordine';
+    $orderDir = $dir === 'asc' ? 'ASC' : 'DESC';
+
+    [$where, $params] = _qk_ordini_where($search, $stato, $dal, $al);
+    $params[] = $limit;
+    $params[] = $offset;
 
     $st = $pdo->prepare(
         'SELECT ot.*,
@@ -42,11 +66,12 @@ function qk_ordini_list(PDO $pdo, string $search = '', string $stato = ''): arra
                 off.numero AS offerta_numero,
                 r.numero   AS rfq_numero
            FROM ordini_testata ot
-      LEFT JOIN clienti_fornitori cf ON cf.id  = ot.fornitore_id
-      LEFT JOIN offerte_testata   off ON off.id = ot.offerta_id
-      LEFT JOIN rfq_testata       r   ON r.id   = ot.rfq_id
+      LEFT JOIN clienti_fornitori cf  ON cf.id  = ot.fornitore_id
+      LEFT JOIN offerte_testata   off ON off.id  = ot.offerta_id
+      LEFT JOIN rfq_testata       r   ON r.id    = ot.rfq_id
           WHERE ' . implode(' AND ', $where) . '
-          ORDER BY ot.created_at DESC'
+          ORDER BY ' . $orderCol . ' ' . $orderDir . ', ot.id DESC
+          LIMIT ? OFFSET ?'
     );
     $st->execute($params);
     return $st->fetchAll(PDO::FETCH_ASSOC);

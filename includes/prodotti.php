@@ -342,7 +342,7 @@ function qk_crea_tag(PDO $pdo, string $nome): int
    LISTA
 ============================================================================= */
 
-function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_only, ?int $supplier_id = null, int $limit = 50, int $offset = 0): array {
+function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_only, ?int $supplier_id = null, int $limit = 50, int $offset = 0, string $sort = 'nome', string $dir = 'asc'): array {
     $where  = [];
     $params = [];
 
@@ -388,7 +388,14 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
          LEFT JOIN prodotti_fornitori_prezzi pp ON pp.prodotto_fornitore_id = pf.id
          $cond
          GROUP BY p.id
-         ORDER BY p.nome
+         ORDER BY " . match($sort) {
+             'sku'       => 'p.sku_interno COLLATE NOCASE',
+             'categoria' => 'c.nome COLLATE NOCASE',
+             'giacenza'  => 'g.quantita_disponibile',
+             'prezzo'    => 'prezzo_min',
+             'tipo'      => 'p.tipo',
+             default     => 'p.nome COLLATE NOCASE',
+         } . " " . ($dir === 'desc' ? 'DESC' : 'ASC') . "
          LIMIT :limit OFFSET :offset";
 
     $stRows = $pdo->prepare($sqlRows);

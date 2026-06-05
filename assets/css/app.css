@@ -1708,3 +1708,99 @@ h3, .qk-title-h3 { font-size: 1.1rem; font-weight: 600; color: var(--qk-text-pri
   text-align: right;
 }
 
+
+/* ─── Paginazione ────────────────────────────────────────────────────────── */
+.qk-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .75rem 1.25rem;
+  border-top: 1px solid var(--qk-border);
+  flex-wrap: wrap;
+}
+.qk-pagination-info {
+  font-size: .82rem;
+  color: var(--qk-text-muted);
+}
+.qk-pagination-nav {
+  display: flex;
+  align-items: center;
+  gap: .2rem;
+}
+.qk-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 .5rem;
+  border-radius: .375rem;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--qk-text);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background .15s, border-color .15s;
+}
+.qk-page-btn:hover:not(.disabled):not(.active) {
+  background: var(--qk-bg-subtle);
+  border-color: var(--qk-border);
+}
+.qk-page-btn.active {
+  background: var(--qk-accent);
+  color: #fff;
+  border-color: var(--qk-accent);
+}
+.qk-page-btn.disabled {
+  opacity: .35;
+  cursor: default;
+  pointer-events: none;
+}
+.qk-page-ellipsis {
+  font-size: .82rem;
+  color: var(--qk-text-muted);
+  padding: 0 .25rem;
+}
+
+/* ─── Sort header ────────────────────────────────────────────────────────── */
+th.qk-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th.qk-sortable a {
+  color: inherit;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+th.qk-sortable a:hover {
+  color: var(--qk-accent);
+}
+
+/* ─── Date range toolbar ─────────────────────────────────────────────────── */
+.qk-date-range {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+.qk-date-range label {
+  font-size: .8rem;
+  color: var(--qk-text-muted);
+  white-space: nowrap;
+}
+.qk-date-range input[type="date"] {
+  font-size: .82rem;
+  padding: .28rem .55rem;
+  height: auto;
+  width: 140px;
+}
+
+/* ─── Date input senza icona (dentro qk-table-toolbar) ──────────────────── */
+.qk-filter-input.qk-filter-date {
+  padding-left: .75rem;
+  width: 140px;
+}

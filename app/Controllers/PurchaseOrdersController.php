@@ -22,8 +22,12 @@ class PurchaseOrdersController extends BaseController
     {
         $search = get_param('q', '');
         $stato  = get_param('stato', '');
+        $dal    = get_param('dal', '');
+        $al     = get_param('al', '');
 
-        $ordini_list = qk_ordini_list($this->pdo, $search, $stato);
+        $pag         = qk_pagination_params(['data','numero','fornitore','stato','consegna','totale'], 'data', 'desc');
+        $total       = qk_ordini_count($this->pdo, $search, $stato, $dal, $al);
+        $ordini_list = qk_ordini_list($this->pdo, $search, $stato, $dal, $al, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
         $page_title  = 'Ordini di Acquisto';
         $breadcrumbs = [
             ['label' => 'Acquisti'],

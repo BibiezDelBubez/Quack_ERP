@@ -108,10 +108,24 @@ function qk_search_prodotti_sales(PDO $pdo, string $q): array
                p.descrizione_confezione AS quantita_confezione,
                p.unita_contenuto_id,
                um_comm.codice AS unita_misura_commerciale,
-               p.quantita_contenuto
+               p.quantita_contenuto,
+               pf.rrp_min,
+               pf.rrp_max,
+               pf.fornitore_id AS rrp_fornitore_id,
+               (SELECT MIN(pfp.prezzo) 
+                FROM prodotti_fornitori_prezzi pfp 
+                WHERE pfp.prodotto_fornitore_id = pf.id 
+                  AND pfp.quantita_minima = 0) AS costo_base
         FROM prodotti p
         LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
         LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
+        LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id 
+            AND pf.attivo = 1 
+            AND pf.ordine_preferenza_fornitore = (
+                SELECT MIN(pf2.ordine_preferenza_fornitore) 
+                FROM prodotti_fornitori pf2 
+                WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
+            )
         WHERE p.attivo = 1
           AND (p.nome LIKE :q OR p.sku_interno LIKE :q)
         ORDER BY p.nome
@@ -321,33 +335,6 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             $iva_riga = round($imponibile_riga * ($iva / 100), 2);
             $totale_riga = round($imponibile_riga + $iva_riga, 2);
 
-            // Calcolo costo d'acquisto stimato (standard/minimo da listini fornitore)
-            $costo_unitario = 0.0;
-            if ($prodotto_id) {
-                $stCost = $pdo->prepare('
-                    SELECT MIN(pfp.prezzo) 
-                    FROM prodotti_fornitori_prezzi pfp
-                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
-                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
-                ');
-                $stCost->execute([$prodotto_id]);
-                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
-            }
-            $totale_costo_riga = round($costo_unitario * $qta, 2);
-            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
-
-            // Verifica classificazione ADR
-            $is_adr = 0;
-            if ($prodotto_id) {
-                $stAdr = $pdo->prepare('
-                    SELECT COUNT(*) 
-                    FROM prodotto_classificazioni_adr 
-                    WHERE prodotto_id = ? AND e_corrente = 1
-                ');
-                $stAdr->execute([$prodotto_id]);
-                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
-            }
-
             // Ottieni UoM id
             $um_codice = $r['unita_misura'] ?? 'pz';
             $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
@@ -371,6 +358,33 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
                         $quantita_stock = round($qta / $factor, 3);
                     }
                 }
+            }
+
+            // Calcolo costo d'acquisto stimato (standard/minimo da listini fornitore)
+            $costo_unitario = 0.0;
+            if ($prodotto_id) {
+                $stCost = $pdo->prepare('
+                    SELECT MIN(pfp.prezzo) 
+                    FROM prodotti_fornitori_prezzi pfp
+                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
+                ');
+                $stCost->execute([$prodotto_id]);
+                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
+            }
+            $totale_costo_riga = round($costo_unitario * $quantita_stock, 2);
+            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
+
+            // Verifica classificazione ADR
+            $is_adr = 0;
+            if ($prodotto_id) {
+                $stAdr = $pdo->prepare('
+                    SELECT COUNT(*) 
+                    FROM prodotto_classificazioni_adr 
+                    WHERE prodotto_id = ? AND e_corrente = 1
+                ');
+                $stAdr->execute([$prodotto_id]);
+                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
             }
 
             $righe_preparate[] = [
@@ -561,12 +575,21 @@ function qk_get_offerta(PDO $pdo, int $id): ?array
                us.codice AS uom_stock,
                uc.codice AS uom_commercial,
                pr.unita_misura_stock_id AS uom_stock_id,
-               p.unita_contenuto_id AS uom_commercial_id
+               p.unita_contenuto_id AS uom_commercial_id,
+               pf.rrp_min,
+               pf.rrp_max,
+               pr.costo_unitario AS costo_base
           FROM preventivi_righe pr
      LEFT JOIN prodotti p ON p.id = pr.prodotto_id
      LEFT JOIN unita_misura um ON um.id = pr.unita_misura_id
      LEFT JOIN unita_misura us ON us.id = pr.unita_misura_stock_id
      LEFT JOIN unita_misura uc ON uc.id = p.unita_contenuto_id
+     LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = pr.prodotto_id AND pf.attivo = 1
+        AND pf.ordine_preferenza_fornitore = (
+            SELECT MIN(pf2.ordine_preferenza_fornitore)
+            FROM prodotti_fornitori pf2
+            WHERE pf2.prodotto_id = pr.prodotto_id AND pf2.attivo = 1
+        )
          WHERE pr.preventivo_id = ?
       ORDER BY pr.posizione_riga ASC
     ');
@@ -607,31 +630,6 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             $iva_riga = round($imponibile_riga * ($iva / 100), 2);
             $totale_riga = round($imponibile_riga + $iva_riga, 2);
 
-            $costo_unitario = 0.0;
-            if ($prodotto_id) {
-                $stCost = $pdo->prepare('
-                    SELECT MIN(pfp.prezzo) 
-                    FROM prodotti_fornitori_prezzi pfp
-                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
-                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
-                ');
-                $stCost->execute([$prodotto_id]);
-                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
-            }
-            $totale_costo_riga = round($costo_unitario * $qta, 2);
-            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
-
-            $is_adr = 0;
-            if ($prodotto_id) {
-                $stAdr = $pdo->prepare('
-                    SELECT COUNT(*) 
-                    FROM prodotto_classificazioni_adr 
-                    WHERE prodotto_id = ? AND e_corrente = 1
-                ');
-                $stAdr->execute([$prodotto_id]);
-                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
-            }
-
             $um_codice = $r['unita_misura'] ?? 'pz';
             $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
             $stUm->execute([$um_codice]);
@@ -653,6 +651,31 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
                         $quantita_stock = round($qta / $factor, 3);
                     }
                 }
+            }
+
+            $costo_unitario = 0.0;
+            if ($prodotto_id) {
+                $stCost = $pdo->prepare('
+                    SELECT MIN(pfp.prezzo) 
+                    FROM prodotti_fornitori_prezzi pfp
+                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
+                ');
+                $stCost->execute([$prodotto_id]);
+                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
+            }
+            $totale_costo_riga = round($costo_unitario * $quantita_stock, 2);
+            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
+
+            $is_adr = 0;
+            if ($prodotto_id) {
+                $stAdr = $pdo->prepare('
+                    SELECT COUNT(*) 
+                    FROM prodotto_classificazioni_adr 
+                    WHERE prodotto_id = ? AND e_corrente = 1
+                ');
+                $stAdr->execute([$prodotto_id]);
+                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
             }
 
             $righe_preparate[] = [
@@ -960,6 +983,83 @@ function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
         throw $e;
     }
 }
+
+/**
+ * Duplica un preventivo in un nuovo preventivo in stato Bozza.
+ */
+function qk_preventivo_duplica(PDO $pdo, int $id, int $userId): int
+{
+    $pdo->beginTransaction();
+    try {
+        // 1. Get original quote
+        $st = $pdo->prepare("SELECT * FROM preventivi WHERE id = ?");
+        $st->execute([$id]);
+        $orig = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$orig) {
+            throw new Exception("Preventivo originale non trovato.");
+        }
+
+        // 2. Generate new quote number
+        $newNum = qk_next_numero_offerta($pdo);
+
+        // 3. Create list of columns
+        $columns = [];
+        $stmtCol = $pdo->query("PRAGMA table_info(preventivi)");
+        while ($col = $stmtCol->fetch(PDO::FETCH_ASSOC)) {
+            if ($col['name'] === 'id') continue;
+            $columns[] = $col['name'];
+        }
+
+        $colList = implode(", ", $columns);
+        $insertSql = "INSERT INTO preventivi ($colList) SELECT $colList FROM preventivi WHERE id = :orig_id";
+        $pdo->prepare($insertSql)->execute([':orig_id' => $id]);
+        $newId = (int)$pdo->lastInsertId();
+
+        // 4. Update new quote specifics
+        $stUpNew = $pdo->prepare("
+            UPDATE preventivi SET
+                numero_preventivo = :newNum,
+                stato = 'bozza',
+                storico = 0,
+                creato_da = :userId,
+                created_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :newId
+        ");
+        $stUpNew->execute([
+            ':newNum' => $newNum,
+            ':userId' => $userId,
+            ':newId'  => $newId
+        ]);
+
+        // 5. Copy righe items from original quote
+        $righeCols = [];
+        $stmtRigheCol = $pdo->query("PRAGMA table_info(preventivi_righe)");
+        while ($col = $stmtRigheCol->fetch(PDO::FETCH_ASSOC)) {
+            if ($col['name'] === 'id') continue;
+            $righeCols[] = $col['name'];
+        }
+
+        $righeColsWithoutPrev = array_filter($righeCols, fn($c) => $c !== 'preventivo_id');
+        $colListRighe = implode(", ", $righeColsWithoutPrev);
+        
+        $insertRigheSql = "
+            INSERT INTO preventivi_righe (preventivo_id, $colListRighe)
+            SELECT :newId, $colListRighe FROM preventivi_righe WHERE preventivo_id = :orig_id
+        ";
+        $pdo->prepare($insertRigheSql)->execute([
+            ':newId'   => $newId,
+            ':orig_id' => $id
+        ]);
+
+        $pdo->commit();
+        return $newId;
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
 
 /**
  * Accetta un preventivo e crea il relativo ordine cliente.

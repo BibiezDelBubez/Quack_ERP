@@ -1,56 +1,90 @@
 <?php
 /**
- * sales/quotes/_list.php — Vista HTML della lista offerte.
- * Variabili attese: $offers, $total, $search, $status
+ * sales/quotes/_list.php
+ * Variabili: $offers, $total, $search, $status, $dal, $al, $pag
  */
+function prev_stato_badge(string $stato): string {
+    $map = ['bozza' => ['draft','Bozza'], 'inviata' => ['confirmed','Inviata'],
+            'accettata' => ['active','Accettata'], 'rifiutata' => ['cancelled','Rifiutata'],
+            'scaduta' => ['warning','Scaduta'], 'annullata' => ['cancelled','Annullata']];
+    [$cls, $lbl] = $map[$stato] ?? ['draft', ucfirst($stato)];
+    return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
+}
+$statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviata' => 'Inviata',
+                'accettata' => 'Accettata', 'rifiutata' => 'Rifiutata',
+                'scaduta' => 'Scaduta', 'annullata' => 'Annullata'];
+$base = url('sales/quotes');
+$sort = $pag['sort']; $dir = $pag['dir'];
+$hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
 
-<!-- Sotto-navigazione condivisa -->
 <?php include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
 
 <div class="qk-card">
+
   <div class="qk-table-toolbar">
-    <div class="qk-table-toolbar-left">
-      <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
-        <div class="qk-filter-wrap">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" name="q" class="qk-filter-input" placeholder="Cerca offerta, cliente…" value="<?= e($search) ?>">
-        </div>
-        <select name="status" class="qk-filter-input" style="width:auto">
-          <option value="">Tutti gli stati</option>
-          <?php foreach (['bozza'=>'Bozza','inviata'=>'Inviata','accettata'=>'Accettata','rifiutata'=>'Rifiutata','scaduta'=>'Scaduta','annullata'=>'Annullata'] as $k => $lbl): ?>
-          <option value="<?= e($k) ?>" <?= $status === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-filter"></i> Filtra</button>
-        <?php if ($search || $status): ?><a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-xmark"></i> Pulisci</a><?php endif; ?>
-      </form>
+    <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <div class="qk-filter-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" name="q" class="qk-filter-input" placeholder="Numero, riferimento, cliente…" value="<?= e($search) ?>" autocomplete="off">
+      </div>
+      <input type="date" name="dal" class="qk-filter-input qk-filter-date" value="<?= e($dal) ?>" title="Da data">
+      <input type="date" name="al"  class="qk-filter-input qk-filter-date" value="<?= e($al) ?>"  title="A data">
+      <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <?php if ($hasFilters): ?><a href="<?= $base ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri"><i class="fa-solid fa-xmark"></i></a><?php endif; ?>
+    </form>
+    <div class="qk-table-toolbar-right">
+      <div class="qk-filter-pills">
+        <?php foreach ($statiLabels as $k => $lbl): ?>
+        <a href="<?= e(qk_list_url($base, ['status' => $k ?: null])) ?>"
+           class="qk-filter-pill <?= $status === $k ? 'active' : '' ?>"><?= e($lbl) ?></a>
+        <?php endforeach; ?>
+      </div>
     </div>
-    <div class="qk-table-toolbar-right"><small class="qk-text-muted"><?= $total ?> offerte</small></div>
   </div>
+
   <div class="qk-table-wrap">
     <?php if (empty($offers)): ?>
     <div class="qk-empty">
       <i class="fa-regular fa-file-invoice"></i>
-      <p><?= ($search || $status) ? 'Nessuna offerta trovata con i filtri selezionati.' : 'Nessuna offerta ancora.' ?></p>
-      <?php if (!$search && !$status): ?><a href="<?= url('sales/quotes/create') ?>" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Crea la prima offerta</a><?php endif; ?>
+      <p><?= $hasFilters || $status ? 'Nessuna offerta trovata con i filtri selezionati.' : 'Nessuna offerta ancora.' ?></p>
+      <?php if (!$hasFilters && !$status): ?>
+      <a href="<?= url('sales/quotes/create') ?>" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus"></i> Crea la prima offerta</a>
+      <?php endif; ?>
     </div>
     <?php else: ?>
     <table class="qk-table">
-      <thead><tr><th>N° Preventivo</th><th>Cliente</th><th>Canale</th><th>Stato</th><th class="text-end">Importo</th><th>Valida fino al</th><th class="col-actions"></th></tr></thead>
+      <thead>
+        <tr>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'data', $sort, $dir)) ?>">Data<?= qk_sort_icon('data', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'stato', $sort, $dir)) ?>">Stato<?= qk_sort_icon('stato', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'numero', $sort, $dir)) ?>">N° Preventivo<?= qk_sort_icon('numero', $sort, $dir) ?></a></th>
+          <th>Rif. Interno</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'cliente', $sort, $dir)) ?>">Cliente<?= qk_sort_icon('cliente', $sort, $dir) ?></a></th>
+          <th>Canale</th>
+          <th class="qk-sortable qk-text-right"><a href="<?= e(qk_sort_url($base, 'totale', $sort, $dir)) ?>">Totale<?= qk_sort_icon('totale', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'scadenza', $sort, $dir)) ?>">Valida fino<?= qk_sort_icon('scadenza', $sort, $dir) ?></a></th>
+          <th class="col-actions"></th>
+        </tr>
+      </thead>
       <tbody>
         <?php foreach ($offers as $o): ?>
         <tr>
-          <td class="fw-semibold">
-            <a href="<?= url('sales/quotes/edit?id=' . $o['id']) ?>" class="qk-text-accent fw-bold text-decoration-none">
-              <?= e($o['numero_preventivo'] ?? '') ?>
-            </a>
-          </td>
-          <td><?= e($o['cliente_nome'] ?? '') ?></td>
-          <td class="qk-text-secondary"><?= e($o['canale_vendita'] ?? '—') ?></td>
-          <td><?= !empty($o['stato']) ? '<span class="qk-badge">' . e(ucfirst($o['stato'])) . '</span>' : '<span class="qk-text-muted">—</span>' ?></td>
-          <td class="text-end fw-semibold"><?= fmt_money((float)($o['totale'] ?? 0)) ?></td>
-          <td class="qk-text-muted"><?= fmt_date($o['data_scadenza'] ?? '') ?></td>
+          <td class="qk-text-muted"><?= fmt_date($o['data_offerta'] ?? '') ?></td>
+          <td><?= prev_stato_badge($o['stato'] ?? '') ?></td>
+          <td><a href="<?= url('sales/quotes/edit?id=' . $o['id']) ?>" class="qk-link-strong"><?= e($o['numero_preventivo'] ?? '') ?></a></td>
+          <td class="qk-text-muted"><?= e($o['riferimento_interno'] ?: '—') ?></td>
+          <td><?= e($o['cliente_nome'] ?? '—') ?></td>
+          <td class="qk-text-muted" style="font-size:.82rem"><?= e($o['canale_vendita'] ?? '—') ?></td>
+          <td class="qk-text-right" style="font-weight:600"><?= fmt_money((float)($o['totale'] ?? 0)) ?></td>
+          <td class="qk-text-muted"><?php
+            if ($o['data_scadenza']) {
+                $scaduta = new DateTime($o['data_scadenza']) < new DateTime() && $o['stato'] === 'bozza';
+                echo '<span' . ($scaduta ? ' class="qk-text-danger"' : '') . '>' . fmt_date($o['data_scadenza']) . '</span>';
+            } else { echo '—'; }
+          ?></td>
           <td class="col-actions"></td>
         </tr>
         <?php endforeach; ?>
@@ -58,4 +92,7 @@
     </table>
     <?php endif; ?>
   </div>
+
+  <?php qk_paginate($total, $pag['page'], $pag['limit'], $base); ?>
+
 </div>

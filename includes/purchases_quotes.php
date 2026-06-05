@@ -19,25 +19,46 @@ require_once __DIR__ . '/purchases_common.php';
  *
  * @param int $rfq_id  Filtra per RFQ specifica; 0 = tutte
  */
-function qk_offerte_list(PDO $pdo, string $search = '', string $stato = '', int $rfq_id = 0): array
+/** @internal */
+function _qk_offerte_where(string $search, string $stato, string $dal, string $al, int $rfq_id): array
 {
-    $where  = ['1=1'];
-    $params = [];
-
+    $where = ['1=1']; $params = [];
     if ($search !== '') {
-        $where[]  = '(o.numero LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ?)';
-        $like     = '%' . $search . '%';
-        $params[] = $like;
-        $params[] = $like;
+        $where[] = '(o.numero LIKE ? OR COALESCE(cf.ragione_sociale, cf.nome) LIKE ? OR r.numero LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like; $params[] = $like; $params[] = $like;
     }
-    if ($stato !== '') {
-        $where[]  = 'o.stato = ?';
-        $params[] = $stato;
-    }
-    if ($rfq_id > 0) {
-        $where[]  = 'o.rfq_id = ?';
-        $params[] = $rfq_id;
-    }
+    if ($stato  !== '') { $where[] = 'o.stato = ?';       $params[] = $stato; }
+    if ($dal    !== '') { $where[] = 'o.data_offerta >= ?'; $params[] = $dal; }
+    if ($al     !== '') { $where[] = 'o.data_offerta <= ?'; $params[] = $al; }
+    if ($rfq_id > 0)   { $where[] = 'o.rfq_id = ?';       $params[] = $rfq_id; }
+    return [$where, $params];
+}
+
+function qk_offerte_count(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = '', int $rfq_id = 0): int
+{
+    [$where, $params] = _qk_offerte_where($search, $stato, $dal, $al, $rfq_id);
+    $st = $pdo->prepare('SELECT COUNT(*) FROM offerte_testata o LEFT JOIN clienti_fornitori cf ON cf.id = o.fornitore_id LEFT JOIN rfq_testata r ON r.id = o.rfq_id WHERE ' . implode(' AND ', $where));
+    $st->execute($params);
+    return (int) $st->fetchColumn();
+}
+
+function qk_offerte_list(PDO $pdo, string $search = '', string $stato = '', string $dal = '', string $al = '', int $rfq_id = 0, string $sort = 'data', string $dir = 'desc', int $limit = 50, int $offset = 0): array
+{
+    $sortMap = [
+        'data'      => 'o.data_offerta',
+        'numero'    => 'o.numero',
+        'fornitore' => 'fornitore_nome',
+        'stato'     => 'o.stato',
+        'scadenza'  => 'o.data_scadenza_offerta',
+        'totale'    => 'o.totale',
+    ];
+    $orderCol = $sortMap[$sort] ?? 'o.data_offerta';
+    $orderDir = $dir === 'asc' ? 'ASC' : 'DESC';
+
+    [$where, $params] = _qk_offerte_where($search, $stato, $dal, $al, $rfq_id);
+    $params[] = $limit;
+    $params[] = $offset;
 
     $st = $pdo->prepare(
         'SELECT o.*,
@@ -45,9 +66,10 @@ function qk_offerte_list(PDO $pdo, string $search = '', string $stato = '', int 
                 r.numero AS rfq_numero
            FROM offerte_testata o
       LEFT JOIN clienti_fornitori cf ON cf.id = o.fornitore_id
-      LEFT JOIN rfq_testata r ON r.id = o.rfq_id
+      LEFT JOIN rfq_testata r        ON r.id  = o.rfq_id
           WHERE ' . implode(' AND ', $where) . '
-          ORDER BY o.created_at DESC'
+          ORDER BY ' . $orderCol . ' ' . $orderDir . ', o.id DESC
+          LIMIT ? OFFSET ?'
     );
     $st->execute($params);
     return $st->fetchAll(PDO::FETCH_ASSOC);
