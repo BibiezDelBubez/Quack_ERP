@@ -1093,15 +1093,16 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
 
         // 3. Create ordini_clienti head
         $sqlHead = "INSERT INTO ordini_clienti (
-            numero_ordine, preventivo_id, cliente_id, data_ordine, data_consegna_prevista, stato, note, creato_da, created_at, updated_at
+            numero_ordine, preventivo_id, cliente_id, indirizzo_spedizione_id, data_ordine, data_consegna_prevista, stato, note, creato_da, created_at, updated_at
         ) VALUES (
-            :numero_ordine, :preventivo_id, :cliente_id, CURRENT_DATE, :data_consegna_prevista, 'in_lavorazione', :note, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            :numero_ordine, :preventivo_id, :cliente_id, :indirizzo_spedizione_id, CURRENT_DATE, :data_consegna_prevista, 'in_lavorazione', :note, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )";
         $stHead = $pdo->prepare($sqlHead);
         $stHead->execute([
             ':numero_ordine'           => $numeroOrdine,
             ':preventivo_id'           => $id,
             ':cliente_id'              => $quota['cliente_id'],
+            ':indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?: null,
             ':data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
             ':note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),
             ':creato_da'               => $userId

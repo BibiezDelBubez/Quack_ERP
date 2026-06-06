@@ -101,4 +101,137 @@ final class SalesOrdersController extends BaseController
             'feature_name'  => 'Creazione ordine di vendita',
         ]);
     }
+
+    public function edit(): void
+    {
+        $id = (int)get_param('id');
+        if ($id <= 0) {
+            redirect(url('sales/orders'));
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $_SESSION['flash_error'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
+            } else {
+                $note = post('note', '');
+                $data_consegna_prevista = post('data_consegna_prevista', '');
+
+                try {
+                    $stUp = $this->pdo->prepare("
+                        UPDATE ordini_clienti 
+                        SET note = ?, 
+                            data_consegna_prevista = ?, 
+                            updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = ?
+                    ");
+                    $stUp->execute([
+                        $note !== '' ? $note : null,
+                        $data_consegna_prevista !== '' ? $data_consegna_prevista : null,
+                        $id
+                    ]);
+                    $_SESSION['flash_success'] = 'Ordine aggiornato correttamente.';
+                } catch (\Throwable $e) {
+                    $_SESSION['flash_error'] = 'Errore durante il salvataggio: ' . $e->getMessage();
+                }
+            }
+            redirect(url('sales/orders/edit') . '?id=' . $id);
+        }
+
+        $st = $this->pdo->prepare("
+            SELECT o.*,
+                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
+                   cf.telefono AS cliente_telefono,
+                   cf.email AS cliente_email,
+                   p.numero_preventivo AS preventivo_numero,
+                   u.username AS creato_da_username
+            FROM ordini_clienti o
+            JOIN clienti_fornitori cf ON cf.id = o.cliente_id
+            LEFT JOIN preventivi p ON p.id = o.preventivo_id
+            LEFT JOIN utenti u ON u.id = o.creato_da
+            WHERE o.id = ?
+        ");
+        $st->execute([$id]);
+        $order = $st->fetch(PDO::FETCH_ASSOC);
+
+        if (!$order) {
+            $_SESSION['flash_error'] = 'Ordine non trovato.';
+            redirect(url('sales/orders'));
+        }
+
+        $address = null;
+        if (!empty($order['indirizzo_spedizione_id'])) {
+            $stAddr = $this->pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
+            $stAddr->execute([$order['indirizzo_spedizione_id']]);
+            $address = $stAddr->fetch(PDO::FETCH_ASSOC);
+        }
+
+        $stLines = $this->pdo->prepare("
+            SELECT r.*,
+                   p.sku_interno AS prodotto_codice,
+                   p.nome AS prodotto_nome,
+                   um.codice AS uom_simbolo
+            FROM ordini_clienti_righe r
+            LEFT JOIN prodotti p ON p.id = r.prodotto_id
+            LEFT JOIN unita_misura um ON um.id = r.unita_misura_id
+            WHERE r.ordine_id = ?
+        ");
+        $stLines->execute([$id]);
+        $lines = $stLines->fetchAll(PDO::FETCH_ASSOC);
+
+        $active_tab    = 'orders';
+        $page_title    = 'Ordine ' . $order['numero_ordine'];
+        $breadcrumbs   = [
+            ['label' => 'Vendite', 'url' => url('sales')],
+            ['label' => 'Ordini', 'url' => url('sales/orders')],
+            ['label' => 'Dettaglio Ordine']
+        ];
+
+        $this->page(APP_ROOT_DIR . '/app/views/sales/orders/_detail.php', get_defined_vars());
+    }
+
+    public function action(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            redirect(url('sales/orders'));
+        }
+
+        $id     = (int)post('id', '0');
+        $azione = post('azione', '');
+
+        try {
+            switch ($azione) {
+                case 'completa':
+                    $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'completato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Ordine completato.';
+                    break;
+
+                case 'riapri':
+                    $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'in_lavorazione', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Ordine rimesso in lavorazione.';
+                    break;
+
+                case 'annulla':
+                    $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'annullato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Ordine annullato.';
+                    break;
+
+                case 'segna_fatturato':
+                    $this->pdo->prepare("UPDATE ordini_clienti SET stato_fatturazione = 'fatturato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Ordine segnato come fatturato.';
+                    break;
+
+                case 'segna_da_fatturare':
+                    $this->pdo->prepare("UPDATE ordini_clienti SET stato_fatturazione = 'da_fatturare', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $_SESSION['flash_success'] = 'Ordine ripristinato a "Da Fatturare".';
+                    break;
+
+                default:
+                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+            }
+        } catch (\Throwable $e) {
+            $_SESSION['flash_error'] = $e->getMessage();
+        }
+
+        redirect(url('sales/orders/edit') . '?id=' . $id);
+    }
 }

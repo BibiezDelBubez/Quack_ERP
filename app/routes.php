@@ -43,6 +43,8 @@ return [
     '/sales/quotes/api/cliente-dettagli' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiClienteDettagli', 'auth' => true],
     '/sales/orders'              => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'index',    'auth' => true],
     '/sales/orders/create'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'create',   'auth' => true],
+    '/sales/orders/edit'         => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'edit',     'auth' => true],
+    '/sales/orders/action'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'action',   'auth' => true],
 
     // ─── Vendite — Listini vendita ─────────────────────────────────────────
     '/sales/pricelists'                  => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'index',          'auth' => true],

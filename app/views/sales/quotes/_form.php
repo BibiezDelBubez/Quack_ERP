@@ -231,9 +231,9 @@ fieldset[disabled] #tbl-righe.is-readonly textarea.inp-desc {
             </button>
           </form>
         <?php elseif ($stato === 'accettata' && !empty($linkedOrder)): ?>
-          <span class="qk-badge qk-badge-success py-2 px-3 fw-bold d-inline-flex align-items-center" style="font-size: 0.85rem; height: 31px;">
+          <span class="qk-badge py-2 px-3 fw-bold d-inline-flex align-items-center" style="font-size: 0.85rem; height: 31px; background: var(--qk-success-bg); color: var(--qk-success); border: 1px solid rgba(16, 185, 129, 0.2);">
             <i class="fa-solid fa-check-double me-1"></i> Ordine Generato: 
-            <a href="<?= url('sales/orders/edit?id=' . $linkedOrder['id']) ?>" class="fw-bold text-white text-decoration-underline ms-1"><?= e($linkedOrder['numero_ordine']) ?></a>
+            <a href="<?= url('sales/orders/edit?id=' . $linkedOrder['id']) ?>" class="fw-bold text-decoration-underline ms-1" style="color: var(--qk-success);"><?= e($linkedOrder['numero_ordine']) ?></a>
           </span>
         <?php endif; ?>
       <?php endif; ?>
