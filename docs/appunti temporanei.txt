@@ -1,8 +1,11 @@
-creazione preventivo
-Che senso ha avere una select per i listini sia nel pannello delle info principali, sia nelle condizioni commerciali?
-Le unità di misura non si leggono completamente. Oltre a trovare una soluzione, verifica che tra i vari campi input di una riga non ci siano spazi eccessivi che rubano spazio, e prevedi che dove possibile il testo possa andare in autowrap.
+Ogni prodotto dell'anagrafica che sia pericoloso, deve avere un codice ADR onu e deve avere delle schede di sicurezza.
 
-Inoltre manca un bottone per nascondere le colonne, come nelle rfq. Nascondi automaticamente sconto e iva
-Perché l'header della colonna "Qtà *	" ha un asterisco?
+Per ottimizzare il caricamento delle schede di sicurezza, cioè evitare di caricare troppe volte le stesse schede per prodotti diversi fatti della stessa sostanza, per ottimizzare la manutenzione di queste schede di sicurezza, e per i calcoli necessari a capire se la spedizione va dichiarata come ADR o è "in esenzione", abbiamo deciso quanto segue
 
-C'è un campo di note aggiuntive per il cliente e un campo di note consegna. Al momento viene stampato nei vari documenti solo il campo di note aggiuntive
+C'è la tabella dei prodotti. Ogni SKU è 1 record nella tabella prodotti
+C'è la tabella dei codici ADR ONU. Questa andrebbe proprio copiata così come viene rilasciata dall'ONU
+Per legare le due cose c'è una tabella ponte, che non ricordo come si chiama nel db ma nel front end chiameremo "Sostanze ADR"
+
+Per rendere l'esperienza utente di associazione (prodotti-sostanze-codici) comoda e intuitiva ho pensato di replicare quello che facciamo già con i listini vendita. Cioè
+
+Creare sottosezione Sostanze ADR nella sezione ADR

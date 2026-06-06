@@ -472,8 +472,8 @@ final class ProductsController extends BaseController
             'peso_lordo_kg'        => '',
             'ean'                  => '',
             'scorta_minima'        => '0',
-            'adr_sostanza_id'      => '',
-            'adr_packing_group'    => '',
+            'is_adr'               => '0',
+            'sostanza_adr_id'      => '',
             'prezzo_vendita_base'  => '',
         ];
     }
@@ -483,8 +483,13 @@ final class ProductsController extends BaseController
         foreach (array_keys($current) as $k) {
             $current[$k] = post($k, $current[$k] ?? '');
         }
-        $current['attivo']        = isset($_POST['attivo']) ? '1' : '0';
+        $current['attivo']        = isset($_POST['attivo'])        ? '1' : '0';
         $current['traccia_lotti'] = isset($_POST['traccia_lotti']) ? '1' : '0';
+        $current['is_adr']        = isset($_POST['is_adr'])        ? '1' : '0';
+        // Se is_adr è disabilitato, azzera la sostanza
+        if ($current['is_adr'] === '0') {
+            $current['sostanza_adr_id'] = '';
+        }
         return $current;
     }
 

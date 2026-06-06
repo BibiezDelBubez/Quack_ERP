@@ -116,7 +116,7 @@ $kit_componenti = $kit_componenti ?? [];
                   data-bs-toggle="tab" data-bs-target="#ptab-adr"
                   type="button" role="tab" aria-selected="false">
             <i class="fa-solid fa-triangle-exclamation fa-fw me-1" style="color:#f59e0b"></i>ADR
-            <?php if (!empty($v['adr_sostanza_id'])): ?>
+            <?php if (($v['is_adr'] ?? '0') === '1'): ?>
             <span class="badge" style="background:var(--qk-warning);color:#000">!</span>
             <?php endif; ?>
           </button>
@@ -995,51 +995,61 @@ $kit_componenti = $kit_componenti ?? [];
                 <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b"></i>
                 Classificazione ADR
               </span>
-              <span class="qk-card-subtitle">Lascia vuoto se il prodotto non è soggetto a normativa ADR</span>
+              <span class="qk-card-subtitle">Abilita solo se il prodotto è soggetto a normativa ADR/merci pericolose</span>
             </div>
             <div class="qk-card-body">
-              <div class="qk-form-row">
+              <!-- Flag is_adr -->
+              <div class="qk-form-row mb-3">
                 <div class="qk-form-group">
-                  <label class="qk-form-label">Sostanza ADR (N° ONU)</label>
-                  <select name="adr_sostanza_id" class="qk-form-control" id="adr-sostanza-sel">
-                    <option value="">— Non ADR —</option>
-                    <?php foreach ($adr_sostanze as $s): ?>
-                    <option value="<?= e($s['numero_onu']) ?>"
-                      <?= ($v['adr_sostanza_id'] ?? '') === $s['numero_onu'] ? 'selected' : '' ?>>
-                      <?= e($s['numero_onu']) ?>
-                      <?php if ($s['descrizione'] ?? ''): ?>— <?= e(mb_strimwidth($s['descrizione'], 0, 60, '…')) ?><?php endif; ?>
-                      <?php if ($s['classe_adr'] ?? ''): ?>(cl. <?= e($s['classe_adr']) ?>)<?php endif; ?>
-                    </option>
-                    <?php endforeach; ?>
-                  </select>
-                </div>
-
-                <div class="qk-form-group" id="adr-pg-wrap"
-                     style="<?= ($v['adr_sostanza_id'] ?? '') === '' ? 'opacity:.4;pointer-events:none' : '' ?>">
-                  <label class="qk-form-label">
-                    Gruppo di imballaggio (Packing Group)
-                    <?php if (($v['adr_sostanza_id'] ?? '') !== ''): ?>
-                    <span class="required">*</span>
-                    <?php endif; ?>
-                  </label>
-                  <select name="adr_packing_group"
-                          class="qk-form-control <?= isset($errors['adr_packing_group']) ? 'is-invalid' : '' ?>">
-                    <option value="">— Seleziona —</option>
-                    <option value="I"   <?= ($v['adr_packing_group'] ?? '') === 'I'   ? 'selected' : '' ?>>I — Alta pericolosità</option>
-                    <option value="II"  <?= ($v['adr_packing_group'] ?? '') === 'II'  ? 'selected' : '' ?>>II — Media pericolosità</option>
-                    <option value="III" <?= ($v['adr_packing_group'] ?? '') === 'III' ? 'selected' : '' ?>>III — Bassa pericolosità</option>
-                  </select>
+                  <div class="form-check form-switch">
+                    <input type="checkbox" class="form-check-input" name="is_adr" id="is_adr" value="1"
+                           <?= ($v['is_adr'] ?? '0') === '1' ? 'checked' : '' ?>
+                           onchange="document.getElementById('adr-sostanza-wrap').style.opacity=this.checked?'1':'.4';
+                                     document.getElementById('adr-sostanza-wrap').style.pointerEvents=this.checked?'':'none';">
+                    <label class="form-check-label fw-semibold" for="is_adr">Prodotto pericoloso ADR</label>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div class="qk-card mb-3" style="border-style:dashed;opacity:.65">
-            <div class="qk-card-body text-center py-4">
-              <i class="fa-solid fa-clock-rotate-left fa-xl mb-2" style="color:var(--qk-text-muted)"></i>
-              <p class="mb-0 small" style="color:var(--qk-text-muted)">
-                Ulteriori dati ADR (schede di sicurezza, restrizioni galleria, quantità limitate…) saranno disponibili in una versione successiva.
-              </p>
+              <!-- Selezione sostanza -->
+              <div id="adr-sostanza-wrap"
+                   style="<?= ($v['is_adr'] ?? '0') !== '1' ? 'opacity:.4;pointer-events:none' : '' ?>">
+                <div class="qk-form-row">
+                  <div class="qk-form-group" style="flex:3">
+                    <label class="qk-form-label">Sostanza ADR</label>
+                    <select name="sostanza_adr_id" class="qk-form-control">
+                      <option value="">— Seleziona sostanza —</option>
+                      <?php foreach ($adr_sostanze as $s): ?>
+                      <option value="<?= (int)$s['id'] ?>"
+                        <?= (string)($v['sostanza_adr_id'] ?? '') === (string)$s['id'] ? 'selected' : '' ?>>
+                        <?= e($s['nome']) ?>
+                        <?php if ($s['codice_onu'] ?? ''): ?> — UN<?= e($s['codice_onu']) ?><?php endif; ?>
+                        <?php if ($s['classe_adr'] ?? ''): ?> (cl. <?= e($s['classe_adr']) ?>)<?php endif; ?>
+                        <?php if ($s['gruppo_imballaggio'] ?? ''): ?> GI <?= e($s['gruppo_imballaggio']) ?><?php endif; ?>
+                      </option>
+                      <?php endforeach; ?>
+                    </select>
+                    <div class="mt-1">
+                      <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="small qk-text-accent text-decoration-none">
+                        <i class="fa-solid fa-plus me-1"></i>Crea nuova sostanza ADR
+                      </a>
+                      <?php if (!empty($v['sostanza_adr_id'])): ?>
+                      &nbsp;·&nbsp;
+                      <a href="<?= url('adr/sostanze/edit?id=' . (int)$v['sostanza_adr_id']) ?>" target="_blank" class="small qk-text-accent text-decoration-none">
+                        <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Apri scheda sostanza
+                      </a>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                </div>
+                <?php if (empty($adr_sostanze)): ?>
+                <div class="qk-alert" style="background:var(--qk-warning-light);border-color:var(--qk-warning);color:var(--qk-warning-dark);margin-top:.5rem;padding:.5rem .75rem;border-radius:var(--qk-radius);font-size:.85rem">
+                  <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                  Nessuna sostanza ADR registrata.
+                  <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="fw-semibold">Aggiungi la prima sostanza</a> prima di abilitare questo flag.
+                </div>
+                <?php endif; ?>
+              </div>
             </div>
           </div>
 

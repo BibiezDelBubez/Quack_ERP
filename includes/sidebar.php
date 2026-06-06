@@ -126,6 +126,12 @@
               <span class="qk-nav-label">Codici classificazione</span>
             </a>
           </li>
+          <li class="qk-nav-item">
+            <a href="<?= url('adr/sostanze') ?>" title="Sostanze ADR">
+              <i class="fa-solid fa-flask-vial fa-fw"></i>
+              <span class="qk-nav-label">Sostanze ADR</span>
+            </a>
+          </li>
         </ul>
       </li>
 

@@ -381,9 +381,9 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             $is_adr = 0;
             if ($prodotto_id) {
                 $stAdr = $pdo->prepare('
-                    SELECT COUNT(*) 
-                    FROM prodotto_classificazioni_adr 
-                    WHERE prodotto_id = ? AND e_corrente = 1
+                    SELECT COALESCE(is_adr, 0)
+                    FROM prodotti
+                    WHERE id = ?
                 ');
                 $stAdr->execute([$prodotto_id]);
                 $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
@@ -674,9 +674,9 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             $is_adr = 0;
             if ($prodotto_id) {
                 $stAdr = $pdo->prepare('
-                    SELECT COUNT(*) 
-                    FROM prodotto_classificazioni_adr 
-                    WHERE prodotto_id = ? AND e_corrente = 1
+                    SELECT COALESCE(is_adr, 0)
+                    FROM prodotti
+                    WHERE id = ?
                 ');
                 $stAdr->execute([$prodotto_id]);
                 $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;

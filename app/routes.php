@@ -160,6 +160,14 @@ return [
     '/adr/classificazioni/import' => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'importClassificazioni', 'auth' => true],
     '/adr/api/lookup'      => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'apiLookup',    'auth' => true],
 
+    '/adr/sostanze'               => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'index',         'auth' => true],
+    '/adr/sostanze/create'        => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'create',        'auth' => true],
+    '/adr/sostanze/edit'          => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'edit',          'auth' => true],
+    '/adr/sostanze/delete'        => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'delete',        'auth' => true],
+    '/adr/sostanze/scheda/upload' => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'uploadScheda',  'auth' => true],
+    '/adr/sostanze/scheda/delete' => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'deleteScheda',  'auth' => true],
+    '/adr/sostanze/scheda/download'=>['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'downloadScheda','auth' => true],
+
     '/profile'          => ['type' => 'controller', 'controller' => 'ProfileController', 'action' => 'index',  'auth' => true],
     '/users'            => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'index',   'auth' => true],
     '/users/create'     => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'create',  'auth' => true],

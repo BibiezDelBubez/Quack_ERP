@@ -158,16 +158,19 @@ function qk_search_categorie(PDO $pdo, string $q = '', int $limit = 50): array
 }
 
 /**
- * @return array<int, array{numero_onu:string, descrizione:string, classe_adr:string}>
+ * @return array<int, array{id:int, nome:string, codice_onu:string|null, classe_adr:string|null, gruppo_imballaggio:string|null}>
  */
 function qk_load_adr_sostanze(PDO $pdo): array
 {
     return $pdo->query(
-        "SELECT id            AS numero_onu,
-                nome_descrizione AS descrizione,
-                classe_pericolo  AS classe_adr
-           FROM adr_codici_onu
-          ORDER BY codice_onu"
+        "SELECT s.id,
+                s.nome,
+                s.gruppo_imballaggio,
+                c.codice_onu,
+                c.classe_pericolo AS classe_adr
+           FROM sostanze_adr s
+      LEFT JOIN adr_codici_onu c ON c.id = s.codice_onu_id
+          ORDER BY s.nome COLLATE NOCASE"
     )->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -355,7 +358,7 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
         $params[':cat']   = (int) $cat;
     }
     if ($adr_only) {
-        $where[]          = 'EXISTS(SELECT 1 FROM prodotto_classificazioni_adr pca WHERE pca.prodotto_id = p.id)';
+        $where[]          = 'COALESCE(p.is_adr, 0) = 1';
     }
 
     if ($supplier_id !== null) {
@@ -378,7 +381,7 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
     $sqlRows = "SELECT p.id, p.sku_interno, p.nome, p.tipo, um.codice AS unita_misura,
                 p.attivo, c.nome AS categoria,
                 g.quantita_disponibile,
-                EXISTS(SELECT 1 FROM prodotto_classificazioni_adr pca WHERE pca.prodotto_id = p.id) AS is_adr,
+                COALESCE(p.is_adr, 0) AS is_adr,
                 MIN(pp.prezzo) AS prezzo_min
          FROM prodotti p
          LEFT JOIN categorie_prodotto c ON c.id = p.categoria_id
@@ -423,6 +426,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
                 p.note_interne, p.attivo, p.traccia_lotti, um.codice AS unita_misura,
                 p.peso_netto_kg, p.peso_lordo_kg, p.ean,
                 p.unita_contenuto_id, p.quantita_contenuto, p.scorta_minima,
+                COALESCE(p.is_adr, 0) AS is_adr, p.sostanza_adr_id,
                 p.created_at, p.updated_at
          FROM prodotti p
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
@@ -457,6 +461,8 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          'unita_contenuto_id'   => (string) ($row['unita_contenuto_id']   ?? ''),
          'quantita_contenuto'   => (string) ($row['quantita_contenuto']   ?? ''),
          'scorta_minima'        => (string) ($row['scorta_minima']        ?? '0'),
+         'is_adr'               => (string) ($row['is_adr']               ?? '0'),
+         'sostanza_adr_id'      => (string) ($row['sostanza_adr_id']      ?? ''),
          'prezzo_vendita_base'  => $prezzo_base !== false ? (string)$prezzo_base : '',
          '_created_at'          => $row['created_at'],
          '_updated_at'          => $row['updated_at'],
@@ -480,12 +486,12 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
                (sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione, descrizione_completa,
                 tipo, categoria_id, note_interne,
                 attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto, peso_netto_kg, peso_lordo_kg,
-                ean, scorta_minima, created_at)
+                ean, scorta_minima, is_adr, sostanza_adr_id, created_at)
              VALUES
                (:sku_interno, :sku_ecommerce, :nome, :desc_breve, :desc_confezione, :desc_completa,
                 :tipo, :cat_id, :note_int,
                 :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto, :peso_netto, :peso_lordo,
-                :ean, :scorta_minima, CURRENT_TIMESTAMP)'
+                :ean, :scorta_minima, :is_adr, :sostanza_adr_id, CURRENT_TIMESTAMP)'
         );
         $stmt->execute([
             ':sku_interno'       => trim($v['sku_interno']),
@@ -506,6 +512,8 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
             ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
+            ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
+            ':sostanza_adr_id'   => qk_prodotti_null($v['sostanza_adr_id'] ?? '') !== null ? (int) $v['sostanza_adr_id'] : null,
         ]);
 
         $id = (int) $pdo->lastInsertId();
@@ -585,6 +593,8 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
                peso_lordo_kg          = :peso_lordo,
                ean                    = :ean,
                scorta_minima          = :scorta_minima,
+               is_adr                 = :is_adr,
+               sostanza_adr_id        = :sostanza_adr_id,
                updated_at             = CURRENT_TIMESTAMP
              WHERE id = :id'
         )->execute([
@@ -606,6 +616,8 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
             ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
+            ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
+            ':sostanza_adr_id'   => qk_prodotti_null($v['sostanza_adr_id'] ?? '') !== null ? (int) $v['sostanza_adr_id'] : null,
             ':id'                => $id,
         ]);
 

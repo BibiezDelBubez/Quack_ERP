@@ -65,12 +65,13 @@ function qk_compliance_check_sale(PDO $pdo, int $customer_id, array $items): arr
                            cr.min_concentration, cr.max_concentration
                     FROM compliance_restriction_types r
                     JOIN compliance_codice_onu_restrizioni cr ON cr.restriction_type_id = r.id
-                    JOIN prodotto_classificazioni_adr pca ON pca.codice_onu_id = cr.un_code_id
-                    WHERE pca.prodotto_id = :prodotto_id
-                      AND pca.e_corrente = 1
+                    JOIN sostanze_adr sa ON sa.codice_onu_id = cr.un_code_id
+                    JOIN prodotti p ON p.sostanza_adr_id = sa.id
+                    WHERE p.id = :prodotto_id
+                      AND COALESCE(p.is_adr, 0) = 1
                       AND r.active = 1
-                      AND (cr.min_concentration IS NULL OR pca.concentrazione_max_pct >= cr.min_concentration)
-                      AND (cr.max_concentration IS NULL OR pca.concentrazione_min_pct <= cr.max_concentration)";
+                      AND (cr.min_concentration IS NULL OR sa.concentrazione_max_pct >= cr.min_concentration)
+                      AND (cr.max_concentration IS NULL OR sa.concentrazione_min_pct <= cr.max_concentration)";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([':prodotto_id' => $p_id]);
@@ -184,12 +185,13 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
         $sql = "SELECT r.id, r.log_transactions
                 FROM compliance_restriction_types r
                 JOIN compliance_codice_onu_restrizioni cr ON cr.restriction_type_id = r.id
-                JOIN prodotto_classificazioni_adr pca ON pca.codice_onu_id = cr.un_code_id
-                WHERE pca.prodotto_id = :prodotto_id
-                  AND pca.e_corrente = 1
+                JOIN sostanze_adr sa ON sa.codice_onu_id = cr.un_code_id
+                JOIN prodotti p ON p.sostanza_adr_id = sa.id
+                WHERE p.id = :prodotto_id
+                  AND COALESCE(p.is_adr, 0) = 1
                   AND r.active = 1
-                  AND (cr.min_concentration IS NULL OR pca.concentrazione_max_pct >= cr.min_concentration)
-                  AND (cr.max_concentration IS NULL OR pca.concentrazione_min_pct <= cr.max_concentration)";
+                  AND (cr.min_concentration IS NULL OR sa.concentrazione_max_pct >= cr.min_concentration)
+                  AND (cr.max_concentration IS NULL OR sa.concentrazione_min_pct <= cr.max_concentration)";
         
         $r_stmt = $pdo->prepare($sql);
         $r_stmt->execute([':prodotto_id' => $p_id]);
