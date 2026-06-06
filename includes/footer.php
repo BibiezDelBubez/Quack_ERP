@@ -15,5 +15,16 @@
 <!-- App logic -->
 <script src="<?= asset('js/app.js') ?>"></script>
 
+<?php
+/**
+ * JS aggiuntivi per-pagina.
+ * Impostare $extra_js come array di path relativi alla cartella assets/js/
+ * prima di includere header.php. Es: $extra_js = ['sales-orders-shipment.js'];
+ */
+if (!empty($extra_js) && is_array($extra_js)):
+  foreach ($extra_js as $_ejs): ?>
+<script src="<?= asset('js/' . e($_ejs)) ?>"></script>
+<?php endforeach; endif; ?>
+
 </body>
 </html>

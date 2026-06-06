@@ -7,6 +7,9 @@ Sga vedo che per 1 listino 1 solo cliente, ma 1 cliente può avere più listini 
 3) preventivi clienti
 errore ${data, prezzo_sorgente} quando inserisco prezzo su preventivo cliente
 
+PREVENTIVI e ORDINI (sia di vendita che di acquisto)
+Riconsidera testo, layout e disposizione dei bottoni (conferma, duplica, annulla, crea versione, fattura).
+
 SPEDIZIONI
 Aggiungere possibilità di caricare foto del pallet prima di spedire.
 

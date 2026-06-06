@@ -8,6 +8,7 @@ $subnav_tabs = [
     'dashboard'  => ['label' => 'Panoramica',      'url' => url('sales')],
     'quotes'     => ['label' => 'Preventivi',      'url' => url('sales/quotes')],
     'orders'     => ['label' => 'Ordini',          'url' => url('sales/orders')],
+    'shipments'  => ['label' => 'Spedizioni',      'url' => url('sales/shipments')],
     'pricelists' => ['label' => 'Listini vendita', 'url' => url('sales/pricelists')],
 ];
 ?>

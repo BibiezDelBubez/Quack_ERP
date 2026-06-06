@@ -364,3 +364,69 @@ $canSave = !$isCompletato && !$isAnnullato;
   <?php endif; ?>
 
 </form>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SEZIONE SPEDIZIONI
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="qk-card mb-4">
+  <div class="qk-card-header d-flex justify-content-between align-items-center">
+    <span class="qk-card-title"><i class="fa-solid fa-truck-fast me-2"></i> Spedizioni e DDT</span>
+    <?php if (!$isAnnullato && !$isCompletato): ?>
+      <a href="<?= url('sales/shipments/new') ?>?order_id=<?= $id ?>"
+         class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
+        <i class="fa-solid fa-plus me-1"></i> Nuova Spedizione
+      </a>
+    <?php endif; ?>
+  </div>
+
+  <?php if (empty($shipments)): ?>
+    <div class="qk-empty py-4">
+      <i class="fa-solid fa-box-open"></i>
+      <p>Nessuna spedizione registrata per questo ordine.</p>
+    </div>
+  <?php else: ?>
+    <div class="qk-table-wrap">
+      <table class="qk-table" style="font-size:0.875rem">
+        <thead>
+          <tr>
+            <th>N° Spedizione</th>
+            <th>Data</th>
+            <th>Vettore</th>
+            <th>Tracking</th>
+            <th>Stato</th>
+            <th>DDT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($shipments as $s):
+            $dttsForSped = array_filter($ddts, fn($d) => (int)$d['spedizione_id'] === (int)$s['id']);
+            $statoClass  = match($s['stato']) {
+              'spedita'    => 'shipped',
+              'consegnata' => 'delivered',
+              'reso'       => 'cancelled',
+              default      => 'draft',
+            };
+          ?>
+            <tr>
+              <td class="fw-semibold"><?= e($s['numero_spedizione']) ?></td>
+              <td><?= fmt_date($s['data_spedizione']) ?></td>
+              <td><?= e($s['vettore'] ?: '—') ?></td>
+              <td><?= !empty($s['tracking']) ? '<code>' . e($s['tracking']) . '</code>' : '—' ?></td>
+              <td><span class="qk-badge <?= $statoClass ?>"><?= e(ucfirst($s['stato'])) ?></span></td>
+              <td>
+                <?php foreach ($dttsForSped as $ddt): ?>
+                  <a href="<?= url('sales/shipments/ddt/view?id=' . $ddt['id']) ?>"
+                     class="qk-text-accent fw-semibold text-decoration-none me-2" target="_blank">
+                    <i class="fa-solid fa-file-lines me-1"></i><?= e($ddt['numero_documento_trasporto']) ?>
+                  </a>
+                <?php endforeach; ?>
+                <?php if (empty($dttsForSped)): ?>—<?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+</div>
+

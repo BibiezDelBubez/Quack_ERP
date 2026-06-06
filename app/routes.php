@@ -45,6 +45,12 @@ return [
     '/sales/orders/create'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'create',   'auth' => true],
     '/sales/orders/edit'         => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'edit',     'auth' => true],
     '/sales/orders/action'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'action',   'auth' => true],
+    '/sales/orders/api/lotti-disponibili' => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiLottiDisponibili', 'auth' => true],
+
+    // ─── Vendite — Spedizioni ──────────────────────────────────────────────
+    '/sales/shipments'            => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'index',       'auth' => true],
+    '/sales/shipments/new'        => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'nuova',       'auth' => true],
+    '/sales/shipments/ddt/view'   => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'ddtView',     'auth' => true],
 
     // ─── Vendite — Listini vendita ─────────────────────────────────────────
     '/sales/pricelists'                  => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'index',          'auth' => true],

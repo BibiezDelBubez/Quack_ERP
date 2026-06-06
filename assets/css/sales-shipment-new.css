@@ -1,0 +1,410 @@
+/* =============================================================================
+   sales-shipment-new.css — Pagina dedicata Pick & Pack (Nuova Spedizione)
+   Usa esclusivamente var(--qk-*). Nessun colore hardcoded.
+============================================================================= */
+
+/* ── Layout principale: 2 colonne ─────────────────────────────────────────── */
+.qk-pp-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* ── Colonna sinistra: scrollabile ────────────────────────────────────────── */
+.qk-pp-left {
+  min-width: 0;
+}
+
+/* ── Barra progresso globale ──────────────────────────────────────────────── */
+.qk-pp-progress-bar {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  padding: .875rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.qk-pp-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .5rem;
+}
+
+.qk-pp-progress-label {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--qk-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.qk-pp-progress-count {
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--qk-text-primary);
+}
+
+.qk-pp-progress-track {
+  height: 6px;
+  background: var(--qk-bg-subtle);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.qk-pp-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--qk-accent);
+  transition: width .4s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Card riga prodotto ────────────────────────────────────────────────────── */
+.qk-pp-riga {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  margin-bottom: .75rem;
+  overflow: hidden;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+/* Indicatore stato (bordo sinistro colorato) */
+.qk-pp-riga::before {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: var(--qk-radius) 0 0 var(--qk-radius);
+}
+.qk-pp-riga { position: relative; }
+
+.qk-pp-riga.ok         { border-color: var(--qk-success, #198754); }
+.qk-pp-riga.ok::before { background: var(--qk-success, #198754); }
+
+.qk-pp-riga.partial         { border-color: var(--qk-warning, #f59e0b); }
+.qk-pp-riga.partial::before { background: var(--qk-warning, #f59e0b); }
+
+.qk-pp-riga.nostock         { border-color: var(--qk-danger, #dc3545); }
+.qk-pp-riga.nostock::before { background: var(--qk-danger, #dc3545); }
+
+/* ── Header riga ──────────────────────────────────────────────────────────── */
+.qk-pp-riga-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: .875rem 1rem .875rem 1.25rem;
+  gap: 1rem;
+  border-bottom: 1px solid var(--qk-card-border);
+}
+
+.qk-pp-riga-prodotto {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.qk-pp-riga-sku {
+  font-weight: 700;
+  font-size: .875rem;
+  color: var(--qk-text-primary);
+  white-space: nowrap;
+}
+
+.qk-pp-riga-nome {
+  font-size: .825rem;
+  color: var(--qk-text-secondary);
+}
+
+.qk-pp-riga-residuo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.qk-pp-residuo-label {
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--qk-text-muted);
+  margin-bottom: .1rem;
+}
+
+.qk-pp-residuo-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--qk-accent);
+}
+
+/* ── Barra spedizioni precedenti ──────────────────────────────────────────── */
+.qk-pp-prev-progress {
+  padding: .4rem 1rem .4rem 1.25rem;
+  background: var(--qk-bg-subtle);
+  font-size: .75rem;
+  color: var(--qk-text-muted);
+  border-bottom: 1px solid var(--qk-card-border);
+}
+
+.qk-pp-prev-label { display: block; margin-bottom: .2rem; }
+
+.qk-pp-prev-track {
+  height: 3px;
+  background: var(--qk-card-border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.qk-pp-prev-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--qk-accent);
+  opacity: .5;
+}
+
+/* ── Corpo assegnazione ───────────────────────────────────────────────────── */
+.qk-pp-riga-body {
+  padding: .875rem 1rem .875rem 1.25rem;
+}
+
+/* Prodotti senza lotti */
+.qk-pp-simple-input { display: flex; flex-direction: column; gap: .4rem; }
+.qk-pp-simple-row   { display: flex; align-items: center; gap: .5rem; }
+.qk-pp-simple-row .qk-form-control { max-width: 140px; }
+
+.qk-pp-uom {
+  font-size: .82rem;
+  color: var(--qk-text-muted);
+  white-space: nowrap;
+}
+
+/* ── Tabella lotti ────────────────────────────────────────────────────────── */
+.qk-pp-lotti-wrap { display: flex; flex-direction: column; gap: .35rem; }
+
+.qk-pp-lotti-cols {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr 28px;
+  gap: .5rem;
+  padding: .3rem .5rem;
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--qk-text-muted);
+}
+
+.qk-pp-lotti-rows { display: flex; flex-direction: column; gap: .35rem; }
+
+.qk-pp-lotto-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr 28px;
+  gap: .5rem;
+  align-items: center;
+  background: var(--qk-bg-subtle);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .45rem .5rem;
+  transition: border-color .15s;
+}
+
+.qk-pp-lotto-row:hover { border-color: var(--qk-accent); }
+
+.qk-pp-lotto-codice {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--qk-text-primary);
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qk-pp-fefo-tag {
+  font-size: .6rem;
+  font-weight: 700;
+  background: var(--qk-accent);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: .04em;
+  flex-shrink: 0;
+}
+
+.qk-pp-lotto-disp,
+.qk-pp-lotto-scad {
+  font-size: .8rem;
+  color: var(--qk-text-secondary);
+}
+
+.qk-pp-lotto-qty-wrap {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+.qk-pp-lotto-qty-wrap .qk-form-control {
+  padding: .25rem .4rem;
+  font-size: .85rem;
+  height: auto;
+  min-width: 0;
+}
+
+.qk-pp-lotto-qta.is-over {
+  border-color: var(--qk-danger, #dc3545) !important;
+  background: color-mix(in srgb, var(--qk-danger, #dc3545) 8%, transparent) !important;
+}
+
+/* Alert stock insufficiente inline */
+.qk-pp-stock-alert {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8rem;
+  padding: .45rem .75rem;
+  border-radius: var(--qk-radius-sm);
+  border: 1px solid;
+}
+.qk-pp-stock-alert.nostock {
+  background: color-mix(in srgb, var(--qk-danger, #dc3545) 8%, var(--qk-card-bg));
+  border-color: color-mix(in srgb, var(--qk-danger, #dc3545) 30%, transparent);
+  color: var(--qk-danger, #dc3545);
+}
+.qk-pp-stock-alert.partial {
+  background: color-mix(in srgb, var(--qk-warning, #f59e0b) 8%, var(--qk-card-bg));
+  border-color: color-mix(in srgb, var(--qk-warning, #f59e0b) 30%, transparent);
+  color: var(--qk-text-primary);
+}
+
+/* Footer riga lotti */
+.qk-pp-lotti-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: .5rem;
+  padding-top: .5rem;
+  border-top: 1px dashed var(--qk-card-border);
+}
+
+.qk-pp-totale {
+  font-size: .8rem;
+  color: var(--qk-text-muted);
+}
+
+.qk-pp-totale strong { color: var(--qk-text-primary); }
+.qk-pp-totale.ok strong { color: var(--qk-success, #198754); }
+.qk-pp-totale.over strong { color: var(--qk-danger, #dc3545); }
+
+/* ── Colonna destra: pannello sticky ──────────────────────────────────────── */
+.qk-pp-right {
+  position: sticky;
+  top: calc(var(--qk-topbar-h) + 1.25rem);
+}
+
+.qk-pp-panel {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.qk-pp-panel-section {
+  padding: 1rem 1.125rem;
+}
+
+.qk-pp-panel-section + .qk-pp-panel-section {
+  border-top: 1px solid var(--qk-card-border);
+}
+
+.qk-pp-panel-label {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--qk-text-muted);
+  margin-bottom: .6rem;
+}
+
+/* Info ordine */
+.qk-pp-order-num {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--qk-text-primary);
+}
+.qk-pp-order-cliente {
+  font-size: .82rem;
+  color: var(--qk-text-secondary);
+  margin-top: .15rem;
+}
+
+/* Divider */
+.qk-pp-divider {
+  height: 1px;
+  background: var(--qk-card-border);
+}
+
+/* Riepilogo allocazione */
+.qk-pp-riepilogo { display: flex; flex-direction: column; gap: .35rem; }
+
+.qk-pp-riepilogo-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .82rem;
+}
+.qk-pp-riepilogo-row span {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  color: var(--qk-text-secondary);
+}
+.qk-pp-riepilogo-row i { color: var(--qk-success, #198754); }
+.qk-pp-riepilogo-row.warn i { color: var(--qk-warning, #f59e0b); }
+
+/* Riga con 2 colonne nel panel */
+.qk-pp-panel-row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+}
+
+/* ── Azioni CTA ────────────────────────────────────────────────────────────── */
+.qk-pp-panel-actions {
+  padding: 1rem 1.125rem;
+  background: var(--qk-bg-subtle);
+  border-top: 1px solid var(--qk-card-border);
+}
+
+.qk-pp-submit-note {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  margin-top: .6rem;
+  font-size: .78rem;
+  color: var(--qk-warning, #f59e0b);
+  padding: .4rem .6rem;
+  background: color-mix(in srgb, var(--qk-warning, #f59e0b) 10%, var(--qk-card-bg));
+  border-radius: var(--qk-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--qk-warning, #f59e0b) 30%, transparent);
+}
+
+.qk-pp-submit-note i { flex-shrink: 0; margin-top: .1rem; }
+
+/* ── Responsive: sotto 900px passa a layout verticale ─────────────────────── */
+@media (max-width: 900px) {
+  .qk-pp-layout {
+    grid-template-columns: 1fr;
+  }
+  .qk-pp-right {
+    position: static;
+    order: -1;
+  }
+}
