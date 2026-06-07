@@ -834,6 +834,43 @@ final class AdrController extends BaseController
         require INCLUDES_DIR . '/footer.php';
     }
 
+    /* ════════════════════════════════════════════════════════════════════════
+     *  API: ricerca prodotti ADR per il calcolatore esenzione
+     * ════════════════════════════════════════════════════════════════════════ */
+
+    public function apiProdottiAdr(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $q     = trim(get_param('q', ''));
+        $limit = min(30, max(1, (int) get_param('limit', '20')));
+
+        $sql = "SELECT p.id, p.nome, p.sku_interno,
+                       s.id AS sostanza_id, s.nome AS sostanza_nome, s.codice_cas,
+                       s.gruppo_imballaggio,
+                       c.codice_onu, c.classe_pericolo, c.categoria_trasporto,
+                       ct.moltiplicatore_punti, ct.soglia_esenzione_kg_l
+                  FROM prodotti p
+                  JOIN sostanze_adr s            ON s.id = p.sostanza_adr_id
+             LEFT JOIN adr_codici_onu c          ON c.id = s.codice_onu_id
+             LEFT JOIN adr_categorie_trasporto ct ON ct.categoria = c.categoria_trasporto
+                 WHERE p.attivo = 1
+                   AND COALESCE(p.is_adr, 0) = 1";
+        $params = [];
+
+        if ($q !== '') {
+            $sql .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR s.nome LIKE :q)";
+            $params[':q'] = '%' . $q . '%';
+        }
+
+        $sql .= " ORDER BY p.nome COLLATE NOCASE LIMIT :lim";
+        $params[':lim'] = $limit;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        exit;
+    }
+
     private function dbMessage(PDOException $e): string
     {
         $msg = $e->getMessage();

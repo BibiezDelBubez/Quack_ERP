@@ -29,9 +29,14 @@
     <div class="qk-card">
       <div class="qk-card-header d-flex justify-content-between align-items-center">
         <span class="qk-card-title"><i class="fa-solid fa-list-check me-2"></i>Merci pericolose nel carico</span>
-        <button type="button" id="btn-add-row" class="btn-qk btn-qk-primary btn-qk-sm">
-          <i class="fa-solid fa-plus me-1"></i>Aggiungi sostanza
-        </button>
+        <div class="d-flex gap-2">
+          <button type="button" id="btn-add-row" class="btn-qk btn-qk-secondary btn-qk-sm">
+            <i class="fa-solid fa-flask-vial me-1"></i>Sostanza ADR
+          </button>
+          <button type="button" id="btn-add-prodotto" class="btn-qk btn-qk-primary btn-qk-sm">
+            <i class="fa-solid fa-box me-1"></i>Prodotto
+          </button>
+        </div>
       </div>
 
       <div class="qk-table-wrap">
@@ -169,253 +174,20 @@
   </div>
 </div>
 
-<!-- ══ DATI PHP → JS ════════════════════════════════════════════════════ -->
-<script>
-const QkAdrEsenzione = {
-  sostanze: <?= json_encode(array_values($sostanze), JSON_HEX_TAG) ?>,
-  categorie: <?= json_encode(array_values($categorie), JSON_HEX_TAG) ?>,
-};
-</script>
-
+<!-- ══ MOTORE + WIRING ══════════════════════════════════════════════════ -->
+<script src="<?= url('assets/js/adr-calcolatore.js') ?>"></script>
 <script>
 (function () {
-  /* ── Stato ──────────────────────────────────────────────────────────── */
-  let rows = [];   // [{id, nome, unCode, categoria, moltiplicatore, quantita}]
-  let nextId = 1;
 
-  const tbody        = document.getElementById('tbody-esenzione');
-  const cellTotale   = document.getElementById('cell-totale');
-  const barProgress  = document.getElementById('bar-progress');
-  const wrapProgress = document.getElementById('wrap-progress');
-
-  const statoVuoto      = document.getElementById('stato-vuoto');
-  const statoEsente     = document.getElementById('stato-esente');
-  const statoNonEsente  = document.getElementById('stato-non-esente');
-  const statoBloccato   = document.getElementById('stato-bloccato');
-  const numPuntiEsente      = document.getElementById('num-punti-esente');
-  const numPuntiNonEsente   = document.getElementById('num-punti-non-esente');
-
-  /* Mappa sostanza_id → dati */
-  const sostanzeMap = {};
-  QkAdrEsenzione.sostanze.forEach(s => { sostanzeMap[s.id] = s; });
-
-  /* ── Costruisce la <option> list del select sostanze ────────────────── */
-  function buildSelectOptions(currentId) {
-    let html = '<option value="">— Seleziona sostanza —</option>';
-    const withCat = QkAdrEsenzione.sostanze.filter(s => s.categoria_trasporto !== null && s.categoria_trasporto !== undefined);
-    const withoutCat = QkAdrEsenzione.sostanze.filter(s => s.categoria_trasporto === null || s.categoria_trasporto === undefined);
-
-    if (withCat.length) {
-      html += '<optgroup label="Sostanze con categoria nota">';
-      withCat.forEach(s => {
-        const label = s.nome + (s.codice_onu ? ' — UN' + s.codice_onu : '') + ' (Cat.' + s.categoria_trasporto + ')';
-        html += `<option value="${s.id}" ${String(s.id) === String(currentId) ? 'selected' : ''}>${escHtml(label)}</option>`;
-      });
-      html += '</optgroup>';
-    }
-    if (withoutCat.length) {
-      html += '<optgroup label="Sostanze senza categoria (inserisci manualmente)">';
-      withoutCat.forEach(s => {
-        const label = s.nome + (s.codice_onu ? ' — UN' + s.codice_onu : '') + ' [cat. mancante]';
-        html += `<option value="${s.id}" ${String(s.id) === String(currentId) ? 'selected' : ''}>${escHtml(label)}</option>`;
-      });
-      html += '</optgroup>';
-    }
-    return html;
-  }
-
-  /* ── Costruisce la <option> list categorie (per override manuale) ───── */
-  function buildCatOptions(currentCat) {
-    let html = '<option value="">—</option>';
-    QkAdrEsenzione.categorie.forEach(c => {
-      const label = 'Cat. ' + c.categoria + ' (×' + c.moltiplicatore_punti + ')';
-      html += `<option value="${c.categoria}" ${String(c.categoria) === String(currentCat) ? 'selected' : ''}>${label}</option>`;
-    });
-    return html;
-  }
-
-  /* ── Aggiunge una riga ──────────────────────────────────────────────── */
-  function addRow() {
-    const id = nextId++;
-    rows.push({ id, sostanzaId: '', nome: '', unCode: '', categoria: '', moltiplicatore: null, quantita: 0 });
-    renderRows();
-    // Focus sul select della nuova riga
-    const sel = tbody.querySelector(`[data-row-id="${id}"] .sel-sostanza`);
-    if (sel) sel.focus();
-  }
-
-  /* ── Rimuove una riga ───────────────────────────────────────────────── */
-  function removeRow(id) {
-    rows = rows.filter(r => r.id !== id);
-    renderRows();
-    updateTotale();
-  }
-
-  /* ── Quando cambia il select sostanza ──────────────────────────────── */
-  function onSostanzaChange(rowId, sostanzaId) {
-    const row = rows.find(r => r.id === rowId);
-    if (!row) return;
-    row.sostanzaId = sostanzaId;
-    if (sostanzaId && sostanzeMap[sostanzaId]) {
-      const s = sostanzeMap[sostanzaId];
-      row.unCode       = s.codice_onu   || '';
-      row.categoria    = s.categoria_trasporto !== null ? String(s.categoria_trasporto) : '';
-      row.moltiplicatore = s.moltiplicatore_punti !== null ? parseInt(s.moltiplicatore_punti) : null;
-    } else {
-      row.unCode = ''; row.categoria = ''; row.moltiplicatore = null;
-    }
-    renderRows();
-    updateTotale();
-  }
-
-  /* ── Quando cambia la categoria (override manuale) ──────────────────── */
-  function onCatChange(rowId, catVal) {
-    const row = rows.find(r => r.id === rowId);
-    if (!row) return;
-    row.categoria = catVal;
-    const catObj = QkAdrEsenzione.categorie.find(c => String(c.categoria) === String(catVal));
-    row.moltiplicatore = catObj ? parseInt(catObj.moltiplicatore_punti) : null;
-    updateTotale();
-    // Aggiorna solo la cella punti senza re-render completo
-    const tr = tbody.querySelector(`[data-row-id="${rowId}"]`);
-    if (tr) tr.querySelector('.cell-punti').textContent = formatPunti(row);
-  }
-
-  /* ── Quando cambia la quantità ──────────────────────────────────────── */
-  function onQtyChange(rowId, val) {
-    const row = rows.find(r => r.id === rowId);
-    if (!row) return;
-    row.quantita = parseFloat(val.replace(',', '.')) || 0;
-    updateTotale();
-    const tr = tbody.querySelector(`[data-row-id="${rowId}"]`);
-    if (tr) tr.querySelector('.cell-punti').textContent = formatPunti(row);
-  }
-
-  /* ── Calcola punti di una riga ──────────────────────────────────────── */
-  function puntiRiga(row) {
-    if (row.moltiplicatore === null || row.moltiplicatore === undefined) return null;
-    return row.quantita * row.moltiplicatore;
-  }
-
-  function formatPunti(row) {
-    const p = puntiRiga(row);
-    if (p === null) return '—';
-    return p % 1 === 0 ? String(p) : p.toFixed(1);
-  }
-
-  /* ── Render completo della tabella ─────────────────────────────────── */
-  function renderRows() {
-    if (rows.length === 0) {
-      tbody.innerHTML = `
-        <tr><td colspan="7" class="text-center py-4" style="color:var(--qk-text-muted)">
-          <i class="fa-regular fa-circle-plus me-1"></i>
-          Nessuna sostanza aggiunta — clicca "Aggiungi sostanza" per iniziare.
-        </td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = rows.map(row => {
-      const hasCat = row.categoria !== '';
-      const catEditable = !row.sostanzaId || sostanzeMap[row.sostanzaId]?.categoria_trasporto === null;
-
-      return `
-      <tr data-row-id="${row.id}">
-        <td>
-          <select class="qk-form-control qk-form-control-sm sel-sostanza">
-            ${buildSelectOptions(row.sostanzaId)}
-          </select>
-        </td>
-        <td>
-          <span class="small" style="color:var(--qk-text-secondary)">
-            ${row.unCode ? '<span class="qk-badge adr">UN' + escHtml(String(row.unCode)) + '</span>' : '<span style="color:var(--qk-text-muted)">—</span>'}
-          </span>
-        </td>
-        <td>
-          ${catEditable
-            ? `<select class="qk-form-control qk-form-control-sm sel-categoria" style="min-width:90px">${buildCatOptions(row.categoria)}</select>`
-            : `<span class="fw-semibold">${escHtml(String(row.categoria))}</span>`
-          }
-        </td>
-        <td class="text-center" style="color:var(--qk-text-muted)">
-          ${row.moltiplicatore !== null ? '×' + row.moltiplicatore : '<span style="color:var(--qk-text-muted)">—</span>'}
-        </td>
-        <td>
-          <input type="number" class="qk-form-control qk-form-control-sm inp-qty text-end"
-                 value="${row.quantita || ''}" min="0" step="0.1" placeholder="0">
-        </td>
-        <td class="text-end fw-semibold cell-punti" style="color:${puntiRiga(row) === null ? 'var(--qk-text-muted)' : 'inherit'}">
-          ${formatPunti(row)}
-        </td>
-        <td>
-          <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-remove-row" title="Rimuovi">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </td>
-      </tr>`;
-    }).join('');
-
-    // Event listeners sulle nuove righe
-    tbody.querySelectorAll('[data-row-id]').forEach(tr => {
-      const rowId = parseInt(tr.dataset.rowId);
-      const selSostanza = tr.querySelector('.sel-sostanza');
-      const selCat      = tr.querySelector('.sel-categoria');
-      const inpQty      = tr.querySelector('.inp-qty');
-      const btnRem      = tr.querySelector('.btn-remove-row');
-
-      if (selSostanza) selSostanza.addEventListener('change', () => onSostanzaChange(rowId, selSostanza.value));
-      if (selCat)      selCat.addEventListener('change',      () => onCatChange(rowId, selCat.value));
-      if (inpQty)      inpQty.addEventListener('input',       () => onQtyChange(rowId, inpQty.value));
-      if (btnRem)      btnRem.addEventListener('click',       () => removeRow(rowId));
-    });
-
-    updateTotale();
-  }
-
-  /* ── Aggiorna totale e pannello risultato ───────────────────────────── */
-  function updateTotale() {
-    if (rows.length === 0) {
-      cellTotale.textContent = '0';
-      wrapProgress.style.display = 'none';
-      showStato('vuoto');
-      return;
-    }
-
-    // Controlla categoria 0
-    const hasCategoria0 = rows.some(r => r.categoria === '0' || r.categoria === 0);
-    if (hasCategoria0) {
-      cellTotale.textContent = '∞';
-      wrapProgress.style.display = 'none';
-      showStato('bloccato');
-      return;
-    }
-
-    // Somma punti (ignora righe senza categoria)
-    let totale = 0;
-    rows.forEach(r => {
-      const p = puntiRiga(r);
-      if (p !== null) totale += p;
-    });
-
-    cellTotale.textContent = totale % 1 === 0 ? String(totale) : totale.toFixed(1);
-
-    // Barra progresso
-    wrapProgress.style.display = 'block';
-    const pct = Math.min((totale / 1000) * 100, 100);
-    barProgress.style.width = pct + '%';
-    barProgress.style.background = totale >= 1000
-      ? 'var(--qk-danger)'
-      : totale >= 700
-        ? 'var(--qk-warning)'
-        : 'var(--qk-success)';
-
-    if (totale < 1000) {
-      numPuntiEsente.textContent = cellTotale.textContent;
-      showStato('esente');
-    } else {
-      numPuntiNonEsente.textContent = cellTotale.textContent;
-      showStato('non-esente');
-    }
-  }
+  const cellTotale        = document.getElementById('cell-totale');
+  const barProgress       = document.getElementById('bar-progress');
+  const wrapProgress      = document.getElementById('wrap-progress');
+  const statoVuoto        = document.getElementById('stato-vuoto');
+  const statoEsente       = document.getElementById('stato-esente');
+  const statoNonEsente    = document.getElementById('stato-non-esente');
+  const statoBloccato     = document.getElementById('stato-bloccato');
+  const numPuntiEsente    = document.getElementById('num-punti-esente');
+  const numPuntiNonEsente = document.getElementById('num-punti-non-esente');
 
   function showStato(stato) {
     statoVuoto.style.display     = stato === 'vuoto'      ? '' : 'none';
@@ -424,19 +196,38 @@ const QkAdrEsenzione = {
     statoBloccato.style.display  = stato === 'bloccato'   ? '' : 'none';
   }
 
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
+  const calc = new QkAdrCalcolatore({
+    tbody:          document.getElementById('tbody-esenzione'),
+    categorie:      <?= json_encode(array_values($categorie), JSON_HEX_TAG) ?>,
+    sostanze:       <?= json_encode(array_values($sostanze),  JSON_HEX_TAG) ?>,
+    apiProdottiAdr: <?= json_encode(url('adr/api/prodotti-adr'), JSON_HEX_TAG) ?>,
 
-  /* ── Boot ───────────────────────────────────────────────────────────── */
-  document.getElementById('btn-add-row').addEventListener('click', addRow);
-  document.getElementById('btn-reset').addEventListener('click', () => {
-    rows = [];
-    nextId = 1;
-    renderRows();
-    updateTotale();
+    onUpdate({ totale, stato }) {
+      if (stato === 'vuoto') {
+        cellTotale.textContent     = '0';
+        wrapProgress.style.display = 'none';
+      } else if (stato === 'bloccato') {
+        cellTotale.textContent     = '∞';
+        wrapProgress.style.display = 'none';
+      } else {
+        const fmt = totale % 1 === 0 ? String(totale) : totale.toFixed(1);
+        cellTotale.textContent     = fmt;
+        wrapProgress.style.display = 'block';
+        const pct = Math.min((totale / 1000) * 100, 100);
+        barProgress.style.width      = pct + '%';
+        barProgress.style.background = totale >= 1000
+          ? 'var(--qk-danger)'
+          : totale >= 700 ? 'var(--qk-warning)' : 'var(--qk-success)';
+        if (stato === 'esente')     numPuntiEsente.textContent    = fmt;
+        if (stato === 'non-esente') numPuntiNonEsente.textContent = fmt;
+      }
+      showStato(stato);
+    },
   });
 
-  renderRows(); // stato iniziale vuoto
+  document.getElementById('btn-add-row').addEventListener('click',     () => calc.addRowSostanza());
+  document.getElementById('btn-add-prodotto').addEventListener('click', () => calc.addRowProdotto());
+  document.getElementById('btn-reset').addEventListener('click',        () => calc.reset());
+
 })();
 </script>
