@@ -59,7 +59,7 @@ $csrf      = csrf_field();
             <div class="qk-form-group" style="flex:2">
               <label class="qk-form-label required">Nome sostanza</label>
               <input type="text" name="nome" class="qk-form-control <?= isset($errors['nome']) ? 'is-invalid' : '' ?>"
-                     value="<?= e($v['nome']) ?>" placeholder="Es. Acido cloridrico soluzione 37%">
+                     value="<?= e($v['nome']) ?>" placeholder="Es. IPOCLORITO DI SODIO 14% — includi sempre nome e concentrazione">
               <?php if (isset($errors['nome'])): ?><div class="invalid-feedback"><?= e($errors['nome']) ?></div><?php endif; ?>
             </div>
             <div class="qk-form-group" style="flex:2">
@@ -70,9 +70,31 @@ $csrf      = csrf_field();
           </div>
 
           <div class="qk-form-row">
+            <div class="qk-form-group" style="flex:1">
+              <label class="qk-form-label">
+                Codice CAS
+                <a href="https://www.cas.org/cas-data/cas-registry" target="_blank" tabindex="-1"
+                   class="small qk-text-muted text-decoration-none ms-1" title="Cos'è il CAS?">
+                  <i class="fa-solid fa-circle-question"></i>
+                </a>
+              </label>
+              <input type="text" name="codice_cas"
+                     class="qk-form-control <?= isset($errors['codice_cas']) ? 'is-invalid' : '' ?>"
+                     value="<?= e($v['codice_cas'] ?? '') ?>"
+                     placeholder="Es. 7647-01-0"
+                     pattern="^\d{2,7}-\d{2}-\d$"
+                     title="Formato CAS: XXXXXXX-XX-X">
+              <?php if (isset($errors['codice_cas'])): ?>
+              <div class="invalid-feedback"><?= e($errors['codice_cas']) ?></div>
+              <?php else: ?>
+              <div class="form-text small qk-text-muted">Identificatore univoco globale (es. 7647-01-0). Opzionale ma raccomandato.</div>
+              <?php endif; ?>
+            </div>
             <div class="qk-form-group" style="flex:3">
               <label class="qk-form-label">Codice ONU (N° UN)</label>
-              <select name="codice_onu_id" class="qk-form-control">
+              <select name="codice_onu_id" id="codice-onu-sel" class="qk-form-control"
+                      data-check-url="<?= url('adr/sostanze/api/check-onu') ?>"
+                      data-exclude-id="<?= $sostanzaId ?>">
                 <option value="">— Nessuno —</option>
                 <?php foreach ($codici_onu as $c): ?>
                 <option value="<?= (int)$c['id'] ?>"
@@ -82,6 +104,9 @@ $csrf      = csrf_field();
                 </option>
                 <?php endforeach; ?>
               </select>
+              <!-- Banner dedup: iniettato via JS -->
+              <div id="onu-dedup-banner" style="display:none" class="mt-2 p-2 rounded small"
+                   style="background:var(--qk-warning-bg,#fffbeb);border:1px solid var(--qk-warning,#f59e0b)"></div>
             </div>
             <div class="qk-form-group" style="flex:1">
               <label class="qk-form-label">Gruppo imballaggio</label>
@@ -334,3 +359,67 @@ $csrf      = csrf_field();
   <?php endif; // isEdit ?>
 
 </div><!-- /tab-content -->
+
+<script>
+(function () {
+  const sel    = document.getElementById('codice-onu-sel');
+  const selGI  = document.querySelector('[name="gruppo_imballaggio"]');
+  const banner = document.getElementById('onu-dedup-banner');
+  if (!sel || !banner) return;
+
+  const baseUrl   = sel.dataset.checkUrl;
+  const excludeId = sel.dataset.excludeId || '0';
+
+  function check() {
+    const codiceOnuId = sel.value;
+    if (!codiceOnuId) { banner.style.display = 'none'; return; }
+
+    const gi  = selGI ? selGI.value : '';
+    const qs  = '?codice_onu_id=' + encodeURIComponent(codiceOnuId)
+              + '&exclude_id='    + encodeURIComponent(excludeId)
+              + (gi ? '&gruppo_imballaggio=' + encodeURIComponent(gi) : '');
+
+    fetch(baseUrl + qs)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.sostanze || data.sostanze.length === 0) {
+          banner.style.display = 'none';
+          return;
+        }
+
+        const lista = data.sostanze.map(s => {
+          const giLabel = s.gruppo_imballaggio ? ' · GI ' + s.gruppo_imballaggio : '';
+          const cas     = s.codice_cas ? ' · CAS ' + s.codice_cas : '';
+          const href    = '<?= url('adr/sostanze/edit?id=') ?>' + s.id;
+          return `<a href="${href}" target="_blank" class="fw-semibold text-decoration-none" style="color:inherit">${s.nome}${giLabel}${cas}</a>`;
+        }).join('<br>');
+
+        // Messaggio diverso se il match è su UN+GI o solo UN
+        const isExact = data.match_type === 'onu+gi';
+        const intro   = isExact
+          ? '<strong>Attenzione:</strong> esiste già ' +
+            (data.sostanze.length === 1 ? 'una sostanza' : data.sostanze.length + ' sostanze') +
+            ' con lo stesso N° ONU <em>e</em> lo stesso gruppo di imballaggio:'
+          : '<strong>Attenzione:</strong> questo codice ONU è già usato da ' +
+            (data.sostanze.length === 1 ? 'un\'altra sostanza' : data.sostanze.length + ' altre sostanze') + ':';
+
+        banner.style.cssText = 'display:block;background:#fffbeb;border:1px solid #f59e0b;border-radius:var(--qk-radius,4px);padding:.5rem .75rem';
+        banner.innerHTML =
+          '<i class="fa-solid fa-triangle-exclamation me-1" style="color:#f59e0b"></i>' +
+          intro + '<br>' + lista + '<br>' +
+          '<span class="qk-text-muted">' +
+          (isExact
+            ? 'Probabilmente è la stessa sostanza — verifica prima di crearne una nuova.'
+            : 'Verifica che non si tratti della stessa sostanza prima di continuare.') +
+          '</span>';
+      })
+      .catch(() => { banner.style.display = 'none'; });
+  }
+
+  sel.addEventListener('change', check);
+  if (selGI) selGI.addEventListener('change', check);
+
+  // Check on page load if editing with values already set
+  if (sel.value) check();
+})();
+</script>

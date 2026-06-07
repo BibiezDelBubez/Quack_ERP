@@ -127,9 +127,9 @@
             </a>
           </li>
           <li class="qk-nav-item">
-            <a href="<?= url('adr/sostanze') ?>" title="Sostanze ADR">
+            <a href="<?= url('adr/sostanze') ?>" title="Schede Sostanze ADR">
               <i class="fa-solid fa-flask-vial fa-fw"></i>
-              <span class="qk-nav-label">Sostanze ADR</span>
+              <span class="qk-nav-label">Schede Sostanze ADR</span>
             </a>
           </li>
         </ul>

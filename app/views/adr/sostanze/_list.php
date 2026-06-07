@@ -1,5 +1,19 @@
 <?php /** @var array $sostanze @var string|null $search */ ?>
 
+<div class="qk-guidance-box mb-4 p-3 border-start border-4 rounded d-flex align-items-start gap-3"
+     style="background:var(--qk-bg-subtle);border-color:var(--qk-accent)!important">
+  <div class="fs-4" style="color:var(--qk-accent);flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+  <div style="font-size:.875rem">
+    <p class="fw-semibold mb-1" style="color:var(--qk-text-primary)">Perché non basta il Codice ONU?</p>
+    <p class="mb-0" style="color:var(--qk-text-secondary)">
+      Il Codice ONU (es. UN&nbsp;1791) è una categoria generica della normativa — copre <em>qualsiasi</em> soluzione di ipoclorito,
+      indipendentemente dalla concentrazione. Qui invece registriamo la nostra formulazione specifica:
+      <strong>Ipoclorito di sodio 14%</strong>, con la sua SDS, la sua classe, il suo gruppo di imballaggio.
+      È questa scheda che poi colleghiamo ai prodotti del catalogo per generare i documenti di trasporto ADR corretti.
+    </p>
+  </div>
+</div>
+
 <div class="qk-card">
   <div class="qk-table-toolbar">
     <div class="qk-table-toolbar-left">
@@ -27,7 +41,7 @@
     <?php if (empty($sostanze)): ?>
       <div class="qk-empty">
         <i class="fa-solid fa-flask-vial"></i>
-        <p>Nessuna sostanza ADR registrata.<?= $search ? ' Prova a cambiare i filtri.' : '' ?></p>
+        <p>Nessuna scheda sostanza ADR registrata.<?= $search ? ' Prova a cambiare i filtri.' : '' ?></p>
         <?php if (!$search): ?>
         <a href="<?= url('adr/sostanze/create') ?>" class="btn-qk btn-qk-primary btn-qk-sm mt-2">
           <i class="fa-solid fa-plus"></i> Aggiungi sostanza
@@ -39,6 +53,7 @@
         <thead>
           <tr>
             <th>Nome sostanza</th>
+            <th>CAS</th>
             <th>N° ONU</th>
             <th>Classe</th>
             <th>G.I.</th>
@@ -59,6 +74,11 @@
               <?php if ($s['nome_tecnico']): ?>
               <div class="small qk-text-muted"><?= e($s['nome_tecnico']) ?></div>
               <?php endif; ?>
+            </td>
+            <td class="small">
+              <?php if ($s['codice_cas']): ?>
+              <code style="font-size:.8rem"><?= e($s['codice_cas']) ?></code>
+              <?php else: ?><span class="qk-text-muted">—</span><?php endif; ?>
             </td>
             <td>
               <?php if ($s['codice_onu']): ?>

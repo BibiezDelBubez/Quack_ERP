@@ -21,7 +21,7 @@ final class SostanzeAdrController extends BaseController
         $search = get_param('q');
 
         $sql = "
-            SELECT s.id, s.nome, s.nome_tecnico, s.gruppo_imballaggio,
+            SELECT s.id, s.nome, s.codice_cas, s.nome_tecnico, s.gruppo_imballaggio,
                    s.concentrazione_min_pct, s.concentrazione_max_pct,
                    s.e_soluzione, s.e_rifiuto,
                    c.codice_onu, c.classe_pericolo,
@@ -42,9 +42,9 @@ final class SostanzeAdrController extends BaseController
         $stmt->execute($params);
         $sostanze = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $page_title    = 'Sostanze ADR';
+        $page_title    = 'Schede Sostanze ADR';
         $page_subtitle = 'Anagrafica sostanze pericolose (tier 2: ONU → Sostanza → Prodotto)';
-        $breadcrumbs   = [['label' => 'ADR', 'url' => url('adr')], ['label' => 'Sostanze ADR']];
+        $breadcrumbs   = [['label' => 'ADR', 'url' => url('adr')], ['label' => 'Schede Sostanze ADR']];
 
         require INCLUDES_DIR . '/header.php';
         include APP_ROOT_DIR . '/app/views/adr/sostanze/_list.php';
@@ -68,11 +68,11 @@ final class SostanzeAdrController extends BaseController
                 $errors['_global'] = 'Token di sicurezza non valido.';
             } else {
                 $v      = $this->readPost($v);
-                $errors = $this->validate($v);
+                $errors = $this->validate($v, null);
                 if (empty($errors)) {
                     try {
                         $id = $this->insertSostanza($v);
-                        redirect_with('adr/sostanze/edit?id=' . $id, 'success', 'Sostanza ADR creata.');
+                        redirect_with('adr/sostanze/edit?id=' . $id, 'success', 'Scheda Sostanza ADR creata.');
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
@@ -81,10 +81,10 @@ final class SostanzeAdrController extends BaseController
         }
 
         $codici_onu = $this->loadCodiciOnu();
-        $page_title    = 'Nuova Sostanza ADR';
+        $page_title    = 'Nuova Scheda Sostanza ADR';
         $breadcrumbs   = [
             ['label' => 'ADR', 'url' => url('adr')],
-            ['label' => 'Sostanze ADR', 'url' => url('adr/sostanze')],
+            ['label' => 'Schede Sostanze ADR', 'url' => url('adr/sostanze')],
             ['label' => 'Nuova'],
         ];
 
@@ -118,11 +118,11 @@ final class SostanzeAdrController extends BaseController
                 $errors['_global'] = 'Token di sicurezza non valido.';
             } else {
                 $v      = $this->readPost($v);
-                $errors = $this->validate($v, $id);
+                $errors = $this->validate($v, $id);  // passa $id per escludere se stesso dal check CAS
                 if (empty($errors)) {
                     try {
                         $this->updateSostanza($id, $v);
-                        redirect_with('adr/sostanze/edit?id=' . $id, 'success', 'Sostanza ADR aggiornata.');
+                        redirect_with('adr/sostanze/edit?id=' . $id, 'success', 'Scheda Sostanza ADR aggiornata.');
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
@@ -133,10 +133,10 @@ final class SostanzeAdrController extends BaseController
         $schede             = $this->loadSchede($id);
         $prodotti_associati = $this->loadProdottiAssociati($id);
         $codici_onu         = $this->loadCodiciOnu();
-        $page_title         = 'Sostanza ADR: ' . e($row['nome']);
+        $page_title         = 'Scheda Sostanza ADR: ' . e($row['nome']);
         $breadcrumbs        = [
             ['label' => 'ADR', 'url' => url('adr')],
-            ['label' => 'Sostanze ADR', 'url' => url('adr/sostanze')],
+            ['label' => 'Schede Sostanze ADR', 'url' => url('adr/sostanze')],
             ['label' => e($row['nome'])],
         ];
 
@@ -178,7 +178,7 @@ final class SostanzeAdrController extends BaseController
         }
 
         $this->pdo->prepare('DELETE FROM sostanze_adr WHERE id = ?')->execute([$id]);
-        redirect_with('adr/sostanze', 'success', 'Sostanza ADR eliminata.');
+        redirect_with('adr/sostanze', 'success', 'Scheda Sostanza ADR eliminata.');
     }
 
     /* ════════════════════════════════════════════════════════════════════════
@@ -314,6 +314,51 @@ final class SostanzeAdrController extends BaseController
     }
 
     /* ════════════════════════════════════════════════════════════════════════
+     *  API: check sostanze duplicate per codice ONU
+     * ════════════════════════════════════════════════════════════════════════ */
+
+    public function apiCheckOnu(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $codiceOnuId    = (int) get_param('codice_onu_id');
+        $excludeId      = (int) get_param('exclude_id');
+        $gruppoRaw      = strtoupper(trim(get_param('gruppo_imballaggio', '')));
+        $gruppoImball   = in_array($gruppoRaw, ['I', 'II', 'III'], true) ? $gruppoRaw : null;
+
+        if ($codiceOnuId <= 0) {
+            echo json_encode(['sostanze' => [], 'match_type' => null]);
+            exit;
+        }
+
+        $sql    = 'SELECT s.id, s.nome, s.codice_cas, s.gruppo_imballaggio
+                     FROM sostanze_adr s
+                    WHERE s.codice_onu_id = ?';
+        $params = [$codiceOnuId];
+
+        // Se il GI è specificato, filtra per entrambi (match più preciso)
+        if ($gruppoImball !== null) {
+            $sql .= ' AND s.gruppo_imballaggio = ?';
+            $params[] = $gruppoImball;
+        }
+
+        if ($excludeId > 0) {
+            $sql .= ' AND s.id != ?';
+            $params[] = $excludeId;
+        }
+        $sql .= ' ORDER BY s.nome COLLATE NOCASE LIMIT 10';
+
+        $st = $this->pdo->prepare($sql);
+        $st->execute($params);
+        $sostanze = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        // match_type comunica al frontend quanto è preciso il match
+        $matchType = $gruppoImball !== null ? 'onu+gi' : 'onu';
+        echo json_encode(['sostanze' => $sostanze, 'match_type' => $matchType]);
+        exit;
+    }
+
+    /* ════════════════════════════════════════════════════════════════════════
      *  Helper privati
      * ════════════════════════════════════════════════════════════════════════ */
 
@@ -321,6 +366,7 @@ final class SostanzeAdrController extends BaseController
     {
         return [
             'nome'                    => '',
+            'codice_cas'              => '',
             'codice_onu_id'           => '',
             'nome_tecnico'            => '',
             'gruppo_imballaggio'      => '',
@@ -345,11 +391,22 @@ final class SostanzeAdrController extends BaseController
         return $v;
     }
 
-    private function validate(array $v): array
+    private function validate(array $v, ?int $editId = null): array
     {
         $errors = [];
         if (trim($v['nome']) === '') {
             $errors['nome'] = 'Il nome è obbligatorio.';
+        }
+        // Unicità CAS
+        $cas = trim($v['codice_cas'] ?? '');
+        if ($cas !== '') {
+            $st = $this->pdo->prepare(
+                'SELECT id FROM sostanze_adr WHERE codice_cas = ? AND (:id IS NULL OR id != :id)'
+            );
+            $st->execute([$cas, $editId, $editId]);
+            if ($st->fetch()) {
+                $errors['codice_cas'] = 'Questo codice CAS è già registrato per un\'altra sostanza.';
+            }
         }
         return $errors;
     }
@@ -358,11 +415,11 @@ final class SostanzeAdrController extends BaseController
     {
         $this->pdo->prepare(
             'INSERT INTO sostanze_adr
-               (nome, codice_onu_id, nome_tecnico, gruppo_imballaggio,
+               (nome, codice_cas, codice_onu_id, nome_tecnico, gruppo_imballaggio,
                 concentrazione_min_pct, concentrazione_max_pct, punto_infiammabilita_c,
                 e_soluzione, e_rifiuto, e_stabilizzato, note_interne)
              VALUES
-               (:nome, :codice_onu_id, :nome_tecnico, :gruppo_imballaggio,
+               (:nome, :codice_cas, :codice_onu_id, :nome_tecnico, :gruppo_imballaggio,
                 :conc_min, :conc_max, :flash,
                 :e_sol, :e_rif, :e_stab, :note)'
         )->execute($this->bindParams($v));
@@ -375,7 +432,8 @@ final class SostanzeAdrController extends BaseController
         $params[':id'] = $id;
         $this->pdo->prepare(
             'UPDATE sostanze_adr SET
-               nome = :nome, codice_onu_id = :codice_onu_id, nome_tecnico = :nome_tecnico,
+               nome = :nome, codice_cas = :codice_cas,
+               codice_onu_id = :codice_onu_id, nome_tecnico = :nome_tecnico,
                gruppo_imballaggio = :gruppo_imballaggio,
                concentrazione_min_pct = :conc_min, concentrazione_max_pct = :conc_max,
                punto_infiammabilita_c = :flash,
@@ -387,10 +445,11 @@ final class SostanzeAdrController extends BaseController
 
     private function bindParams(array $v): array
     {
-        $n = fn($x) => ($x === '' || $x === null) ? null : $x;
+        $n = fn($x) => ($x === '' || $x === null) ? null : trim((string) $x);
         $d = fn($x) => ($x === '' || $x === null) ? null : (float) str_replace(',', '.', (string) $x);
         return [
             ':nome'              => trim($v['nome']),
+            ':codice_cas'        => $n($v['codice_cas'] ?? ''),
             ':codice_onu_id'     => $n($v['codice_onu_id']) !== null ? (int) $v['codice_onu_id'] : null,
             ':nome_tecnico'      => $n($v['nome_tecnico']),
             ':gruppo_imballaggio'=> $n($v['gruppo_imballaggio']),
@@ -400,7 +459,7 @@ final class SostanzeAdrController extends BaseController
             ':e_sol'             => $v['e_soluzione']    === '1' ? 1 : 0,
             ':e_rif'             => $v['e_rifiuto']      === '1' ? 1 : 0,
             ':e_stab'            => $v['e_stabilizzato'] === '1' ? 1 : 0,
-            ':note'              => $n($v['note_interne']),
+            ':note'              => $n($v['note_interne'] ?? ''),
         ];
     }
 

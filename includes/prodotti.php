@@ -165,6 +165,7 @@ function qk_load_adr_sostanze(PDO $pdo): array
     return $pdo->query(
         "SELECT s.id,
                 s.nome,
+                s.codice_cas,
                 s.gruppo_imballaggio,
                 c.codice_onu,
                 c.classe_pericolo AS classe_adr

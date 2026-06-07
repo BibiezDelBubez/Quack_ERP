@@ -32,6 +32,7 @@ if (!$exists) {
         CREATE TABLE sostanze_adr (
             id                      INTEGER PRIMARY KEY AUTOINCREMENT,
             nome                    VARCHAR(300) NOT NULL,
+            codice_cas              VARCHAR(12)  UNIQUE,
             codice_onu_id           INTEGER REFERENCES adr_codici_onu(id),
             nome_tecnico            VARCHAR(200),
             gruppo_imballaggio      CHAR(3),
@@ -49,7 +50,15 @@ if (!$exists) {
     ");
     $steps[] = '✓ Tabella sostanze_adr creata.';
 } else {
-    $steps[] = '— sostanze_adr già esistente, saltata.';
+    // Aggiungi codice_cas se non presente (idempotente)
+    $cols = array_column($pdo->query('PRAGMA table_info(sostanze_adr)')->fetchAll(), 'name');
+    if (!in_array('codice_cas', $cols, true)) {
+        $pdo->exec('ALTER TABLE sostanze_adr ADD COLUMN codice_cas VARCHAR(12)');
+        $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_sostanze_adr_cas ON sostanze_adr(codice_cas) WHERE codice_cas IS NOT NULL');
+        $steps[] = '✓ Colonna sostanze_adr.codice_cas aggiunta.';
+    } else {
+        $steps[] = '— sostanze_adr già esistente con codice_cas, saltata.';
+    }
 }
 
 /* ── 2. Tabella sostanze_adr_schede ─────────────────────────────────────── */

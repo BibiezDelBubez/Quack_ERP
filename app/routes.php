@@ -167,6 +167,7 @@ return [
     '/adr/sostanze/scheda/upload' => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'uploadScheda',  'auth' => true],
     '/adr/sostanze/scheda/delete' => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'deleteScheda',  'auth' => true],
     '/adr/sostanze/scheda/download'=>['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'downloadScheda','auth' => true],
+    '/adr/sostanze/api/check-onu'  =>['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'apiCheckOnu',    'auth' => true],
 
     '/profile'          => ['type' => 'controller', 'controller' => 'ProfileController', 'action' => 'index',  'auth' => true],
     '/users'            => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'index',   'auth' => true],

@@ -1016,13 +1016,14 @@ $kit_componenti = $kit_componenti ?? [];
                    style="<?= ($v['is_adr'] ?? '0') !== '1' ? 'opacity:.4;pointer-events:none' : '' ?>">
                 <div class="qk-form-row">
                   <div class="qk-form-group" style="flex:3">
-                    <label class="qk-form-label">Sostanza ADR</label>
+                    <label class="qk-form-label">Scheda Sostanza ADR</label>
                     <select name="sostanza_adr_id" class="qk-form-control">
                       <option value="">— Seleziona sostanza —</option>
                       <?php foreach ($adr_sostanze as $s): ?>
                       <option value="<?= (int)$s['id'] ?>"
                         <?= (string)($v['sostanza_adr_id'] ?? '') === (string)$s['id'] ? 'selected' : '' ?>>
                         <?= e($s['nome']) ?>
+                        <?php if ($s['codice_cas'] ?? ''): ?> · CAS <?= e($s['codice_cas']) ?><?php endif; ?>
                         <?php if ($s['codice_onu'] ?? ''): ?> — UN<?= e($s['codice_onu']) ?><?php endif; ?>
                         <?php if ($s['classe_adr'] ?? ''): ?> (cl. <?= e($s['classe_adr']) ?>)<?php endif; ?>
                         <?php if ($s['gruppo_imballaggio'] ?? ''): ?> GI <?= e($s['gruppo_imballaggio']) ?><?php endif; ?>
@@ -1031,7 +1032,7 @@ $kit_componenti = $kit_componenti ?? [];
                     </select>
                     <div class="mt-1">
                       <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="small qk-text-accent text-decoration-none">
-                        <i class="fa-solid fa-plus me-1"></i>Crea nuova sostanza ADR
+                        <i class="fa-solid fa-plus me-1"></i>Crea nuova scheda sostanza ADR
                       </a>
                       <?php if (!empty($v['sostanza_adr_id'])): ?>
                       &nbsp;·&nbsp;
@@ -1045,7 +1046,7 @@ $kit_componenti = $kit_componenti ?? [];
                 <?php if (empty($adr_sostanze)): ?>
                 <div class="qk-alert" style="background:var(--qk-warning-light);border-color:var(--qk-warning);color:var(--qk-warning-dark);margin-top:.5rem;padding:.5rem .75rem;border-radius:var(--qk-radius);font-size:.85rem">
                   <i class="fa-solid fa-triangle-exclamation me-1"></i>
-                  Nessuna sostanza ADR registrata.
+                  Nessuna scheda sostanza ADR registrata.
                   <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="fw-semibold">Aggiungi la prima sostanza</a> prima di abilitare questo flag.
                 </div>
                 <?php endif; ?>
