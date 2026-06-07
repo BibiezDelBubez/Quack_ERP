@@ -76,60 +76,36 @@
         </ul>
       </li>
 
-      <!-- Sottomenu Anagrafiche ADR -->
+      <!-- Sottomenu ADR -->
       <li class="qk-nav-item">
         <button class="qk-nav-link <?= is_current_section('/adr') ? 'active' : '' ?>"
-                title="Anagrafiche ADR"
+                title="ADR"
                 data-bs-toggle="collapse"
                 data-bs-target="#nav-adr"
                 aria-expanded="<?= is_current_section('/adr') ? 'true' : 'false' ?>"
                 aria-controls="nav-adr">
           <i class="fa-solid fa-biohazard"></i>
-          <span class="qk-nav-label">Anagrafiche ADR</span>
+          <span class="qk-nav-label">ADR</span>
           <i class="fa-solid fa-chevron-right qk-nav-arrow ms-auto"></i>
         </button>
         <ul class="qk-nav-sub collapse <?= is_current_section('/adr') ? 'show' : '' ?>"
             id="nav-adr">
           <li class="qk-nav-item">
-            <a href="<?= url('adr?tab=codici') ?>" title="Codici ONU">
+            <a href="<?= url('adr?tab=codici') ?>" title="Anagrafiche ADR">
               <i class="fa-solid fa-list-ol fa-fw"></i>
-              <span class="qk-nav-label">Codici ONU</span>
-            </a>
-          </li>
-          <li class="qk-nav-item">
-            <a href="<?= url('adr?tab=classi') ?>" title="Classi di pericolo">
-              <i class="fa-solid fa-fire-flame-curved fa-fw"></i>
-              <span class="qk-nav-label">Classi pericolo</span>
-            </a>
-          </li>
-          <li class="qk-nav-item">
-            <a href="<?= url('adr?tab=imballaggio') ?>" title="Gruppi imballaggio">
-              <i class="fa-solid fa-box-taped fa-fw"></i>
-              <span class="qk-nav-label">Gruppi imballaggio</span>
-            </a>
-          </li>
-          <li class="qk-nav-item">
-            <a href="<?= url('adr?tab=gallerie') ?>" title="Codici galleria">
-              <i class="fa-solid fa-car-tunnel fa-fw"></i>
-              <span class="qk-nav-label">Codici galleria</span>
-            </a>
-          </li>
-          <li class="qk-nav-item">
-            <a href="<?= url('adr?tab=categorie') ?>" title="Categorie di trasporto">
-              <i class="fa-solid fa-truck fa-fw"></i>
-              <span class="qk-nav-label">Categorie trasporto</span>
-            </a>
-          </li>
-          <li class="qk-nav-item">
-            <a href="<?= url('adr?tab=classificazioni') ?>" title="Codici classificazione">
-              <i class="fa-solid fa-barcode fa-fw"></i>
-              <span class="qk-nav-label">Codici classificazione</span>
+              <span class="qk-nav-label">Anagrafiche ADR</span>
             </a>
           </li>
           <li class="qk-nav-item">
             <a href="<?= url('adr/sostanze') ?>" title="Schede Sostanze ADR">
               <i class="fa-solid fa-flask-vial fa-fw"></i>
               <span class="qk-nav-label">Schede Sostanze ADR</span>
+            </a>
+          </li>
+          <li class="qk-nav-item">
+            <a href="<?= url('adr/esenzione') ?>" title="Calcola Esenzione">
+              <i class="fa-regular fa-calculator fa-fw"></i>
+              <span class="qk-nav-label">Calcola Esenzione</span>
             </a>
           </li>
         </ul>

@@ -159,6 +159,7 @@ return [
     '/adr/codici/import'   => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'importCodici', 'auth' => true],
     '/adr/classificazioni/import' => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'importClassificazioni', 'auth' => true],
     '/adr/api/lookup'      => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'apiLookup',    'auth' => true],
+    '/adr/esenzione'       => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'esenzione',   'auth' => true],
 
     '/adr/sostanze'               => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'index',         'auth' => true],
     '/adr/sostanze/create'        => ['type' => 'controller', 'controller' => 'SostanzeAdrController', 'action' => 'create',        'auth' => true],

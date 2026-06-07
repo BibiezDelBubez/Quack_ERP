@@ -383,7 +383,7 @@ final class SostanzeAdrController extends BaseController
     private function readPost(array $v): array
     {
         foreach (array_keys($v) as $k) {
-            $v[$k] = post($k, $v[$k] ?? '');
+            $v[$k] = post($k, (string)($v[$k] ?? ''));
         }
         $v['e_soluzione']   = isset($_POST['e_soluzione'])   ? '1' : '0';
         $v['e_rifiuto']     = isset($_POST['e_rifiuto'])     ? '1' : '0';

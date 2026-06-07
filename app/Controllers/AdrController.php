@@ -797,6 +797,43 @@ final class AdrController extends BaseController
         ]);
     }
 
+    /* ════════════════════════════════════════════════════════════════════════
+     *  ESENZIONE — calcolatore 1000 punti (ADR 1.1.3.6)
+     * ════════════════════════════════════════════════════════════════════════ */
+
+    public function esenzione(): void
+    {
+        // Categorie di trasporto con moltiplicatore
+        $categorie = $this->pdo->query(
+            'SELECT categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione
+               FROM adr_categorie_trasporto
+              ORDER BY categoria'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        // Sostanze ADR con i dati necessari al calcolo
+        $sostanze = $this->pdo->query(
+            "SELECT s.id, s.nome, s.codice_cas, s.gruppo_imballaggio,
+                    c.codice_onu, c.classe_pericolo, c.categoria_trasporto,
+                    c.quantita_limitata, c.codice_quantita_esente,
+                    ct.moltiplicatore_punti, ct.soglia_esenzione_kg_l
+               FROM sostanze_adr s
+          LEFT JOIN adr_codici_onu c  ON c.id = s.codice_onu_id
+          LEFT JOIN adr_categorie_trasporto ct ON ct.categoria = c.categoria_trasporto
+              ORDER BY s.nome COLLATE NOCASE"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $page_title    = 'Calcola Esenzione ADR';
+        $page_subtitle = 'Verifica del limite 1000 punti (ADR 1.1.3.6)';
+        $breadcrumbs   = [
+            ['label' => 'ADR', 'url' => url('adr')],
+            ['label' => 'Calcola Esenzione'],
+        ];
+
+        require INCLUDES_DIR . '/header.php';
+        include APP_ROOT_DIR . '/app/views/adr/_esenzione.php';
+        require INCLUDES_DIR . '/footer.php';
+    }
+
     private function dbMessage(PDOException $e): string
     {
         $msg = $e->getMessage();
