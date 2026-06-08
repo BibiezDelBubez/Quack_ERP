@@ -33,11 +33,6 @@ $statoLabel = [
 ?>
 
 <style>
-/* Override visual indicators */
-.is-overridden {
-  border-color: #f59e0b !important;
-  background-color: #fef3c7 !important;
-}
 </style>
 
   <?php if ($isEdit && $stato === 'rifiutata' && !empty($offerta['motivo_rifiuto'])): ?>
@@ -368,7 +363,7 @@ $statoLabel = [
                 </td>
               </tr>
               <?php else: ?>
-              <tr class="offerta-riga" data-idx="<?= $i ?>" data-temp-id="<?= e($r['temp_id'] ?? $r['id'] ?? 'row_' . $i) ?>" style="<?= !empty($r['offerta_riga_padre_id']) ? 'background: rgba(0,0,0,0.02);' : '' ?>">
+              <tr class="offerta-riga" data-idx="<?= $i ?>" data-temp-id="<?= e($r['temp_id'] ?? $r['id'] ?? 'row_' . $i) ?>" style="<?= !empty($r['offerta_riga_padre_id']) ? 'background: var(--qk-row-alt);' : '' ?>">
                 <td>
                   <input type="hidden" name="riga_rfq_riga_id[]" value="<?= e($r['rfq_riga_id'] ?? '') ?>">
                   <input type="hidden" name="riga_offerta_riga_padre_id[]" class="r-padre-id" value="<?= e($r['offerta_riga_padre_id'] ?? '') ?>">
@@ -871,7 +866,7 @@ $statoLabel = [
       badge.style.display = 'none';
       badge.innerHTML = '';
     } else {
-      input.style.borderColor = '#d97706'; // warning orange
+      input.style.borderColor = 'var(--qk-warning)'; // warning orange
       badge.style.display = 'block';
       const sign = diff > 0 ? '+' : '';
       const pct = ((diff / requested) * 100).toFixed(0);
@@ -1319,7 +1314,7 @@ $statoLabel = [
 <?php if ($isEdit && $isInValutazione): ?>
 <div id="modal-rifiuta-offerta"
      style="display:none;position:fixed;inset:0;z-index:1050;
-            background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            background:var(--qk-overlay);align-items:center;justify-content:center">
   <div style="background:var(--qk-card-bg);border:1px solid var(--qk-border);
               border-radius:var(--qk-radius-lg);padding:1.5rem;width:100%;max-width:480px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">

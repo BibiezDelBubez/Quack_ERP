@@ -57,22 +57,16 @@ $savedOk = isset($saved) && $saved;
 <?php unset($_SESSION['flash_error']); endif; ?>
 
 <style>
-/* Override visual indicators */
-.is-overridden {
-  border-color: #f59e0b !important;
-  background-color: #fef3c7 !important;
-}
-
 /* Miglioramento UX per righe RFQ */
 #tbl-righe tbody tr {
   border-bottom: 1px solid var(--qk-border);
   transition: background-color 0.12s ease;
 }
 #tbl-righe tbody tr:nth-child(even) {
-  background-color: #f8fafc;
+  background-color: var(--qk-bg-subtle);
 }
 #tbl-righe tbody tr:hover {
-  background-color: #f1f5f9 !important;
+  background-color: var(--qk-table-head-bg) !important;
 }
 #tbl-righe tbody td {
   padding: .65rem .5rem !important;
@@ -851,7 +845,7 @@ $savedOk = isset($saved) && $saved;
 <?php if ($isEdit && $isBozza): ?>
 <div id="modal-invia-rfq"
      style="display:none;position:fixed;inset:0;z-index:1050;
-            background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            background:var(--qk-overlay);align-items:center;justify-content:center">
   <div style="background:var(--qk-card-bg);border:1px solid var(--qk-border);
               border-radius:var(--qk-radius-lg);padding:1.5rem;width:100%;max-width:480px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">

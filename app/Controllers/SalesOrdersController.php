@@ -11,14 +11,14 @@ final class SalesOrdersController extends BaseController
         $status = get_param('status');
 
         $stmt = $this->pdo->prepare(
-            "SELECT o.id, o.numero_ordine, o.data_ordine, o.stato,
+            "SELECT o.id, o.numero_ordine, o.data_ordine, o.data_consegna_prevista, o.stato,
                     COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome
-             FROM ordini_clienti o
-             JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-             WHERE 1=1
-               " . ($search ? "AND (o.numero_ordine LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)" : '') . "
-               " . ($status ? "AND o.stato = :stato" : '') . "
-             ORDER BY o.created_at DESC"
+               FROM ordini_clienti o
+               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
+              WHERE 1=1
+                " . ($search ? "AND (o.numero_ordine LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)" : '') . "
+                " . ($status ? "AND o.stato = :stato" : '') . "
+              ORDER BY o.created_at DESC"
         );
         $params = [];
         if ($search) $params[':q']     = '%' . $search . '%';
@@ -36,52 +36,7 @@ final class SalesOrdersController extends BaseController
             <i class="fa-solid fa-plus"></i> Nuovo ordine
         </a>';
 
-        require INCLUDES_DIR . '/header.php';
-        // Render simple order list placeholder
-        ?>
-        <?php include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
-        <div class="qk-card">
-          <div class="qk-table-toolbar">
-            <div class="qk-table-toolbar-left">
-              <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
-                <div class="qk-filter-wrap">
-                  <i class="fa-solid fa-magnifying-glass"></i>
-                  <input type="text" name="q" class="qk-filter-input" placeholder="Cerca ordine, cliente…" value="<?= e($search) ?>">
-                </div>
-                <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-filter"></i> Filtra</button>
-              </form>
-            </div>
-            <div class="qk-table-toolbar-right"><small class="qk-text-muted"><?= $total ?> ordini</small></div>
-          </div>
-          <div class="qk-table-wrap">
-            <?php if (empty($orders)): ?>
-            <div class="qk-empty">
-              <i class="fa-solid fa-file-invoice-dollar"></i>
-              <p>Nessun ordine trovato.</p>
-            </div>
-            <?php else: ?>
-            <table class="qk-table">
-              <thead><tr><th>N° Ordine</th><th>Cliente</th><th>Stato</th><th>Data Ordine</th></tr></thead>
-              <tbody>
-                <?php foreach ($orders as $o): ?>
-                <tr>
-                  <td class="fw-semibold">
-                    <a href="<?= url('sales/orders/edit?id=' . $o['id']) ?>" class="qk-text-accent fw-bold text-decoration-none">
-                      <?= e($o['numero_ordine'] ?? '') ?>
-                    </a>
-                  </td>
-                  <td><?= e($o['cliente_nome'] ?? '') ?></td>
-                  <td><span class="qk-badge"><?= e(ucfirst(str_replace('_', ' ', $o['stato'] ?? ''))) ?></span></td>
-                  <td class="qk-text-muted"><?= fmt_date($o['data_ordine'] ?? '') ?></td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-            <?php endif; ?>
-          </div>
-        </div>
-        <?php
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/sales/orders/_list.php', get_defined_vars());
     }
 
     public function create(): void

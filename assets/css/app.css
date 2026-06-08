@@ -641,7 +641,9 @@ html.sidebar-collapsed .qk-main { margin-left: var(--qk-sidebar-w-col); }
   background: var(--qk-card-bg);
 }
 .qk-form-control::placeholder { color: var(--qk-text-muted); }
-.qk-form-control.is-invalid { border-color: var(--qk-danger); }
+.qk-form-control.is-invalid  { border-color: var(--qk-danger); }
+.qk-form-control.is-warning,
+.is-overridden { border-color: var(--qk-warning) !important; background-color: var(--qk-warning-bg) !important; }
 select.qk-form-control { appearance: none; cursor: pointer; }
 textarea.qk-form-control { resize: vertical; min-height: 90px; }
 

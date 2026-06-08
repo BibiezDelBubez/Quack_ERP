@@ -9,6 +9,9 @@
   --qk-tab-indicator:           #fbbf24;
   --qk-tab-active-bg:           transparent;
   --qk-tab-active-text:         inherit;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -71,6 +74,9 @@
   --qk-tab-indicator:           #fbbf24;
   --qk-tab-active-bg:           rgba(251, 191, 36, 0.14);
   --qk-tab-active-text:         #1f2937;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +139,9 @@
 
   --qk-tab-active-bg:           #f9fafb;
   --qk-tab-active-text:         #111827;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +203,9 @@
   --qk-tab-indicator:           #fbbf24;
   --qk-tab-active-bg:           rgba(103, 232, 249, 0.45);
   --qk-tab-active-text:         #0f172a;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -255,6 +267,9 @@
   --qk-tab-indicator:           #2d7a6e;
   --qk-tab-active-bg:           rgba(45, 122, 110, 0.13);
   --qk-tab-active-text:         #1f1a16;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -316,6 +331,9 @@
   --qk-tab-indicator:           #0d9488;
   --qk-tab-active-bg:           #d1fae5;
   --qk-tab-active-text:         #0f172a;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -377,6 +395,9 @@
   --qk-tab-indicator:           #b48234;
   --qk-tab-active-bg:           #582c4d;
   --qk-tab-active-text:         #ffffff;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -438,6 +459,9 @@
   --qk-tab-indicator:           #2563eb;
   --qk-tab-active-bg:           #1f2937;
   --qk-tab-active-text:         #ffffff;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -499,6 +523,9 @@
   --qk-tab-indicator:           #f8a800;
   --qk-tab-active-bg:           rgba(248, 168, 0, 0.13);
   --qk-tab-active-text:         #0e1c30;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -560,6 +587,9 @@
   --qk-tab-indicator:           #D97706;
   --qk-tab-active-bg:           rgba(217, 119, 6, 0.12);
   --qk-tab-active-text:         #292524;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -623,6 +653,9 @@
   --qk-tab-indicator:           #f8f8f8;
   --qk-tab-active-bg:           rgba(255, 255, 255, 0.08);
   --qk-tab-active-text:         #f8f8f8;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -684,6 +717,9 @@
   --qk-tab-indicator:           #00f5a0;
   --qk-tab-active-bg:           #00f5a0;
   --qk-tab-active-text:         #0b0e0f;
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -756,4 +792,7 @@
   --qk-tab-indicator:            #a63326;  
   --qk-tab-active-bg:            #ffffff;  
   --qk-tab-active-text:          #1e1f22;  
+
+  --qk-overlay:                 rgba(0,0,0,.45);
+  --qk-row-alt:                 rgba(0,0,0,.015);
 }

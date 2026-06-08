@@ -316,7 +316,7 @@ foreach ($ricezioni as $rc) {
             </tr>
             <!-- Sezione pianificazione tranche della riga -->
             <?php if (!empty($r['pianificazione'])): ?>
-              <tr style="background-color:rgba(0,0,0,0.01)">
+              <tr style="background-color:var(--qk-row-alt)">
                 <td colspan="10" style="padding-left: 2rem; border-top:none">
                   <div class="small">
                     <strong>Pianificazione consegne (Tranche):</strong>

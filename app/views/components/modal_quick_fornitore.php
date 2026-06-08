@@ -1,6 +1,6 @@
 <div id="modal-quick-fornitore"
      style="display:none;position:fixed;inset:0;z-index:1050;
-            background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            background:var(--qk-overlay);align-items:center;justify-content:center">
   <div style="background:var(--qk-card-bg);border:1px solid var(--qk-border);
               border-radius:var(--qk-radius-lg);padding:1.5rem;width:100%;max-width:420px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">

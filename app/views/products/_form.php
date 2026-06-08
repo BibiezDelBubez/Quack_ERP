@@ -115,18 +115,11 @@ $kit_componenti = $kit_componenti ?? [];
           <button class="nav-link" id="ptab-btn-adr"
                   data-bs-toggle="tab" data-bs-target="#ptab-adr"
                   type="button" role="tab" aria-selected="false">
-            <i class="fa-solid fa-triangle-exclamation fa-fw me-1" style="color:#f59e0b"></i>ADR
+            <i class="fa-solid fa-triangle-exclamation fa-fw me-1" style="color:var(--qk-warning)"></i>ADR & Restrizioni
             <?php if (($v['is_adr'] ?? '0') === '1'): ?>
-            <span class="badge" style="background:var(--qk-warning);color:#000">!</span>
+            <span class="badge ms-1" style="background:var(--qk-warning);color:var(--qk-body-bg)">ADR</span>
             <?php endif; ?>
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="ptab-btn-compliance"
-                  data-bs-toggle="tab" data-bs-target="#ptab-compliance"
-                  type="button" role="tab" aria-selected="false">
-            <i class="fa-solid fa-shield-halved fa-fw me-1" style="color:var(--qk-danger)"></i>Compliance
-            <span class="badge bg-danger ms-1 d-none" id="badge-compliance">0</span>
+            <span class="badge bg-danger ms-1 d-none" id="badge-compliance">!</span>
           </button>
         </li>
       </ul>
@@ -993,20 +986,20 @@ $kit_componenti = $kit_componenti ?? [];
 
 
         <!-- ──────────────────────────────────────────────────────────────
-             TAB 4: ADR
+             TAB: ADR E RESTRIZIONI
         ─────────────────────────────────────────────────────────────────── -->
         <div class="tab-pane fade" id="ptab-adr" role="tabpanel">
 
-          <div class="qk-card mb-3">
+          <!-- ── Sezione 1: Classificazione ADR ────────────────────────── -->
+          <div class="qk-card mb-3 mt-3">
             <div class="qk-card-header">
               <span class="qk-card-title">
-                <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b"></i>
+                <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--qk-warning)"></i>
                 Classificazione ADR
               </span>
               <span class="qk-card-subtitle">Abilita solo se il prodotto è soggetto a normativa ADR/merci pericolose</span>
             </div>
             <div class="qk-card-body">
-              <!-- Flag is_adr -->
               <div class="qk-form-row mb-3">
                 <div class="qk-form-group">
                   <div class="form-check form-switch">
@@ -1019,13 +1012,12 @@ $kit_componenti = $kit_componenti ?? [];
                 </div>
               </div>
 
-              <!-- Selezione sostanza -->
               <div id="adr-sostanza-wrap"
                    style="<?= ($v['is_adr'] ?? '0') !== '1' ? 'opacity:.4;pointer-events:none' : '' ?>">
                 <div class="qk-form-row">
                   <div class="qk-form-group" style="flex:3">
                     <label class="qk-form-label">Sostanza chimica</label>
-                    <select name="sostanza_chimica_id" class="qk-form-control">
+                    <select name="sostanza_chimica_id" id="sel-sostanza-chimica" class="qk-form-control">
                       <option value="">— Seleziona sostanza —</option>
                       <?php foreach ($adr_sostanze as $s): ?>
                       <option value="<?= (int)$s['id'] ?>"
@@ -1038,13 +1030,14 @@ $kit_componenti = $kit_componenti ?? [];
                       </option>
                       <?php endforeach; ?>
                     </select>
-                    <div class="mt-1">
+                    <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
                       <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="small qk-text-accent text-decoration-none">
                         <i class="fa-solid fa-plus me-1"></i>Crea nuova sostanza chimica
                       </a>
                       <?php if (!empty($v['sostanza_chimica_id'])): ?>
-                      &nbsp;·&nbsp;
-                      <a href="<?= url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) ?>" target="_blank" class="small qk-text-accent text-decoration-none">
+                      <span class="qk-text-muted small">·</span>
+                      <a href="<?= url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) ?>"
+                         target="_blank" class="small qk-text-accent text-decoration-none">
                         <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Apri scheda sostanza
                       </a>
                       <?php endif; ?>
@@ -1052,29 +1045,27 @@ $kit_componenti = $kit_componenti ?? [];
                   </div>
                 </div>
                 <?php if (empty($adr_sostanze)): ?>
-                <div class="qk-alert" style="background:var(--qk-warning-light);border-color:var(--qk-warning);color:var(--qk-warning-dark);margin-top:.5rem;padding:.5rem .75rem;border-radius:var(--qk-radius);font-size:.85rem">
+                <div class="qk-alert qk-alert-warning mt-2" style="font-size:.85rem">
                   <i class="fa-solid fa-triangle-exclamation me-1"></i>
-                  Nessuna scheda sostanza ADR registrata.
-                  <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="fw-semibold">Aggiungi la prima sostanza</a> prima di abilitare questo flag.
+                  Nessuna sostanza chimica registrata.
+                  <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="fw-semibold">Crea la prima sostanza</a> prima di abilitare l'ADR.
                 </div>
                 <?php endif; ?>
               </div>
             </div>
           </div>
 
-        </div><!-- /ptab-adr -->
-
-
-        <!-- ──────────────────────────────────────────────────────────────
-             TAB: COMPLIANCE
-        ─────────────────────────────────────────────────────────────────── -->
-        <div class="tab-pane fade" id="ptab-compliance" role="tabpanel">
-
+          <!-- ── Sezione 2: Restrizioni di vendita ─────────────────────── -->
           <?php if (!$isEdit): ?>
-          <div class="qk-card mt-3">
-            <div class="qk-card-body text-center py-5">
-              <i class="fa-solid fa-floppy-disk fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
-              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter gestire le restrizioni di vendita.</p>
+          <div class="qk-card mb-3">
+            <div class="qk-card-header">
+              <span class="qk-card-title">
+                <i class="fa-solid fa-shield-halved me-1" style="color:var(--qk-danger)"></i>Restrizioni di vendita
+              </span>
+            </div>
+            <div class="qk-card-body text-center py-4">
+              <i class="fa-solid fa-floppy-disk fa-2x mb-2" style="color:var(--qk-text-muted)"></i>
+              <p class="mb-0 small" style="color:var(--qk-text-muted)">Salva prima il prodotto per gestire le restrizioni.</p>
             </div>
           </div>
           <?php else: ?>
@@ -1088,14 +1079,29 @@ $kit_componenti = $kit_componenti ?? [];
             </button>
           </div>
 
-          <!-- Card principale -->
+          <!-- Pannello informativo -->
+          <div class="qk-guidance-box mt-3 mb-0 p-3 border-start border-4 rounded d-flex align-items-start gap-3"
+               style="background:var(--qk-bg-subtle);border-color:var(--qk-accent)!important">
+            <div class="fs-5" style="color:var(--qk-accent);flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+            <div style="font-size:.875rem;color:var(--qk-text-secondary)">
+              <strong style="color:var(--qk-text-primary)">Le restrizioni vanno gestite sulla sostanza chimica, non qui.</strong><br>
+              Se questo prodotto contiene una sostanza soggetta a limiti di vendita (precursori di esplosivi, stupefacenti, biocidi ecc.),
+              vai sulla <a href="<?= !empty($v['sostanza_chimica_id']) ? url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) : url('adr/sostanze') ?>"
+              target="_blank" class="qk-text-accent fw-semibold text-decoration-none">scheda sostanza chimica</a> e aggiungile lì —
+              si applicano automaticamente a tutti i prodotti che usano quella sostanza.<br>
+              <span class="qk-text-muted">Usa la sezione qui sotto solo per restrizioni specifiche di <em>questo</em> prodotto
+              che non dipendono dalla sostanza (es. prodotto biocida non ADR, fitofarmaco, ecc.).</span>
+            </div>
+          </div>
+
+          <!-- Card principale restrizioni dirette sul prodotto -->
           <div class="qk-card mt-3">
-            <div class="qk-card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <div class="qk-card-header">
               <span class="qk-card-title">
-                <i class="fa-solid fa-shield-halved me-2" style="color:var(--qk-danger)"></i>Restrizioni di vendita
+                <i class="fa-solid fa-shield-halved me-1" style="color:var(--qk-danger)"></i>Restrizioni specifiche di questo prodotto
               </span>
               <button type="button" class="btn-qk btn-qk-primary btn-qk-sm" id="btn-add-restrizione">
-                <i class="fa-solid fa-plus"></i> Aggiungi
+                <i class="fa-solid fa-plus me-1"></i>Aggiungi
               </button>
             </div>
 
@@ -1334,7 +1340,7 @@ $kit_componenti = $kit_componenti ?? [];
             }
 
             // Carica quando si attiva la tab
-            document.getElementById('ptab-btn-compliance').addEventListener('shown.bs.tab', function () {
+            document.getElementById('ptab-btn-adr').addEventListener('shown.bs.tab', function () {
               if (!tbody.dataset.loaded) {
                 load();
                 tbody.dataset.loaded = '1';
@@ -1346,7 +1352,7 @@ $kit_componenti = $kit_componenti ?? [];
 
           <?php endif; ?>
 
-        </div><!-- /ptab-compliance -->
+        </div><!-- /ptab-adr (ADR e Restrizioni) -->
 
       </div><!-- /tab-content -->
 

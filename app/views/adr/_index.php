@@ -1243,6 +1243,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     var a   = document.createElement('a');
     a.href     = url;
     a.download = filename;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1863,4 +1864,5 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
     }
   }
 
-})
+})();
+</script>

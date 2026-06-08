@@ -241,13 +241,7 @@
         </a>
       </li>
 
-      <li class="qk-nav-item">
-        <a href="<?= url('ecommerce/sales.php') ?>" title="Vendite in-sito"
-           class="<?= nav_active('/ecommerce/sales') ?>">
-          <i class="fa-solid fa-cart-shopping"></i>
-          <span class="qk-nav-label">Vendite in-sito</span>
-        </a>
-      </li>
+
 
       <li><div class="qk-nav-divider"></div></li>
 

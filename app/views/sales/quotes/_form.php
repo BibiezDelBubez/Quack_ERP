@@ -52,12 +52,6 @@ $can_edit = ($stato === 'bozza');
 #tbl-righe .col-range   { width: 120px; }
 #tbl-righe .col-delta   { width: 90px; }
 .riga-sku { font-size: .72rem; color: var(--qk-text-muted); font-family: monospace; }
-/* Override visual indicators */
-.is-overridden {
-  border-color: #f59e0b !important;
-  background-color: #fef3c7 !important;
-}
-
 /* Compact the table cells */
 #tbl-righe th, #tbl-righe td {
   padding: 0.5rem 0.4rem !important;
@@ -148,12 +142,12 @@ fieldset[disabled] #tbl-righe.is-readonly textarea.inp-desc {
   border-color: var(--qk-accent) !important;
 }
 .badge-rrp-min {
-  background-color: rgba(40, 167, 69, 0.1) !important;
-  color: #28a745 !important;
+  background-color: var(--qk-success-bg) !important;
+  color: var(--qk-success) !important;
 }
 .badge-rrp-max {
-  background-color: rgba(0, 123, 255, 0.1) !important;
-  color: #007bff !important;
+  background-color: var(--qk-accent-light) !important;
+  color: var(--qk-accent) !important;
 }
 .badge-costo {
   background-color: var(--qk-bg-subtle) !important;
@@ -595,13 +589,13 @@ fieldset[disabled] #tbl-righe.is-readonly textarea.inp-desc {
                 </div>
               </div>
               <div class="col-6 col-md-3">
-                <div class="p-3 rounded border shadow-xs text-center" id="box-margine-euro-container" style="background-color: rgba(40,167,69,0.06); border-color: rgba(40,167,69,0.2);">
+                <div class="p-3 rounded border shadow-xs text-center" id="box-margine-euro-container" style="background-color: var(--qk-success-bg); border-color: var(--qk-success);">
                   <div class="text-muted small fw-bold text-uppercase" style="font-size:0.75rem;">Margine €</div>
                   <div class="fs-4 fw-bold text-success mt-1" id="box-margine-euro">€ 0,00</div>
                 </div>
               </div>
               <div class="col-6 col-md-3">
-                <div class="p-3 rounded border shadow-xs text-center" id="box-margine-perc-container" style="background-color: rgba(40,167,69,0.06); border-color: rgba(40,167,69,0.2);">
+                <div class="p-3 rounded border shadow-xs text-center" id="box-margine-perc-container" style="background-color: var(--qk-success-bg); border-color: var(--qk-success);">
                   <div class="text-muted small fw-bold text-uppercase" style="font-size:0.75rem;">Margine %</div>
                   <div class="fs-4 fw-bold text-success mt-1" id="box-margine-perc">0,00%</div>
                 </div>
@@ -1394,7 +1388,7 @@ function calcTotali() {
     if (elDelta) {
       elDelta.textContent = window.qkFormatEuro(rowDelta);
       if (rowDelta >= 0) {
-        elDelta.style.color = '#28a745';
+        elDelta.style.color = 'var(--qk-success)';
       } else {
         elDelta.style.color = 'var(--qk-danger)';
       }
