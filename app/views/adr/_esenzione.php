@@ -1,7 +1,7 @@
 <?php
 /**
  * @var array $categorie   adr_categorie_trasporto [{categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione}]
- * @var array $sostanze    sostanze_adr con join codici_onu e categorie_trasporto
+ * @var array $sostanze    sostanze_chimiche con join codici_onu e categorie_trasporto
  */
 ?>
 

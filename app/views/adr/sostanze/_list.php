@@ -4,12 +4,17 @@
      style="background:var(--qk-bg-subtle);border-color:var(--qk-accent)!important">
   <div class="fs-4" style="color:var(--qk-accent);flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
   <div style="font-size:.875rem">
-    <p class="fw-semibold mb-1" style="color:var(--qk-text-primary)">Perché non basta il Codice ONU?</p>
+    <p class="fw-semibold mb-1" style="color:var(--qk-text-primary)">A cosa serve questa sezione?</p>
     <p class="mb-0" style="color:var(--qk-text-secondary)">
-      Il Codice ONU (es. UN&nbsp;1791) è una categoria generica della normativa — copre <em>qualsiasi</em> soluzione di ipoclorito,
-      indipendentemente dalla concentrazione. Qui invece registriamo la nostra formulazione specifica:
-      <strong>Ipoclorito di sodio 14%</strong>, con la sua SDS, la sua classe, il suo gruppo di imballaggio.
-      È questa scheda che poi colleghiamo ai prodotti del catalogo per generare i documenti di trasporto ADR corretti.
+      Qui raggruppiamo i prodotti composti dalla stessa identica sostanza. <strong>Serve per unificare l'assegnazione
+      del codice ONU, delle schede di sicurezza (SDS) e delle restrizioni di vendita — così non devi ripetere
+      le stesse informazioni su ogni singolo prodotto.</strong><br>
+      <span class="qk-text-muted" style="font-size:.85rem">
+        Esempio: il Codice ONU 1791 è una categoria generica che copre <em>qualsiasi</em> soluzione di ipoclorito.
+        Qui invece si registra la formulazione specifica — <strong>Ipoclorito di sodio 14%</strong> — con il suo CAS,
+        la sua scheda di sicurezza, la classificazione CLP/GHS (pittogrammi, frasi H e P) e i dati ADR.
+        Tutti i prodotti che vendono quella stessa formulazione (es. tanica 5L, fusto 25kg, ecc.) vengono poi collegati a questa scheda.
+      </span>
     </p>
   </div>
 </div>
@@ -21,7 +26,7 @@
         <div class="qk-filter-wrap">
           <i class="fa-solid fa-magnifying-glass"></i>
           <input type="text" name="q" class="qk-filter-input"
-                 placeholder="Nome, nome tecnico, N° ONU…"
+                 placeholder="Nome, nome tecnico, CAS, N° ONU…"
                  value="<?= e($search ?? '') ?>">
         </div>
         <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm">
@@ -41,7 +46,7 @@
     <?php if (empty($sostanze)): ?>
       <div class="qk-empty">
         <i class="fa-solid fa-flask-vial"></i>
-        <p>Nessuna scheda sostanza ADR registrata.<?= $search ? ' Prova a cambiare i filtri.' : '' ?></p>
+        <p>Nessuna sostanza chimica registrata.<?= $search ? ' Prova a cambiare i filtri.' : '' ?></p>
         <?php if (!$search): ?>
         <a href="<?= url('adr/sostanze/create') ?>" class="btn-qk btn-qk-primary btn-qk-sm mt-2">
           <i class="fa-solid fa-plus"></i> Aggiungi sostanza
@@ -58,9 +63,10 @@
             <th>Classe</th>
             <th>G.I.</th>
             <th>Concentrazione</th>
+            <th>CLP</th>
             <th>Flag</th>
-            <th>Schede SDS</th>
-            <th>Prodotti</th>
+            <th>SDS</th>
+            <th>SKU</th>
             <th></th>
           </tr>
         </thead>
@@ -99,6 +105,25 @@
                 <?php if ($s['concentrazione_min_pct'] !== null && $s['concentrazione_max_pct'] !== null): ?> – <?php endif; ?>
                 <?= $s['concentrazione_max_pct'] !== null ? number_format((float)$s['concentrazione_max_pct'], 1) . '%' : '' ?>
               <?php else: ?>—<?php endif; ?>
+            </td>
+            <td style="min-width:120px">
+              <?php if ($s['clp_avvertenza']): ?>
+                <span class="qk-badge <?= $s['clp_avvertenza'] === 'Pericolo' ? 'cancelled' : 'pending' ?> me-1">
+                  <?= e($s['clp_avvertenza']) ?>
+                </span>
+              <?php endif; ?>
+              <?php if (!empty($s['h_codes'])): ?>
+                <span class="small qk-text-muted" title="<?= e($s['h_codes']) ?>">
+                  <?= count(explode(' ', trim($s['h_codes']))) ?> frasi H
+                </span>
+              <?php endif; ?>
+              <?php if (!empty($s['pittogrammi'])): ?>
+                <div class="small qk-text-muted mt-1">
+                  <?php foreach (explode(',', $s['pittogrammi']) as $pitt): ?>
+                    <span class="badge bg-secondary me-1" style="font-size:.7rem"><?= e(trim($pitt)) ?></span>
+                  <?php endforeach; ?>
+                </div>
+              <?php endif; ?>
             </td>
             <td class="small">
               <?php if ($s['e_soluzione']): ?><span class="qk-badge draft me-1">Soluz.</span><?php endif; ?>

@@ -121,6 +121,14 @@ $kit_componenti = $kit_componenti ?? [];
             <?php endif; ?>
           </button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="ptab-btn-compliance"
+                  data-bs-toggle="tab" data-bs-target="#ptab-compliance"
+                  type="button" role="tab" aria-selected="false">
+            <i class="fa-solid fa-shield-halved fa-fw me-1" style="color:var(--qk-danger)"></i>Compliance
+            <span class="badge bg-danger ms-1 d-none" id="badge-compliance">0</span>
+          </button>
+        </li>
       </ul>
 
       <div class="tab-content mt-0" id="productTabsContent">
@@ -1016,12 +1024,12 @@ $kit_componenti = $kit_componenti ?? [];
                    style="<?= ($v['is_adr'] ?? '0') !== '1' ? 'opacity:.4;pointer-events:none' : '' ?>">
                 <div class="qk-form-row">
                   <div class="qk-form-group" style="flex:3">
-                    <label class="qk-form-label">Scheda Sostanza ADR</label>
-                    <select name="sostanza_adr_id" class="qk-form-control">
+                    <label class="qk-form-label">Sostanza chimica</label>
+                    <select name="sostanza_chimica_id" class="qk-form-control">
                       <option value="">— Seleziona sostanza —</option>
                       <?php foreach ($adr_sostanze as $s): ?>
                       <option value="<?= (int)$s['id'] ?>"
-                        <?= (string)($v['sostanza_adr_id'] ?? '') === (string)$s['id'] ? 'selected' : '' ?>>
+                        <?= (string)($v['sostanza_chimica_id'] ?? '') === (string)$s['id'] ? 'selected' : '' ?>>
                         <?= e($s['nome']) ?>
                         <?php if ($s['codice_cas'] ?? ''): ?> · CAS <?= e($s['codice_cas']) ?><?php endif; ?>
                         <?php if ($s['codice_onu'] ?? ''): ?> — UN<?= e($s['codice_onu']) ?><?php endif; ?>
@@ -1032,11 +1040,11 @@ $kit_componenti = $kit_componenti ?? [];
                     </select>
                     <div class="mt-1">
                       <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="small qk-text-accent text-decoration-none">
-                        <i class="fa-solid fa-plus me-1"></i>Crea nuova scheda sostanza ADR
+                        <i class="fa-solid fa-plus me-1"></i>Crea nuova sostanza chimica
                       </a>
-                      <?php if (!empty($v['sostanza_adr_id'])): ?>
+                      <?php if (!empty($v['sostanza_chimica_id'])): ?>
                       &nbsp;·&nbsp;
-                      <a href="<?= url('adr/sostanze/edit?id=' . (int)$v['sostanza_adr_id']) ?>" target="_blank" class="small qk-text-accent text-decoration-none">
+                      <a href="<?= url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) ?>" target="_blank" class="small qk-text-accent text-decoration-none">
                         <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Apri scheda sostanza
                       </a>
                       <?php endif; ?>
@@ -1055,6 +1063,290 @@ $kit_componenti = $kit_componenti ?? [];
           </div>
 
         </div><!-- /ptab-adr -->
+
+
+        <!-- ──────────────────────────────────────────────────────────────
+             TAB: COMPLIANCE
+        ─────────────────────────────────────────────────────────────────── -->
+        <div class="tab-pane fade" id="ptab-compliance" role="tabpanel">
+
+          <?php if (!$isEdit): ?>
+          <div class="qk-card mt-3">
+            <div class="qk-card-body text-center py-5">
+              <i class="fa-solid fa-floppy-disk fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
+              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter gestire le restrizioni di vendita.</p>
+            </div>
+          </div>
+          <?php else: ?>
+
+          <!-- Suggerimento da ADR (mostrato da JS se ci sono suggerimenti) -->
+          <div class="qk-alert qk-alert-info mt-3 mb-0 d-none" id="compliance-suggest-banner">
+            <i class="fa-solid fa-circle-info fa-fw"></i>
+            <span id="compliance-suggest-text"></span>
+            <button type="button" class="btn-qk btn-qk-primary btn-qk-sm ms-auto" id="btn-apply-suggestions">
+              Applica suggerimenti
+            </button>
+          </div>
+
+          <!-- Card principale -->
+          <div class="qk-card mt-3">
+            <div class="qk-card-header" style="display:flex;align-items:center;justify-content:space-between">
+              <span class="qk-card-title">
+                <i class="fa-solid fa-shield-halved me-2" style="color:var(--qk-danger)"></i>Restrizioni di vendita
+              </span>
+              <button type="button" class="btn-qk btn-qk-primary btn-qk-sm" id="btn-add-restrizione">
+                <i class="fa-solid fa-plus"></i> Aggiungi
+              </button>
+            </div>
+
+            <!-- Stato vuoto -->
+            <div class="qk-card-body text-center py-5 d-none" id="compliance-empty">
+              <i class="fa-solid fa-shield-check fa-2x mb-2" style="color:var(--qk-success)"></i>
+              <p class="mb-0" style="color:var(--qk-text-muted)">Nessuna restrizione — prodotto vendibile liberamente.</p>
+            </div>
+
+            <!-- Lista restrizioni -->
+            <div class="qk-table-wrap d-none" id="compliance-list-wrap">
+              <table class="qk-table mb-0" id="compliance-table">
+                <thead>
+                  <tr>
+                    <th>Tipo restrizione</th>
+                    <th>Riferimento normativo</th>
+                    <th>Note</th>
+                    <th style="width:60px"></th>
+                  </tr>
+                </thead>
+                <tbody id="compliance-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Modale aggiungi restrizione -->
+          <div class="modal fade" id="modal-compliance-add" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title"><i class="fa-solid fa-shield-halved me-2"></i>Aggiungi restrizione</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Tipo restrizione <span class="required">*</span></label>
+                    <select class="qk-form-control" id="compliance-add-type">
+                      <option value="">— Seleziona —</option>
+                    </select>
+                  </div>
+                  <div class="qk-form-group mb-0">
+                    <label class="qk-form-label">Note interne</label>
+                    <input type="text" class="qk-form-control" id="compliance-add-note"
+                           placeholder="Opzionale — motivo, riferimento interno…">
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+                  <button type="button" class="btn-qk btn-qk-primary" id="btn-compliance-add-confirm">
+                    <i class="fa-solid fa-plus me-1"></i>Aggiungi
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <script>
+          (function () {
+            const PRODOTTO_ID  = <?= (int)$entity_id ?>;
+            const CSRF         = <?= json_encode(csrf_token()) ?>;
+            const BASE         = <?= json_encode(url()) ?>;
+            const API_LIST     = BASE + '/products/compliance/list';
+            const API_ADD      = BASE + '/products/compliance/add';
+            const API_REMOVE   = BASE + '/products/compliance/remove';
+
+            const tbody        = document.getElementById('compliance-tbody');
+            const emptyEl      = document.getElementById('compliance-empty');
+            const listWrap     = document.getElementById('compliance-list-wrap');
+            const badge        = document.getElementById('badge-compliance');
+            const suggestBanner = document.getElementById('compliance-suggest-banner');
+            const suggestText  = document.getElementById('compliance-suggest-text');
+            const typeSelect   = document.getElementById('compliance-add-type');
+            const modalEl      = document.getElementById('modal-compliance-add');
+            const modal        = new bootstrap.Modal(modalEl);
+
+            let allTypes       = [];
+            let assegnateIds   = new Set();
+            let suggerimenti   = [];
+
+            // ── Carica dati ─────────────────────────────────────────────────
+            async function load() {
+              try {
+                const r = await fetch(API_LIST + '?prodotto_id=' + PRODOTTO_ID);
+                const d = await r.json();
+                if (!d.ok) return;
+
+                allTypes      = d.tutti;
+                assegnateIds  = new Set(d.assegnate.map(a => a.restriction_type_id));
+                suggerimenti  = d.suggerimenti.filter(s => !assegnateIds.has(s.restriction_type_id));
+
+                renderTable(d.assegnate);
+                renderSuggestions();
+                populateSelect();
+              } catch (e) { console.error('compliance load', e); }
+            }
+
+            // ── Tabella ──────────────────────────────────────────────────────
+            function renderTable(rows) {
+              tbody.innerHTML = '';
+              if (rows.length === 0) {
+                emptyEl.classList.remove('d-none');
+                listWrap.classList.add('d-none');
+                badge.classList.add('d-none');
+              } else {
+                emptyEl.classList.add('d-none');
+                listWrap.classList.remove('d-none');
+                badge.classList.remove('d-none');
+                badge.textContent = rows.length;
+                rows.forEach(r => tbody.appendChild(buildRow(r)));
+              }
+            }
+
+            function buildRow(r) {
+              const tr = document.createElement('tr');
+              tr.dataset.rtid = r.restriction_type_id;
+              tr.innerHTML = `
+                <td><strong>${esc(r.name)}</strong></td>
+                <td><span class="qk-form-hint">${esc(r.regulatory_ref || '—')}</span></td>
+                <td><span class="small" style="color:var(--qk-text-muted)">${esc(r.note || '—')}</span></td>
+                <td>
+                  <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-remove-restrizione" title="Rimuovi">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                </td>`;
+              return tr;
+            }
+
+            // ── Suggerimenti da ADR ─────────────────────────────────────────
+            function renderSuggestions() {
+              if (suggerimenti.length === 0) {
+                suggestBanner.classList.add('d-none');
+                return;
+              }
+              const nomi = suggerimenti.map(s => `<strong>${esc(s.name)}</strong>`).join(', ');
+              suggestText.innerHTML = `Dal codice ONU di questo prodotto risulta: ${nomi}. Vuoi aggiungerle?`;
+              suggestBanner.classList.remove('d-none');
+            }
+
+            // ── Select modale ────────────────────────────────────────────────
+            function populateSelect() {
+              typeSelect.innerHTML = '<option value="">— Seleziona —</option>';
+              allTypes.filter(t => !assegnateIds.has(t.id)).forEach(t => {
+                const o = document.createElement('option');
+                o.value = t.id;
+                o.textContent = t.name + (t.regulatory_ref ? ' (' + t.regulatory_ref + ')' : '');
+                typeSelect.appendChild(o);
+              });
+            }
+
+            // ── Aggiungi ─────────────────────────────────────────────────────
+            document.getElementById('btn-add-restrizione').addEventListener('click', () => {
+              document.getElementById('compliance-add-note').value = '';
+              modal.show();
+            });
+
+            document.getElementById('btn-compliance-add-confirm').addEventListener('click', async () => {
+              const rtid = typeSelect.value;
+              const note = document.getElementById('compliance-add-note').value.trim();
+              if (!rtid) { typeSelect.focus(); return; }
+
+              await addRestrizione(parseInt(rtid), note);
+              modal.hide();
+            });
+
+            // ── Applica suggerimenti ─────────────────────────────────────────
+            document.getElementById('btn-apply-suggestions').addEventListener('click', async () => {
+              for (const s of suggerimenti) {
+                await addRestrizione(s.restriction_type_id, '');
+              }
+            });
+
+            async function addRestrizione(rtid, note) {
+              const fd = new FormData();
+              fd.append('prodotto_id', PRODOTTO_ID);
+              fd.append('restriction_type_id', rtid);
+              fd.append('note', note);
+              fd.append('csrf_token', CSRF);
+
+              const r = await fetch(API_ADD, { method: 'POST', body: fd });
+              const d = await r.json();
+              if (d.ok) {
+                assegnateIds.add(rtid);
+                suggerimenti = suggerimenti.filter(s => s.restriction_type_id !== rtid);
+                tbody.appendChild(buildRow(d.restrizione));
+                emptyEl.classList.add('d-none');
+                listWrap.classList.remove('d-none');
+                badge.classList.remove('d-none');
+                badge.textContent = assegnateIds.size;
+                populateSelect();
+                renderSuggestions();
+              } else {
+                alert(d.error || 'Errore.');
+              }
+            }
+
+            // ── Rimuovi ──────────────────────────────────────────────────────
+            tbody.addEventListener('click', async function (e) {
+              const btn = e.target.closest('.btn-remove-restrizione');
+              if (!btn) return;
+              const tr   = btn.closest('tr');
+              const rtid = parseInt(tr.dataset.rtid);
+
+              if (!confirm('Rimuovere questa restrizione dal prodotto?')) return;
+
+              const fd = new FormData();
+              fd.append('prodotto_id', PRODOTTO_ID);
+              fd.append('restriction_type_id', rtid);
+              fd.append('csrf_token', CSRF);
+
+              const r = await fetch(API_REMOVE, { method: 'POST', body: fd });
+              const d = await r.json();
+              if (d.ok) {
+                tr.remove();
+                assegnateIds.delete(rtid);
+                badge.textContent = assegnateIds.size;
+                if (assegnateIds.size === 0) {
+                  emptyEl.classList.remove('d-none');
+                  listWrap.classList.add('d-none');
+                  badge.classList.add('d-none');
+                }
+                populateSelect();
+                // Ricalcola suggerimenti (la rimossa potrebbe tornare suggerita)
+                suggerimenti = allTypes.filter(t =>
+                  !assegnateIds.has(t.id) &&
+                  suggerimenti.some(s => s.restriction_type_id === t.id)
+                );
+                renderSuggestions();
+              } else {
+                alert(d.error || 'Errore nella rimozione.');
+              }
+            });
+
+            function esc(str) {
+              if (!str) return '';
+              return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            }
+
+            // Carica quando si attiva la tab
+            document.getElementById('ptab-btn-compliance').addEventListener('shown.bs.tab', function () {
+              if (!tbody.dataset.loaded) {
+                load();
+                tbody.dataset.loaded = '1';
+              }
+            });
+
+          })();
+          </script>
+
+          <?php endif; ?>
+
+        </div><!-- /ptab-compliance -->
 
       </div><!-- /tab-content -->
 

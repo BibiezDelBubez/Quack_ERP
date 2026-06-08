@@ -473,7 +473,7 @@ final class ProductsController extends BaseController
             'ean'                  => '',
             'scorta_minima'        => '0',
             'is_adr'               => '0',
-            'sostanza_adr_id'      => '',
+            'sostanza_chimica_id'      => '',
             'prezzo_vendita_base'  => '',
         ];
     }
@@ -488,7 +488,7 @@ final class ProductsController extends BaseController
         $current['is_adr']        = isset($_POST['is_adr'])        ? '1' : '0';
         // Se is_adr è disabilitato, azzera la sostanza
         if ($current['is_adr'] === '0') {
-            $current['sostanza_adr_id'] = '';
+            $current['sostanza_chimica_id'] = '';
         }
         return $current;
     }
@@ -1025,7 +1025,7 @@ final class ProductsController extends BaseController
     public function apiFornitoreListini(): void
     {
         header('Content-Type: application/json; charset=utf-8');
-        
+
         $fornitoreId = (int) get_param('fornitore_id');
         if ($fornitoreId <= 0) {
             echo json_encode(['ok' => true, 'listini' => []]);
@@ -1034,14 +1034,153 @@ final class ProductsController extends BaseController
 
         try {
             $stmtListini = $this->pdo->prepare(
-                'SELECT id, nome_listino 
-                 FROM listini_acquisto 
-                 WHERE fornitore_id = :fid 
+                'SELECT id, nome_listino
+                 FROM listini_acquisto
+                 WHERE fornitore_id = :fid
                  ORDER BY nome_listino ASC'
             );
             $stmtListini->execute([':fid' => $fornitoreId]);
             $listini = $stmtListini->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode(['ok' => true, 'listini' => $listini]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /* ── Compliance prodotto ─────────────────────────────────────────────── */
+
+    /**
+     * GET /products/compliance/list?prodotto_id=X
+     * Restituisce:
+     *   - restrizioni attive sul prodotto
+     *   - tutti i tipi di restrizione disponibili
+     *   - suggerimenti da codice ONU (se il prodotto ha una classificazione ADR)
+     */
+    public function apiComplianceList(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $prodottoId = (int) get_param('prodotto_id');
+        if ($prodottoId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'prodotto_id mancante.']);
+            exit;
+        }
+
+        try {
+            // Restrizioni già assegnate al prodotto
+            $stmtAssigned = $this->pdo->prepare(
+                'SELECT pr.restriction_type_id, rt.code, rt.name, rt.regulatory_ref, pr.note, pr.created_at
+                 FROM prodotti_restrizioni pr
+                 JOIN compliance_restriction_types rt ON rt.id = pr.restriction_type_id
+                 WHERE pr.prodotto_id = :pid
+                 ORDER BY rt.name'
+            );
+            $stmtAssigned->execute([':pid' => $prodottoId]);
+            $assegnate = $stmtAssigned->fetchAll(PDO::FETCH_ASSOC);
+
+            // Tutti i tipi di restrizione attivi
+            $stmtAll = $this->pdo->prepare(
+                'SELECT id, code, name, regulatory_ref FROM compliance_restriction_types WHERE active = 1 ORDER BY name'
+            );
+            $stmtAll->execute();
+            $tutti = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
+
+            // Suggerimenti da codice ONU del prodotto (se ha classificazione ADR)
+            $stmtSuggest = $this->pdo->prepare(
+                'SELECT DISTINCT rt.id AS restriction_type_id, rt.code, rt.name, rt.regulatory_ref
+                 FROM prodotti p
+                 JOIN prodotto_classificazioni_adr pca ON pca.prodotto_id = p.id
+                 JOIN compliance_codice_onu_restrizioni ccr ON ccr.un_code_id = pca.codice_onu_id
+                 JOIN compliance_restriction_types rt ON rt.id = ccr.restriction_type_id
+                 WHERE p.id = :pid AND rt.active = 1'
+            );
+            $stmtSuggest->execute([':pid' => $prodottoId]);
+            $suggerimenti = $stmtSuggest->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                'ok'           => true,
+                'assegnate'    => $assegnate,
+                'tutti'        => $tutti,
+                'suggerimenti' => $suggerimenti,
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /**
+     * POST /products/compliance/add
+     * Body: prodotto_id, restriction_type_id, note, csrf_token
+     */
+    public function apiComplianceAdd(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token CSRF non valido.']);
+            exit;
+        }
+
+        $prodottoId        = (int) post('prodotto_id');
+        $restrictionTypeId = (int) post('restriction_type_id');
+        $note              = trim(post('note') ?? '');
+
+        if ($prodottoId <= 0 || $restrictionTypeId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Parametri non validi.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->prepare(
+                'INSERT OR IGNORE INTO prodotti_restrizioni (prodotto_id, restriction_type_id, note)
+                 VALUES (:pid, :rtid, :note)'
+            )->execute([':pid' => $prodottoId, ':rtid' => $restrictionTypeId, ':note' => $note ?: null]);
+
+            // Restituisce la riga con il nome del tipo
+            $row = $this->pdo->prepare(
+                'SELECT pr.restriction_type_id, rt.code, rt.name, rt.regulatory_ref, pr.note, pr.created_at
+                 FROM prodotti_restrizioni pr
+                 JOIN compliance_restriction_types rt ON rt.id = pr.restriction_type_id
+                 WHERE pr.prodotto_id = :pid AND pr.restriction_type_id = :rtid'
+            );
+            $row->execute([':pid' => $prodottoId, ':rtid' => $restrictionTypeId]);
+
+            echo json_encode(['ok' => true, 'restrizione' => $row->fetch(PDO::FETCH_ASSOC)]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /**
+     * POST /products/compliance/remove
+     * Body: prodotto_id, restriction_type_id, csrf_token
+     */
+    public function apiComplianceRemove(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token CSRF non valido.']);
+            exit;
+        }
+
+        $prodottoId        = (int) post('prodotto_id');
+        $restrictionTypeId = (int) post('restriction_type_id');
+
+        if ($prodottoId <= 0 || $restrictionTypeId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Parametri non validi.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->prepare(
+                'DELETE FROM prodotti_restrizioni WHERE prodotto_id = :pid AND restriction_type_id = :rtid'
+            )->execute([':pid' => $prodottoId, ':rtid' => $restrictionTypeId]);
+
+            echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
             echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }

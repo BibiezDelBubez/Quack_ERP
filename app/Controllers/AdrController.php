@@ -816,7 +816,7 @@ final class AdrController extends BaseController
                     c.codice_onu, c.classe_pericolo, c.categoria_trasporto,
                     c.quantita_limitata, c.codice_quantita_esente,
                     ct.moltiplicatore_punti, ct.soglia_esenzione_kg_l
-               FROM sostanze_adr s
+               FROM sostanze_chimiche s
           LEFT JOIN adr_codici_onu c  ON c.id = s.codice_onu_id
           LEFT JOIN adr_categorie_trasporto ct ON ct.categoria = c.categoria_trasporto
               ORDER BY s.nome COLLATE NOCASE"
@@ -850,7 +850,7 @@ final class AdrController extends BaseController
                        c.codice_onu, c.classe_pericolo, c.categoria_trasporto,
                        ct.moltiplicatore_punti, ct.soglia_esenzione_kg_l
                   FROM prodotti p
-                  JOIN sostanze_adr s            ON s.id = p.sostanza_adr_id
+                  JOIN sostanze_chimiche s        ON s.id = p.sostanza_chimica_id
              LEFT JOIN adr_codici_onu c          ON c.id = s.codice_onu_id
              LEFT JOIN adr_categorie_trasporto ct ON ct.categoria = c.categoria_trasporto
                  WHERE p.attivo = 1

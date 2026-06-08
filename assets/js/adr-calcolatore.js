@@ -6,7 +6,7 @@
  *   const calc = new QkAdrCalcolatore({
  *     tbody:         document.getElementById('mio-tbody'),
  *     categorie:     [...],          // array da adr_categorie_trasporto
- *     sostanze:      [...],          // array sostanze_adr con join codici_onu
+ *     sostanze:      [...],          // array sostanze_chimiche con join codici_onu
  *     apiProdottiAdr: '/adr/api/prodotti-adr',
  *     onUpdate:      ({ totale, stato, rows }) => { ... },  // callback opzionale
  *   });

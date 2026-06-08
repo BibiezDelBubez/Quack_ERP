@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Quack ERP — Database Inizializzazione
 -- SQLite 3  |  WAL mode  |  Foreign Keys ON
--- Schema v4.2
+-- Schema v4.3
 -- =============================================================================
 -- Convenzioni di naming:
 --   • snake_case per tutti i nomi di tabelle e colonne
@@ -22,7 +22,9 @@
 --  10.  listini
 --  11.  Anagrafica: clienti_fornitori, indirizzi, dettagli_*
 --  12.  Catalogo: categorie_prodotto, prodotti
---  13.  prodotto_classificazioni_adr, schede_sicurezza, immagini, tag, kit
+--  13.  CLP lookup (clp_h_statements, clp_p_statements, clp_pittogrammi)
+--  13b. prodotto_classificazioni_adr, schede_sicurezza, immagini, tag, kit
+--  13c. sostanze_chimiche + sostanze_chimiche_schede + pivot CLP
 --  14.  prodotti_fornitori, prodotti_fornitori_prezzi
 --  15.  listini_prezzi
 --  16.  Acquisto: ordini_acquisto, ordini_acquisto_righe
@@ -416,6 +418,8 @@ CREATE TABLE IF NOT EXISTS prodotti (
     peso_lordo_kg        DECIMAL(10,3),
     ean                  VARCHAR(14),                                          -- EAN/barcode della confezione
     traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
+    is_adr               BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = prodotto soggetto ad ADR
+    sostanza_chimica_id  INTEGER       REFERENCES sostanze_chimiche(id),       -- sostanza chimica associata (ex sostanza_adr_id)
     note_interne         TEXT,
     attivo               BOOLEAN       NOT NULL DEFAULT 1,
     created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -423,7 +427,107 @@ CREATE TABLE IF NOT EXISTS prodotti (
 );
 
 -- =============================================================================
--- 13. PRODOTTO ↔ ADR, SCHEDE SICUREZZA, IMMAGINI, TAG, KIT
+-- 13. CLP / GHS — LOOKUP TABLES
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS clp_h_statements (
+    codice VARCHAR(6) PRIMARY KEY,  -- H200, H225, EUH001...
+    testo  TEXT NOT NULL,
+    tipo   TEXT NOT NULL CHECK(tipo IN ('fisico','salute','ambiente','supplementare'))
+);
+
+CREATE TABLE IF NOT EXISTS clp_p_statements (
+    codice VARCHAR(6) PRIMARY KEY,  -- P101, P210, P501...
+    testo  TEXT NOT NULL,
+    tipo   TEXT NOT NULL CHECK(tipo IN ('generale','prevenzione','risposta','conservazione','smaltimento'))
+);
+
+CREATE TABLE IF NOT EXISTS clp_pittogrammi (
+    codice      VARCHAR(6)  PRIMARY KEY,  -- GHS01..GHS09
+    nome        VARCHAR(100) NOT NULL,
+    descrizione TEXT,
+    file_path   TEXT         -- percorso icona SVG/PNG
+);
+
+-- =============================================================================
+-- 13b. SOSTANZE CHIMICHE (ex sostanze_adr)
+-- =============================================================================
+-- Entità chimica condivisa da più SKU. Contiene proprietà intrinseche della
+-- formula: CAS, ONU, caratteristiche fisico-chimiche, classificazione CLP/GHS.
+
+CREATE TABLE IF NOT EXISTS sostanze_chimiche (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome                    VARCHAR(300) NOT NULL,
+    codice_cas              VARCHAR(12)  UNIQUE,
+    codice_onu_id           INTEGER REFERENCES adr_codici_onu(id),
+    nome_tecnico            VARCHAR(200),
+    gruppo_imballaggio      CHAR(3),
+    concentrazione_min_pct  DECIMAL(5,2),
+    concentrazione_max_pct  DECIMAL(5,2),
+    punto_infiammabilita_c  DECIMAL(6,2),
+    e_soluzione             BOOLEAN NOT NULL DEFAULT 0,
+    e_rifiuto               BOOLEAN NOT NULL DEFAULT 0,
+    e_stabilizzato          BOOLEAN NOT NULL DEFAULT 0,
+    -- Nuovi campi normativi
+    codice_ufi              VARCHAR(20),   -- Unique Formula Identifier (PCN 2025)
+    codice_einecs           VARCHAR(10),   -- EINECS/ELINCS
+    codice_reach            VARCHAR(30),   -- REACH registration number
+    numero_kemler           VARCHAR(4),    -- numero di pericolo pannello arancio (es. "33", "80")
+    stato_fisico            TEXT CHECK(stato_fisico IN ('solido','liquido','gas','aerosol','pasta')),
+    -- CLP
+    clp_avvertenza          TEXT CHECK(clp_avvertenza IN ('Pericolo','Attenzione')),
+    note_interne            TEXT,
+    creato_da               INTEGER REFERENCES utenti(id),
+    created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sostanze_chimiche_cas
+    ON sostanze_chimiche(codice_cas) WHERE codice_cas IS NOT NULL;
+
+-- Schede di sicurezza (SDS) per sostanza chimica, multi-lingua con versioning
+CREATE TABLE IF NOT EXISTS sostanze_chimiche_schede (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    sostanza_id     INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
+    lingua          CHAR(5)  NOT NULL,
+    versione        VARCHAR(20),
+    data_emissione  DATE,
+    file_path       TEXT NOT NULL,
+    file_nome_orig  VARCHAR(255),
+    e_corrente      BOOLEAN NOT NULL DEFAULT 1,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(sostanza_id, lingua, versione)
+);
+
+-- Pivot: sostanza ↔ H statements CLP
+CREATE TABLE IF NOT EXISTS sostanze_h_statements (
+    sostanza_id INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
+    h_codice    VARCHAR(6) NOT NULL REFERENCES clp_h_statements(codice) ON DELETE CASCADE,
+    PRIMARY KEY (sostanza_id, h_codice)
+);
+
+-- Pivot: sostanza ↔ P statements CLP
+CREATE TABLE IF NOT EXISTS sostanze_p_statements (
+    sostanza_id INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
+    p_codice    VARCHAR(6) NOT NULL REFERENCES clp_p_statements(codice) ON DELETE CASCADE,
+    PRIMARY KEY (sostanza_id, p_codice)
+);
+
+-- Pivot: sostanza ↔ pittogrammi GHS
+CREATE TABLE IF NOT EXISTS sostanze_pittogrammi (
+    sostanza_id     INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
+    pittogramma_cod VARCHAR(6) NOT NULL REFERENCES clp_pittogrammi(codice) ON DELETE CASCADE,
+    PRIMARY KEY (sostanza_id, pittogramma_cod)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sostanze_chimiche_cas      ON sostanze_chimiche(codice_cas);
+CREATE INDEX IF NOT EXISTS idx_sostanze_chimiche_onu      ON sostanze_chimiche(codice_onu_id);
+CREATE INDEX IF NOT EXISTS idx_sost_h_sostanza            ON sostanze_h_statements(sostanza_id);
+CREATE INDEX IF NOT EXISTS idx_sost_p_sostanza            ON sostanze_p_statements(sostanza_id);
+CREATE INDEX IF NOT EXISTS idx_sost_pitt_sostanza         ON sostanze_pittogrammi(sostanza_id);
+
+-- =============================================================================
+-- 13c. PRODOTTO ↔ ADR, SCHEDE SICUREZZA (legacy su prodotto), IMMAGINI, TAG, KIT
 -- =============================================================================
 
 -- Un prodotto può avere più classificazioni (stati fisici diversi, concentrazioni, biennio ADR)
@@ -1240,7 +1344,136 @@ INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) 
     ('spedizione',             'SPE/', 2026, 0, 4),
     ('documento_trasporto',    'DDT/', 2026, 0, 4);
 
-INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES 
+-- =============================================================================
+-- SEED CLP / GHS
+-- =============================================================================
+
+INSERT OR IGNORE INTO clp_pittogrammi (codice, nome, descrizione) VALUES
+    ('GHS01','Esplosivo',        'Esplosivi instabili, div. 1.1–1.4, autoreattivi A/B, perossidi organici A/B'),
+    ('GHS02','Infiammabile',     'Gas, aerosol, liquidi e solidi infiammabili; sostanze piroforiche; autoriscaldanti; idroattive'),
+    ('GHS03','Comburente',       'Gas, liquidi e solidi comburenti; perossidi organici'),
+    ('GHS04','Gas compressi',    'Gas compressi, liquefatti, disciolti o refrigerati'),
+    ('GHS05','Corrosivo',        'Corrosivi per metalli; corrosivi cutanei cat. 1; lesioni oculari gravi cat. 1'),
+    ('GHS06','Tossico acuto',    'Tossicità acuta cat. 1-3 (orale, cutanea, inalazione)'),
+    ('GHS07','Nocivo/Irritante', 'Tossicità acuta cat. 4; irritazione; sensibilizzazione cutanea; STOT cat. 3'),
+    ('GHS08','Pericolo salute',  'Sensibilizzazione respiratoria; mutagenesi; carcinogenesi; STOT cat. 1-2; aspirazione'),
+    ('GHS09','Ambiente',         'Pericolo acuto/cronico per l''ambiente acquatico');
+
+INSERT OR IGNORE INTO clp_h_statements (codice, testo, tipo) VALUES
+    ('H200','Esplosivo instabile.','fisico'),
+    ('H201','Esplosivo; pericolo di esplosione di massa.','fisico'),
+    ('H202','Esplosivo; grave pericolo di proiezione.','fisico'),
+    ('H203','Esplosivo; pericolo di incendio, di spostamento d''aria o di proiezione.','fisico'),
+    ('H204','Pericolo di incendio o di proiezione.','fisico'),
+    ('H205','Pericolo di esplosione di massa in caso di incendio.','fisico'),
+    ('H220','Gas facilmente infiammabile.','fisico'),
+    ('H221','Gas infiammabile.','fisico'),
+    ('H222','Aerosol facilmente infiammabile.','fisico'),
+    ('H223','Aerosol infiammabile.','fisico'),
+    ('H224','Liquido e vapori facilmente infiammabili.','fisico'),
+    ('H225','Liquido e vapori molto facilmente infiammabili.','fisico'),
+    ('H226','Liquido e vapori infiammabili.','fisico'),
+    ('H227','Liquido combustibile.','fisico'),
+    ('H228','Solido infiammabile.','fisico'),
+    ('H229','Contenitore in pressione: può esplodere se riscaldato.','fisico'),
+    ('H240','Rischio di esplosione per riscaldamento.','fisico'),
+    ('H241','Rischio di incendio o esplosione per riscaldamento.','fisico'),
+    ('H242','Rischio di incendio per riscaldamento.','fisico'),
+    ('H250','Prende fuoco spontaneamente a contatto con l''aria.','fisico'),
+    ('H251','Autoriscaldante; può prendere fuoco.','fisico'),
+    ('H252','Autoriscaldante in grandi quantità; può prendere fuoco.','fisico'),
+    ('H260','A contatto con l''acqua libera gas infiammabili che possono infiammarsi spontaneamente.','fisico'),
+    ('H261','A contatto con l''acqua libera gas infiammabili.','fisico'),
+    ('H270','Può provocare o aggravare un incendio; comburente.','fisico'),
+    ('H271','Rischio di esplosione o incendio; molto comburente.','fisico'),
+    ('H272','Può aggravare un incendio; comburente.','fisico'),
+    ('H280','Contiene gas sotto pressione; può esplodere se riscaldato.','fisico'),
+    ('H281','Contiene gas refrigerato; può causare ustioni o lesioni criogeniche.','fisico'),
+    ('H290','Può essere corrosivo per i metalli.','fisico'),
+    ('H300','Letale se ingerito.','salute'),
+    ('H301','Tossico se ingerito.','salute'),
+    ('H302','Nocivo se ingerito.','salute'),
+    ('H303','Può essere nocivo se ingerito.','salute'),
+    ('H304','Può essere letale in caso di ingestione e di penetrazione nelle vie respiratorie.','salute'),
+    ('H310','Letale per contatto con la pelle.','salute'),
+    ('H311','Tossico per contatto con la pelle.','salute'),
+    ('H312','Nocivo per contatto con la pelle.','salute'),
+    ('H313','Può essere nocivo per contatto con la pelle.','salute'),
+    ('H314','Provoca gravi ustioni cutanee e gravi lesioni oculari.','salute'),
+    ('H315','Provoca irritazione cutanea.','salute'),
+    ('H317','Può provocare una reazione allergica cutanea.','salute'),
+    ('H318','Provoca gravi lesioni oculari.','salute'),
+    ('H319','Provoca grave irritazione oculare.','salute'),
+    ('H330','Letale per inalazione.','salute'),
+    ('H331','Tossico per inalazione.','salute'),
+    ('H332','Nocivo per inalazione.','salute'),
+    ('H334','Può provocare sintomi allergici o asmatici o difficoltà respiratorie per inalazione.','salute'),
+    ('H335','Può irritare le vie respiratorie.','salute'),
+    ('H336','Può provocare sonnolenza o vertigini.','salute'),
+    ('H340','Può provocare alterazioni genetiche.','salute'),
+    ('H341','Sospettato di provocare alterazioni genetiche.','salute'),
+    ('H350','Può provocare il cancro.','salute'),
+    ('H351','Sospettato di provocare il cancro.','salute'),
+    ('H360','Può nuocere alla fertilità o al feto.','salute'),
+    ('H361','Sospettato di nuocere alla fertilità o al feto.','salute'),
+    ('H362','Può essere nocivo per i lattanti allattati al seno.','salute'),
+    ('H370','Provoca danni agli organi.','salute'),
+    ('H371','Può provocare danni agli organi.','salute'),
+    ('H372','Provoca danni agli organi in caso di esposizione prolungata o ripetuta.','salute'),
+    ('H373','Può provocare danni agli organi in caso di esposizione prolungata o ripetuta.','salute'),
+    ('H400','Molto tossico per gli organismi acquatici.','ambiente'),
+    ('H410','Molto tossico per gli organismi acquatici con effetti di lunga durata.','ambiente'),
+    ('H411','Tossico per gli organismi acquatici con effetti di lunga durata.','ambiente'),
+    ('H412','Nocivo per gli organismi acquatici con effetti di lunga durata.','ambiente'),
+    ('H413','Può essere nocivo per gli organismi acquatici con effetti di lunga durata.','ambiente'),
+    ('H420','Danneggia la salute pubblica e l''ambiente distruggendo l''ozono nello strato superiore dell''atmosfera.','ambiente'),
+    ('EUH014','Reagisce violentemente con l''acqua.','supplementare'),
+    ('EUH018','Durante l''uso può formarsi una miscela vapore-aria esplosiva/infiammabile.','supplementare'),
+    ('EUH029','A contatto con l''acqua libera gas tossici.','supplementare'),
+    ('EUH031','A contatto con acidi libera gas tossici.','supplementare'),
+    ('EUH032','A contatto con acidi libera gas molto tossici.','supplementare'),
+    ('EUH059','Pericoloso per lo strato di ozono.','supplementare'),
+    ('EUH066','L''esposizione ripetuta può provocare secchezza o screpolature della pelle.','supplementare'),
+    ('EUH071','Corrosivo per le vie respiratorie.','supplementare'),
+    ('EUH208','Contiene [nome della sostanza sensibilizzante]. Può provocare una reazione allergica.','supplementare'),
+    ('EUH210','Su richiesta è disponibile una scheda di dati di sicurezza.','supplementare');
+
+INSERT OR IGNORE INTO clp_p_statements (codice, testo, tipo) VALUES
+    ('P101','In caso di consultazione di un medico, tenere a disposizione il contenitore o l''etichetta del prodotto.','generale'),
+    ('P102','Tenere fuori dalla portata dei bambini.','generale'),
+    ('P103','Leggere l''etichetta prima dell''uso.','generale'),
+    ('P210','Tenere lontano da fonti di calore, superfici surriscaldate, scintille, fiamme libere o altre fonti di accensione. Non fumare.','prevenzione'),
+    ('P220','Tenere lontano da indumenti e altri materiali combustibili.','prevenzione'),
+    ('P233','Tenere il recipiente ben chiuso.','prevenzione'),
+    ('P260','Non respirare polveri/fumi/gas/nebbie/vapori/aerosol.','prevenzione'),
+    ('P261','Evitare di respirare polveri/fumi/gas/nebbie/vapori/aerosol.','prevenzione'),
+    ('P262','Evitare il contatto con gli occhi, la pelle o gli indumenti.','prevenzione'),
+    ('P264','Lavare accuratamente dopo l''uso.','prevenzione'),
+    ('P270','Non mangiare, né bere, né fumare durante l''uso.','prevenzione'),
+    ('P271','Utilizzare soltanto all''aperto o in luogo ben ventilato.','prevenzione'),
+    ('P273','Non disperdere nell''ambiente.','prevenzione'),
+    ('P280','Indossare dispositivi di protezione individuale.','prevenzione'),
+    ('P301','IN CASO DI INGESTIONE:','risposta'),
+    ('P302','IN CASO DI CONTATTO CON LA PELLE:','risposta'),
+    ('P304','IN CASO DI INALAZIONE:','risposta'),
+    ('P305','IN CASO DI CONTATTO CON GLI OCCHI:','risposta'),
+    ('P310','Contattare immediatamente un CENTRO ANTIVELENI/un medico.','risposta'),
+    ('P311','Contattare un CENTRO ANTIVELENI/un medico.','risposta'),
+    ('P312','Contattare un CENTRO ANTIVELENI/un medico in caso di malessere.','risposta'),
+    ('P330','Sciacquare la bocca.','risposta'),
+    ('P331','NON provocare il vomito.','risposta'),
+    ('P351','Sciacquare accuratamente per parecchi minuti.','risposta'),
+    ('P352','Lavare abbondantemente con acqua e sapone.','risposta'),
+    ('P353','Sciacquare la pelle/fare una doccia.','risposta'),
+    ('P391','Raccogliere il materiale fuoriuscito.','risposta'),
+    ('P401','Conservare in conformità alle norme locali.','conservazione'),
+    ('P403','Conservare in luogo ben ventilato.','conservazione'),
+    ('P405','Conservare sotto chiave.','conservazione'),
+    ('P410','Proteggere dai raggi solari.','conservazione'),
+    ('P501','Smaltire il prodotto/recipiente in conformità alle norme locali.','smaltimento'),
+    ('P502','Informarsi presso il produttore per il recupero e il riciclo.','smaltimento');
+
+INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES
 -- Dati Anagrafici Gemina Srl
 ('azienda_ragione_sociale', 'GEMINA S.R.L.'),
 ('azienda_piva', '02969850607'),
@@ -1646,6 +1879,24 @@ INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) 
 -- COMPLIANCE TABLES & SEEDS
 -- =============================================================================
 
+-- Restrizioni dirette sulla sostanza chimica (best practice: la restrizione
+-- vive sul livello CAS/formula, non sul codice ONU né sul singolo SKU).
+-- Il check di vendita usa questo percorso come prioritario; il collegamento
+-- compliance_codice_onu_restrizioni rimane come fallback per sostanze senza
+-- restrizioni dirette configurate.
+CREATE TABLE IF NOT EXISTS sostanze_chimiche_restrizioni (
+    sostanza_id         INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
+    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
+    concentrazione_min  DECIMAL(5,2),  -- % minima che attiva la restrizione; NULL = nessun minimo
+    concentrazione_max  DECIMAL(5,2),  -- % massima; NULL = nessun massimo
+    note                TEXT,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (sostanza_id, restriction_type_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sost_restr_sostanza ON sostanze_chimiche_restrizioni(sostanza_id);
+CREATE INDEX IF NOT EXISTS idx_sost_restr_tipo     ON sostanze_chimiche_restrizioni(restriction_type_id);
+
 CREATE TABLE IF NOT EXISTS compliance_restriction_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code VARCHAR(30) UNIQUE NOT NULL,
@@ -1715,6 +1966,22 @@ CREATE TABLE IF NOT EXISTS compliance_log_transazioni (
     report_reference TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Collega direttamente un prodotto (SKU) a un tipo di restrizione.
+-- Fonte di verità per il check di vendita. Indipendente dall'ADR.
+CREATE TABLE IF NOT EXISTS prodotti_restrizioni (
+    prodotto_id         INTEGER NOT NULL REFERENCES prodotti(id) ON DELETE CASCADE,
+    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
+    note                TEXT,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (prodotto_id, restriction_type_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prodotti_restrizioni_prodotto
+    ON prodotti_restrizioni(prodotto_id);
+
+CREATE INDEX IF NOT EXISTS idx_prodotti_restrizioni_tipo
+    ON prodotti_restrizioni(restriction_type_id);
 
 CREATE TRIGGER IF NOT EXISTS trg_compliance_autorizzazioni_updated_at
 AFTER UPDATE ON compliance_autorizzazioni
