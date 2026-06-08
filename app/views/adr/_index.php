@@ -154,9 +154,10 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           <?php foreach ($codici as $c): ?>
             <tr>
               <td>
-                <span class="fw-semibold font-monospace">
+                <a href="<?= url('adr/codici/edit?id=' . (int)$c['id']) ?>"
+                   class="fw-semibold font-monospace qk-text-accent text-decoration-none">
                   UN <?= e((string)$c['codice_onu']) ?>
-                </span>
+                </a>
               </td>
               <td>
                 <?php if (!empty($c['nome_descrizione'])): ?>
@@ -188,30 +189,20 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
                 <?php if ($c['e_inquinante_marino']): ?><span title="Inquinante marino"><i class="fa-solid fa-fish-fins" style="color:var(--qk-info)"></i></span><?php endif; ?>
               </td>
               <td class="col-actions">
-                <div class="dropdown">
-                  <button class="btn-qk btn-qk-secondary btn-qk-sm px-2"
-                          data-bs-toggle="dropdown">
-                    <i class="fa-solid fa-ellipsis-vertical"></i>
-                  </button>
-                  <ul class="dropdown-menu dropdown-menu-end">
-                    <li>
-                      <a class="dropdown-item"
-                         href="<?= url('adr/codici/edit?id=' . (int)$c['id']) ?>">
-                        <i class="fa-solid fa-pen fa-fw me-2"></i>Modifica
-                      </a>
-                    </li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li>
-                      <form method="post" action="<?= url('adr/codici/delete') ?>">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
-                        <button type="submit" class="dropdown-item text-danger"
-                                onclick="return confirm('Eliminare UN <?= (int)$c['codice_onu'] ?>?')">
-                          <i class="fa-solid fa-trash fa-fw me-2"></i>Elimina
-                        </button>
-                      </form>
-                    </li>
-                  </ul>
+                <div class="d-flex gap-1 justify-content-end">
+                  <a href="<?= url('adr/codici/edit?id=' . (int)$c['id']) ?>"
+                     class="btn-qk btn-qk-secondary btn-qk-sm" title="Modifica">
+                    <i class="fa-solid fa-pen"></i>
+                  </a>
+                  <form method="post" action="<?= url('adr/codici/delete') ?>" class="d-inline">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+                    <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm"
+                            onclick="return confirm('Eliminare UN <?= (int)$c['codice_onu'] ?>?')" title="Elimina">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </form>
+                </div>
                 </div>
               </td>
             </tr>
@@ -220,6 +211,50 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         </table>
         <?php endif; ?>
       </div><!-- /qk-table-wrap -->
+
+      <?php if ($codici_pages > 1): ?>
+      <div class="d-flex align-items-center justify-content-between px-3 py-2 border-top" style="font-size:.875rem">
+        <span class="qk-text-muted">
+          <?= number_format($codici_total) ?> codici ·
+          pagina <?= $page ?> di <?= $codici_pages ?>
+        </span>
+        <div class="d-flex gap-1">
+          <?php
+          $qBase = http_build_query(array_filter(['tab' => 'codici', 'q' => $search]));
+          $prevPage = $page > 1 ? $page - 1 : null;
+          $nextPage = $page < $codici_pages ? $page + 1 : null;
+          ?>
+          <a href="?<?= $qBase ?>&page=1"
+             class="btn-qk btn-qk-secondary btn-qk-sm <?= $page <= 1 ? 'disabled' : '' ?>">
+            <i class="fa-solid fa-angles-left"></i>
+          </a>
+          <a href="?<?= $qBase ?>&page=<?= $prevPage ?? 1 ?>"
+             class="btn-qk btn-qk-secondary btn-qk-sm <?= !$prevPage ? 'disabled' : '' ?>">
+            <i class="fa-solid fa-angle-left"></i>
+          </a>
+          <?php
+          // Mostra al massimo 5 pagine intorno alla corrente
+          $from = max(1, $page - 2);
+          $to   = min($codici_pages, $page + 2);
+          for ($p = $from; $p <= $to; $p++):
+          ?>
+          <a href="?<?= $qBase ?>&page=<?= $p ?>"
+             class="btn-qk btn-qk-secondary btn-qk-sm <?= $p === $page ? 'active' : '' ?>">
+            <?= $p ?>
+          </a>
+          <?php endfor; ?>
+          <a href="?<?= $qBase ?>&page=<?= $nextPage ?? $codici_pages ?>"
+             class="btn-qk btn-qk-secondary btn-qk-sm <?= !$nextPage ? 'disabled' : '' ?>">
+            <i class="fa-solid fa-angle-right"></i>
+          </a>
+          <a href="?<?= $qBase ?>&page=<?= $codici_pages ?>"
+             class="btn-qk btn-qk-secondary btn-qk-sm <?= $page >= $codici_pages ? 'disabled' : '' ?>">
+            <i class="fa-solid fa-angles-right"></i>
+          </a>
+        </div>
+      </div>
+      <?php endif; ?>
+
     </div><!-- /qk-card -->
   </div><!-- /tab-codici -->
 
@@ -266,24 +301,21 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           </thead>
           <tbody>
           <?php foreach ($classi as $cl): ?>
-            <tr>
-              <td><span class="fw-semibold font-monospace"><?= e($cl['codice']) ?></span></td>
+            <tr class="qk-tr-clickable"
+                data-bs-toggle="modal" data-bs-target="#modal-classe"
+                data-mode="edit"
+                data-codice="<?= e($cl['codice']) ?>"
+                data-denominazione="<?= e($cl['denominazione']) ?>"
+                data-divisioni="<?= $cl['ha_divisioni'] ? '1' : '0' ?>">
+              <td><span class="fw-semibold font-monospace qk-text-accent"><?= e($cl['codice']) ?></span></td>
               <td><?= e($cl['denominazione']) ?></td>
               <td class="text-center">
                 <?= $cl['ha_divisioni']
                     ? '<i class="fa-solid fa-check text-success"></i>'
                     : '<span class="qk-text-muted">No</span>' ?>
               </td>
-              <td class="col-actions">
+              <td class="col-actions" onclick="event.stopPropagation()">
                 <div class="d-flex gap-1 justify-content-end">
-                  <button class="btn-qk btn-qk-secondary btn-qk-sm"
-                          data-bs-toggle="modal" data-bs-target="#modal-classe"
-                          data-mode="edit"
-                          data-codice="<?= e($cl['codice']) ?>"
-                          data-denominazione="<?= e($cl['denominazione']) ?>"
-                          data-divisioni="<?= $cl['ha_divisioni'] ? '1' : '0' ?>">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
                   <form method="post" action="<?= url('adr') ?>" class="d-inline">
                     <?= csrf_field() ?>
                     <input type="hidden" name="tab"    value="classi">
@@ -347,18 +379,15 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           </thead>
           <tbody>
           <?php foreach ($imballaggi as $imb): ?>
-            <tr>
-              <td><span class="fw-semibold font-monospace"><?= e($imb['codice']) ?></span></td>
+            <tr class="qk-tr-clickable"
+                data-bs-toggle="modal" data-bs-target="#modal-imb"
+                data-mode="edit"
+                data-codice="<?= e($imb['codice']) ?>"
+                data-descrizione="<?= e($imb['descrizione']) ?>">
+              <td><span class="fw-semibold font-monospace qk-text-accent"><?= e($imb['codice']) ?></span></td>
               <td><?= e($imb['descrizione']) ?></td>
-              <td class="col-actions">
+              <td class="col-actions" onclick="event.stopPropagation()">
                 <div class="d-flex gap-1 justify-content-end">
-                  <button class="btn-qk btn-qk-secondary btn-qk-sm"
-                          data-bs-toggle="modal" data-bs-target="#modal-imb"
-                          data-mode="edit"
-                          data-codice="<?= e($imb['codice']) ?>"
-                          data-descrizione="<?= e($imb['descrizione']) ?>">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
                   <form method="post" action="<?= url('adr') ?>" class="d-inline">
                     <?= csrf_field() ?>
                     <input type="hidden" name="tab"    value="imballaggio">
@@ -424,8 +453,13 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           </thead>
           <tbody>
           <?php foreach ($gallerie as $g): ?>
-            <tr>
-              <td><code class="fw-semibold"><?= e($g['codice']) ?></code></td>
+            <tr class="qk-tr-clickable"
+                data-bs-toggle="modal" data-bs-target="#modal-galleria"
+                data-mode="edit"
+                data-codice="<?= e($g['codice']) ?>"
+                data-descrizione="<?= e($g['descrizione'] ?? '') ?>"
+                data-cisterna="<?= e($g['si_applica_a_cisterna'] ?? '') ?>">
+              <td><code class="fw-semibold qk-text-accent"><?= e($g['codice']) ?></code></td>
               <td><?= e($g['descrizione'] ?? '') ?></td>
               <td>
                 <?= $g['si_applica_a_cisterna']
@@ -441,16 +475,8 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
                   <span class="qk-text-muted">—</span>
                 <?php endif; ?>
               </td>
-              <td class="col-actions">
+              <td class="col-actions" onclick="event.stopPropagation()">
                 <div class="d-flex gap-1 justify-content-end">
-                  <button class="btn-qk btn-qk-secondary btn-qk-sm"
-                          data-bs-toggle="modal" data-bs-target="#modal-galleria"
-                          data-mode="edit"
-                          data-codice="<?= e($g['codice']) ?>"
-                          data-descrizione="<?= e($g['descrizione'] ?? '') ?>"
-                          data-cisterna="<?= e($g['si_applica_a_cisterna'] ?? '') ?>">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
                   <form method="post" action="<?= url('adr') ?>" class="d-inline">
                     <?= csrf_field() ?>
                     <input type="hidden" name="tab"    value="gallerie">
@@ -516,8 +542,14 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           </thead>
           <tbody>
           <?php foreach ($categorie_trasporto as $ct): ?>
-            <tr>
-              <td><span class="fw-semibold font-monospace"><?= e((string)$ct['categoria']) ?></span></td>
+            <tr class="qk-tr-clickable"
+                data-bs-toggle="modal" data-bs-target="#modal-categoria"
+                data-mode="edit"
+                data-categoria="<?= e((string)$ct['categoria']) ?>"
+                data-moltiplicatore="<?= e((string)$ct['moltiplicatore_punti']) ?>"
+                data-soglia="<?= e((string)($ct['soglia_esenzione_kg_l'] ?? '')) ?>"
+                data-descrizione="<?= e($ct['descrizione'] ?? '') ?>">
+              <td><span class="fw-semibold font-monospace qk-text-accent"><?= e((string)$ct['categoria']) ?></span></td>
               <td class="text-center"><?= e((string)$ct['moltiplicatore_punti']) ?></td>
               <td class="text-center">
                 <?= $ct['soglia_esenzione_kg_l'] !== null
@@ -525,17 +557,8 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
                     : '<span class="qk-text-muted">—</span>' ?>
               </td>
               <td class="small"><?= $ct['descrizione'] ? e($ct['descrizione']) : '<span class="qk-text-muted">—</span>' ?></td>
-              <td class="col-actions">
+              <td class="col-actions" onclick="event.stopPropagation()">
                 <div class="d-flex gap-1 justify-content-end">
-                  <button class="btn-qk btn-qk-secondary btn-qk-sm"
-                          data-bs-toggle="modal" data-bs-target="#modal-categoria"
-                          data-mode="edit"
-                          data-categoria="<?= e((string)$ct['categoria']) ?>"
-                          data-moltiplicatore="<?= e((string)$ct['moltiplicatore_punti']) ?>"
-                          data-soglia="<?= e((string)($ct['soglia_esenzione_kg_l'] ?? '')) ?>"
-                          data-descrizione="<?= e($ct['descrizione'] ?? '') ?>">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
                   <form method="post" action="<?= url('adr') ?>" class="d-inline">
                     <?= csrf_field() ?>
                     <input type="hidden" name="tab"       value="categorie">
@@ -611,8 +634,15 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           </thead>
           <tbody>
           <?php foreach ($codici_classificazione as $cf): ?>
-            <tr>
-              <td><span class="fw-semibold font-monospace"><?= e($cf['codice']) ?></span></td>
+            <tr class="qk-tr-clickable"
+                data-bs-toggle="modal" data-bs-target="#modal-classificazione"
+                data-mode="edit"
+                data-codice="<?= e($cf['codice']) ?>"
+                data-classe="<?= e($cf['codice_classe']) ?>"
+                data-descrizione="<?= e($cf['descrizione'] ?? '') ?>"
+                data-primario="<?= e($cf['pericolo_primario'] ?? '') ?>"
+                data-secondario="<?= e($cf['pericolo_secondario'] ?? '') ?>">
+              <td><span class="fw-semibold font-monospace qk-text-accent"><?= e($cf['codice']) ?></span></td>
               <td>
                 <?php if ($cf['codice_classe']): ?>
                   <span class="qk-badge draft" title="<?= e($cf['classe_label'] ?? '') ?>">
@@ -625,18 +655,8 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
               <td><?= $cf['pericolo_primario'] ? e($cf['pericolo_primario']) : '<span class="qk-text-muted">—</span>' ?></td>
               <td><?= $cf['pericolo_secondario'] ? e($cf['pericolo_secondario']) : '<span class="qk-text-muted">—</span>' ?></td>
               <td class="small"><?= $cf['descrizione'] ? e($cf['descrizione']) : '<span class="qk-text-muted">—</span>' ?></td>
-              <td class="col-actions">
+              <td class="col-actions" onclick="event.stopPropagation()">
                 <div class="d-flex gap-1 justify-content-end">
-                  <button class="btn-qk btn-qk-secondary btn-qk-sm"
-                          data-bs-toggle="modal" data-bs-target="#modal-classificazione"
-                          data-mode="edit"
-                          data-codice="<?= e($cf['codice']) ?>"
-                          data-classe="<?= e($cf['codice_classe']) ?>"
-                          data-descrizione="<?= e($cf['descrizione'] ?? '') ?>"
-                          data-primario="<?= e($cf['pericolo_primario'] ?? '') ?>"
-                          data-secondario="<?= e($cf['pericolo_secondario'] ?? '') ?>">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
                   <form method="post" action="<?= url('adr') ?>" class="d-inline">
                     <?= csrf_field() ?>
                     <input type="hidden" name="tab"    value="classificazioni">
@@ -1865,4 +1885,4 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
   }
 
 })();
-</script>
+</script>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

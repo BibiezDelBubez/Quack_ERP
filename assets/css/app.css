@@ -541,6 +541,13 @@ html.sidebar-collapsed .qk-main { margin-left: var(--qk-sidebar-w-col); }
 .btn-qk-secondary:hover {
   background: var(--qk-body-bg); color: var(--qk-text-primary);
 }
+.btn-qk-secondary.active {
+  background: var(--qk-accent); color: #fff; border-color: var(--qk-accent);
+}
+.btn-qk-secondary.disabled,
+.btn-qk-secondary[disabled] {
+  opacity: .4; pointer-events: none;
+}
 
 .btn-qk-danger {
   background: var(--qk-danger-bg); color: var(--qk-danger);
@@ -696,6 +703,10 @@ textarea.qk-form-control { resize: vertical; min-height: 90px; }
   color: currentColor; opacity: .6; font-size: .8rem; padding: 0; flex-shrink: 0;
 }
 .qk-alert-close:hover { opacity: 1; }
+
+/* ── CLICKABLE TABLE ROW ─────────────────────────────────────────────────── */
+.qk-tr-clickable { cursor: pointer; }
+.qk-tr-clickable:hover td { background: var(--qk-accent-light) !important; }
 
 /* ── EMPTY STATE ──────────────────────────────────────────────────────────── */
 .qk-empty {

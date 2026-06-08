@@ -42,9 +42,11 @@ final class AdrController extends BaseController
         }
 
         /* ── Dati per tutti i tab ─────────────────────────────────────── */
-        $search = get_param('q');
+        $search    = get_param('q');
+        $page      = max(1, (int) get_param('page', '1'));
+        $per_page  = 100;
 
-        $codici     = $this->loadCodiciOnu($search);
+        [$codici, $codici_total, $codici_pages] = $this->loadCodiciOnu($search, $page, $per_page);
         $classi     = $this->pdo->query(
             'SELECT codice, denominazione, ha_divisioni
                FROM adr_classi_pericolo
@@ -82,6 +84,10 @@ final class AdrController extends BaseController
             'ok'            => $ok,
             'errors'        => $errors,
             'search'        => $search,
+            'page'          => $page,
+            'per_page'      => $per_page,
+            'codici_total'  => $codici_total,
+            'codici_pages'  => $codici_pages,
             'codici'        => $codici,
             'classi'        => $classi,
             'imballaggi'    => $imballaggi,
@@ -215,15 +221,31 @@ final class AdrController extends BaseController
      *  HELPERS PRIVATI
      * ════════════════════════════════════════════════════════════════════════ */
 
-    private function loadCodiciOnu(?string $search): array
+    private function loadCodiciOnu(?string $search, int $page = 1, int $perPage = 100): array
     {
         $search = $search ?? '';
         $where  = '1=1';
         $params = [];
         if ($search !== '') {
-            $where    = '(CAST(a.codice_onu AS TEXT) LIKE :q OR a.nome_descrizione LIKE :q OR cl.denominazione LIKE :q)';
-            $params   = [':q' => '%' . $search . '%'];
+            $where  = '(CAST(a.codice_onu AS TEXT) LIKE :q OR a.nome_descrizione LIKE :q OR cl.denominazione LIKE :q)';
+            $params = [':q' => '%' . $search . '%'];
         }
+
+        // Totale
+        $stmtCount = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM adr_codici_onu a
+             LEFT JOIN adr_classi_pericolo cl ON cl.codice = a.classe_pericolo
+             WHERE $where"
+        );
+        $stmtCount->execute($params);
+        $total = (int) $stmtCount->fetchColumn();
+        $pages = $total > 0 ? (int) ceil($total / $perPage) : 1;
+        $page  = max(1, min($page, $pages));
+
+        $offset = ($page - 1) * $perPage;
+        $params[':limit']  = $perPage;
+        $params[':offset'] = $offset;
+
         $stmt = $this->pdo->prepare(
             "SELECT a.id, a.codice_onu, a.nome_descrizione, a.classe_pericolo, a.codice_classificazione,
                     a.gruppo_imballaggio, a.categoria_trasporto,
@@ -235,10 +257,11 @@ final class AdrController extends BaseController
                FROM adr_codici_onu a
           LEFT JOIN adr_classi_pericolo cl ON cl.codice = a.classe_pericolo
               WHERE $where
-           ORDER BY a.codice_onu, a.classe_pericolo"
+           ORDER BY a.codice_onu, a.classe_pericolo
+           LIMIT :limit OFFSET :offset"
         );
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return [$stmt->fetchAll(), $total, $pages];
     }
 
     private function loadLookups(): array
