@@ -1,17 +1,15 @@
 <?php
 /**
- * products/_list.php — Vista HTML della lista prodotti.
- * Variabili attese: $products, $total, $search, $category, $adr_only, $categories
+ * products/_list.php
  */
 ?>
-
 <div class="qk-card">
   <div class="qk-table-toolbar">
     <div class="qk-table-toolbar-left">
       <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
         <div class="qk-filter-wrap">
           <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" name="q" class="qk-filter-input" placeholder="Cerca nome, SKU…" value="<?= e($search) ?>">
+          <input type="text" name="q" class="qk-filter-input" placeholder="Cerca nome, SKU..." value="<?= e($search) ?>">
         </div>
         <?php if (!empty($categories)): ?>
         <select name="cat" class="qk-filter-input" style="width:auto">
@@ -19,14 +17,14 @@
           <?php foreach ($categories as $cat): ?><option value="<?= e($cat['id']) ?>" <?= (string)$category === (string)$cat['id'] ? 'selected' : '' ?>><?= e($cat['label']) ?></option><?php endforeach; ?>
         </select>
         <?php endif; ?>
-<?php if (!empty($suppliers)): ?>
-    <select name="fornitore" class="qk-filter-input" style="width:auto">
-        <option value="">Tutti i fornitori</option>
-        <?php foreach ($suppliers as $sup): ?>
+        <?php if (!empty($suppliers)): ?>
+        <select name="fornitore" class="qk-filter-input" style="width:auto">
+          <option value="">Tutti i fornitori</option>
+          <?php foreach ($suppliers as $sup): ?>
             <option value="<?= e($sup['id']) ?>" <?= (string)$supplier === (string)$sup['id'] ? 'selected' : '' ?>><?= e($sup['ragione_sociale']) ?></option>
-        <?php endforeach; ?>
-    </select>
-<?php endif; ?>
+          <?php endforeach; ?>
+        </select>
+        <?php endif; ?>
         <label class="d-flex align-items-center gap-1 fw-medium" style="font-size:.85rem;cursor:pointer">
           <input type="checkbox" name="adr" value="1" <?= $adr_only ? 'checked' : '' ?>> Solo ADR
         </label>
@@ -34,8 +32,14 @@
         <?php if ($search || $category || $adr_only): ?><a href="<?= url('products') ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-xmark"></i> Pulisci</a><?php endif; ?>
       </form>
     </div>
-    <div class="qk-table-toolbar-right"><small class="qk-text-muted"><?= $total ?> prodotti</small></div>
+    <div class="qk-table-toolbar-right">
+      <small class="qk-text-muted me-3"><?= $total ?> prodotti</small>
+      <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaProdotti">
+        <i class="fa-solid fa-file-import me-1"></i>Importa
+      </button>
+    </div>
   </div>
+
   <div class="qk-table-wrap">
     <?php if (empty($products)): ?>
     <div class="qk-empty">
@@ -64,10 +68,10 @@
               <?= e($p['nome'] ?? '') ?>
             </a>
           </td>
-          <td><?php if ($p['categoria']): ?><span class="qk-badge draft"><?= e($p['categoria']) ?></span><?php else: ?><span class="qk-text-muted">—</span><?php endif; ?></td>
-          <td class="text-center"><?= $p['quantita_disponibile'] !== null ? (int)$p['quantita_disponibile'] : '<span class="qk-text-muted">—</span>' ?></td>
-          <td class="text-end"><?php if (!empty($p['prezzo_min'])) { echo e(number_format($p['prezzo_min'], 2, ',', '.')); } else { echo '—'; } ?></td>
-          <td><?= !empty($p['is_adr']) ? '<span class="qk-badge warning">ADR</span>' : '<span class="qk-text-muted">—</span>' ?></td>
+          <td><?php if ($p['categoria']): ?><span class="qk-badge draft"><?= e($p['categoria']) ?></span><?php else: ?><span class="qk-text-muted">--</span><?php endif; ?></td>
+          <td class="text-center"><?= $p['quantita_disponibile'] !== null ? (int)$p['quantita_disponibile'] : '<span class="qk-text-muted">--</span>' ?></td>
+          <td class="text-end"><?php if (!empty($p['prezzo_min'])) { echo e(number_format($p['prezzo_min'], 2, ',', '.')); } else { echo '--'; } ?></td>
+          <td><?= !empty($p['is_adr']) ? '<span class="qk-badge warning">ADR</span>' : '<span class="qk-text-muted">--</span>' ?></td>
           <td class="col-actions">
             <a href="<?= url('products/edit?id=' . $p['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-pencil"></i></a>
           </td>
@@ -82,21 +86,294 @@
   <div class="qk-table-footer mt-2">
     <span class="qkwh-count-label"><?= $total ?> prodotti</span>
     <div class="qk-pagination">
-      <?php for ($p = 1; $p <= $pages; $p++): ?>
+      <?php for ($pg = 1; $pg <= $pages; $pg++): ?>
       <?php
-        $params = array_filter([
-          'q' => $search,
-          'cat' => $category,
-          'adr' => $adr_only ? '1' : '',
+        $paginationParams = array_filter([
+          'q'        => $search,
+          'cat'      => $category,
+          'adr'      => $adr_only ? '1' : '',
           'fornitore' => $supplier ?: '',
-          'page' => $p > 1 ? $p : ''
+          'page'     => $pg > 1 ? $pg : '',
         ]);
-        $qs = http_build_query($params);
+        $paginationQs = http_build_query($paginationParams);
       ?>
-      <a href="<?= url('products') . ($qs ? '?' . $qs : '') ?>"
-         class="qk-page-btn <?= $p === $page ? 'active' : '' ?>"><?= $p ?></a>
+      <a href="<?= url('products') . ($paginationQs ? '?' . $paginationQs : '') ?>"
+         class="qk-page-btn <?= $pg === $page ? 'active' : '' ?>"><?= $pg ?></a>
       <?php endfor; ?>
     </div>
   </div>
   <?php endif; ?>
+</div><!-- /qk-card -->
+
+<!-- ======================================================================
+     MODALE — Importazione massiva prodotti
+     ====================================================================== -->
+<div class="modal fade" id="modalImportaProdotti" tabindex="-1" aria-labelledby="modalImportaProdottiLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-semibold" id="modalImportaProdottiLabel">
+          <i class="fa-solid fa-file-import me-2"></i>Importazione Massiva Prodotti
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <div class="mb-3 p-3" style="background:var(--qk-bg-subtle);border:1px solid var(--qk-border);border-radius:6px">
+          <p class="mb-2 fw-semibold"><i class="fa-solid fa-circle-info me-1 qk-text-accent"></i>Come funziona</p>
+          <ol class="mb-0" style="font-size:.875rem;padding-left:1.2rem">
+            <li>Scarica il tracciato Excel con il pulsante qui sotto</li>
+            <li>Compila il file rispettando le colonne (non modificare la riga 1)</li>
+            <li>Carica il file compilato con "Carica file Excel"</li>
+            <li>Controlla l'anteprima e clicca <strong>Importa</strong></li>
+          </ol>
+          <div class="mt-2" style="font-size:.8rem;color:var(--qk-text-muted)">
+            Campi obbligatori: <strong>sku_interno</strong>, <strong>nome</strong>.
+            Le righe con SKU gia presenti vengono saltate (nessun aggiornamento).
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 mb-3">
+          <button type="button" id="btnDownloadTracciato" class="btn-qk btn-qk-secondary btn-qk-sm">
+            <i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Tracciato
+          </button>
+          <label class="btn-qk btn-qk-secondary btn-qk-sm mb-0" style="cursor:pointer">
+            <i class="fa-solid fa-folder-open me-1"></i>Carica file Excel
+            <input type="file" id="inputFileProdotti" accept=".xlsx,.xls" style="display:none">
+          </label>
+        </div>
+
+        <div id="importPreviewWrap" style="display:none">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <span class="fw-semibold" style="font-size:.875rem">Anteprima (<span id="importPreviewCount">0</span> righe)</span>
+            <button type="button" id="btnClearFile" class="btn-qk btn-qk-secondary btn-qk-sm">
+              <i class="fa-solid fa-xmark"></i> Rimuovi
+            </button>
+          </div>
+          <div style="max-height:240px;overflow:auto;border:1px solid var(--qk-border);border-radius:6px">
+            <table class="qk-table qk-table-sm mb-0">
+              <thead id="importPreviewHead"></thead>
+              <tbody id="importPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="importResult" style="display:none;margin-top:1rem"></div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Chiudi</button>
+        <button type="button" id="btnImportaProdotti" class="btn-qk btn-qk-primary" disabled>
+          <i class="fa-solid fa-upload me-1"></i>Importa
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
+<?php
+$_qk_csrf   = csrf_token();
+$_qk_import = url('products/import');
+?>
+<script src="<?= asset('js/exceljs.min.js') ?>"></script>
+<script>
+(function () {
+  'use strict';
+
+  var CSRF_TOKEN  = '<?= $_qk_csrf ?>';
+  var IMPORT_URL  = '<?= $_qk_import ?>';
+
+  function downloadBuffer(buffer, filename) {
+    var blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1000);
+  }
+
+  var COLS = [
+    {key:'sku_interno',            note:'Obbligatorio. Deve essere univoco.',                  esempio:'PROD-001'},
+    {key:'nome',                   note:'Obbligatorio.',                                       esempio:'Acido Cloridrico 37%'},
+    {key:'descrizione_breve',      note:'Testo breve per preventivi.',                         esempio:'HCl 37% - Tanica 25L'},
+    {key:'descrizione_confezione', note:'Formato confezione per documenti commerciali.',       esempio:'Tanica HDPE 25 litri'},
+    {key:'tipo',                   note:'"semplice" o "kit". Default: semplice.',              esempio:'semplice'},
+    {key:'categoria',              note:'Nome esatto della categoria (case-insensitive).',     esempio:'Acidi'},
+    {key:'unita_misura',           note:'Codice UoM (es. kg, l, pz, ml). Default: pz.',       esempio:'l'},
+    {key:'peso_netto_kg',          note:'Peso del contenuto in kg.',                          esempio:'25.000'},
+    {key:'peso_lordo_kg',          note:'Peso imballo incluso in kg.',                        esempio:'26.200'},
+    {key:'ean',                    note:'Codice EAN-13 della confezione.',                    esempio:'8012345678901'},
+    {key:'sku_ecommerce',          note:'SKU usato su WooCommerce (opzionale).',              esempio:'WOO-HCL-25L'},
+    {key:'prezzo_vendita_base',    note:'Prezzo nel listino base (listino 1).',               esempio:'45.00'},
+    {key:'scorta_minima',          note:'Quantita minima di riordino. Default: 0.',           esempio:'5'},
+    {key:'is_adr',                 note:'"1" se ADR, altrimenti "0".',                        esempio:'1'},
+    {key:'traccia_lotti',          note:'"1" per attivare la gestione lotti.',                esempio:'1'},
+    {key:'attivo',                 note:'"1" attivo, "0" disabilitato. Default: 1.',          esempio:'1'},
+    {key:'note_interne',           note:'Annotazioni ad uso interno.',                       esempio:''},
+  ];
+
+  document.getElementById('btnDownloadTracciato').addEventListener('click', async function(){
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Generazione...';
+
+    var wb = new ExcelJS.Workbook();
+    wb.creator = 'Quack ERP';
+    var ws = wb.addWorksheet('Prodotti');
+    ws.columns = COLS.map(function(c){ return {header:c.key, key:c.key, width:Math.max(c.key.length+4,22)}; });
+
+    var hr = ws.getRow(1);
+    COLS.forEach(function(c,i){
+      var cell = hr.getCell(i+1);
+      cell.value = c.key;
+      cell.font  = {bold:true, color:{argb:'FFFFFFFF'}};
+      cell.fill  = {type:'pattern', pattern:'solid', fgColor:{argb:'FF2E4057'}};
+      cell.alignment = {vertical:'middle', horizontal:'center'};
+      cell.note  = {texts:[{text:c.note}]};
+    });
+    hr.height = 22;
+
+    var ex = ws.addRow(COLS.reduce(function(a,c){ a[c.key]=c.esempio; return a; }, {}));
+    ex.eachCell(function(cell){
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEAF2FB'}};
+      cell.font = {italic:true, color:{argb:'FF555555'}};
+    });
+    ws.views = [{state:'frozen', ySplit:1}];
+
+    var wg = wb.addWorksheet('Guida');
+    wg.getColumn(1).width = 28; wg.getColumn(2).width = 55;
+    wg.addRow(['Campo','Descrizione']);
+    wg.getRow(1).eachCell(function(c){
+      c.font = {bold:true, color:{argb:'FFFFFFFF'}};
+      c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF2E4057'}};
+    });
+    COLS.forEach(function(c){
+      var row = wg.addRow([c.key, c.note]);
+      if (c.key === 'sku_interno' || c.key === 'nome')
+        row.getCell(1).font = {bold:true, color:{argb:'FFCC0000'}};
+    });
+
+    downloadBuffer(await wb.xlsx.writeBuffer(), 'Prodotti_Tracciato.xlsx');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Tracciato';
+  });
+
+  var parsedRows = [];
+
+  document.getElementById('inputFileProdotti').addEventListener('change', async function(){
+    var file = this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = async function(e){
+      var wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(e.target.result);
+      var ws = wb.worksheets[0];
+      if (!ws) { alert('File non valido.'); return; }
+
+      var headers = [];
+      ws.getRow(1).eachCell({includeEmpty:false}, function(cell){
+        headers.push(String(cell.value !== null && cell.value !== undefined ? cell.value : '').trim());
+      });
+
+      parsedRows = [];
+      ws.eachRow(function(row, rn){
+        if (rn === 1) return;
+        var obj = {};
+        headers.forEach(function(h,i){
+          var v = row.getCell(i+1).value;
+          obj[h] = (v !== null && v !== undefined) ? String(v).trim() : '';
+        });
+        if (Object.values(obj).some(function(v){ return v !== ''; })) parsedRows.push(obj);
+      });
+      renderPreview(headers, parsedRows);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  function renderPreview(headers, rows){
+    var th = '<tr>';
+    headers.forEach(function(h){ th += '<th style="white-space:nowrap">'+esc(h)+'</th>'; });
+    th += '</tr>';
+    document.getElementById('importPreviewHead').innerHTML = th;
+
+    var tb = '';
+    rows.slice(0,10).forEach(function(row){
+      tb += '<tr>';
+      headers.forEach(function(h){
+        var v = row[h] !== undefined ? row[h] : '';
+        var bad = (h==='sku_interno'||h==='nome') && v==='';
+        tb += '<td style="white-space:nowrap'+(bad?';color:var(--qk-danger);font-weight:600':'')+'">' + esc(v||'--') + '</td>';
+      });
+      tb += '</tr>';
+    });
+    if (rows.length > 10)
+      tb += '<tr><td colspan="'+headers.length+'" class="text-center qk-text-muted" style="font-size:.8rem">... e altre '+(rows.length-10)+' righe</td></tr>';
+
+    document.getElementById('importPreviewBody').innerHTML = tb;
+    document.getElementById('importPreviewCount').textContent = rows.length;
+    document.getElementById('importPreviewWrap').style.display = 'block';
+    document.getElementById('btnImportaProdotti').disabled = rows.length === 0;
+    document.getElementById('importResult').style.display  = 'none';
+  }
+
+  document.getElementById('btnClearFile').addEventListener('click', function(){
+    parsedRows = [];
+    document.getElementById('inputFileProdotti').value = '';
+    document.getElementById('importPreviewWrap').style.display = 'none';
+    document.getElementById('btnImportaProdotti').disabled = true;
+    document.getElementById('importResult').style.display  = 'none';
+  });
+
+  document.getElementById('modalImportaProdotti').addEventListener('hidden.bs.modal', function(){
+    document.getElementById('btnClearFile').click();
+  });
+
+  document.getElementById('btnImportaProdotti').addEventListener('click', async function(){
+    if (!parsedRows.length) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Importazione...';
+
+    var fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    fd.append('rows', JSON.stringify(parsedRows));
+
+    try {
+      var resp   = await fetch(IMPORT_URL, {method:'POST', body:fd});
+      var result = await resp.json();
+      var box    = document.getElementById('importResult');
+      box.style.display = 'block';
+
+      if (!result.ok) {
+        box.innerHTML = '<div class="alert alert-danger py-2"><i class="fa-solid fa-triangle-exclamation me-1"></i>' + esc(result.error) + '</div>';
+      } else {
+        var html = '<div class="alert alert-success py-2 mb-2">'
+                 + '<i class="fa-solid fa-circle-check me-1"></i>'
+                 + '<strong>'+result.inserted+'</strong> prodotti importati'
+                 + (result.skipped>0 ? ', <strong>'+result.skipped+'</strong> saltati' : '') + '.'
+                 + '</div>';
+        if (result.errors && result.errors.length) {
+          html += '<details style="font-size:.8rem"><summary style="cursor:pointer" class="qk-text-muted">Dettaglio righe saltate ('+result.errors.length+')</summary>'
+               + '<ul class="mt-1 mb-0">';
+          result.errors.forEach(function(e){ html += '<li>'+esc(e)+'</li>'; });
+          html += '</ul></details>';
+        }
+        box.innerHTML = html;
+        if (result.inserted > 0) {
+          parsedRows = [];
+          document.getElementById('importPreviewWrap').style.display = 'none';
+          setTimeout(function(){ window.location.reload(); }, 1500);
+        }
+      }
+    } catch(err) {
+      document.getElementById('importResult').innerHTML =
+        '<div class="alert alert-danger py-2">Errore di rete: '+esc(err.message)+'</div>';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-upload me-1"></i>Importa';
+  });
+
+  function esc(str){
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>

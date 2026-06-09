@@ -839,6 +839,159 @@ final class ProductsController extends BaseController
         exit;
     }
 
+    /* ════════════════════════════════════════════════════════════════════════
+     *  PRODOTTI — importazione massiva (JSON API, POST)
+     * ════════════════════════════════════════════════════════════════════════ */
+
+    public function importProdotti(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']); exit;
+        }
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido. Ricarica la pagina.']); exit;
+        }
+
+        $rows = json_decode(post('rows') ?? '[]', true);
+        if (!is_array($rows) || empty($rows)) {
+            echo json_encode(['ok' => false, 'error' => 'Nessun dato ricevuto.']); exit;
+        }
+
+        // Carica lookup UoM una volta sola
+        $umMap = [];
+        foreach ($this->pdo->query('SELECT codice, id FROM unita_misura')->fetchAll() as $r) {
+            $umMap[strtolower(trim($r['codice']))] = (int) $r['id'];
+        }
+
+        // Carica lookup categorie per nome
+        $catMap = [];
+        foreach ($this->pdo->query('SELECT id, nome FROM categorie_prodotto')->fetchAll() as $r) {
+            $catMap[strtolower(trim($r['nome']))] = (int) $r['id'];
+        }
+
+        $inserted  = 0;
+        $skipped   = 0;
+        $rowErrors = [];
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($rows as $i => $row) {
+                $lineNum = $i + 2; // +2 perché riga 1 = intestazione Excel
+
+                $sku  = trim((string)($row['sku_interno'] ?? ''));
+                $nome = trim((string)($row['nome'] ?? ''));
+                $um   = strtolower(trim((string)($row['unita_misura'] ?? 'pz')));
+
+                if ($sku === '') {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': SKU interno vuoto — saltata.';
+                    continue;
+                }
+                if ($nome === '') {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): nome vuoto — saltata.';
+                    continue;
+                }
+
+                // Verifica duplicato SKU
+                $dupStmt = $this->pdo->prepare('SELECT COUNT(*) FROM prodotti WHERE sku_interno = :s');
+                $dupStmt->execute([':s' => $sku]);
+                if ($dupStmt->fetchColumn() > 0) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': SKU "' . htmlspecialchars($sku) . '" già presente — saltata.';
+                    continue;
+                }
+
+                // Risolvi UoM
+                $umId = $umMap[$um] ?? $umMap['pz'] ?? null;
+                if ($umId === null) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': unità di misura "' . htmlspecialchars($um) . '" non trovata — saltata.';
+                    continue;
+                }
+
+                // Risolvi categoria (opzionale)
+                $catNome = strtolower(trim((string)($row['categoria'] ?? '')));
+                $catId   = ($catNome !== '') ? ($catMap[$catNome] ?? null) : null;
+
+                $tipo    = in_array(strtolower(trim((string)($row['tipo'] ?? ''))), ['kit']) ? 'kit' : 'semplice';
+                $isAdr   = in_array(strtolower(trim((string)($row['is_adr'] ?? ''))), ['1', 'si', 'sì', 'yes', 'true']) ? 1 : 0;
+                $attivo  = !in_array(strtolower(trim((string)($row['attivo'] ?? '1'))), ['0', 'no', 'false']) ? 1 : 0;
+                $traccia = ($isAdr || in_array(strtolower(trim((string)($row['traccia_lotti'] ?? ''))), ['1', 'si', 'sì', 'yes', 'true'])) ? 1 : 0;
+
+                $toFloat = function(?string $v): ?float {
+                    if ($v === null || trim($v) === '') return null;
+                    return (float) str_replace(',', '.', trim($v));
+                };
+
+                $this->pdo->prepare(
+                    'INSERT INTO prodotti
+                       (sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione,
+                        tipo, categoria_id, note_interne, attivo, traccia_lotti,
+                        unita_misura_stock_id, peso_netto_kg, peso_lordo_kg, ean,
+                        scorta_minima, is_adr, created_at)
+                     VALUES
+                       (:sku, :sku_ec, :nome, :desc_b, :desc_conf,
+                        :tipo, :cat_id, :note, :attivo, :traccia,
+                        :um_id, :peso_n, :peso_l, :ean,
+                        :scorta, :is_adr, CURRENT_TIMESTAMP)'
+                )->execute([
+                    ':sku'       => $sku,
+                    ':sku_ec'    => ($row['sku_ecommerce'] ?? '') !== '' ? trim($row['sku_ecommerce']) : null,
+                    ':nome'      => $nome,
+                    ':desc_b'    => ($row['descrizione_breve'] ?? '') !== '' ? trim($row['descrizione_breve']) : null,
+                    ':desc_conf' => ($row['descrizione_confezione'] ?? '') !== '' ? trim($row['descrizione_confezione']) : null,
+                    ':tipo'      => $tipo,
+                    ':cat_id'    => $catId,
+                    ':note'      => ($row['note_interne'] ?? '') !== '' ? trim($row['note_interne']) : null,
+                    ':attivo'    => $attivo,
+                    ':traccia'   => $traccia,
+                    ':um_id'     => $umId,
+                    ':peso_n'    => $toFloat($row['peso_netto_kg'] ?? null),
+                    ':peso_l'    => $toFloat($row['peso_lordo_kg'] ?? null),
+                    ':ean'       => ($row['ean'] ?? '') !== '' ? trim($row['ean']) : null,
+                    ':scorta'    => $toFloat($row['scorta_minima'] ?? null) ?? 0.0,
+                    ':is_adr'    => $isAdr,
+                ]);
+
+                $prodId = (int) $this->pdo->lastInsertId();
+
+                // Crea giacenza
+                if ($tipo === 'semplice') {
+                    $this->pdo->prepare(
+                        'INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                         VALUES (:id, 0, 0, 0, :scorta, CURRENT_TIMESTAMP)'
+                    )->execute([':id' => $prodId, ':scorta' => $toFloat($row['scorta_minima'] ?? null) ?? 0.0]);
+                }
+
+                // Prezzo di vendita base (listino 1)
+                $prezzoBase = $toFloat($row['prezzo_vendita_base'] ?? null);
+                if ($prezzoBase !== null) {
+                    $this->pdo->prepare(
+                        'INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id)
+                         VALUES (1, :pid, 0, :prezzo, :um_id)'
+                    )->execute([':pid' => $prodId, ':prezzo' => $prezzoBase, ':um_id' => $umId]);
+                }
+
+                $inserted++;
+            }
+
+            $this->pdo->commit();
+            echo json_encode([
+                'ok'       => true,
+                'inserted' => $inserted,
+                'skipped'  => $skipped,
+                'errors'   => $rowErrors,
+            ]);
+        } catch (PDOException $e) {
+            $this->pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => $this->dbMessage($e)]);
+        }
+        exit;
+    }
+
     public function apiFornitoreDettagli(): void
     {
         header('Content-Type: application/json; charset=utf-8');

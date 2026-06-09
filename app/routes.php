@@ -87,6 +87,7 @@ return [
     '/products/kit/componenti'     => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'listComponentiKit',   'auth' => true],
     '/products/kit/save'           => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'saveComponenteKit',   'auth' => true],
     '/products/kit/delete'         => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteComponenteKit', 'auth' => true],
+    '/products/import'             => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'importProdotti',      'auth' => true],
     '/warehouse'                      => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'dashboard',       'auth' => true],
     '/warehouse/stock'                => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'stock',           'auth' => true],
     '/warehouse/movements'            => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'movements',       'auth' => true],
