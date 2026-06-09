@@ -83,7 +83,9 @@ if (!in_array($_qk_theme_raw, array_column(QK_THEMES, 'slug'), true)) {
 define('ACTIVE_THEME', $_qk_theme_raw);
 unset($_qk_theme_raw);
 
-/* ── Error reporting ──────────────────────────────────────────────────────── */
+/* ── PHP error display ────────────────────────────────────────────────────── */
+// In development gli errori PHP vengono stampati a schermo.
+// In production vengono silenziati (ci pensa l'error reporter sotto).
 if (APP_ENV === 'development') {
     error_reporting(E_ALL);
     ini_set('display_errors', '1');
@@ -91,6 +93,44 @@ if (APP_ENV === 'development') {
     error_reporting(0);
     ini_set('display_errors', '0');
 }
+
+/* ── Error Reporter ───────────────────────────────────────────────────────────
+ *
+ * Quando qualcosa si rompe, il sistema fa due cose automaticamente:
+ *   1. Scrive l'errore in logs/errors.md con URL, utente, stack trace e
+ *      dati della richiesta — così hai uno storico leggibile.
+ *   2. Manda una mail a QK_ERROR_EMAIL_TO — così lo sai subito.
+ *      (Stessa mail non viene mandata più di una volta ogni 30 min.)
+ *
+ * Per attivare: metti QK_ERROR_REPORT_ENABLED = true qui sotto.
+ * Le credenziali SMTP Brevo sono già configurate e pronte.
+ *
+─────────────────────────────────────────────────────────────────────────── */
+
+// true = attivo, false = disattivato completamente
+define('QK_ERROR_REPORT_ENABLED',   true);
+
+// Destinatario delle mail di errore
+define('QK_ERROR_EMAIL_TO',         'michel.papetti@campioni.com');
+
+// Mittente — deve corrispondere a un indirizzo verificato su Brevo
+define('QK_ERROR_EMAIL_FROM',       '***SMTP_USER_RIMOSSO***');
+
+// Path del file di log (non serve cambiare)
+define('QK_ERROR_LOG_FILE',         APP_ROOT_DIR . '/logs/errors.md');
+
+// Provider: 'smtp' (Brevo configurato sotto) | 'resend' | 'mailgun'
+define('QK_ERROR_MAIL_PROVIDER',    'smtp');
+
+// Minuti di pausa tra una mail e l'altra per lo stesso identico errore
+define('QK_ERROR_THROTTLE_MINUTES', 30);
+
+// ── Credenziali SMTP Brevo ────────────────────────────────────────────────
+define('QK_SMTP_HOST',   'smtp-relay.brevo.com');
+define('QK_SMTP_PORT',   587);
+define('QK_SMTP_USER',   '***SMTP_USER_RIMOSSO***');
+define('QK_SMTP_PASS',   '***SMTP_PASS_RIMOSSA***');
+define('QK_SMTP_SECURE', 'tls');
 
 /* ── Charset ──────────────────────────────────────────────────────────────── */
 header('Content-Type: text/html; charset=UTF-8');

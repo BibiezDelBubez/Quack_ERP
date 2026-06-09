@@ -37,8 +37,14 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" name="q" class="qk-filter-input" placeholder="Numero, riferimento, fornitore…" value="<?= e($search) ?>" autocomplete="off">
       </div>
-      <input type="date" name="dal" class="qk-filter-input qk-filter-date" value="<?= e($dal) ?>" title="Da data">
-      <input type="date" name="al"  class="qk-filter-input qk-filter-date" value="<?= e($al) ?>"  title="A data">
+      <div class="qk-filter-date-group">
+        <label>Da emissione</label>
+        <input type="date" name="dal" class="qk-filter-input qk-filter-date" value="<?= e($dal) ?>">
+      </div>
+      <div class="qk-filter-date-group">
+        <label>A emissione</label>
+        <input type="date" name="al" class="qk-filter-input qk-filter-date" value="<?= e($al) ?>">
+      </div>
       <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
       <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
       <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra">

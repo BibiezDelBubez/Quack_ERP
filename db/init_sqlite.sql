@@ -390,11 +390,12 @@ CREATE TABLE IF NOT EXISTS aziende_interne (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS categorie_prodotto (
-    id                 INTEGER      PRIMARY KEY AUTOINCREMENT,
-    nome               VARCHAR(100) NOT NULL,
-    parent_id          INTEGER      REFERENCES categorie_prodotto(id),  -- self-join per struttura ad albero
-    posizione_categoria INTEGER     NOT NULL DEFAULT 0,                 -- ordine di visualizzazione
-    created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                  INTEGER      PRIMARY KEY AUTOINCREMENT,
+    nome                VARCHAR(100) NOT NULL,
+    parent_id           INTEGER      REFERENCES categorie_prodotto(id),  -- self-join per struttura ad albero
+    posizione_categoria INTEGER      NOT NULL DEFAULT 0,                 -- ordine di visualizzazione
+    immagine_path       VARCHAR(500),                                    -- percorso immagine/SVG associata alla categoria
+    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS prodotti (

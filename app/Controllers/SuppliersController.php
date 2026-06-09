@@ -16,19 +16,16 @@ class SuppliersController extends BaseController
 
     public function index(): void
     {
-        $search   = get_param('q');
+        $search   = get_param('q', '');
         $adr_only = false;
-        $page     = (int) get_param('page', '1');
-        if ($page < 1) {
-            $page = 1;
-        }
-        $limit    = 50;
-        $offset   = ($page - 1) * $limit;
 
-        $list      = qk_fornitori_list($this->pdo, $search, $adr_only, $limit, $offset);
+        $sortWhitelist = ['nome','email','status'];
+        $pag    = qk_pagination_params($sortWhitelist, 'nome', 'asc');
+
+        $list      = qk_fornitori_list($this->pdo, $search, $adr_only, $pag['limit'], $pag['offset'], $pag['sort'], $pag['dir']);
         $suppliers = $list['rows'];
         $total     = $list['total'];
-        $pages     = (int) ceil($total / $limit);
+        $base      = url('suppliers');
 
         $page_title    = 'Fornitori';
         $page_subtitle = 'Gestione anagrafiche fornitori';

@@ -9,37 +9,60 @@ final class SpedizioniController extends BaseController
      */
     public function index(): void
     {
-        $search = get_param('q');
-        $stato  = get_param('stato');
+        $search = get_param('q', '');
+        $stato  = get_param('stato', '');
+        $dal    = get_param('dal', '');
+        $al     = get_param('al', '');
 
-        $sql = "
-            SELECT s.id, s.numero_spedizione, s.data_spedizione, s.stato, s.vettore, s.tracking,
-                   s.ordine_id,
-                   o.numero_ordine,
-                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                   d.id AS ddt_id,
-                   d.numero_documento_trasporto
-            FROM spedizioni s
-            JOIN ordini_clienti o ON o.id = s.ordine_id
-            JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-            LEFT JOIN documenti_trasporto d ON d.spedizione_id = s.id
-            WHERE 1=1
-        ";
+        $sortWhitelist = ['numero', 'data', 'stato', 'cliente', 'vettore'];
+        $pag = qk_pagination_params($sortWhitelist, 'data', 'desc');
+
+        $sortMap = [
+            'numero'  => 's.numero_spedizione',
+            'data'    => 's.data_spedizione',
+            'stato'   => 's.stato',
+            'cliente' => 'cf.ragione_sociale',
+            'vettore' => 's.vettore',
+        ];
+        $orderCol = $sortMap[$pag['sort']] ?? 's.data_spedizione';
+
+        $where = ['1=1'];
         $params = [];
         if ($search) {
-            $sql .= " AND (s.numero_spedizione LIKE :q OR o.numero_ordine LIKE :q OR cf.ragione_sociale LIKE :q)";
+            $where[] = "(s.numero_spedizione LIKE :q OR o.numero_ordine LIKE :q OR cf.ragione_sociale LIKE :q)";
             $params[':q'] = '%' . $search . '%';
         }
-        if ($stato) {
-            $sql .= " AND s.stato = :stato";
-            $params[':stato'] = $stato;
-        }
-        $sql .= " ORDER BY s.created_at DESC";
+        if ($stato) { $where[] = "s.stato = :stato";             $params[':stato'] = $stato; }
+        if ($dal)   { $where[] = "s.data_spedizione >= :dal";    $params[':dal']   = $dal; }
+        if ($al)    { $where[] = "s.data_spedizione <= :al";     $params[':al']    = $al; }
+        $whereStr = implode(' AND ', $where);
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        $shipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $countStmt = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM spedizioni s
+               JOIN ordini_clienti o  ON o.id = s.ordine_id
+               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
+              WHERE $whereStr"
+        );
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
 
+        $listStmt = $this->pdo->prepare(
+            "SELECT s.id, s.numero_spedizione, s.data_spedizione, s.stato, s.vettore, s.tracking,
+                    s.ordine_id, o.numero_ordine,
+                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
+                    d.id AS ddt_id, d.numero_documento_trasporto
+               FROM spedizioni s
+               JOIN ordini_clienti o  ON o.id = s.ordine_id
+               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
+          LEFT JOIN documenti_trasporto d ON d.spedizione_id = s.id
+              WHERE $whereStr
+              ORDER BY $orderCol {$pag['dir']}
+              LIMIT {$pag['limit']} OFFSET {$pag['offset']}"
+        );
+        $listStmt->execute($params);
+        $shipments = $listStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $base          = url('sales/shipments');
         $page_title    = 'Spedizioni';
         $page_subtitle = 'Registro delle spedizioni e DDT emessi';
         $breadcrumbs   = [['label' => 'Vendite', 'url' => url('sales')], ['label' => 'Spedizioni']];

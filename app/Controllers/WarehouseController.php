@@ -137,21 +137,22 @@ class WarehouseController extends BaseController
 
     public function movements(): void
     {
-        $search      = get_param('q');
-        $tipo        = get_param('tipo');
-        $prodotto_id = (int) get_param('prodotto_id');
+        $search      = get_param('q', '');
+        $tipo        = get_param('tipo', '');
+        $dal         = get_param('dal', '');
+        $al          = get_param('al', '');
+        $prodotto_id = (int) get_param('prodotto_id', '0');
 
         $tipiValidi = ['', 'carico', 'scarico', 'rettifica', 'reso_cliente', 'reso_fornitore', 'riserva', 'svincolo'];
         if (!in_array($tipo, $tipiValidi, true)) $tipo = '';
 
-        $page   = max(1, (int) get_param('page', '1'));
-        $limit  = 50;
-        $offset = ($page - 1) * $limit;
+        $sortWhitelist = ['data', 'tipo', 'prodotto', 'qta'];
+        $pag = qk_pagination_params($sortWhitelist, 'data', 'desc');
 
-        $result = qk_movements_list($this->pdo, $search, $tipo, $prodotto_id, $limit, $offset);
+        $result = qk_movements_list($this->pdo, $search, $tipo, $prodotto_id, $pag['limit'], $pag['offset'], $dal, $al, $pag['sort'], $pag['dir']);
         $movements = $result['rows'];
         $total     = $result['total'];
-        $pages     = (int) ceil($total / $limit);
+        $base      = url('warehouse/movements');
 
         $page_title    = 'Movimenti magazzino';
         $page_subtitle = 'Storico movimenti inventario';

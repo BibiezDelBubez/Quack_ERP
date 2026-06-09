@@ -46,7 +46,7 @@
                 data-bs-target="#nav-prodotti"
                 aria-expanded="<?= is_current_section('/products') ? 'true' : 'false' ?>"
                 aria-controls="nav-prodotti">
-          <img src="<?= asset('img/Tanica_arancione.svg') ?>" alt="" style="width:1.15rem;height:1.15rem;flex-shrink:0;opacity:.75;filter:brightness(0) invert(1)">
+          <span class="qk-nav-svg-icon" style="--i:url('<?= asset('img/Tanica_arancione.svg') ?>')"></span>
           <span class="qk-nav-label">Prodotti</span>
           <i class="fa-solid fa-chevron-right qk-nav-arrow ms-auto"></i>
         </button>

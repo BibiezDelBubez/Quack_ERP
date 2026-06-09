@@ -1,10 +1,8 @@
 <?php
 /**
- * warehouse/_movements.php
- * Storico movimenti magazzino.
- * Variabili: $movements, $total, $page, $pages, $search, $tipo, $prodotto_id, $limit
+ * warehouse/movements.php
+ * Variabili: $movements, $total, $search, $tipo, $dal, $al, $prodotto_id, $pag, $base
  */
-
 $tipoLabels = [
     ''               => 'Tutti i tipi',
     'carico'         => 'Carico',
@@ -15,155 +13,114 @@ $tipoLabels = [
     'riserva'        => 'Riserva',
     'svincolo'       => 'Svincolo',
 ];
-
-function wh_tipo_badge(string $tipo): string {
-    $map = [
-        'carico'         => ['label' => 'Carico',         'cls' => 'success'],
-        'scarico'        => ['label' => 'Scarico',        'cls' => 'danger'],
-        'rettifica'      => ['label' => 'Rettifica',      'cls' => 'warning'],
-        'reso_cliente'   => ['label' => 'Reso cliente',   'cls' => 'info'],
-        'reso_fornitore' => ['label' => 'Reso fornitore', 'cls' => 'info'],
-        'riserva'        => ['label' => 'Riserva',        'cls' => 'muted'],
-        'svincolo'       => ['label' => 'Svincolo',       'cls' => 'muted'],
-    ];
-    $d = $map[$tipo] ?? ['label' => $tipo, 'cls' => 'muted'];
-    return '<span class="qkwh-tipo-badge qkwh-tipo-' . $d['cls'] . '">' . e($d['label']) . '</span>';
-}
+$tipoBadgeMap = [
+    'carico'         => ['label' => 'Carico',         'cls' => 'confirmed'],
+    'scarico'        => ['label' => 'Scarico',        'cls' => 'cancelled'],
+    'rettifica'      => ['label' => 'Rettifica',      'cls' => 'pending'],
+    'reso_cliente'   => ['label' => 'Reso cliente',   'cls' => 'draft'],
+    'reso_fornitore' => ['label' => 'Reso fornitore', 'cls' => 'draft'],
+    'riserva'        => ['label' => 'Riserva',        'cls' => 'muted'],
+    'svincolo'       => ['label' => 'Svincolo',       'cls' => 'muted'],
+];
+$sort = $pag['sort']; $dir = $pag['dir'];
+$hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
-
-<!-- Sotto-navigazione condivisa -->
 <?php $active_tab = 'movements'; include __DIR__ . '/_subnav.php'; ?>
-
-<!-- Filtri -->
-<div class="qk-toolbar mb-3">
-  <form method="get" action="<?= url('warehouse/movements') ?>" class="qkwh-filter-form">
-    <select name="tipo" class="qk-form-control qkwh-select-tipo" onchange="this.form.submit()">
-      <?php foreach ($tipoLabels as $k => $lbl): ?>
-      <option value="<?= e($k) ?>" <?= $tipo === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
-      <?php endforeach; ?>
-    </select>
-
-    <div class="qk-search-wrap">
-      <i class="fa-solid fa-magnifying-glass"></i>
-      <input type="search" name="q" value="<?= e($search) ?>"
-             placeholder="Prodotto, SKU, note, riferimento…" class="qk-form-control" autocomplete="off">
-    </div>
-    <?php if ($prodotto_id): ?>
-    <input type="hidden" name="prodotto_id" value="<?= (int)$prodotto_id ?>">
-    <?php endif; ?>
-    <button type="submit" class="btn-qk btn-qk-secondary">
-      <i class="fa-solid fa-filter"></i> Filtra
-    </button>
-  </form>
-
-  <a href="<?= url('warehouse/stock') ?>" class="btn-qk btn-qk-ghost">
-    <i class="fa-solid fa-boxes-stacked"></i> Giacenze
-  </a>
-</div>
 
 <?php if ($prodotto_id): ?>
 <div class="qk-alert qk-alert-info mb-3">
   <i class="fa-solid fa-filter"></i>
   <span>Movimenti filtrati per prodotto ID #<?= (int)$prodotto_id ?> —
-    <a href="<?= url('warehouse/movements') ?>">rimuovi filtro</a>
-  </span>
+    <a href="<?= $base ?>">rimuovi filtro</a></span>
 </div>
 <?php endif; ?>
 
-<!-- Tabella movimenti -->
 <div class="qk-card">
-  <div class="qk-card-body p-0">
-    <?php if (empty($movements)): ?>
-    <div class="qk-empty-state">
-      <i class="fa-solid fa-clock-rotate-left"></i>
-      <p>Nessun movimento trovato.</p>
+  <div class="qk-table-toolbar">
+    <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <div class="qk-filter-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" name="q" class="qk-filter-input"
+               placeholder="Prodotto, SKU, note, rif…" value="<?= e($search) ?>" autocomplete="off">
+      </div>
+      <div class="qk-filter-date-group">
+        <label>Da data</label>
+        <input type="date" name="dal" class="qk-filter-input qk-filter-date" value="<?= e($dal) ?>">
+      </div>
+      <div class="qk-filter-date-group">
+        <label>A data</label>
+        <input type="date" name="al" class="qk-filter-input qk-filter-date" value="<?= e($al) ?>">
+      </div>
+      <?php if ($prodotto_id): ?><input type="hidden" name="prodotto_id" value="<?= (int)$prodotto_id ?>"><?php endif; ?>
+      <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+      <?php if ($hasFilters): ?>
+      <a href="<?= $base ?><?= $prodotto_id ? '?prodotto_id='.(int)$prodotto_id : '' ?>"
+         class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri">
+        <i class="fa-solid fa-xmark"></i>
+      </a>
+      <?php endif; ?>
+    </form>
+    <div class="qk-table-toolbar-right">
+      <div class="qk-filter-pills">
+        <?php foreach ($tipoLabels as $k => $lbl): ?>
+        <a href="<?= e(qk_list_url($base, ['tipo' => $k ?: null])) ?>"
+           class="qk-filter-pill <?= $tipo === $k ? 'active' : '' ?>"><?= e($lbl) ?></a>
+        <?php endforeach; ?>
+      </div>
     </div>
-    <?php else: ?>
-    <table class="qk-table qkwh-movements-table">
+  </div>
+
+  <div class="qk-table-wrap">
+    <table class="qk-table">
       <thead>
         <tr>
-          <th>Data</th>
-          <th>Tipo</th>
-          <th>Prodotto</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'data', $sort, $dir)) ?>">Data<?= qk_sort_icon('data', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'tipo', $sort, $dir)) ?>">Tipo<?= qk_sort_icon('tipo', $sort, $dir) ?></a></th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'prodotto', $sort, $dir)) ?>">Prodotto<?= qk_sort_icon('prodotto', $sort, $dir) ?></a></th>
           <th>Lotto</th>
-          <th class="text-end">Quantità</th>
+          <th class="qk-sortable qk-text-right"><a href="<?= e(qk_sort_url($base, 'qta', $sort, $dir)) ?>">Quantità<?= qk_sort_icon('qta', $sort, $dir) ?></a></th>
           <th>Origine</th>
-          <th>Note / Riferimento</th>
+          <th>Note / Rif.</th>
           <th>Utente</th>
         </tr>
       </thead>
       <tbody>
-        <?php foreach ($movements as $m): ?>
+        <?php if (empty($movements)): ?>
+        <tr><td colspan="8" class="qk-table-empty"><i class="fa-solid fa-inbox"></i> Nessun movimento trovato.</td></tr>
+        <?php else: foreach ($movements as $m):
+          $bd = $tipoBadgeMap[$m['tipo_movimento']] ?? ['label' => $m['tipo_movimento'], 'cls' => 'draft'];
+          $positivi = ['carico','reso_fornitore','svincolo'];
+          $segno = in_array($m['tipo_movimento'], $positivi) ? '+' : '-';
+          $qtaClass = $segno === '+' ? 'qk-text-success' : 'qk-text-danger';
+        ?>
         <tr>
-          <td class="qkwh-date text-nowrap">
-            <?= e(fmt_datetime($m['created_at'])) ?>
-          </td>
-          <td><?= wh_tipo_badge($m['tipo_movimento']) ?></td>
+          <td class="text-nowrap qk-text-muted" style="font-size:.82rem"><?= e(fmt_datetime($m['created_at'])) ?></td>
+          <td><span class="qk-badge <?= $bd['cls'] ?>"><?= e($bd['label']) ?></span></td>
           <td>
-            <div class="qkwh-prod-name">
-              <a href="<?= url('products/edit?id=' . $m['prodotto_id']) ?>" class="qk-text-accent text-decoration-none fw-semibold">
-                <?= e($m['prodotto_nome']) ?>
-              </a>
-            </div>
-            <div class="qkwh-sku-small"><code><?= e($m['sku_interno']) ?></code></div>
-          </td>
-          <td>
-            <?= $m['codice_lotto_interno'] !== ''
-                ? '<span class="qkwh-lotto-tag"><i class="fa-solid fa-tag"></i> ' . e($m['codice_lotto_interno']) . '</span>'
-                : '<span class="qkwh-qty-muted">—</span>' ?>
-          </td>
-          <td class="text-end text-nowrap">
-            <span class="qkwh-qty-delta qkwh-delta-<?= e($m['tipo_movimento']) ?>">
-              <?= $m['segno'] ?><?= fmt_qty($m['quantita']) ?>
-            </span>
-            <span class="qkwh-uom-small"><?= e($m['uom']) ?></span>
-          </td>
-          <td>
-            <?php if ($m['canale_origine'] === 'manuale'): ?>
-            <span class="qkwh-origine-badge">
-              <i class="fa-solid fa-hand"></i> Manuale
-            </span>
-            <?php else: ?>
-            <span class="qkwh-origine-badge qkwh-origine-auto">
-              <i class="fa-solid fa-gears"></i> <?= e($m['canale_origine']) ?>
-            </span>
-            <?php endif; ?>
-            <?php if ($m['documento_tipo']): ?>
-            <div class="qkwh-doc-ref"><?= e($m['documento_tipo']) ?> <?= $m['documento_id'] ? '#' . $m['documento_id'] : '' ?></div>
+            <a href="<?= url('products/edit?id=' . $m['prodotto_id']) ?>" class="qk-link-strong">
+              <?= e($m['prodotto_nome']) ?>
+            </a>
+            <?php if (!empty($m['sku_interno'])): ?>
+            <span class="qk-text-muted" style="font-size:.78rem;margin-left:.3rem"><?= e($m['sku_interno']) ?></span>
             <?php endif; ?>
           </td>
-          <td class="qkwh-note-cell">
-            <?php if ($m['riferimento_esterno']): ?>
-            <div class="qkwh-rif-ext"><?= e($m['riferimento_esterno']) ?></div>
-            <?php endif; ?>
-            <?php if ($m['note']): ?>
-            <div class="qkwh-note-text" title="<?= e($m['note']) ?>">
-              <?= e(mb_strimwidth($m['note'], 0, 60, '…')) ?>
-            </div>
-            <?php endif; ?>
+          <td class="qk-text-muted" style="font-size:.82rem"><?= e($m['codice_lotto_interno'] ?? '—') ?></td>
+          <td class="qk-text-right fw-semibold <?= $qtaClass ?>">
+            <?= $segno ?><?= number_format((float)$m['quantita'], 3, ',', '.') ?>
+            <span class="qk-text-muted fw-normal"><?= e($m['uom'] ?? '') ?></span>
           </td>
-          <td class="qkwh-utente"><?= e($m['creato_da_username']) ?></td>
+          <td class="qk-text-muted" style="font-size:.82rem"><?= e($m['canale_origine'] ?? '—') ?></td>
+          <td class="qk-text-muted" style="font-size:.82rem"><?= e($m['riferimento_esterno'] ?: ($m['note'] ? truncate($m['note'], 40) : '—')) ?></td>
+          <td class="qk-text-muted" style="font-size:.82rem"><?= e($m['creato_da_username'] ?? '—') ?></td>
         </tr>
-        <?php endforeach; ?>
+        <?php endforeach; endif; ?>
       </tbody>
     </table>
-    <?php endif; ?>
   </div>
-</div>
 
-<!-- Paginazione e conteggio -->
-<div class="qk-table-footer mt-2">
-  <span class="qkwh-count-label"><?= $total ?> moviment<?= $total === 1 ? 'o' : 'i' ?></span>
-  <?php if ($pages > 1): ?>
-  <div class="qk-pagination">
-    <?php for ($p = 1; $p <= $pages; $p++): ?>
-    <?php
-      $params = array_filter(['q' => $search, 'tipo' => $tipo, 'prodotto_id' => $prodotto_id ?: '', 'page' => $p > 1 ? $p : '']);
-      $qs = http_build_query(array_filter($params));
-    ?>
-    <a href="<?= url('warehouse/movements') . ($qs ? '?' . $qs : '') ?>"
-       class="qk-page-btn <?= $p === $page ? 'active' : '' ?>"><?= $p ?></a>
-    <?php endfor; ?>
-  </div>
-  <?php endif; ?>
+  <?php qk_paginate($total, $pag['page'], $pag['limit'], $base); ?>
 </div>

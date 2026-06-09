@@ -540,9 +540,12 @@ function qk_load_cliente_form(PDO $pdo, int $id): ?array
 /**
  * @return array{rows: list<array<string, mixed>>, total: int}
  */
-function qk_clienti_list(PDO $pdo, string $search, string $typeFilter, int $limit = 50, int $offset = 0): array
+function qk_clienti_list(PDO $pdo, string $search, string $typeFilter, int $limit = 50, int $offset = 0, string $sort = 'nome', string $dir = 'asc'): array
 {
     $where = ["cf.tipo IN ('cliente','entrambi')", "cf.id NOT IN (SELECT soggetto_id FROM aziende_interne)"];
+    if (!in_array($dir, ['asc','desc'], true)) $dir = 'asc';
+    if (!in_array($sort, ['nome','email','citta','created'], true)) $sort = 'nome';
+
     $params = [];
 
     if ($search !== '') {
@@ -563,6 +566,14 @@ function qk_clienti_list(PDO $pdo, string $search, string $typeFilter, int $limi
     $st->execute($params);
     $total = (int) $st->fetchColumn();
 
+    $sortColMap = [
+        'nome'    => "COALESCE(NULLIF(TRIM(cf.ragione_sociale),''), cf.cognome, cf.nome)",
+        'email'   => 'cf.email',
+        'citta'   => 'MAX(i.citta)',
+        'created' => 'cf.created_at',
+    ];
+    $sortCol = $sortColMap[$sort] ?? $sortColMap['nome'];
+
     $sql = 'SELECT cf.id, cf.tipo_soggetto, cf.ragione_sociale, cf.nome, cf.cognome,
                    cf.email, cf.telefono, cf.created_at,
                    MAX(i.citta) AS citta,
@@ -571,7 +582,7 @@ function qk_clienti_list(PDO $pdo, string $search, string $typeFilter, int $limi
             ' . $joinAddr . '
             WHERE ' . implode(' AND ', $where) . '
             GROUP BY cf.id
-            ORDER BY cf.ragione_sociale COLLATE NOCASE, cf.cognome COLLATE NOCASE, cf.nome COLLATE NOCASE
+            ORDER BY ' . $sortCol . ' COLLATE NOCASE ' . $dir . '
             LIMIT ? OFFSET ?';
 
     $st2 = $pdo->prepare($sql);
@@ -836,9 +847,12 @@ function qk_load_fornitore_form(PDO $pdo, int $id): ?array
 /**
  * @return array{rows: list<array<string, mixed>>, total: int}
  */
-function qk_fornitori_list(PDO $pdo, string $search, bool $adrOnly = false, int $limit = 50, int $offset = 0): array
+function qk_fornitori_list(PDO $pdo, string $search, bool $adrOnly = false, int $limit = 50, int $offset = 0, string $sort = 'nome', string $dir = 'asc'): array
 {
     $where = ["cf.tipo IN ('fornitore','entrambi')", "cf.id NOT IN (SELECT soggetto_id FROM aziende_interne)"];
+    if (!in_array($dir, ['asc','desc'], true)) $dir = 'asc';
+    if (!in_array($sort, ['nome','email','status'], true)) $sort = 'nome';
+
     $params = [];
 
     if ($search !== '') {
@@ -853,12 +867,19 @@ function qk_fornitori_list(PDO $pdo, string $search, bool $adrOnly = false, int 
     $st->execute($params);
     $total = (int) $st->fetchColumn();
 
+    $forniSortMap = [
+        'nome'   => 'cf.ragione_sociale',
+        'email'  => 'cf.email',
+        'status' => 'CAST(cf.attivo AS TEXT)',
+    ];
+    $forniSortCol = $forniSortMap[$sort] ?? 'cf.ragione_sociale';
+
     $sql = 'SELECT cf.id, cf.ragione_sociale, cf.partita_iva, cf.email, cf.attivo,
                     df.lead_time_giorni, df.condizioni_pagamento, df.note_commerciali
              FROM clienti_fornitori cf
              ' . $join . '
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY cf.ragione_sociale COLLATE NOCASE
+             ORDER BY ' . $forniSortCol . ' COLLATE NOCASE ' . $dir . '
              LIMIT ? OFFSET ?';
 
     $st2 = $pdo->prepare($sql);

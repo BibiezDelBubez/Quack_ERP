@@ -81,6 +81,8 @@ return [
     '/products/api/crea-tag'       => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'crearTag',         'auth' => true],
     '/products/categories'         => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'categories',       'auth' => true],
     '/products/categories/delete'  => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteCategory',   'auth' => true],
+    '/products/categories/import'  => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'importCategorie',  'auth' => true],
+    '/products/categories/export'  => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'exportCategorie',  'auth' => true],
     '/products/tags'               => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'tags',             'auth' => true],
     '/products/tags/delete'        => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteTag',          'auth' => true],
     '/products/api/prodotti'       => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'searchProdotti',      'auth' => true],

@@ -48,10 +48,10 @@ function get_stato_label(string $stato): string {
 </div>
 
 <!-- Layout: Liste principale (Ordini Vendite + Ordini Acquisto) + Azioni Rapide a destra -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) 260px; gap: 1.5rem; margin-top: 1.5rem; align-items: start;">
+<div class="qk-dash-grid">
 
   <!-- Colonna Documenti Recenti -->
-  <div style="display: flex; flex-direction: column; gap: 1.5rem; grid-column: span 1;">
+  <div style="display:flex;flex-direction:column;gap:1.5rem;">
     
     <!-- Ordini Clienti Recenti -->
     <div class="qk-card shadow-sm" style="margin: 0;">
@@ -154,7 +154,7 @@ function get_stato_label(string $stato): string {
   </div>
 
   <!-- Pannello azioni rapide (Destra) -->
-  <div style="grid-column: span 1;">
+  <div class="qk-dash-aside">
     <div class="qk-card shadow-sm" style="margin: 0;">
       <div class="qk-card-header">
         <span class="qk-card-title">

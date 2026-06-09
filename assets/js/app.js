@@ -12,6 +12,7 @@
 
   /* ── DOM ready ────────────────────────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', function () {
+    cleanModalState();
     initSidebar();
     initScrollTitle();
     /* ── Rimuovi blocco transizioni dopo il primo frame renderizzato ─────── */
@@ -27,6 +28,33 @@
     initDropdownActionLinks();
     initFormValidation();
   });
+
+  /* Scatta anche su navigazione back/forward dalla cache del browser */
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) { cleanModalState(); }
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────
+     MODAL STATE CLEANUP
+     Rimuove backdrop orfani e la classe modal-open dal body quando la pagina
+     viene caricata dopo un redirect PHP da dentro un modale (form POST in modal).
+     Senza questo, il backdrop rimane nel DOM e blocca tutti i click successivi.
+  ──────────────────────────────────────────────────────────────────────── */
+  function cleanModalState() {
+    /* Rimuovi tutti i .modal-backdrop residui */
+    document.querySelectorAll('.modal-backdrop').forEach(function (el) { el.remove(); });
+    /* Ripristina scroll e classe modal-open sul body */
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    /* Chiudi eventuali modali rimasti aperti senza backdrop (edge case) */
+    document.querySelectorAll('.modal.show').forEach(function (modal) {
+      modal.classList.remove('show');
+      modal.style.display = '';
+      modal.setAttribute('aria-hidden', 'true');
+      modal.removeAttribute('aria-modal');
+    });
+  }
 
   /* ────────────────────────────────────────────────────────────────────────
      SIDEBAR

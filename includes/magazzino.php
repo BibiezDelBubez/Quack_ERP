@@ -228,8 +228,16 @@ function qk_movements_list(
     string $tipo        = '',
     int    $prodotto_id = 0,
     int    $limit       = 50,
-    int    $offset      = 0
+    int    $offset      = 0,
+    string $dal         = '',
+    string $al          = '',
+    string $sort        = 'data',
+    string $dir         = 'desc'
 ): array {
+    if (!in_array($dir, ['asc','desc'], true)) $dir = 'desc';
+    $sortMap = ['data' => 'm.created_at', 'tipo' => 'm.tipo_movimento', 'prodotto' => 'p.nome', 'qta' => 'm.quantita'];
+    $orderCol = $sortMap[$sort] ?? 'm.created_at';
+
     $where  = ['1=1'];
     $params = [];
 
@@ -246,6 +254,8 @@ function qk_movements_list(
         $where[]  = 'm.prodotto_id = ?';
         $params[] = $prodotto_id;
     }
+    if ($dal !== '') { $where[] = 'DATE(m.created_at) >= ?'; $params[] = $dal; }
+    if ($al  !== '') { $where[] = 'DATE(m.created_at) <= ?'; $params[] = $al; }
 
     $whereStr = implode(' AND ', $where);
 
@@ -278,7 +288,7 @@ function qk_movements_list(
             LEFT JOIN lotti l ON l.id = m.lotto_id
             LEFT JOIN utenti ut ON ut.id = m.creato_da
             WHERE ' . $whereStr . '
-            ORDER BY m.created_at DESC, m.id DESC
+            ORDER BY ' . $orderCol . ' ' . $dir . ', m.id ' . $dir . '
             LIMIT ? OFFSET ?';
 
     $stRows = $pdo->prepare($sql);

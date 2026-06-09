@@ -1,28 +1,30 @@
 <?php
 /**
  * suppliers/_list.php
- * Variabili attese: $suppliers (array), $total (int), $search (string), $adr_only (bool)
+ * Variabili: $suppliers, $total, $search, $adr_only, $pag, $base
  */
+$sort = $pag['sort']; $dir = $pag['dir'];
+$hasFilters = $search !== '';
 ?>
 <div class="qk-card">
   <div class="qk-table-toolbar">
-    <div class="qk-table-toolbar-left">
-      <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
-        <div class="qk-filter-wrap">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" name="q" class="qk-filter-input"
-                 placeholder="Cerca ragione sociale, p.iva, referente…" value="<?= e($search) ?>">
-        </div>
-        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm">
-          <i class="fa-solid fa-filter"></i> Filtra
-        </button>
-        <?php if ($search): ?>
-        <a href="<?= url('suppliers') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
-          <i class="fa-solid fa-xmark"></i> Pulisci
-        </a>
-        <?php endif; ?>
-      </form>
-    </div>
+    <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <div class="qk-filter-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" name="q" class="qk-filter-input"
+               placeholder="Ragione sociale, p.iva, referente…" value="<?= e($search) ?>" autocomplete="off">
+      </div>
+      <?php if ($sort !== 'nome'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'asc'):  ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+      <?php if ($hasFilters): ?>
+      <a href="<?= $base ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri">
+        <i class="fa-solid fa-xmark"></i>
+      </a>
+      <?php endif; ?>
+    </form>
     <div class="qk-table-toolbar-right">
       <small class="qk-text-muted"><?= $total ?> fornitor<?= $total === 1 ? 'e' : 'i' ?></small>
     </div>
@@ -32,8 +34,8 @@
     <?php if (empty($suppliers)): ?>
     <div class="qk-empty">
       <i class="fa-regular fa-truck"></i>
-      <p><?= ($search || $adr_only) ? 'Nessun fornitore trovato con i filtri selezionati.' : 'Nessun fornitore ancora.' ?></p>
-      <?php if (!$search && !$adr_only): ?>
+      <p><?= $hasFilters ? 'Nessun fornitore trovato con i filtri selezionati.' : 'Nessun fornitore ancora.' ?></p>
+      <?php if (!$hasFilters): ?>
       <a href="<?= url('suppliers/create') ?>" class="btn-qk btn-qk-primary">
         <i class="fa-solid fa-plus"></i> Aggiungi il primo fornitore
       </a>
@@ -43,13 +45,13 @@
     <table class="qk-table">
       <thead>
         <tr>
-          <th>Ragione sociale</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'nome', $sort, $dir)) ?>">Ragione sociale<?= qk_sort_icon('nome', $sort, $dir) ?></a></th>
           <th>P. IVA</th>
           <th>Referente comm.</th>
-          <th>Email</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'email', $sort, $dir)) ?>">Email<?= qk_sort_icon('email', $sort, $dir) ?></a></th>
           <th class="text-center">Lead time</th>
           <th>Pagamento</th>
-          <th>Stato</th>
+          <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'status', $sort, $dir)) ?>">Stato<?= qk_sort_icon('status', $sort, $dir) ?></a></th>
           <th class="col-actions"></th>
         </tr>
       </thead>
@@ -57,21 +59,16 @@
         <?php foreach ($suppliers as $s): ?>
         <tr>
           <td class="fw-semibold">
-            <a href="<?= url('suppliers/edit?id=' . $s['id']) ?>" class="qk-text-accent text-decoration-none">
-              <?= e($s['company']) ?>
-            </a>
+            <a href="<?= url('suppliers/edit?id=' . $s['id']) ?>" class="qk-link-strong"><?= e($s['company']) ?></a>
           </td>
           <td class="qk-text-muted" style="font-family:monospace;font-size:.82rem"><?= e($s['vat']) ?: '—' ?></td>
           <td class="qk-text-secondary"><?= $s['referent'] ? e($s['referent']) : '<span class="qk-text-muted">—</span>' ?></td>
           <td class="qk-text-secondary"><?= $s['email'] ? e($s['email']) : '<span class="qk-text-muted">—</span>' ?></td>
-          <td class="text-center qk-text-muted">
-            <?= $s['lead_time'] !== null ? $s['lead_time'] . ' gg' : '—' ?>
-          </td>
+          <td class="text-center qk-text-muted"><?= $s['lead_time'] !== null ? $s['lead_time'] . ' gg' : '—' ?></td>
           <td class="qk-text-muted" style="font-size:.82rem"><?= $s['payment_terms'] ? e(truncate($s['payment_terms'], 25)) : '—' ?></td>
           <td><?= status_badge($s['status']) ?></td>
           <td class="col-actions">
-            <a href="<?= url('suppliers/edit?id=' . $s['id']) ?>"
-               class="btn-qk btn-qk-secondary btn-qk-sm" title="Modifica">
+            <a href="<?= url('suppliers/edit?id=' . $s['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Modifica">
               <i class="fa-solid fa-pen-to-square"></i>
             </a>
           </td>
@@ -82,19 +79,5 @@
     <?php endif; ?>
   </div>
 
-  <?php if ($pages > 1): ?>
-  <div class="qk-table-footer mt-2">
-    <span class="qkwh-count-label"><?= $total ?> fornitor<?= $total === 1 ? 'e' : 'i' ?></span>
-    <div class="qk-pagination">
-      <?php for ($p = 1; $p <= $pages; $p++): ?>
-      <?php
-        $params = array_filter(['q' => $search, 'page' => $p > 1 ? $p : '']);
-        $qs = http_build_query(array_filter($params));
-      ?>
-      <a href="<?= url('suppliers') . ($qs ? '?' . $qs : '') ?>"
-         class="qk-page-btn <?= $p === $page ? 'active' : '' ?>"><?= $p ?></a>
-      <?php endfor; ?>
-    </div>
-  </div>
-  <?php endif; ?>
+  <?php qk_paginate($total, $pag['page'], $pag['limit'], $base); ?>
 </div>

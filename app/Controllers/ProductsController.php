@@ -541,6 +541,7 @@ final class ProductsController extends BaseController
                 $nome = trim(post('nome') ?? '');
                 $parent_id = filter_input(INPUT_POST, 'parent_id', FILTER_VALIDATE_INT) ?: null;
                 $posizione_categoria = (int) post('posizione_categoria', '0');
+                $immagine_path = trim(post('immagine_path') ?? '') ?: null;
 
                 if ($nome === '') {
                     $errors['nome'] = 'Il nome della categoria è obbligatorio.';
@@ -556,23 +557,25 @@ final class ProductsController extends BaseController
                     try {
                         if ($id) {
                             $stmt = $this->pdo->prepare(
-                                'UPDATE categorie_prodotto SET nome = :nome, parent_id = :parent_id, posizione_categoria = :pos WHERE id = :id'
+                                'UPDATE categorie_prodotto SET nome = :nome, parent_id = :parent_id, posizione_categoria = :pos, immagine_path = :img WHERE id = :id'
                             );
                             $stmt->execute([
                                 ':nome'      => $nome,
                                 ':parent_id' => $parent_id,
                                 ':pos'       => $posizione_categoria,
+                                ':img'       => $immagine_path,
                                 ':id'        => $id,
                             ]);
                             redirect_with('products/categories', 'success', 'Categoria aggiornata con successo.');
                         } else {
                             $stmt = $this->pdo->prepare(
-                                'INSERT INTO categorie_prodotto (nome, parent_id, posizione_categoria) VALUES (:nome, :parent_id, :pos)'
+                                'INSERT INTO categorie_prodotto (nome, parent_id, posizione_categoria, immagine_path) VALUES (:nome, :parent_id, :pos, :img)'
                             );
                             $stmt->execute([
                                 ':nome'      => $nome,
                                 ':parent_id' => $parent_id,
                                 ':pos'       => $posizione_categoria,
+                                ':img'       => $immagine_path,
                             ]);
                             redirect_with('products/categories', 'success', 'Categoria creata con successo.');
                         }
@@ -585,7 +588,7 @@ final class ProductsController extends BaseController
 
         // Fetch categories list
         $categories = $this->pdo->query(
-            'SELECT c.id, c.nome, c.parent_id, c.posizione_categoria, p.nome AS parent_nome
+            'SELECT c.id, c.nome, c.parent_id, c.posizione_categoria, c.immagine_path, p.nome AS parent_nome
                FROM categorie_prodotto c
           LEFT JOIN categorie_prodotto p ON p.id = c.parent_id
               ORDER BY c.posizione_categoria, c.nome'
@@ -637,6 +640,129 @@ final class ProductsController extends BaseController
         } catch (Throwable $e) {
             redirect_with('products/categories', 'danger', 'Impossibile eliminare questa categoria poiché è associata ad uno o più prodotti.');
         }
+    }
+
+    /* ════════════════════════════════════════════════════════════════════════
+     *  CATEGORIE — Export JSON (GET)
+     * ════════════════════════════════════════════════════════════════════════ */
+
+    public function exportCategorie(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $rows = $this->pdo->query(
+            'SELECT c.id, c.nome, c.posizione_categoria, c.immagine_path,
+                    p.nome AS parent_nome
+               FROM categorie_prodotto c
+          LEFT JOIN categorie_prodotto p ON p.id = c.parent_id
+              ORDER BY c.posizione_categoria, c.nome'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            'ok'         => true,
+            'exported_at' => date('Y-m-d H:i:s'),
+            'rows'       => $rows,
+        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /* ════════════════════════════════════════════════════════════════════════
+     *  CATEGORIE — Import massivo (JSON API, POST)
+     * ════════════════════════════════════════════════════════════════════════ */
+
+    public function importCategorie(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']); exit;
+        }
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido. Ricarica la pagina.']); exit;
+        }
+
+        $rows = json_decode(post('rows') ?? '[]', true);
+        if (!is_array($rows) || empty($rows)) {
+            echo json_encode(['ok' => false, 'error' => 'Nessun dato ricevuto.']); exit;
+        }
+
+        $inserted  = 0;
+        $updated   = 0;
+        $skipped   = 0;
+        $rowErrors = [];
+
+        // Carica mappa nome→id per risolvere parent
+        $nameMap = [];
+        foreach ($this->pdo->query('SELECT id, nome FROM categorie_prodotto')->fetchAll() as $r) {
+            $nameMap[strtolower(trim($r['nome']))] = (int) $r['id'];
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($rows as $i => $row) {
+                $lineNum = $i + 2;
+                $nome    = trim((string)($row['nome'] ?? ''));
+
+                if ($nome === '') {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': nome vuoto — saltata.';
+                    continue;
+                }
+
+                $posizione     = (int)($row['posizione_categoria'] ?? 0);
+                $immaginePath  = trim((string)($row['immagine_path'] ?? '')) ?: null;
+
+                // Risolvi parent per nome (opzionale)
+                $parentNome = strtolower(trim((string)($row['parent_nome'] ?? '')));
+                $parentId   = ($parentNome !== '') ? ($nameMap[$parentNome] ?? null) : null;
+
+                $nomeKey = strtolower($nome);
+                if (isset($nameMap[$nomeKey])) {
+                    // UPDATE — aggiorna posizione e immagine, non tocca parent se non specificato
+                    $existingId = $nameMap[$nomeKey];
+                    $this->pdo->prepare(
+                        'UPDATE categorie_prodotto
+                            SET posizione_categoria = :pos,
+                                immagine_path       = :img,
+                                parent_id           = COALESCE(:pid, parent_id)
+                          WHERE id = :id'
+                    )->execute([
+                        ':pos' => $posizione,
+                        ':img' => $immaginePath,
+                        ':pid' => $parentId,
+                        ':id'  => $existingId,
+                    ]);
+                    $updated++;
+                } else {
+                    // INSERT
+                    $this->pdo->prepare(
+                        'INSERT INTO categorie_prodotto (nome, parent_id, posizione_categoria, immagine_path)
+                         VALUES (:nome, :pid, :pos, :img)'
+                    )->execute([
+                        ':nome' => $nome,
+                        ':pid'  => $parentId,
+                        ':pos'  => $posizione,
+                        ':img'  => $immaginePath,
+                    ]);
+                    $newId = (int) $this->pdo->lastInsertId();
+                    $nameMap[$nomeKey] = $newId;
+                    $inserted++;
+                }
+            }
+
+            $this->pdo->commit();
+            echo json_encode([
+                'ok'       => true,
+                'inserted' => $inserted,
+                'updated'  => $updated,
+                'skipped'  => $skipped,
+                'errors'   => $rowErrors,
+            ]);
+        } catch (PDOException $e) {
+            $this->pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => $this->dbMessage($e)]);
+        }
+        exit;
     }
 
     /* ── Tag Prodotti ──────────────────────────────────────────────────────── */

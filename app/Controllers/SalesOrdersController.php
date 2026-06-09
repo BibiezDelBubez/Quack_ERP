@@ -6,29 +6,59 @@ final class SalesOrdersController extends BaseController
 {
     public function index(): void
     {
-        // For now, client orders list can query ordini_clienti
-        $search = get_param('q');
-        $status = get_param('status');
+        $search = get_param('q', '');
+        $stato  = get_param('stato', '');
+        $dal    = get_param('dal', '');
+        $al     = get_param('al', '');
 
-        $stmt = $this->pdo->prepare(
+        $sortWhitelist = ['numero', 'data', 'stato', 'cliente', 'consegna', 'totale'];
+        $pag = qk_pagination_params($sortWhitelist, 'data', 'desc');
+
+        $sortMap = [
+            'numero'   => 'o.numero_ordine',
+            'data'     => 'o.data_ordine',
+            'stato'    => 'o.stato',
+            'cliente'  => 'cf.ragione_sociale',
+            'consegna' => 'o.data_consegna_prevista',
+            'totale'   => '(SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario),0) FROM ordini_clienti_righe r WHERE r.ordine_id = o.id)',
+        ];
+        $orderCol = $sortMap[$pag['sort']] ?? 'o.data_ordine';
+
+        $where = ['1=1'];
+        $params = [];
+        if ($search) {
+            $where[] = "(o.numero_ordine LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)";
+            $params[':q'] = '%' . $search . '%';
+        }
+        if ($stato)  { $where[] = "o.stato = :stato"; $params[':stato'] = $stato; }
+        if ($dal)    { $where[] = "o.data_ordine >= :dal"; $params[':dal'] = $dal; }
+        if ($al)     { $where[] = "o.data_ordine <= :al";  $params[':al']  = $al; }
+
+        $whereStr = implode(' AND ', $where);
+
+        $countStmt = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM ordini_clienti o
+               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
+              WHERE $whereStr"
+        );
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $listStmt = $this->pdo->prepare(
             "SELECT o.id, o.numero_ordine, o.data_ordine, o.data_consegna_prevista, o.stato,
+                    (SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario),0) FROM ordini_clienti_righe r WHERE r.ordine_id = o.id) AS totale,
                     COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome
                FROM ordini_clienti o
                JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-              WHERE 1=1
-                " . ($search ? "AND (o.numero_ordine LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)" : '') . "
-                " . ($status ? "AND o.stato = :stato" : '') . "
-              ORDER BY o.created_at DESC"
+              WHERE $whereStr
+              ORDER BY $orderCol {$pag['dir']}
+              LIMIT {$pag['limit']} OFFSET {$pag['offset']}"
         );
-        $params = [];
-        if ($search) $params[':q']     = '%' . $search . '%';
-        if ($status) $params[':stato'] = $status;
-        $stmt->execute($params);
-
-        $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $total  = count($orders);
+        $listStmt->execute($params);
+        $orders = $listStmt->fetchAll(PDO::FETCH_ASSOC);
 
         $active_tab    = 'orders';
+        $base          = url('sales/orders');
         $page_title    = 'Ordini Clienti';
         $page_subtitle = 'Gestione ordini di vendita attivi';
         $breadcrumbs   = [['label' => 'Vendite', 'url' => url('sales')], ['label' => 'Ordini']];

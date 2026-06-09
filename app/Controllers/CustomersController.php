@@ -21,19 +21,16 @@ class CustomersController extends BaseController
 
     public function index(): void
     {
-        $search = get_param('q');
-        $type   = get_param('type');
-        $page   = (int) get_param('page', '1');
-        if ($page < 1) {
-            $page = 1;
-        }
-        $limit  = 50;
-        $offset = ($page - 1) * $limit;
+        $search = get_param('q', '');
+        $type   = get_param('type', '');
 
-        $list      = qk_clienti_list($this->pdo, $search, $type, $limit, $offset);
+        $sortWhitelist = ['nome','email','citta','created'];
+        $pag    = qk_pagination_params($sortWhitelist, 'nome', 'asc');
+
+        $list      = qk_clienti_list($this->pdo, $search, $type, $pag['limit'], $pag['offset'], $pag['sort'], $pag['dir']);
         $customers = $list['rows'];
         $total     = $list['total'];
-        $pages     = (int) ceil($total / $limit);
+        $base      = url('customers');
 
         $page_title    = 'Clienti';
         $page_subtitle = 'Gestione anagrafiche clienti';

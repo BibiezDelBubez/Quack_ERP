@@ -4,6 +4,12 @@
  * Variabili attese: $categories, $dropdown_categories, $errors
  */
 ?>
+<script src="<?= asset('js/exceljs.min.js') ?>"></script>
+<?php
+$_qk_csrf_cat    = csrf_token();
+$_qk_import_cat  = url('products/categories/import');
+$_qk_export_cat  = url('products/categories/export');
+?>
 
 <?php if (!empty($errors['_global'])): ?>
 <div class="qk-alert qk-alert-danger mb-3">
@@ -18,6 +24,13 @@
       <h2 class="mb-0">Elenco Categorie</h2>
     </div>
     <div class="qk-table-toolbar-right">
+      <button class="btn-qk btn-qk-secondary btn-qk-sm" id="btnEsportaCategorie">
+        <i class="fa-solid fa-file-arrow-down"></i> Esporta
+      </button>
+      <button class="btn-qk btn-qk-secondary btn-qk-sm"
+              data-bs-toggle="modal" data-bs-target="#modalImportaCategorie">
+        <i class="fa-solid fa-file-arrow-up"></i> Importa
+      </button>
       <button class="btn-qk btn-qk-primary btn-qk-sm"
               data-bs-toggle="modal" data-bs-target="#modal-categoria"
               data-mode="create">
@@ -40,6 +53,7 @@
           <th>Nome Categoria</th>
           <th>Categoria Genitore</th>
           <th style="width:100px" class="text-center">Ordine</th>
+          <th>Immagine</th>
           <th class="col-actions"></th>
         </tr>
       </thead>
@@ -56,6 +70,13 @@
             <?php endif; ?>
           </td>
           <td class="text-center"><?= e($cat['posizione_categoria']) ?></td>
+          <td>
+            <?php if (!empty($cat['immagine_path'])): ?>
+              <span class="text-monospace small" style="font-size:.75rem"><?= e($cat['immagine_path']) ?></span>
+            <?php else: ?>
+              <span class="qk-text-muted">—</span>
+            <?php endif; ?>
+          </td>
           <td class="col-actions">
             <div class="dropdown">
               <button class="btn-qk btn-qk-secondary btn-qk-sm px-2"
@@ -70,7 +91,8 @@
                           data-id="<?= e($cat['id']) ?>"
                           data-nome="<?= e($cat['nome']) ?>"
                           data-parent-id="<?= e($cat['parent_id'] ?? '') ?>"
-                          data-posizione="<?= e($cat['posizione_categoria']) ?>">
+                          data-posizione="<?= e($cat['posizione_categoria']) ?>"
+                          data-immagine="<?= e($cat['immagine_path'] ?? '') ?>">
                     <i class="fa-solid fa-pencil me-2"></i> Modifica
                   </button>
                 </li>
@@ -143,6 +165,12 @@
           <label for="cat-posizione" class="qk-form-label">Ordine di visualizzazione</label>
           <input type="number" name="posizione_categoria" id="cat-posizione" class="qk-form-control" value="0" min="0">
         </div>
+
+        <div class="qk-form-group">
+          <label for="cat-immagine" class="qk-form-label">Percorso Immagine</label>
+          <input type="text" name="immagine_path" id="cat-immagine" class="qk-form-control" maxlength="500" placeholder="es. assets/img/categoria.svg">
+          <div class="qk-form-hint">Percorso relativo alla root del progetto oppure URL assoluto.</div>
+        </div>
       </div>
 
       <div class="modal-footer">
@@ -153,52 +181,337 @@
   </div>
 </div>
 
+<!-- ── MODAL IMPORTA CATEGORIE ── -->
+<div class="modal fade" id="modalImportaCategorie" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-file-arrow-up me-2"></i>Importa Categorie</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Istruzioni -->
+        <div class="qk-alert qk-alert-info mb-3 p-3">
+          <i class="fa-solid fa-circle-info"></i>
+          <div style="font-size:0.85rem;line-height:1.5">
+            <strong>Come funziona l'importazione:</strong><br>
+            Scarica il tracciato Excel, compila le righe e carica il file.<br>
+            Le categorie vengono <strong>inserite o aggiornate</strong> in base al nome (case-insensitive).<br>
+            <ul class="mb-0 mt-1" style="padding-left:1.2rem">
+              <li><strong>nome *</strong> — obbligatorio, identificatore univoco</li>
+              <li><strong>parent_nome</strong> — nome della categoria genitore (deve esistere già o essere nella stessa importazione prima)</li>
+              <li><strong>posizione_categoria</strong> — numero intero, ordine di visualizzazione (default 0)</li>
+              <li><strong>immagine_path</strong> — percorso immagine/SVG</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Bottone tracciato -->
+        <div class="mb-3">
+          <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btnTracCat">
+            <i class="fa-solid fa-download me-1"></i> Scarica Tracciato Excel
+          </button>
+        </div>
+
+        <!-- Upload -->
+        <div class="mb-3">
+          <label class="qk-form-label" for="fileCat">Carica file Excel (.xlsx)</label>
+          <input type="file" id="fileCat" accept=".xlsx" class="qk-form-control">
+        </div>
+
+        <!-- Preview -->
+        <div id="previewCat" class="d-none">
+          <div class="qk-form-label mb-1">Anteprima prime 10 righe</div>
+          <div class="qk-table-wrap" style="max-height:260px;overflow-y:auto">
+            <table class="qk-table" id="previewCatTable">
+              <thead><tr id="previewCatHead"></tr></thead>
+              <tbody id="previewCatBody"></tbody>
+            </table>
+          </div>
+          <div class="mt-2 text-muted small" id="previewCatCount"></div>
+        </div>
+
+        <!-- Risultato -->
+        <div id="importCatResult" class="d-none mt-3"></div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Chiudi</button>
+        <button type="button" class="btn-qk btn-qk-primary d-none" id="btnImportCat">
+          <i class="fa-solid fa-upload me-1"></i> Importa
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const modalEl = document.getElementById('modal-categoria');
-  if (!modalEl) return;
+(function() {
+  var CSRF_TOKEN = '<?= $_qk_csrf_cat ?>';
+  var IMPORT_URL = '<?= $_qk_import_cat ?>';
+  var EXPORT_URL = '<?= $_qk_export_cat ?>';
 
-  modalEl.addEventListener('show.bs.modal', (e) => {
-    const trigger = e.relatedTarget;
-    if (!trigger) return;
+  var CAT_COLS = ['nome','parent_nome','posizione_categoria','immagine_path'];
+  var CAT_HEADERS = ['nome *','parent_nome','posizione_categoria','immagine_path'];
 
-    const mode = trigger.getAttribute('data-mode');
-    const titleEl = document.getElementById('cat-modal-title');
-    const idInput = document.getElementById('cat-id');
-    const nomeInput = document.getElementById('cat-nome');
-    const parentSelect = document.getElementById('cat-parent');
-    const posizioneInput = document.getElementById('cat-posizione');
+  // ── Modale edit: popola immagine_path ───────────────────────────────
+  var modalCatEl = document.getElementById('modal-categoria');
+  if (modalCatEl) {
+    modalCatEl.addEventListener('show.bs.modal', function(e) {
+      var trigger = e.relatedTarget;
+      if (!trigger) return;
+      var mode = trigger.getAttribute('data-mode');
+      var titleEl = document.getElementById('cat-modal-title');
+      var idInput = document.getElementById('cat-id');
+      var nomeInput = document.getElementById('cat-nome');
+      var parentSelect = document.getElementById('cat-parent');
+      var posizioneInput = document.getElementById('cat-posizione');
+      var immagineInput = document.getElementById('cat-immagine');
 
-    if (mode === 'create') {
-      titleEl.innerText = 'Nuova Categoria';
-      idInput.value = '';
-      nomeInput.value = '';
-      parentSelect.value = '';
-      posizioneInput.value = '0';
+      if (mode === 'create') {
+        titleEl.innerText = 'Nuova Categoria';
+        idInput.value = '';
+        nomeInput.value = '';
+        parentSelect.value = '';
+        posizioneInput.value = '0';
+        immagineInput.value = '';
+        Array.from(parentSelect.options).forEach(function(o){ o.style.display=''; });
+      } else {
+        titleEl.innerText = 'Modifica Categoria';
+        idInput.value = trigger.getAttribute('data-id');
+        nomeInput.value = trigger.getAttribute('data-nome');
+        parentSelect.value = trigger.getAttribute('data-parent-id') || '';
+        posizioneInput.value = trigger.getAttribute('data-posizione') || '0';
+        immagineInput.value = trigger.getAttribute('data-immagine') || '';
+        var selfId = trigger.getAttribute('data-id');
+        Array.from(parentSelect.options).forEach(function(o){
+          o.style.display = (o.value === selfId) ? 'none' : '';
+        });
+      }
+    });
+  }
 
-      // Restore all options to visible
-      Array.from(parentSelect.options).forEach(opt => opt.style.display = '');
-    } else {
-      titleEl.innerText = 'Modifica Categoria';
-      const id = trigger.getAttribute('data-id');
-      const nome = trigger.getAttribute('data-nome');
-      const parentId = trigger.getAttribute('data-parent-id');
-      const posizione = trigger.getAttribute('data-posizione');
+  // ── Esporta ─────────────────────────────────────────────────────────
+  var btnEsporta = document.getElementById('btnEsportaCategorie');
+  if (btnEsporta) {
+    btnEsporta.addEventListener('click', function() {
+      fetch(EXPORT_URL)
+        .then(function(r){ return r.json(); })
+        .then(function(json) {
+          if (!json.ok || !json.rows) { alert('Errore durante l\'export.'); return; }
+          if (typeof ExcelJS === 'undefined') { alert('ExcelJS non caricato.'); return; }
+          var wb = new ExcelJS.Workbook();
+          var ws = wb.addWorksheet('Categorie');
+          ws.columns = [
+            {header:'id', key:'id', width:8},
+            {header:'nome', key:'nome', width:30},
+            {header:'parent_nome', key:'parent_nome', width:30},
+            {header:'posizione_categoria', key:'posizione_categoria', width:20},
+            {header:'immagine_path', key:'immagine_path', width:40}
+          ];
+          ws.getRow(1).font = {bold:true};
+          json.rows.forEach(function(r){
+            ws.addRow({
+              id: r.id,
+              nome: r.nome,
+              parent_nome: r.parent_nome || '',
+              posizione_categoria: r.posizione_categoria,
+              immagine_path: r.immagine_path || ''
+            });
+          });
+          wb.xlsx.writeBuffer().then(function(buf){
+            var blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'categorie_' + new Date().toISOString().slice(0,10) + '.xlsx';
+            a.click();
+          });
+        })
+        .catch(function(){ alert('Errore di rete durante l\'export.'); });
+    });
+  }
 
-      idInput.value = id;
-      nomeInput.value = nome;
-      parentSelect.value = parentId || '';
-      posizioneInput.value = posizione || '0';
+  // ── Tracciato template ───────────────────────────────────────────────
+  var btnTrac = document.getElementById('btnTracCat');
+  if (btnTrac) {
+    btnTrac.addEventListener('click', function() {
+      if (typeof ExcelJS === 'undefined') { alert('ExcelJS non caricato.'); return; }
+      var wb = new ExcelJS.Workbook();
+      var ws = wb.addWorksheet('Categorie');
+      ws.columns = [
+        {header:'nome *', key:'nome', width:30},
+        {header:'parent_nome', key:'parent_nome', width:30},
+        {header:'posizione_categoria', key:'posizione_categoria', width:20},
+        {header:'immagine_path', key:'immagine_path', width:40}
+      ];
+      ws.getRow(1).font = {bold:true};
+      ws.getRow(1).fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFD6E4F7'}};
+      // Riga di esempio
+      ws.addRow(['Solventi','Chimici','10','assets/img/solventi.svg']);
 
-      // Cannot select self as parent
-      Array.from(parentSelect.options).forEach(opt => {
-        if (opt.value === id) {
-          opt.style.display = 'none';
-        } else {
-          opt.style.display = '';
-        }
+      var wsGuida = wb.addWorksheet('Guida');
+      wsGuida.getCell('A1').value = 'GUIDA ALL\'IMPORTAZIONE CATEGORIE';
+      wsGuida.getCell('A1').font = {bold:true, size:13};
+      var guida = [
+        ['Campo','Obbligatorio','Descrizione'],
+        ['nome','SI','Nome della categoria. Usato come chiave per upsert (insert o update).'],
+        ['parent_nome','NO','Nome della categoria genitore. Deve essere presente nel file o già in DB.'],
+        ['posizione_categoria','NO','Numero intero per ordinamento. Default: 0.'],
+        ['immagine_path','NO','Percorso relativo o URL dell\'immagine associata alla categoria.']
+      ];
+      guida.forEach(function(row, i){
+        var r = wsGuida.addRow(row);
+        if (i === 0) r.font = {bold:true};
       });
-    }
-  });
-});
+      wsGuida.columns = [{width:25},{width:15},{width:70}];
+
+      wb.xlsx.writeBuffer().then(function(buf){
+        var blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'tracciato_categorie.xlsx';
+        a.click();
+      });
+    });
+  }
+
+  // ── Upload + Preview ─────────────────────────────────────────────────
+  var fileCat = document.getElementById('fileCat');
+  var parsedCatRows = [];
+
+  if (fileCat) {
+    fileCat.addEventListener('change', function() {
+      var file = fileCat.files[0];
+      if (!file) return;
+      document.getElementById('importCatResult').classList.add('d-none');
+      document.getElementById('previewCat').classList.add('d-none');
+      document.getElementById('btnImportCat').classList.add('d-none');
+      parsedCatRows = [];
+
+      if (typeof ExcelJS === 'undefined') { alert('ExcelJS non caricato.'); return; }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var wb = new ExcelJS.Workbook();
+        wb.xlsx.load(ev.target.result).then(function() {
+          var ws = wb.worksheets[0];
+          var headers = [];
+          var dataRows = [];
+          ws.eachRow(function(row, rowNum) {
+            var vals = row.values.slice(1).map(function(v){
+              if (v === null || v === undefined) return '';
+              if (typeof v === 'object' && v.text) return v.text;
+              return String(v);
+            });
+            if (rowNum === 1) { headers = vals; }
+            else if (vals.some(function(v){ return v.trim() !== ''; })) { dataRows.push(vals); }
+          });
+
+          // Mappa header → indice colonna
+          var idxMap = {};
+          CAT_COLS.forEach(function(col) {
+            idxMap[col] = headers.findIndex(function(h){
+              return h.replace(' *','').trim().toLowerCase() === col.toLowerCase();
+            });
+          });
+
+          parsedCatRows = dataRows.map(function(row) {
+            var obj = {};
+            CAT_COLS.forEach(function(col) {
+              obj[col] = idxMap[col] >= 0 ? (row[idxMap[col]] || '').trim() : '';
+            });
+            return obj;
+          }).filter(function(r){ return r.nome !== ''; });
+
+          // Preview
+          var headTr = document.getElementById('previewCatHead');
+          headTr.innerHTML = '';
+          CAT_HEADERS.forEach(function(h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            headTr.appendChild(th);
+          });
+          var tbody = document.getElementById('previewCatBody');
+          tbody.innerHTML = '';
+          parsedCatRows.slice(0, 10).forEach(function(r) {
+            var tr = document.createElement('tr');
+            CAT_COLS.forEach(function(col) {
+              var td = document.createElement('td');
+              td.textContent = r[col];
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          });
+          document.getElementById('previewCatCount').textContent =
+            'Righe trovate: ' + parsedCatRows.length + (parsedCatRows.length > 10 ? ' (mostrate le prime 10)' : '');
+          document.getElementById('previewCat').classList.remove('d-none');
+          document.getElementById('btnImportCat').classList.remove('d-none');
+        }).catch(function(err){
+          alert('Errore nella lettura del file: ' + err.message);
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // ── Importa ──────────────────────────────────────────────────────────
+  var btnImport = document.getElementById('btnImportCat');
+  if (btnImport) {
+    btnImport.addEventListener('click', function() {
+      if (!parsedCatRows.length) { alert('Nessuna riga da importare.'); return; }
+      btnImport.disabled = true;
+      btnImport.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Importazione...';
+
+      fetch(IMPORT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify({rows: parsedCatRows, csrf_token: CSRF_TOKEN})
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(res) {
+        btnImport.disabled = false;
+        btnImport.innerHTML = '<i class="fa-solid fa-upload me-1"></i> Importa';
+        var div = document.getElementById('importCatResult');
+        div.classList.remove('d-none');
+        if (res.ok) {
+          var msg = '<div class="qk-alert qk-alert-success p-3"><i class="fa-solid fa-circle-check"></i><div>' +
+            '<strong>Importazione completata.</strong><br>' +
+            'Inserite: <strong>' + res.inserted + '</strong> &nbsp; ' +
+            'Aggiornate: <strong>' + res.updated + '</strong> &nbsp; ' +
+            'Saltate: <strong>' + res.skipped + '</strong>';
+          if (res.errors && res.errors.length) {
+            msg += '<br><span class="text-danger">Errori: ' + res.errors.join('; ') + '</span>';
+          }
+          msg += '</div></div>';
+          div.innerHTML = msg;
+          setTimeout(function(){ location.reload(); }, 2000);
+        } else {
+          div.innerHTML = '<div class="qk-alert qk-alert-danger p-3"><i class="fa-solid fa-circle-xmark"></i><span>' +
+            (res.error || 'Errore durante l\'importazione.') + '</span></div>';
+        }
+      })
+      .catch(function(err) {
+        btnImport.disabled = false;
+        btnImport.innerHTML = '<i class="fa-solid fa-upload me-1"></i> Importa';
+        alert('Errore di rete: ' + err.message);
+      });
+    });
+  }
+
+  // Reset modale all'apertura
+  var modalImpEl = document.getElementById('modalImportaCategorie');
+  if (modalImpEl) {
+    modalImpEl.addEventListener('show.bs.modal', function() {
+      if (fileCat) fileCat.value = '';
+      parsedCatRows = [];
+      document.getElementById('previewCat').classList.add('d-none');
+      document.getElementById('importCatResult').classList.add('d-none');
+      document.getElementById('btnImportCat').classList.add('d-none');
+    });
+  }
+
+})();
 </script>
