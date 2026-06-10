@@ -55,7 +55,7 @@ $hasFilters = $search !== '' || $type !== '';
           <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'email', $sort, $dir)) ?>">Email<?= qk_sort_icon('email', $sort, $dir) ?></a></th>
           <th>Telefono</th>
           <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'citta', $sort, $dir)) ?>">Città<?= qk_sort_icon('citta', $sort, $dir) ?></a></th>
-          <th class="text-center">Ordini</th>
+          <th class="text-center" title="Ordini in corso (esclusi quelli completati o annullati)">Ordini Attivi</th>
           <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'created', $sort, $dir)) ?>">Creato<?= qk_sort_icon('created', $sort, $dir) ?></a></th>
           <th class="col-actions"></th>
         </tr>
@@ -78,7 +78,7 @@ $hasFilters = $search !== '' || $type !== '';
           <td class="qk-text-muted"><?= $c['city'] ? e($c['city']) : '—' ?></td>
           <td class="text-center">
             <?php if ($c['orders'] > 0): ?>
-              <a href="<?= url('orders?customer_id=' . $c['id']) ?>" class="qk-link-strong"><?= $c['orders'] ?></a>
+              <a href="<?= url('sales/orders?customer_id=' . $c['id']) ?>" class="qk-link-strong"><?= $c['orders'] ?></a>
             <?php else: ?>
               <span class="qk-text-muted">—</span>
             <?php endif; ?>

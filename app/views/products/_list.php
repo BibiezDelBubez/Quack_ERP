@@ -51,6 +51,7 @@
     <table class="qk-table">
       <?php $base = url('products'); $sort = $pag['sort']; $dir = $pag['dir']; ?>
       <thead><tr>
+        <th class="text-center" style="width: 45px;"><input type="checkbox" id="select-all-products" style="transform: scale(1.15); cursor: pointer;"></th>
         <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'sku', $sort, $dir)) ?>">SKU<?= qk_sort_icon('sku', $sort, $dir) ?></a></th>
         <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'nome', $sort, $dir)) ?>">Nome prodotto<?= qk_sort_icon('nome', $sort, $dir) ?></a></th>
         <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'categoria', $sort, $dir)) ?>">Categoria<?= qk_sort_icon('categoria', $sort, $dir) ?></a></th>
@@ -61,7 +62,8 @@
       </tr></thead>
       <tbody>
       <?php foreach ($products as $p): ?>
-        <tr>
+        <tr data-id="<?= (int)$p['id'] ?>">
+          <td class="text-center" style="width: 45px;"><input type="checkbox" class="product-select-chk" data-id="<?= (int)$p['id'] ?>" style="transform: scale(1.15); cursor: pointer;"></td>
           <td><code class="qk-text-secondary" style="font-size:.8rem"><?= e($p['sku_interno'] ?? '') ?></code></td>
           <td class="fw-semibold">
             <a href="<?= url('products/edit?id=' . $p['id']) ?>" class="qk-text-accent text-decoration-none">
@@ -376,4 +378,179 @@ $_qk_import = url('products/import');
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 })();
+</script>
+
+<!-- Barra Azioni Massive Fluttuante (Premium UI) -->
+<div id="bulk-actions-bar" class="qk-bulk-actions-bar">
+  <div class="qk-bulk-actions-content qk-flex-row qk-justify-between qk-gap-md">
+    <div class="qk-flex-row qk-gap-sm align-items-center">
+      <span class="qk-badge confirmed font-monospace" id="bulk-select-count-badge" style="font-size: 0.9rem; padding: 4px 8px;">0</span>
+      <span class="fw-semibold text-white">Selezionati</span>
+    </div>
+    
+    <div class="qk-flex-row qk-gap-sm align-items-center flex-wrap">
+      <select id="bulk-substance-select" class="qk-form-control py-1" style="width: auto; max-width: 250px; background: rgba(0,0,0,0.4); border-color: rgba(255,255,255,0.15); color: #fff; border-radius: 6px;">
+        <option value="" style="background: var(--qk-card-bg); color: var(--qk-text-primary);">— Associa Sostanza ADR —</option>
+        <option value="0" style="background: var(--qk-card-bg); color: var(--qk-text-primary);">— Rimuovi Sostanza ADR (Disassocia) —</option>
+        <?php if (!empty($adr_sostanze)): foreach ($adr_sostanze as $sub): ?>
+          <option value="<?= (int)$sub['id'] ?>" style="background: var(--qk-card-bg); color: var(--qk-text-primary);">
+            <?= e($sub['nome']) ?> <?= $sub['codice_onu'] ? '[UN' . e($sub['codice_onu']) . ']' : '' ?>
+          </option>
+        <?php endforeach; endif; ?>
+      </select>
+      
+      <button type="button" id="btn-bulk-apply" class="btn-qk btn-qk-primary btn-qk-sm" disabled>
+        <i class="fa-solid fa-link me-1"></i> Applica
+      </button>
+      
+      <button type="button" id="btn-bulk-cancel" class="btn-qk btn-qk-secondary btn-qk-sm" style="border-color: rgba(255,255,255,0.15); color: #fff; background: transparent;">
+        Annulla
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+.qk-bulk-actions-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  z-index: 1050;
+  width: 90%;
+  max-width: 650px;
+  background: rgba(17, 24, 39, 0.85); /* Sfondo scuro semitrasparente */
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 10px 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  opacity: 0;
+}
+.qk-bulk-actions-bar.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.qk-bulk-actions-content {
+  display: flex;
+  align-items: center;
+}
+/* Stile per i checkbox selezionati nella riga */
+.qk-table tr.row-selected {
+  background-color: var(--qk-accent-light) !important;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var selectAll = document.getElementById('select-all-products');
+  var checkboxes = document.querySelectorAll('.product-select-chk');
+  var bar = document.getElementById('bulk-actions-bar');
+  var badge = document.getElementById('bulk-select-count-badge');
+  var selectSub = document.getElementById('bulk-substance-select');
+  var btnApply = document.getElementById('btn-bulk-apply');
+  var btnCancel = document.getElementById('btn-bulk-cancel');
+
+  function updateBarState() {
+    var selected = document.querySelectorAll('.product-select-chk:checked');
+    var count = selected.length;
+    badge.textContent = count;
+    
+    // Evidenzia le righe selezionate
+    checkboxes.forEach(function(chk) {
+      var tr = chk.closest('tr');
+      if (tr) {
+        tr.classList.toggle('row-selected', chk.checked);
+      }
+    });
+
+    if (count > 0) {
+      bar.classList.add('show');
+    } else {
+      bar.classList.remove('show');
+      if (selectAll) selectAll.checked = false;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      var state = this.checked;
+      checkboxes.forEach(function (chk) {
+        chk.checked = state;
+      });
+      updateBarState();
+    });
+  }
+
+  checkboxes.forEach(function (chk) {
+    chk.addEventListener('change', function () {
+      if (selectAll && !this.checked) {
+        selectAll.checked = false;
+      }
+      updateBarState();
+    });
+  });
+
+  if (selectSub) {
+    selectSub.addEventListener('change', function () {
+      btnApply.disabled = (this.value === '');
+    });
+  }
+
+  if (btnCancel) {
+    btnCancel.addEventListener('click', function () {
+      checkboxes.forEach(function (chk) {
+        chk.checked = false;
+      });
+      if (selectAll) selectAll.checked = false;
+      updateBarState();
+    });
+  }
+
+  if (btnApply) {
+    btnApply.addEventListener('click', async function () {
+      var subId = selectSub.value;
+      var selected = document.querySelectorAll('.product-select-chk:checked');
+      var ids = Array.from(selected).map(function (chk) {
+        return chk.dataset.id;
+      });
+
+      if (ids.length === 0 || subId === '') return;
+
+      btnApply.disabled = true;
+      btnApply.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Applicazione…';
+
+      var fd = new FormData();
+      fd.append('csrf_token', '<?= csrf_token() ?>');
+      fd.append('sostanza_id', subId);
+      ids.forEach(function (id) {
+        fd.append('prodotto_ids[]', id);
+      });
+
+      try {
+        var resp = await fetch('<?= url("products/api/batch-associa-adr") ?>', {
+          method: 'POST',
+          body: fd
+        });
+        var res = await resp.json();
+        if (res.ok) {
+          window.qkToast(ids.length + ' prodotti aggiornati con successo!', 'success');
+          setTimeout(function () {
+            window.location.reload();
+          }, 1000);
+        } else {
+          window.qkToast(res.error || 'Errore durante l\'aggiornamento.', 'danger');
+          btnApply.disabled = false;
+          btnApply.innerHTML = '<i class="fa-solid fa-link me-1"></i> Applica';
+        }
+      } catch (err) {
+        window.qkToast('Errore di rete.', 'danger');
+        btnApply.disabled = false;
+        btnApply.innerHTML = '<i class="fa-solid fa-link me-1"></i> Applica';
+      }
+    });
+  }
+});
 </script>

@@ -892,7 +892,18 @@ class RfqController extends BaseController
     {
         ob_start();
         $q    = get_param('q', '');
-        $like = '%' . $q . '%';
+        
+        $whereSearch = "(ragione_sociale LIKE ? OR nome LIKE ? OR codice LIKE ?)";
+        if (mb_strlen($q) === 1) {
+            // Cerca solo fornitori che INIZIANO con la lettera cercata, o che hanno codice corrispondente
+            $like = $q . '%';
+            $codeLike = $q;
+        } else {
+            // Ricerca parziale (contiene) per query più lunghe
+            $like = '%' . $q . '%';
+            $codeLike = '%' . $q . '%';
+        }
+
         $st   = $this->pdo->prepare(
             "SELECT id, codice,
                     COALESCE(ragione_sociale, nome || ' ' || COALESCE(cognome,'')) AS nome,
@@ -903,7 +914,7 @@ class RfqController extends BaseController
                 AND (ragione_sociale LIKE ? OR nome LIKE ? OR codice LIKE ?)
               ORDER BY ragione_sociale, nome LIMIT 30"
         );
-        $st->execute([$like, $like, $like]);
+        $st->execute([$like, $like, $codeLike]);
         ob_end_clean();
         header('Content-Type: application/json');
         echo json_encode(['ok' => true, 'fornitori' => $st->fetchAll(PDO::FETCH_ASSOC)]);

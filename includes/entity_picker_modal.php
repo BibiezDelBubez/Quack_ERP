@@ -282,15 +282,39 @@
       const { inputEl, dropdownEl, clearBtn } = this;
       if (!inputEl || !dropdownEl) return;
 
-      inputEl.addEventListener('focus', () => this._search(inputEl.value.trim()));
+      inputEl.addEventListener('focus', () => {
+        // UX: Seleziona tutto il testo in modo che digitando si sovrascriva
+        inputEl.select();
+        // Cerca a vuoto per mostrare subito tutte le opzioni disponibili
+        this._search('');
+      });
 
       inputEl.addEventListener('input', () => {
         clearTimeout(this._debounce);
-        this._debounce = setTimeout(() => this._search(inputEl.value.trim()), 220);
+        this._debounce = setTimeout(() => {
+          const val = inputEl.value.trim();
+          // Best practice: non avviamo query automatiche se c'è 1 solo carattere
+          if (val.length === 1) {
+            this._close();
+            return;
+          }
+          this._search(val);
+        }, 220);
       });
 
       inputEl.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { this._close(); inputEl.blur(); }
+        if (e.key === 'Escape') { 
+          this._close(); 
+          inputEl.blur(); 
+        } else if (e.key === 'Enter') {
+          // Ricerca esplicita premendo Invio: bypassa il limite di 1 carattere
+          const val = inputEl.value.trim();
+          if (val.length === 1) {
+            e.preventDefault();
+            clearTimeout(this._debounce);
+            this._search(val);
+          }
+        }
       });
 
       document.addEventListener('click', e => {
@@ -308,9 +332,21 @@
       this.dropdownEl.innerHTML = '<div class="qk-m2o-option is-loading">Ricerca…</div>';
       this._open();
       try {
-        const url  = this.cfg.apiUrl + (q ? '?q=' + encodeURIComponent(q) : '');
+        const separator = this.cfg.apiUrl.includes('?') ? '&' : '?';
+        const url  = this.cfg.apiUrl + (q ? separator + 'q=' + encodeURIComponent(q) : '');
         const res  = await fetch(url, { credentials: 'same-origin' });
-        this._rows = await res.json();
+        const data = await res.json();
+        
+        // Se la risposta è un array, la usiamo direttamente
+        if (Array.isArray(data)) {
+          this._rows = data;
+        } else if (data && typeof data === 'object') {
+          // Se la risposta è un oggetto, cerchiamo al suo interno una chiave che contenga un array
+          const arrKey = Object.keys(data).find(k => Array.isArray(data[k]));
+          this._rows = arrKey ? data[arrKey] : [];
+        } else {
+          this._rows = [];
+        }
       } catch { this._rows = []; }
       this._render(q);
     }
@@ -319,7 +355,7 @@
       const { labelKey, columns, pageSize, picker, onCreate } = this.cfg;
       const col1  = columns?.[0]?.key ?? labelKey;
       const col2  = columns?.[1]?.key ?? null;
-      const slice = this._rows.slice(0, pageSize);
+      const slice = Array.isArray(this._rows) ? this._rows.slice(0, pageSize) : [];
       let html    = '';
 
       if (slice.length === 0 && !onCreate) {
@@ -327,8 +363,21 @@
       }
 
       slice.forEach(row => {
-        const lbl = row[col1] ?? '';
-        const sub = col2 ? (row[col2] ?? '') : '';
+        // Fallback per la colonna principale (se undefined, prova a usare chiavi comuni)
+        let lbl = row[col1];
+        if (lbl === undefined || lbl === null) {
+          lbl = row['nome'] ?? row['label'] ?? row['ragione_sociale'] ?? row['codice'] ?? '';
+        }
+        
+        // Fallback per la colonna secondaria
+        let sub = '';
+        if (col2) {
+          sub = row[col2];
+          if (sub === undefined || sub === null) {
+            sub = row['sub'] ?? row['codice'] ?? row['partita_iva'] ?? row['descrizione'] ?? '';
+          }
+        }
+
         html += `<div class="qk-m2o-option" data-id="${row.id}" data-label="${String(lbl).replace(/"/g,'&quot;')}">`;
         html += `<span>${lbl}</span>`;
         if (sub) html += ` <small class="ms-2" style="color:var(--qk-text-muted);font-size:.8em">${sub}</small>`;

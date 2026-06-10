@@ -640,6 +640,7 @@ final class AdrController extends BaseController
             'gallerie'        => ['adr_codici_restrizione_gallerie',  'codice',    'codice',    'descrizione',         'codice'],
             'quantita_esenti' => ['adr_quantita_esenti',              'codice',    'codice',    'descrizione',         'codice'],
             'unita_misura'    => ['unita_misura',                     'id',        'codice',    'descrizione',         'descrizione, codice'],
+            'codici_onu'      => ['adr_codici_onu',                   'id',        'codice_onu', 'nome_descrizione',    'codice_onu'],
         ];
 
         $type = get_param('type', '');
@@ -654,9 +655,17 @@ final class AdrController extends BaseController
         $where  = '';
         $params = [];
         if ($q !== '') {
-            $where    = "WHERE CAST($idCol AS TEXT) LIKE :q OR $labelCol LIKE :q"
-                      . ($subCol ? " OR $subCol LIKE :q" : '');
-            $params   = [':q' => '%' . $q . '%'];
+            if (mb_strlen($q) === 1) {
+                // Ricerca ottimizzata per caratteri singoli (codice esatto o inizia con per la descrizione)
+                $where  = "WHERE CAST($idCol AS TEXT) = :q OR $labelCol LIKE :q_start"
+                        . ($subCol ? " OR $subCol LIKE :q_start" : '');
+                $params = [':q' => $q, ':q_start' => $q . '%'];
+            } else {
+                // Ricerca parziale standard (contiene) per query più lunghe
+                $where    = "WHERE CAST($idCol AS TEXT) LIKE :q OR $labelCol LIKE :q"
+                          . ($subCol ? " OR $subCol LIKE :q" : '');
+                $params   = [':q' => '%' . $q . '%'];
+            }
         }
 
         $sql  = "SELECT $idCol AS id, $labelCol AS label"

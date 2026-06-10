@@ -79,6 +79,7 @@ function qk_search_prodotti_sales(PDO $pdo, string $q): array
         SELECT p.id, 
                p.nome AS label, 
                p.sku_interno AS sku, 
+               p.categoria_id,
                um.codice AS unita_misura,
                p.unita_misura_stock_id,
                p.descrizione_confezione AS quantita_confezione,

@@ -13,6 +13,14 @@ final class SalesOrdersController extends BaseController
         $stato  = get_param('stato', '');
         $dal    = get_param('dal', '');
         $al     = get_param('al', '');
+        $customerId = get_param('customer_id', '');
+
+        $customerName = '';
+        if ($customerId) {
+            $cStmt = $this->pdo->prepare("SELECT COALESCE(ragione_sociale, TRIM(nome || ' ' || cognome)) FROM clienti_fornitori WHERE id = ?");
+            $cStmt->execute([$customerId]);
+            $customerName = $cStmt->fetchColumn() ?: '';
+        }
 
         $sortWhitelist = ['numero', 'data', 'stato', 'cliente', 'consegna', 'totale'];
         $pag = qk_pagination_params($sortWhitelist, 'data', 'desc');
@@ -36,6 +44,7 @@ final class SalesOrdersController extends BaseController
         if ($stato)  { $where[] = "o.stato = :stato"; $params[':stato'] = $stato; }
         if ($dal)    { $where[] = "o.data_ordine >= :dal"; $params[':dal'] = $dal; }
         if ($al)     { $where[] = "o.data_ordine <= :al";  $params[':al']  = $al; }
+        if ($customerId) { $where[] = "o.cliente_id = :customer_id"; $params[':customer_id'] = $customerId; }
 
         $whereStr = implode(' AND ', $where);
 

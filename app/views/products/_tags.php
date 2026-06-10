@@ -47,9 +47,13 @@
         <tr>
           <td><span class="text-monospace small">#<?= e($t['id']) ?></span></td>
           <td>
-            <span class="fw-semibold">
+            <a href="#" class="qk-link-strong text-decoration-none fw-semibold"
+               data-bs-toggle="modal" data-bs-target="#modal-tag"
+               data-mode="edit"
+               data-id="<?= e($t['id']) ?>"
+               data-nome="<?= e($t['nome']) ?>">
               <i class="fa-solid fa-hashtag small text-muted me-1"></i><?= e($t['nome']) ?>
-            </span>
+            </a>
           </td>
           <td class="text-center">
             <span class="qk-badge <?= $t['prodotti_count'] > 0 ? 'confirmed' : 'draft' ?>">

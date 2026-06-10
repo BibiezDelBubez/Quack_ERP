@@ -435,7 +435,8 @@
             close();
           };
         } else {
-          close();
+          dropdown.innerHTML = `<div class="text-muted" style="padding:8px 12px; font-size:0.85rem; font-style:italic;"><i class="fa-solid fa-circle-exclamation me-1"></i> Nessun risultato</div>`;
+          dropdown.style.display = 'block';
         }
         return;
       }
@@ -479,23 +480,59 @@
       }
     }
 
-    input.addEventListener('input', () => {
+    const triggerSearch = (q) => {
       clearTimeout(timer);
-      const q = input.value.trim();
-      if (q.length < 1) { close(); return; }
-
       timer = setTimeout(async () => {
         try {
-          const data = await fetchFn(q);
-          open(data);
+          let resolved = false;
+          const res = fetchFn(q, (data) => {
+            resolved = true;
+            open(data);
+          });
+          if (res instanceof Promise || (res && typeof res.then === 'function')) {
+            const data = await res;
+            if (!resolved) open(data);
+          } else if (Array.isArray(res)) {
+            if (!resolved) open(res);
+          }
         } catch (e) {
           console.error(e);
           close();
         }
       }, 250);
+    };
+
+    input.addEventListener('focus', () => {
+      // UX: Seleziona tutto il testo in modo che digitando si sovrascriva
+      input.select();
+      // Cerca a vuoto per mostrare subito tutte le opzioni disponibili
+      triggerSearch('');
+    });
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      // Best practice: non avviamo query automatiche se c'è 1 solo carattere
+      if (q.length === 1) {
+        close();
+        return;
+      }
+      triggerSearch(q);
     });
 
     input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = input.value.trim();
+        // Se c'è un elemento attivo selezionato con le frecce, premi Enter normalmente
+        const items = dropdown.querySelectorAll('.qk-ac-item:not(.qk-ac-create)');
+        const hasActiveItem = Array.from(items).some(item => item.classList.contains('active'));
+        
+        if (q.length === 1 && !hasActiveItem) {
+          e.preventDefault();
+          triggerSearch(q);
+          return;
+        }
+      }
+      
       const items = dropdown.querySelectorAll('.qk-ac-item:not(.qk-ac-create)');
       if (dropdown.style.display === 'none' || items.length === 0) return;
 

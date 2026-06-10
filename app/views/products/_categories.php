@@ -68,6 +68,7 @@ $_qk_export_cat  = url('products/categories/export');
                data-id="<?= e($cat['id']) ?>"
                data-nome="<?= e($cat['nome']) ?>"
                data-parent-id="<?= e($cat['parent_id'] ?? '') ?>"
+               data-parent-nome="<?= e($cat['parent_nome'] ?? '') ?>"
                data-posizione="<?= e($cat['posizione_categoria']) ?>"
                data-immagine="<?= e($cat['immagine_path'] ?? '') ?>">
               <?= e($cat['nome']) ?>
@@ -102,6 +103,7 @@ $_qk_export_cat  = url('products/categories/export');
                           data-id="<?= e($cat['id']) ?>"
                           data-nome="<?= e($cat['nome']) ?>"
                           data-parent-id="<?= e($cat['parent_id'] ?? '') ?>"
+                          data-parent-nome="<?= e($cat['parent_nome'] ?? '') ?>"
                           data-posizione="<?= e($cat['posizione_categoria']) ?>"
                           data-immagine="<?= e($cat['immagine_path'] ?? '') ?>">
                     <i class="fa-solid fa-pencil me-2"></i> Modifica
@@ -160,13 +162,17 @@ $_qk_export_cat  = url('products/categories/export');
         </div>
 
         <div class="qk-form-group">
-          <label for="cat-parent" class="qk-form-label">Categoria Genitore</label>
-          <select name="parent_id" id="cat-parent" class="qk-form-control <?= isset($errors['parent_id']) ? 'is-invalid' : '' ?>">
-            <option value="">(Nessuna genitore - Root)</option>
-            <?php foreach ($dropdown_categories as $dcat): ?>
-              <option value="<?= e($dcat['id']) ?>"><?= e($dcat['label']) ?></option>
-            <?php endforeach; ?>
-          </select>
+          <label class="qk-form-label">Categoria Genitore</label>
+          <input type="hidden" name="parent_id" id="cat-parent-id" value="">
+          <div class="qk-m2o-wrap" style="position:relative;">
+            <input type="text"
+                   class="qk-form-control qk-m2o-input"
+                   id="cat-parent-label"
+                   placeholder="Cerca categoria genitore…"
+                   autocomplete="off">
+            <button type="button" class="qk-m2o-clear d-none" id="cat-parent-clear">&times;</button>
+            <div class="qk-m2o-dropdown shadow-sm" id="cat-parent-dropdown" style="display:none; position:absolute; z-index:1050; background:var(--qk-card-bg); border:1px solid var(--qk-border); width:100%; max-height:200px; overflow-y:auto;"></div>
+          </div>
           <?php if (isset($errors['parent_id'])): ?>
             <div class="qk-form-error"><?= e($errors['parent_id']) ?></div>
           <?php endif; ?>
@@ -277,6 +283,59 @@ $_qk_export_cat  = url('products/categories/export');
   var CAT_COLS = ['nome','parent_nome','posizione_categoria','immagine_path'];
   var CAT_HEADERS = ['nome *','parent_nome','posizione_categoria','immagine_path'];
 
+  // ── Autocomplete per Categoria Genitore ─────────────────────────────────────
+  function fetchParentCategories(term, callback) {
+    var selfId = document.getElementById('cat-id').value;
+    fetch('<?= url("products/api/categorie") ?>?q=' + encodeURIComponent(term))
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        var results = data.map(function(item) {
+          return { id: item.id, label: item.nome };
+        });
+        if (selfId) {
+          results = results.filter(function(item) {
+            return String(item.id) !== String(selfId);
+          });
+        }
+        callback(results);
+      })
+      .catch(function(err) {
+        console.error('Errore caricamento categorie:', err);
+        callback([]);
+      });
+  }
+
+  var pInput = document.getElementById('cat-parent-label');
+  var pHidden = document.getElementById('cat-parent-id');
+  var pDropdown = document.getElementById('cat-parent-dropdown');
+  var pClear = document.getElementById('cat-parent-clear');
+
+  if (pInput) {
+    window.qkAutocomplete({
+      input: pInput,
+      dropdown: pDropdown,
+      fetchFn: fetchParentCategories,
+      onSelect: function(sel) {
+        if (sel) {
+          pHidden.value = sel.id;
+          pInput.value = sel.label;
+          pClear.classList.remove('d-none');
+        } else {
+          pHidden.value = '';
+          pInput.value = '';
+          pClear.classList.add('d-none');
+        }
+      }
+    });
+
+    pClear.addEventListener('click', function() {
+      pHidden.value = '';
+      pInput.value = '';
+      pClear.classList.add('d-none');
+      pDropdown.style.display = 'none';
+    });
+  }
+
   // ── Modale edit: popola immagine_path e preview ───────────────────────────────
   var modalCatEl = document.getElementById('modal-categoria');
   if (modalCatEl) {
@@ -287,7 +346,9 @@ $_qk_export_cat  = url('products/categories/export');
       var titleEl = document.getElementById('cat-modal-title');
       var idInput = document.getElementById('cat-id');
       var nomeInput = document.getElementById('cat-nome');
-      var parentSelect = document.getElementById('cat-parent');
+      var parentIdInput = document.getElementById('cat-parent-id');
+      var parentLabelInput = document.getElementById('cat-parent-label');
+      var parentClearBtn = document.getElementById('cat-parent-clear');
       var posizioneInput = document.getElementById('cat-posizione');
       var immagineInput = document.getElementById('cat-immagine');
       
@@ -302,10 +363,11 @@ $_qk_export_cat  = url('products/categories/export');
         titleEl.innerText = 'Nuova Categoria';
         idInput.value = '';
         nomeInput.value = '';
-        parentSelect.value = '';
+        parentIdInput.value = '';
+        parentLabelInput.value = '';
+        if (parentClearBtn) parentClearBtn.classList.add('d-none');
         posizioneInput.value = '0';
         immagineInput.value = '';
-        Array.from(parentSelect.options).forEach(function(o){ o.style.display=''; });
         
         previewImg.src = '#';
         statusText.innerText = '';
@@ -314,7 +376,17 @@ $_qk_export_cat  = url('products/categories/export');
         titleEl.innerText = 'Modifica Categoria';
         idInput.value = trigger.getAttribute('data-id');
         nomeInput.value = trigger.getAttribute('data-nome');
-        parentSelect.value = trigger.getAttribute('data-parent-id') || '';
+        
+        var pId = trigger.getAttribute('data-parent-id') || '';
+        var pNome = trigger.getAttribute('data-parent-nome') || '';
+        parentIdInput.value = pId;
+        parentLabelInput.value = pNome;
+        if (pId) {
+          if (parentClearBtn) parentClearBtn.classList.remove('d-none');
+        } else {
+          if (parentClearBtn) parentClearBtn.classList.add('d-none');
+        }
+        
         posizioneInput.value = trigger.getAttribute('data-posizione') || '0';
         
         var immaginePath = trigger.getAttribute('data-immagine') || '';
@@ -337,11 +409,6 @@ $_qk_export_cat  = url('products/categories/export');
           statusText.innerText = '';
           previewContainer.style.setProperty('display', 'none', 'important');
         }
-        
-        var selfId = trigger.getAttribute('data-id');
-        Array.from(parentSelect.options).forEach(function(o){
-          o.style.display = (o.value === selfId) ? 'none' : '';
-        });
       }
     });
 

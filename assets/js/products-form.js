@@ -28,7 +28,7 @@
     const formGrid    = document.querySelector('.qk-form-grid');
     if (statusPanel) {
       /* Tab che NON devono mostrare la sidebar foto/stato */
-      const TABS_SENZA_SIDEBAR = ['ptab-btn-fornitori', 'ptab-btn-adr', 'ptab-btn-kit'];
+      const TABS_SENZA_SIDEBAR = ['ptab-btn-fornitori', 'ptab-btn-adr', 'ptab-btn-kit', 'ptab-btn-listini'];
 
       /**
        * Nasconde/mostra il pannello laterale E collassa la colonna CSS grid

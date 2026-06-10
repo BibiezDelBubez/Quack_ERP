@@ -1475,7 +1475,7 @@ window.QkPF = {
   tuttePrezzi:          <?= json_encode(array_values($tutti_prezzi)) ?>,
 };
 </script>
-<script src="<?= url('assets/js/products-form.js') ?>"></script>
+<script src="<?= asset('js/products-form.js') ?>"></script>
 <?php if ($isEdit): ?>
-<script src="<?= url('assets/js/products-suppliers.js') ?>"></script>
+<script src="<?= asset('js/products-suppliers.js') ?>"></script>
 <?php endif; ?>

@@ -101,6 +101,50 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  // Autocomplete Listino
+  const elListinoSearch = document.getElementById('quote-listino-label');
+  const elListinoId     = document.getElementById('quote-listino-id');
+  const elListinoDrop   = document.getElementById('quote-listino-dropdown');
+  const elListinoClear  = document.getElementById('quote-listino-clear');
+
+  function fetchListini(q) {
+    const listini = window.QK_QUOTES_CONFIG.listini || [];
+    if (!q) return listini;
+    const lowerQ = q.toLowerCase();
+    return listini.filter(item => item.label.toLowerCase().includes(lowerQ));
+  }
+
+  function selectListino(item) {
+    if (elListinoId) elListinoId.value = item.id;
+    if (elListinoSearch) elListinoSearch.value = item.label;
+    if (elListinoClear) elListinoClear.classList.remove('d-none');
+    if (elListinoId) elListinoId.dispatchEvent(new Event('change'));
+  }
+
+  function clearListino() {
+    if (elListinoId) elListinoId.value = '';
+    if (elListinoSearch) elListinoSearch.value = '';
+    if (elListinoClear) elListinoClear.classList.add('d-none');
+    if (elListinoId) elListinoId.dispatchEvent(new Event('change'));
+  }
+
+  if (elListinoClear) {
+    elListinoClear.addEventListener('click', clearListino);
+  }
+
+  if (elListinoSearch) {
+    elListinoSearch.addEventListener('input', () => {
+      if (!elListinoSearch.value.trim()) clearListino();
+    });
+
+    window.qkAutocomplete({
+      input:    elListinoSearch,
+      dropdown: elListinoDrop,
+      fetchFn:  fetchListini,
+      onSelect: selectListino
+    });
+  }
+
   /* ─────────────────────────────────────────────────────────────────────────
      RIGHE PRODOTTO
      ───────────────────────────────────────────────────────────────────────── */
@@ -895,9 +939,16 @@ document.addEventListener('DOMContentLoaded', function () {
         condPagInput.value = data.cliente.condizioni_pagamento;
       }
 
-      const listinoSelect = document.getElementById('quote-listino-id');
-      if (listinoSelect && !listinoSelect.value && data.cliente?.listino_id) {
-        listinoSelect.value = data.cliente.listino_id;
+      const listinoInputId = document.getElementById('quote-listino-id');
+      const listinoInputLabel = document.getElementById('quote-listino-label');
+      const listinoClearBtn = document.getElementById('quote-listino-clear');
+      if (listinoInputId && !listinoInputId.value && data.cliente?.listino_id) {
+        listinoInputId.value = data.cliente.listino_id;
+        const lst = (window.QK_QUOTES_CONFIG.listini || []).find(l => String(l.id) === String(data.cliente.listino_id));
+        if (lst && listinoInputLabel) {
+          listinoInputLabel.value = lst.label;
+          if (listinoClearBtn) listinoClearBtn.classList.remove('d-none');
+        }
         refetchAllRowPrices();
       }
 

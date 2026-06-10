@@ -12,13 +12,18 @@ $statiLabels = [
     'annullato'            => 'Annullato',
 ];
 $sort = $pag['sort']; $dir = $pag['dir'];
-$hasFilters = $search !== '' || $dal !== '' || $al !== '';
+$customerId = $customerId ?? '';
+$customerName = $customerName ?? '';
+$hasFilters = $search !== '' || $dal !== '' || $al !== '' || $customerId !== '';
 ?>
 <?php $active_tab = 'orders'; include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
 
 <div class="qk-card">
   <div class="qk-table-toolbar">
     <form method="get" action="<?= $base ?>" class="qk-table-toolbar-left">
+      <?php if ($customerId): ?>
+        <input type="hidden" name="customer_id" value="<?= e($customerId) ?>">
+      <?php endif; ?>
       <div class="qk-filter-wrap">
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" name="q" class="qk-filter-input" placeholder="Numero, cliente…" value="<?= e($search) ?>" autocomplete="off">
@@ -33,6 +38,12 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
       </div>
       <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
       <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <?php if ($customerId): ?>
+        <div class="qk-filter-pill active" style="margin-left: 10px; display: inline-flex; align-items: center; gap: 6px; background: rgba(var(--qk-accent-rgb, 212, 163, 89), 0.2); border: 1px solid var(--qk-accent); color: var(--qk-accent); padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 500;">
+          Cliente: <?= e($customerName) ?>
+          <a href="<?= e(qk_list_url($base, ['customer_id' => null])) ?>" style="color: inherit; text-decoration: none; display: inline-flex; align-items: center;"><i class="fa-solid fa-circle-xmark"></i></a>
+        </div>
+      <?php endif; ?>
       <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra">
         <i class="fa-solid fa-magnifying-glass"></i>
       </button>

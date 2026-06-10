@@ -559,9 +559,11 @@ final class SalesQuotesController extends BaseController
         
         if ($cliente_id > 0) {
             $stmtCli = $this->pdo->prepare(
-                "SELECT cf.id, cf.email, cf.telefono, cf.cellulare, dc.condizioni_pagamento, dc.listino_id
+                "SELECT cf.id, cf.email, cf.telefono, cf.cellulare, dc.condizioni_pagamento, dc.listino_id,
+                        l.nome AS listino_nome, l.valuta AS listino_valuta
                    FROM clienti_fornitori cf
               LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
+              LEFT JOIN listini l ON l.id = dc.listino_id
                   WHERE cf.id = ? AND cf.attivo = 1"
             );
             $stmtCli->execute([$cliente_id]);

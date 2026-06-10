@@ -138,6 +138,7 @@ final class SostanzeChimicheController extends BaseController
             }
         }
 
+        require_once APP_ROOT_DIR . '/includes/prodotti.php';
         $schede             = $this->loadSchede($id);
         $prodotti_associati = $this->loadProdottiAssociati($id);
         $h_selezionati      = $this->loadHSelezionati($id);
@@ -145,6 +146,7 @@ final class SostanzeChimicheController extends BaseController
         $pitt_selezionati   = $this->loadPittSelezionati($id);
         $codici_onu         = $this->loadCodiciOnu();
         $clp_data           = $this->loadClpLookup();
+        $categories         = qk_load_categorie($this->pdo);
         $page_title         = 'Sostanza: ' . e($row['nome']);
         $breadcrumbs        = [
             ['label' => 'ADR', 'url' => url('adr')],
@@ -673,7 +675,12 @@ final class SostanzeChimicheController extends BaseController
 
     private function loadSostanza(int $id): ?array
     {
-        $st = $this->pdo->prepare('SELECT * FROM sostanze_chimiche WHERE id = ?');
+        $st = $this->pdo->prepare('
+            SELECT s.*, c.codice_onu, c.nome_descrizione AS codice_onu_desc, c.classe_pericolo AS codice_onu_classe
+              FROM sostanze_chimiche s
+         LEFT JOIN adr_codici_onu c ON c.id = s.codice_onu_id
+             WHERE s.id = ?
+        ');
         $st->execute([$id]);
         $r = $st->fetch(PDO::FETCH_ASSOC);
         return $r ?: null;
@@ -691,7 +698,7 @@ final class SostanzeChimicheController extends BaseController
     private function loadProdottiAssociati(int $id): array
     {
         $st = $this->pdo->prepare(
-            'SELECT p.id, p.sku_interno, p.nome, p.attivo
+            'SELECT p.id, p.sku_interno, p.nome, p.attivo, p.categoria_id
                FROM prodotti p
               WHERE p.sostanza_chimica_id = ?
               ORDER BY p.nome COLLATE NOCASE'
@@ -744,6 +751,72 @@ final class SostanzeChimicheController extends BaseController
         $st = $this->pdo->prepare('SELECT pittogramma_cod FROM sostanze_pittogrammi WHERE sostanza_id = ?');
         $st->execute([$id]);
         return array_column($st->fetchAll(PDO::FETCH_ASSOC), 'pittogramma_cod');
+    }
+
+    public function apiAssociaProdotti(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']);
+            exit;
+        }
+
+        $sostanzaId = (int) post('sostanza_id');
+        $prodottoIds = (array) ($_POST['prodotto_ids'] ?? []);
+
+        if ($sostanzaId <= 0 || empty($prodottoIds)) {
+            echo json_encode(['ok' => false, 'error' => 'Dati mancanti.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+            $stmt = $this->pdo->prepare('UPDATE prodotti SET sostanza_chimica_id = ?, is_adr = 1 WHERE id = ?');
+            foreach ($prodottoIds as $pId) {
+                $stmt->execute([$sostanzaId, (int)$pId]);
+            }
+            $this->pdo->commit();
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    public function apiDisassociaProdotto(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']);
+            exit;
+        }
+
+        $prodottoId = (int) post('prodotto_id');
+        $prodottoIds = (array) ($_POST['prodotto_ids'] ?? []);
+
+        if ($prodottoId > 0) {
+            $prodottoIds[] = $prodottoId;
+        }
+
+        if (empty($prodottoIds)) {
+            echo json_encode(['ok' => false, 'error' => 'Dati mancanti.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+            $stmt = $this->pdo->prepare('UPDATE prodotti SET sostanza_chimica_id = NULL WHERE id = ?');
+            foreach ($prodottoIds as $pId) {
+                $stmt->execute([(int)$pId]);
+            }
+            $this->pdo->commit();
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
     }
 
     public static function lingue(): array { return self::LINGUE; }

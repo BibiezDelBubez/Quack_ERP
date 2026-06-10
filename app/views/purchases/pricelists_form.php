@@ -195,10 +195,10 @@ document.addEventListener('DOMContentLoaded', function () {
       dropdownEl: dropdownEl,
       clearBtn: clearBtn,
       apiUrl: QK_BASE + '/purchases/rfq/api/fornitori',
-      labelKey: 'label',
+      labelKey: 'nome',
       columns: [
-        { key: 'label', label: 'Fornitore' },
-        { key: 'email', label: 'E-mail' }
+        { key: 'nome', label: 'Fornitore' },
+        { key: 'codice', label: 'Codice' }
       ]
     });
 

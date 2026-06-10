@@ -27,6 +27,7 @@ final class ProductsController extends BaseController
         $pages      = (int) ceil($total / $limit);
         $categories = qk_load_categorie($this->pdo);
         $suppliers  = qk_load_fornitori_disponibili($this->pdo);
+        $adr_sostanze = qk_load_adr_sostanze($this->pdo);
 
         $page_title    = 'Prodotti';
         $page_subtitle = 'Catalogo e giacenze magazzino';
@@ -1483,6 +1484,49 @@ final class ProductsController extends BaseController
 
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /**
+     * POST /products/api/batch-associa-adr
+     */
+    public function apiBatchAssociaAdr(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']);
+            exit;
+        }
+
+        $sostanzaId = (int) post('sostanza_id');
+        $prodottoIds = (array) ($_POST['prodotto_ids'] ?? []);
+
+        if (empty($prodottoIds)) {
+            echo json_encode(['ok' => false, 'error' => 'Nessun prodotto selezionato.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+            if ($sostanzaId > 0) {
+                $stmt = $this->pdo->prepare('UPDATE prodotti SET sostanza_chimica_id = ?, is_adr = 1 WHERE id = ?');
+                foreach ($prodottoIds as $pId) {
+                    $stmt->execute([$sostanzaId, (int)$pId]);
+                }
+            } else {
+                // Rimuove l'associazione
+                $stmt = $this->pdo->prepare('UPDATE prodotti SET sostanza_chimica_id = NULL, is_adr = 0 WHERE id = ?');
+                foreach ($prodottoIds as $pId) {
+                    $stmt->execute([(int)$pId]);
+                }
+            }
+            $this->pdo->commit();
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
             echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
         exit;

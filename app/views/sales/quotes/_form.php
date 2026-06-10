@@ -183,12 +183,12 @@ $can_edit = ($stato === 'bozza');
             <div class="qk-form-group flex-grow-1">
               <label class="qk-form-label">Cliente <span class="required">*</span></label>
               <div class="qk-flex-row qk-gap-sm">
-                <div class="qk-ac-wrap flex-grow-1" style="position:relative;">
-                  <input type="text" id="cliente_search" class="qk-form-control <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
+                <div class="qk-m2o-wrap flex-grow-1" style="position:relative;">
+                  <input type="text" id="cliente_search" class="qk-form-control qk-m2o-input <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
                          placeholder="Cerca cliente per nome, ragione sociale, email…"
-                         value="<?= e($v['cliente_label']) ?>" autocomplete="off" style="padding-right: 28px;">
-                  <button type="button" class="qk-ac-clear <?= $v['cliente_id'] ? '' : 'd-none' ?>" id="btn-clear-cliente-inline" title="Rimuovi cliente">&times;</button>
-                  <div class="qk-ac-dropdown" id="ac-clienti-drop"></div>
+                         value="<?= e($v['cliente_label']) ?>" autocomplete="off">
+                  <button type="button" class="qk-m2o-clear <?= $v['cliente_id'] ? '' : 'd-none' ?>" id="btn-clear-cliente-inline" title="Rimuovi cliente">&times;</button>
+                  <div class="qk-m2o-dropdown shadow-sm" id="ac-clienti-drop"></div>
                 </div>
                 <button type="button" class="btn-qk btn-qk-secondary" id="btn-nuovo-cliente"
                         title="Crea nuovo cliente" style="white-space:nowrap">
@@ -216,14 +216,26 @@ $can_edit = ($stato === 'bozza');
 
             <div class="qk-form-group" style="flex: 0 0 200px; min-width: 170px;">
               <label class="qk-form-label">Listino prezzi</label>
-              <select name="listino_id" id="quote-listino-id" class="qk-form-control" style="font-size: 0.85rem;">
-                <option value="">— Nessuno (Prezzi liberi) —</option>
-                <?php foreach ($listini as $lst): ?>
-                  <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>>
-                    <?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)
-                  </option>
-                <?php endforeach; ?>
-              </select>
+              <input type="hidden" name="listino_id" id="quote-listino-id" value="<?= e($v['listino_id'] ?? '') ?>">
+              <div class="qk-m2o-wrap" style="position:relative;">
+                <?php
+                $listinoLabel = '';
+                foreach ($listini as $lst) {
+                    if ((string)($v['listino_id'] ?? '') === (string)$lst['id']) {
+                        $listinoLabel = $lst['nome'] . ' (' . $lst['valuta'] . ')';
+                        break;
+                    }
+                }
+                ?>
+                <input type="text"
+                       class="qk-form-control qk-m2o-input"
+                       id="quote-listino-label"
+                       placeholder="Cerca listino…"
+                       value="<?= e($listinoLabel) ?>"
+                       autocomplete="off">
+                <button type="button" class="qk-m2o-clear <?= empty($v['listino_id']) ? 'd-none' : '' ?>" id="quote-listino-clear">&times;</button>
+                <div class="qk-m2o-dropdown shadow-sm" id="quote-listino-dropdown" style="display:none; position:absolute; z-index:1050; background:var(--qk-card-bg); border:1px solid var(--qk-border); width:100%; max-height:200px; overflow-y:auto;"></div>
+              </div>
             </div>
           </div>
           
@@ -821,7 +833,8 @@ $can_edit = ($stato === 'bozza');
 window.QK_QUOTES_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
   preloadedRighe: <?= json_encode($preloadedRighe ?? []) ?>,
-  quoteStato: <?= json_encode($values['stato'] ?? 'bozza') ?>
+  quoteStato: <?= json_encode($values['stato'] ?? 'bozza') ?>,
+  listini: <?= json_encode(array_map(fn($l) => ['id' => $l['id'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini)) ?>
 };
 </script>
-<script src="<?= url('assets/js/sales-quotes.js') ?>"></script>
+<script src="<?= asset('js/sales-quotes.js') ?>"></script>

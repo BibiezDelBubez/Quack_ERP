@@ -577,7 +577,7 @@ function qk_clienti_list(PDO $pdo, string $search, string $typeFilter, int $limi
     $sql = 'SELECT cf.id, cf.tipo_soggetto, cf.ragione_sociale, cf.nome, cf.cognome,
                    cf.email, cf.telefono, cf.created_at,
                    MAX(i.citta) AS citta,
-                   (SELECT COUNT(*) FROM ordini_clienti oc WHERE oc.cliente_id = cf.id) AS ordini_count
+                   (SELECT COUNT(*) FROM ordini_clienti oc WHERE oc.cliente_id = cf.id AND oc.stato NOT IN (\'completato\', \'annullato\')) AS ordini_count
             FROM clienti_fornitori cf
             ' . $joinAddr . '
             WHERE ' . implode(' AND ', $where) . '

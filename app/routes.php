@@ -91,6 +91,7 @@ return [
     '/products/tags'               => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'tags',             'auth' => true],
     '/products/tags/delete'        => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteTag',          'auth' => true],
     '/products/api/prodotti'       => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'searchProdotti',      'auth' => true],
+    '/products/api/batch-associa-adr' => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'apiBatchAssociaAdr', 'auth' => true],
     '/products/kit/componenti'     => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'listComponentiKit',   'auth' => true],
     '/products/kit/save'           => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'saveComponenteKit',   'auth' => true],
     '/products/kit/delete'         => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteComponenteKit', 'auth' => true],
@@ -184,6 +185,8 @@ return [
     '/adr/sostanze/api/restrizioni'     => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiRestrizioniList',   'auth' => true],
     '/adr/sostanze/api/restrizioni/add' => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiRestrizioniAdd',    'auth' => true],
     '/adr/sostanze/api/restrizioni/remove'=>['type'=> 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiRestrizioniRemove', 'auth' => true],
+    '/adr/sostanze/api/associa-prodotti' => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiAssociaProdotti',  'auth' => true],
+    '/adr/sostanze/api/disassocia-prodotto'=>['type'=> 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiDisassociaProdotto', 'auth' => true],
 
     '/profile'          => ['type' => 'controller', 'controller' => 'ProfileController', 'action' => 'index',  'auth' => true],
     '/users'            => ['type' => 'controller', 'controller' => 'UsersController', 'action' => 'index',   'auth' => true],
