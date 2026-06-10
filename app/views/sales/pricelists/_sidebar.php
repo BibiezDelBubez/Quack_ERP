@@ -21,7 +21,7 @@
   </div>
 
   <div class="qk-card shadow-sm">
-    <div class="qk-card-header d-flex justify-content-between align-items-center" style="padding:.75rem 1rem">
+    <div class="qk-card-header qk-flex-row qk-justify-between" style="padding:.75rem 1rem">
       <span class="qk-card-title" style="font-size:.8rem">
         <i class="fa-solid fa-address-book me-2" style="color:var(--qk-accent)"></i>Clienti assegnati
       </span>
@@ -38,8 +38,8 @@
         <?php if (!empty($clienti_assegnati)): ?>
           <?php foreach ($clienti_assegnati as $cl): ?>
           <a href="<?= url('customers/edit?id=' . $cl['id']) ?>"
-             style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.83rem;
-                    color:var(--qk-accent-text);text-decoration:none;border-bottom:1px solid var(--qk-card-border)">
+             class="qk-flex-row qk-gap-sm"
+             style="padding:.3rem 0;font-size:.83rem;color:var(--qk-accent-text);text-decoration:none;border-bottom:1px solid var(--qk-card-border)">
             <i class="fa-solid fa-user" style="font-size:.72rem;color:var(--qk-text-muted);flex-shrink:0"></i>
             <?= e($cl['nome_cliente']) ?>
           </a>
@@ -217,8 +217,8 @@ document.addEventListener('DOMContentLoaded', function() {
           if (data.clienti_assegnati.length > 0) {
             sidebarClientsList.innerHTML = data.clienti_assegnati.map(cl => `
               <a href="${baseUrl}/customers/edit?id=${cl.id}"
-                 style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.83rem;
-                        color:var(--qk-accent-text);text-decoration:none;border-bottom:1px solid var(--qk-card-border)">
+                 class="qk-flex-row qk-gap-sm"
+                 style="padding:.3rem 0;font-size:.83rem;color:var(--qk-accent-text);text-decoration:none;border-bottom:1px solid var(--qk-card-border)">
                 <i class="fa-solid fa-user" style="font-size:.72rem;color:var(--qk-text-muted);flex-shrink:0"></i>
                 \${escapeHtml(cl.nome_cliente)}
               </a>
@@ -258,3 +258,4 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <?php endif; ?>
 
+                                        

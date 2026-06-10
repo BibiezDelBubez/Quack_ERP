@@ -8,7 +8,7 @@
 <div class="qk-card">
   <div class="qk-table-toolbar">
     <div class="qk-table-toolbar-left">
-      <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
+      <form method="get" class="qk-flex-row qk-gap-sm flex-wrap align-items-center">
         <div class="qk-filter-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" name="q" class="qk-filter-input" placeholder="Cerca nome o email…" value="<?= e($search) ?>"></div>
         <select name="ruolo" class="qk-filter-input" style="width:auto">
           <option value="">Tutti i ruoli</option>

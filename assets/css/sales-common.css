@@ -1,0 +1,151 @@
+/*
+ * sales-common.css — Stili condivisi per preventivi vendita e ordini clienti
+ */
+
+/* Cliente selezionato */
+.qk-cliente-preview { background: var(--qk-accent-muted, rgba(0,100,60,.06));
+                      border: 1px solid var(--qk-border); border-radius: var(--qk-radius-sm);
+                      padding: .65rem 1rem; margin-top: .5rem; display: flex;
+                      align-items: flex-start; gap: .75rem; }
+.qk-cliente-preview .name { font-weight: 700; }
+.qk-cliente-preview .info { font-size: .82rem; color: var(--qk-text-muted); }
+.qk-cliente-preview .btn-clear { margin-left: auto; background: none; border: none;
+                                  cursor: pointer; color: var(--qk-text-muted); padding: .1rem .3rem; }
+
+/* Totali */
+.qk-totali-grid { display: grid; grid-template-columns: 1fr auto; gap: .25rem .75rem;
+                  align-items: center; }
+.qk-totali-grid .lbl { font-size: .88rem; color: var(--qk-text-muted); text-align: right; }
+.qk-totali-grid .val { font-size: .95rem; font-weight: 600; text-align: right; white-space: nowrap; min-width: 110px; }
+.qk-totali-grid .lbl-total { font-size: 1rem; font-weight: 700; color: var(--qk-text-primary); }
+.qk-totali-grid .val-total { font-size: 1.1rem; font-weight: 800; color: var(--qk-accent-text); }
+.qk-totali-sep  { grid-column: 1 / -1; border: none; border-top: 1px solid var(--qk-border); margin: .3rem 0; }
+
+/* Sticky footer actions */
+.qk-form-sticky-actions { position: sticky; bottom: 0; z-index: 100;
+                           background: var(--qk-topbar-bg); border-top: 1px solid var(--qk-border);
+                           padding: .75rem 1.5rem; display: flex; align-items: center;
+                           gap: .75rem; margin: 1.5rem -1.5rem -1.5rem; }
+@media (max-width: 768px) {
+  .qk-form-sticky-actions { flex-wrap: wrap; }
+}
+
+#tbl-righe .col-search, #tbl-righe-ord .col-search { min-width: 180px; width: 22%; }
+#tbl-righe .col-desc, #tbl-righe-ord .col-desc   { min-width: 200px; width: 28%; }
+#tbl-righe .col-conf, #tbl-righe-ord .col-conf   { width: 90px; }
+#tbl-righe .col-qta, #tbl-righe-ord .col-qta    { width: 80px; }
+#tbl-righe .col-um, #tbl-righe-ord .col-um     { width: 60px; }
+#tbl-righe .col-pu, #tbl-righe-ord .col-pu     { width: 100px; }
+#tbl-righe .col-sc, #tbl-righe-ord .col-sc     { width: 65px; }
+#tbl-righe .col-iva, #tbl-righe-ord .col-iva    { width: 60px; }
+#tbl-righe .col-tot, #tbl-righe-ord .col-tot    { width: 100px; }
+#tbl-righe .col-del, #tbl-righe-ord .col-del    { width: 36px; }
+#tbl-righe .col-costo, #tbl-righe-ord .col-costo  { width: 90px; }
+#tbl-righe .col-range { width: 120px; }
+#tbl-righe .col-delta { width: 90px; }
+
+.riga-sku { font-size: .72rem; color: var(--qk-text-muted); font-family: monospace; }
+
+/* Compact the table cells */
+#tbl-righe th, #tbl-righe td, #tbl-righe-ord th, #tbl-righe-ord td {
+  padding: 0.5rem 0.4rem !important;
+  font-size: 0.85rem;
+}
+#tbl-righe th, #tbl-righe-ord th {
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: var(--qk-text-secondary, #4b5563);
+  font-weight: 600;
+  border-bottom: 2px solid var(--qk-border, #e5e7eb) !important;
+}
+
+/* Sleek, borderless-look inputs in the table */
+#tbl-righe .qk-form-control, #tbl-righe-ord .qk-form-control {
+  border: 1px solid var(--qk-border, #d1d5db);
+  background-color: var(--qk-bg-card, #fff);
+  padding: 4px 6px;
+  font-size: 0.82rem;
+  border-radius: var(--qk-radius-sm, 4px);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  height: 31px;
+}
+#tbl-righe .qk-form-control:focus, #tbl-righe-ord .qk-form-control:focus {
+  border-color: var(--qk-accent, #3b82f6);
+  box-shadow: 0 0 0 2px var(--qk-accent-muted, rgba(59, 130, 246, 0.15));
+}
+#tbl-righe textarea.inp-desc, #tbl-righe-ord textarea.inp-desc {
+  min-height: 38px;
+  height: 38px;
+  resize: vertical;
+  line-height: 1.3;
+  padding: 4px 6px;
+  font-size: 0.82rem;
+  overflow-y: auto;
+}
+
+/* Read-only styles: transparent background and no borders */
+#tbl-righe.is-readonly .col-del {
+  display: none !important;
+}
+#tbl-righe.is-readonly .qk-form-control:disabled,
+fieldset[disabled] #tbl-righe.is-readonly .qk-form-control,
+#pane-spedizione-contatti .qk-form-control:disabled,
+fieldset[disabled] #pane-spedizione-contatti .qk-form-control,
+#pane-condizioni-commerciali .qk-form-control:disabled,
+fieldset[disabled] #pane-condizioni-commerciali .qk-form-control,
+#pane-note .qk-form-control:disabled,
+fieldset[disabled] #pane-note .qk-form-control {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: var(--qk-text-primary) !important;
+  cursor: default !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+#tbl-righe.is-readonly textarea.inp-desc:disabled,
+fieldset[disabled] #tbl-righe.is-readonly textarea.inp-desc {
+  resize: none !important;
+  overflow: hidden !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  line-height: 1.4 !important;
+}
+#tbl-righe.is-readonly .col-del,
+#tbl-righe.is-readonly .qk-ac-clear,
+#tbl-righe.is-readonly .price-origin-badge,
+#tbl-righe.is-readonly .col-costo,
+#tbl-righe.is-readonly .col-range,
+#tbl-righe.is-readonly .col-delta {
+  display: none !important;
+}
+
+/* Stili Catalogo Prodotti */
+.qk-card-prod-catalogo {
+  background: var(--qk-card-bg, #fff);
+  border: 1px solid var(--qk-border) !important;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.qk-card-prod-catalogo:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+  border-color: var(--qk-accent) !important;
+}
+.badge-rrp-min {
+  background-color: var(--qk-success-bg) !important;
+  color: var(--qk-success) !important;
+}
+.badge-rrp-max {
+  background-color: var(--qk-accent-light) !important;
+  color: var(--qk-accent) !important;
+}
+.badge-costo {
+  background-color: var(--qk-bg-subtle) !important;
+  color: var(--qk-text-secondary) !important;
+}

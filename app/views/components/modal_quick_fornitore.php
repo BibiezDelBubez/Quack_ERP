@@ -3,7 +3,7 @@
             background:var(--qk-overlay);align-items:center;justify-content:center">
   <div style="background:var(--qk-card-bg);border:1px solid var(--qk-border);
               border-radius:var(--qk-radius-lg);padding:1.5rem;width:100%;max-width:420px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div class="qk-flex-row qk-justify-between mb-3">
       <strong><i class="fa-solid fa-handshake me-2"></i>Nuovo fornitore rapido</strong>
       <button type="button" onclick="document.getElementById('modal-quick-fornitore').style.display='none'"
               style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--qk-text-muted)">&times;</button>
@@ -24,7 +24,7 @@
       <label class="qk-form-label">Partita IVA</label>
       <input type="text" id="qf-partita-iva" class="qk-form-control" placeholder="IT12345678901">
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+    <div class="qk-flex-row qk-justify-end qk-gap-sm mt-3">
       <button type="button" class="btn-qk btn-qk-ghost"
               onclick="document.getElementById('modal-quick-fornitore').style.display='none'">
         Annulla

@@ -14,7 +14,7 @@ $statoClassMap = ['spedita' => 'confirmed', 'consegnata' => 'delivered', 'reso' 
 $sort = $pag['sort']; $dir = $pag['dir'];
 $hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
-<?php include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
+<?php $active_tab = 'shipments'; include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
 
 <div class="qk-card">
   <div class="qk-table-toolbar">
@@ -73,7 +73,15 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
           $cls = $statoClassMap[$s['stato']] ?? 'draft';
         ?>
         <tr>
-          <td class="fw-semibold"><?= e($s['numero_spedizione']) ?></td>
+          <td class="fw-semibold">
+            <?php if (!empty($s['ddt_id'])): ?>
+              <a href="<?= url('sales/shipments/ddt/view?id=' . $s['ddt_id']) ?>" class="qk-link-strong text-decoration-none">
+                <?= e($s['numero_spedizione']) ?>
+              </a>
+            <?php else: ?>
+              <?= e($s['numero_spedizione']) ?>
+            <?php endif; ?>
+          </td>
           <td><?= e(fmt_date($s['data_spedizione'])) ?: '—' ?></td>
           <td><a href="<?= url('sales/orders/edit?id=' . $s['ordine_id']) ?>" class="qk-link-strong"><?= e($s['numero_ordine']) ?></a></td>
           <td><?= e($s['cliente_nome']) ?></td>

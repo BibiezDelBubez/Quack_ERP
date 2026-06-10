@@ -43,7 +43,7 @@ $statoLabel = [
   <?php endif; ?>
 
 <!-- Guidance Box -->
-<div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
+<div class="qk-guidance-box mb-4 p-3 ">
   <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
   <div>
     <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
@@ -62,9 +62,9 @@ $statoLabel = [
 </div>
 
   <!-- Barra Azioni e Stato (Odoo style) -->
-  <div class="d-flex justify-content-between align-items-center mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
+  <div class="qk-flex-row qk-justify-between mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; : wrap; gap: .75rem;">
     <!-- Bottoni Azione -->
-    <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+    <div class="qk-flex-row qk-gap-sm">
       <?php if ($isEdit && $isInValutazione): ?>
         <!-- Accetta ed eventualmente genera ordine -->
         <form method="post" action="<?= url('purchases/quotes/action') ?>" class="d-inline">
@@ -194,12 +194,12 @@ $statoLabel = [
         <div class="qk-form-group">
           <label class="qk-form-label">Allegato Preventivo</label>
           <?php if (!empty($values['allegato_path'])): ?>
-            <div class="mb-2" style="display:flex;align-items:center;gap:.5rem">
+            <div class="mb-2" class="qk-flex-row qk-gap-sm">
               <a href="<?= url(ltrim($values['allegato_path'], '/')) ?>" target="_blank" class="btn-qk btn-qk-ghost text-primary py-1 px-2" style="font-size:.82rem; height:auto; display:inline-flex; align-items:center; gap:.25rem">
                 <i class="fa-solid fa-file-pdf"></i> Apri allegato
               </a>
               <?php if ($canEdit): ?>
-                <label class="d-inline-flex align-items-center gap-1 text-danger cursor-pointer" style="font-size:.82rem; margin:0">
+                <label class="qk-flex-row  text-danger cursor-pointer" style="font-size:.82rem; margin:0">
                   <input type="checkbox" name="rimuovi_allegato" value="1"> Rimuovi
                 </label>
               <?php endif; ?>
@@ -256,7 +256,7 @@ $statoLabel = [
     <!-- Pane: Articoli Offerti -->
     <div class="tab-pane active" id="pane-articoli">
       <div class="qk-card mb-4">
-        <div class="qk-card-header" style="display:flex; justify-content:space-between; align-items:center; width:100%">
+        <div class="qk-card-header" class="qk-flex-row qk-justify-between" style=" width:100%">
           <span class="qk-card-title">
             <i class="fa-solid fa-list me-2"></i>Articoli Offerti
           </span>
@@ -265,28 +265,28 @@ $statoLabel = [
               <i class="fa-solid fa-sliders"></i> Colonne
             </button>
             <div class="qk-dropdown-menu shadow-sm" id="col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.6rem .8rem; min-width:180px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-              <div style="display:flex; flex-direction:column; gap:.5rem;">
-                <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+              <div class="qk-flex-col qk-gap-sm">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                   <input type="checkbox" id="chk-show-sku" style="transform:scale(1.15);" checked>
                   <span>SKU Fornitore</span>
                 </label>
-                <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                   <input type="checkbox" id="chk-show-desc" style="transform:scale(1.15);" checked>
                   <span>Descrizione</span>
                 </label>
-                <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                   <input type="checkbox" id="chk-show-sconto" style="transform:scale(1.15);">
                   <span>Sconto %</span>
                 </label>
-                <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                   <input type="checkbox" id="chk-show-iva" style="transform:scale(1.15);" checked>
                   <span>IVA %</span>
                 </label>
-                <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                   <input type="checkbox" id="chk-show-consegna" style="transform:scale(1.15);">
                   <span>Data Consegna</span>
                 </label>
-                <label style="display:flex; align-items:center; gap:.6rem; font-size:.85rem; font-weight:500; cursor:pointer; color:var(--qk-text-primary); margin:0;">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                   <input type="checkbox" id="chk-show-note" style="transform:scale(1.15);" checked>
                   <span>Note</span>
                 </label>
@@ -492,7 +492,7 @@ $statoLabel = [
 
             <!-- Dettagli Referente sul Documento -->
             <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
-              <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="qk-flex-row qk-justify-between mb-3">
                 <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
                   <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
                   <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
@@ -611,7 +611,7 @@ $statoLabel = [
   </div> <!-- Fine tab-content -->
 
   <?php if ($canEdit): ?>
-  <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-bottom:2rem">
+  <div class="qk-flex-row qk-justify-end qk-gap-sm" style="margin-bottom:2rem">
     <a href="<?= url('purchases/quotes') ?>" class="btn-qk btn-qk-ghost">Annulla</a>
     <button type="submit" class="btn-qk btn-qk-primary">
       <i class="fa-solid fa-floppy-disk"></i> Salva Preventivo
@@ -870,7 +870,7 @@ $statoLabel = [
       badge.style.display = 'block';
       const sign = diff > 0 ? '+' : '';
       const pct = ((diff / requested) * 100).toFixed(0);
-      badge.innerHTML = `<span style="color:#d97706;font-weight:600"><i class="fa-solid fa-triangle-exclamation"></i> Scostamento: ${sign}${diff} (${sign}${pct}%)</span>`;
+      badge.innerHTML = `<span style="color:var(--qk-warning);font-weight:600"><i class="fa-solid fa-triangle-exclamation"></i> Scostamento: ${sign}${diff} (${sign}${pct}%)</span>`;
     }
   }
 
@@ -1317,7 +1317,7 @@ $statoLabel = [
             background:var(--qk-overlay);align-items:center;justify-content:center">
   <div style="background:var(--qk-card-bg);border:1px solid var(--qk-border);
               border-radius:var(--qk-radius-lg);padding:1.5rem;width:100%;max-width:480px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div class="qk-flex-row qk-justify-between" style="margin-bottom:1rem">
       <strong style="display:inline-flex;align-items:center;gap:.5rem"><i class="fa-solid fa-ban text-danger"></i> Seleziona Motivo Rifiuto</strong>
       <button type="button" onclick="document.getElementById('modal-rifiuta-offerta').style.display='none'"
               style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--qk-text-muted)">&times;</button>
@@ -1345,7 +1345,7 @@ $statoLabel = [
         <input type="text" name="motivo_rifiuto_altro" id="motivo_rifiuto_altro" class="qk-form-control" placeholder="Es. Caratteristiche chimiche non conformi">
       </div>
       
-      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.5rem">
+      <div class="qk-flex-row qk-justify-end qk-gap-sm" style="margin-top:1.5rem">
         <button type="button" class="btn-qk btn-qk-ghost" onclick="document.getElementById('modal-rifiuta-offerta').style.display='none'">
           Annulla
         </button>

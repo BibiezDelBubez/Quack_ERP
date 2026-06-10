@@ -36,6 +36,7 @@ if (!defined('QK_ERROR_LOG_FILE'))          define('QK_ERROR_LOG_FILE',         
 if (!defined('QK_ERROR_MAIL_PROVIDER'))     define('QK_ERROR_MAIL_PROVIDER',     'smtp');
 if (!defined('QK_ERROR_THROTTLE_MINUTES')) define('QK_ERROR_THROTTLE_MINUTES',  30);
 if (!defined('QK_ERROR_THROTTLE_FILE'))    define('QK_ERROR_THROTTLE_FILE',     APP_ROOT_DIR . '/logs/.throttle.json');
+if (!defined('QK_ERROR_QUEUE_FILE'))       define('QK_ERROR_QUEUE_FILE',        APP_ROOT_DIR . '/logs/.mail_queue.json');
 
 /* ── Tipi di errore PHP → stringa leggibile ──────────────────────────────── */
 function _qk_err_type_label(int $type): string {
@@ -119,26 +120,95 @@ function _qk_err_build_md(string $level, string $type, string $message, string $
 MD;
 }
 
-/* ── Rate limiting per le mail ───────────────────────────────────────────── */
-function _qk_err_should_mail(string $hash): bool
-{
-    if (QK_ERROR_THROTTLE_MINUTES <= 0) return true;
-    $throttleFile = QK_ERROR_THROTTLE_FILE;
-    $data = [];
-    if (file_exists($throttleFile)) {
-        $data = json_decode(file_get_contents($throttleFile), true) ?? [];
-    }
-    $now     = time();
-    $cutoff  = $now - (QK_ERROR_THROTTLE_MINUTES * 60);
-    // Pulisce hash vecchi
-    $data = array_filter($data, fn($ts) => $ts > $cutoff);
+/* ── Coda errori pendenti (per digest mail) ──────────────────────────────── */
 
-    if (isset($data[$hash]) && $data[$hash] > $cutoff) {
-        return false; // già mandata di recente
+/**
+ * Aggiunge un errore alla coda pendente per la prossima mail digest.
+ * Deduplica: se lo stesso hash è già in coda, incrementa solo il contatore.
+ */
+function _qk_err_queue_push(string $hash, string $subject, string $mdSnippet): void
+{
+    $queueFile = QK_ERROR_QUEUE_FILE;
+    $queue = [];
+    if (file_exists($queueFile)) {
+        $queue = json_decode(file_get_contents($queueFile), true) ?? [];
     }
-    $data[$hash] = $now;
-    @file_put_contents($throttleFile, json_encode($data), LOCK_EX);
-    return true;
+    if (isset($queue[$hash])) {
+        $queue[$hash]['count']++;
+        $queue[$hash]['last_ts'] = date('Y-m-d H:i:s');
+    } else {
+        $queue[$hash] = [
+            'subject'  => $subject,
+            'snippet'  => $mdSnippet,
+            'count'    => 1,
+            'first_ts' => date('Y-m-d H:i:s'),
+            'last_ts'  => date('Y-m-d H:i:s'),
+        ];
+    }
+    @file_put_contents($queueFile, json_encode($queue, JSON_PRETTY_PRINT), LOCK_EX);
+}
+
+/**
+ * Controlla se è il momento di spedire il digest.
+ * Usa un singolo timestamp "ultima mail inviata" — non per-hash.
+ * Restituisce true se la coda non è vuota e il throttle è scaduto.
+ */
+function _qk_err_should_send_digest(): bool
+{
+    $queueFile   = QK_ERROR_QUEUE_FILE;
+    $throttleFile = QK_ERROR_THROTTLE_FILE;
+
+    // Niente da mandare
+    if (!file_exists($queueFile)) return false;
+    $queue = json_decode(file_get_contents($queueFile), true) ?? [];
+    if (empty($queue)) return false;
+
+    if (QK_ERROR_THROTTLE_MINUTES <= 0) return true;
+
+    $lastSent = 0;
+    if (file_exists($throttleFile)) {
+        $data     = json_decode(file_get_contents($throttleFile), true) ?? [];
+        $lastSent = (int)($data['last_sent'] ?? 0);
+    }
+    return (time() - $lastSent) >= (QK_ERROR_THROTTLE_MINUTES * 60);
+}
+
+/**
+ * Spedisce il digest con tutti gli errori in coda, poi svuota la coda
+ * e aggiorna il timestamp dell'ultima mail inviata.
+ */
+function _qk_err_flush_digest(): void
+{
+    $queueFile    = QK_ERROR_QUEUE_FILE;
+    $throttleFile = QK_ERROR_THROTTLE_FILE;
+
+    if (!file_exists($queueFile)) return;
+    $queue = json_decode(file_get_contents($queueFile), true) ?? [];
+    if (empty($queue)) return;
+
+    $count  = count($queue);
+    $period = QK_ERROR_THROTTLE_MINUTES;
+    $subject = '[' . APP_NAME . '] Riepilogo errori: ' . $count . ' tipo' . ($count !== 1 ? 'logia distinta' : 'logia') . ' negli ultimi ' . $period . ' min';
+
+    $body  = "# Quack ERP — Riepilogo Errori\n\n";
+    $body .= "Periodo: ultimi **{$period} minuti** — " . date('d/m/Y H:i:s') . "\n";
+    $body .= "Tipologie distinte: **{$count}**\n\n---\n";
+
+    foreach ($queue as $hash => $item) {
+        $times = $item['count'] > 1
+            ? " _(ripetuto **{$item['count']}x**, ultimo: {$item['last_ts']})_"
+            : " _(prima occorrenza: {$item['first_ts']})_";
+        $body .= "\n### " . $item['subject'] . $times . "\n\n";
+        $body .= $item['snippet'] . "\n";
+    }
+
+    _qk_err_send_mail($subject, $body);
+
+    // Svuota la coda
+    @file_put_contents($queueFile, json_encode([]), LOCK_EX);
+
+    // Aggiorna timestamp ultima mail
+    @file_put_contents($throttleFile, json_encode(['last_sent' => time()]), LOCK_EX);
 }
 
 /* ── Append sul file MD ──────────────────────────────────────────────────── */
@@ -163,7 +233,9 @@ function _qk_err_send_mail(string $subject, string $mdBody): void
 
     $provider = QK_ERROR_MAIL_PROVIDER;
 
-    if ($provider === 'resend') {
+    if ($provider === 'brevo') {
+        _qk_err_send_brevo($subject, $mdBody);
+    } elseif ($provider === 'resend') {
         _qk_err_send_resend($subject, $mdBody);
     } elseif ($provider === 'mailgun') {
         _qk_err_send_mailgun($subject, $mdBody);
@@ -271,6 +343,34 @@ function _qk_err_send_smtp_raw(string $subject, string $body): void
     }
 }
 
+function _qk_err_send_brevo(string $subject, string $body): void
+{
+    if (!defined('QK_BREVO_API_KEY')) return;
+    $payload = json_encode([
+        'sender'     => ['email' => QK_ERROR_EMAIL_FROM],
+        'to'         => [['email' => QK_ERROR_EMAIL_TO]],
+        'subject'    => $subject,
+        'textContent' => $body,
+    ]);
+    $ch = curl_init('https://api.brevo.com/v3/smtp/email');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_HTTPHEADER     => [
+            'api-key: ' . QK_BREVO_API_KEY,
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ],
+    ]);
+    $result = curl_exec($ch);
+    if (curl_errno($ch)) {
+        error_log('[Quack ErrorReporter] Brevo API fail: ' . curl_error($ch));
+    }
+    curl_close($ch);
+}
+
 function _qk_err_send_resend(string $subject, string $body): void
 {
     if (!defined('QK_RESEND_API_KEY')) return;
@@ -326,15 +426,24 @@ function _qk_handle_error(string $level, string $type, string $message, string $
 {
     if (!QK_ERROR_REPORT_ENABLED) return;
 
-    $md   = _qk_err_build_md($level, $type, $message, $file, $line, $trace, $context);
-    $hash = md5($type . $file . $line . $message);
+    $md      = _qk_err_build_md($level, $type, $message, $file, $line, $trace, $context);
+    $hash    = md5($type . $file . $line . $message);
+    $relFile = basename($file);
+    $subject = $level . ': ' . $type . ' in ' . $relFile . ':' . $line;
 
+    // 1. Scrive sempre nel log MD
     _qk_err_log_md($md);
 
-    if (_qk_err_should_mail($hash)) {
-        $relFile = basename($file);
-        $subject = '[' . APP_NAME . '] ' . $level . ': ' . $type . ' in ' . $relFile . ':' . $line;
-        _qk_err_send_mail($subject, strip_tags($md));
+    // 2. Aggiunge alla coda mail (con deduplicazione per hash)
+    // Snippet compatto per il digest: solo messaggio + file:riga
+    $snippet = "**Messaggio:** " . $message . "\n"
+             . "**File:** `" . str_replace(APP_ROOT_DIR, '', $file) . "` riga **{$line}**\n"
+             . "**URL:** `" . ($_SERVER['REQUEST_METHOD'] ?? 'CLI') . ' ' . ($_SERVER['REQUEST_URI'] ?? 'n/a') . "`\n";
+    _qk_err_queue_push($hash, $subject, $snippet);
+
+    // 3. Se è scaduto il throttle globale, spedisce il digest con tutti gli errori in coda
+    if (_qk_err_should_send_digest()) {
+        _qk_err_flush_digest();
     }
 }
 

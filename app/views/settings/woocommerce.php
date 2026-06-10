@@ -34,7 +34,7 @@
       <div class="qk-card mb-3">
         <div class="qk-card-header">
           <span class="qk-card-title">
-            <i class="fa-brands fa-wordpress me-2" style="color:#3858e9"></i>Credenziali API WooCommerce
+            <i class="fa-brands fa-wordpress me-2" style="color:var(--qk-accent)"></i>Credenziali API WooCommerce
           </span>
         </div>
         <div class="qk-card-body">
@@ -83,7 +83,7 @@
           </div>
 
         </div>
-        <div class="qk-card-footer" style="display:flex;align-items:center;gap:.75rem">
+        <div class="qk-card-footer qk-flex-row qk-gap-md">
           <button type="button" id="btn-test-connection" class="btn-qk btn-qk-secondary">
             <i class="fa-solid fa-plug me-1"></i>Testa connessione
           </button>
@@ -101,7 +101,7 @@
         <div class="qk-card-body">
 
           <div class="qk-form-group">
-            <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+            <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
               <input type="hidden" name="wc_sync_enabled" value="0">
               <input type="checkbox" name="wc_sync_enabled" value="1"
                      id="wc-sync-enabled" <?= ($values['wc_sync_enabled'] ?? '0') === '1' ? 'checked' : '' ?>
@@ -115,15 +115,15 @@
 
             <div class="qk-form-group">
               <label class="qk-form-label">Cosa sincronizzare</label>
-              <div style="display:flex;flex-direction:column;gap:.5rem">
-                <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+              <div class="qk-flex-col qk-gap-sm">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                   <input type="hidden" name="wc_sync_products" value="0">
                   <input type="checkbox" name="wc_sync_products" value="1"
                          <?= ($values['wc_sync_products'] ?? '0') === '1' ? 'checked' : '' ?>
                          style="width:1.1rem;height:1.1rem;cursor:pointer">
                   <span>Prodotti (nome, prezzo, stock, immagine)</span>
                 </label>
-                <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                   <input type="hidden" name="wc_sync_orders" value="0">
                   <input type="checkbox" name="wc_sync_orders" value="1"
                          <?= ($values['wc_sync_orders'] ?? '0') === '1' ? 'checked' : '' ?>
@@ -135,13 +135,13 @@
 
             <div class="qk-form-group mb-0">
               <label class="qk-form-label">Direzione sincronizzazione prodotti</label>
-              <div style="display:flex;flex-direction:column;gap:.4rem">
+              <div class="qk-flex-col qk-gap-xs">
                 <?php foreach ([
                   'push' => ['Quack → WooCommerce', 'I prodotti vengono gestiti in Quack e pubblicati su WooCommerce'],
                   'pull' => ['WooCommerce → Quack', 'I prodotti vengono importati da WooCommerce in Quack'],
                   'both' => ['Bidirezionale', 'Sync in entrambe le direzioni (Quack è la fonte di verità)'],
                 ] as $val => [$label, $hint]): ?>
-                <label class="d-flex align-items-start gap-2" style="font-size:.875rem;cursor:pointer">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                   <input type="radio" name="wc_sync_direction" value="<?= $val ?>"
                          <?= ($values['wc_sync_direction'] ?? 'both') === $val ? 'checked' : '' ?>
                          style="margin-top:.15rem;flex-shrink:0">
@@ -191,7 +191,7 @@
       <div class="qk-status-panel-hd">Stato integrazione</div>
       <div class="qk-status-panel-body">
 
-        <div style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem">
+        <div class="qk-flex-col qk-gap-sm mb-3">
 
           <?php
           $hasUrl    = !empty($values['wc_store_url']);
@@ -200,15 +200,15 @@
           $syncOn    = ($values['wc_sync_enabled'] ?? '0') === '1';
           ?>
 
-          <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+          <div class="qk-flex-row qk-gap-sm" style="font-size:.82rem">
             <i class="fa-solid fa-circle <?= $hasUrl ? 'text-success' : '' ?>" style="font-size:.55rem;color:<?= $hasUrl ? 'var(--qk-success)' : 'var(--qk-text-muted)' ?>"></i>
             <span style="color:var(--qk-text-secondary)">URL negozio <?= $hasUrl ? 'configurato' : 'non configurato' ?></span>
           </div>
-          <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+          <div class="qk-flex-row qk-gap-sm" style="font-size:.82rem">
             <i class="fa-solid fa-circle" style="font-size:.55rem;color:<?= ($hasCk && $hasCs) ? 'var(--qk-success)' : 'var(--qk-text-muted)' ?>"></i>
             <span style="color:var(--qk-text-secondary)">Chiavi API <?= ($hasCk && $hasCs) ? 'configurate' : 'non configurate' ?></span>
           </div>
-          <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+          <div class="qk-flex-row qk-gap-sm" style="font-size:.82rem">
             <i class="fa-solid fa-circle" style="font-size:.55rem;color:<?= $syncOn ? 'var(--qk-success)' : 'var(--qk-text-muted)' ?>"></i>
             <span style="color:var(--qk-text-secondary)">Sync automatica <?= $syncOn ? 'attiva' : 'disattivata' ?></span>
           </div>
@@ -288,3 +288,4 @@ document.addEventListener('DOMContentLoaded', function () {
 
 });
 </script>
+                                                                                                       

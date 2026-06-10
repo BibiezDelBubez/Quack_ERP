@@ -5,17 +5,15 @@
  */
 ?>
 
-<!-- Guidance box -->
-<div class="qk-guidance-box mb-4 p-3 border-start border-4 rounded d-flex align-items-start gap-3"
-     style="background:var(--qk-bg-subtle);border-color:var(--qk-accent)!important">
-  <div class="fs-4" style="color:var(--qk-accent);flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
-  <div style="font-size:.875rem">
-    <p class="fw-semibold mb-1" style="color:var(--qk-text-primary)">Regola dei 1000 punti (ADR 1.1.3.6)</p>
-    <p class="mb-1" style="color:var(--qk-text-secondary)">
+<div class="qk-guidance-box mb-4 p-3">
+  <div class="fs-4 text-primary" style="flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+  <div>
+    <h6 class="mb-1 fw-bold text-primary">Regola dei 1000 punti (ADR 1.1.3.6)</h6>
+    <p class="mb-1 text-muted" style="font-size:0.875rem">
       Una spedizione è <strong>esente dal regime ADR completo</strong> se la somma dei punti di tutte le merci pericolose a bordo è inferiore a 1000.
       I punti di ogni sostanza si calcolano come: <strong>quantità (kg o L) × moltiplicatore della categoria di trasporto</strong>.
     </p>
-    <p class="mb-0" style="color:var(--qk-text-muted)">
+    <p class="mb-0 text-muted" style="font-size:.85rem">
       Categoria 1 → ×50 &nbsp;|&nbsp; Categoria 2 → ×3 &nbsp;|&nbsp; Categoria 3 → ×1 &nbsp;|&nbsp; Categoria 4 → ×0 (non conta)
       &nbsp;|&nbsp; <span style="color:var(--qk-danger)">Categoria 0 → esenzione <em>mai</em> applicabile</span>
     </p>

@@ -45,7 +45,12 @@ return [
     '/sales/orders/create'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'create',   'auth' => true],
     '/sales/orders/edit'         => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'edit',     'auth' => true],
     '/sales/orders/action'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'action',   'auth' => true],
-    '/sales/orders/api/lotti-disponibili' => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiLottiDisponibili', 'auth' => true],
+    '/sales/orders/api/lotti-disponibili'  => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiLottiDisponibili',  'auth' => true],
+    '/sales/orders/api/clienti'            => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiClienti',            'auth' => true],
+    '/sales/orders/api/prodotti'           => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiProdotti',           'auth' => true],
+    '/sales/orders/api/cliente-dettagli'   => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiClienteDettagli',    'auth' => true],
+    '/sales/orders/api/crea-cliente'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiCreaCliente',        'auth' => true],
+    '/sales/orders/api/crea-prodotto'      => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiCreaProdotto',       'auth' => true],
 
     // ─── Vendite — Spedizioni ──────────────────────────────────────────────
     '/sales/shipments'            => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'index',       'auth' => true],

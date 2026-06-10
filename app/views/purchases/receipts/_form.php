@@ -28,8 +28,8 @@ $isBozza = $rc['stato'] === 'bozza';
 <?php unset($_SESSION['flash_error']); endif; ?>
 
 <!-- StatusBar/Actions -->
-<div class="qk-statusbar d-flex justify-content-between align-items-center mb-4 p-2 bg-light border rounded">
-  <div class="qk-statusbar-buttons d-flex gap-2">
+<div class="qk-statusbar qk-flex-row qk-justify-between mb-4" style="padding:.5rem .75rem;background:var(--qk-table-head-bg);border:1px solid var(--qk-card-border);border-radius:var(--qk-radius)">
+  <div class="qk-statusbar-buttons qk-flex-row qk-gap-sm">
     <a href="<?= url('purchases/receipts') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
       <i class="fa-solid fa-arrow-left me-1"></i> Lista Ricezioni
     </a>
@@ -108,19 +108,15 @@ $isBozza = $rc['stato'] === 'bozza';
                 <strong><?= e($r['sku_interno']) ?></strong> - <?= e($r['prodotto_nome']) ?>
                 
                 <?php if ($r['traccia_lotti'] == 1 && $isBozza): ?>
-                  <div class="qk-card mt-2 p-2 bg-light border-dashed" style="margin:0; font-size:0.82rem">
+                  <div class="qk-card mt-2 p-2" style="margin:0; font-size:0.82rem">
                     <strong class="text-warning"><i class="fa-solid fa-triangle-exclamation"></i> Questo prodotto richiede la tracciabilità per lotti.</strong>
                     <div class="mt-2">
                       <label class="d-block mb-1">Seleziona Lotto:</label>
                       <select name="riga_lotto_id[]" class="qk-form-control mb-2 select-lotto" onchange="toggleNuovoLotto(this, <?= $i ?>)">
                         <option value="0">- Crea un NUOVO lotto -</option>
-                        <?php
-                          $stLotti = $this->pdo->prepare('SELECT id, codice_lotto_interno, data_scadenza FROM lotti WHERE prodotto_id = ?');
-                          $stLotti->execute([(int)$r['prodotto_id']]);
-                          foreach ($stLotti->fetchAll(PDO::FETCH_ASSOC) as $lot):
-                        ?>
+                        <?php if (!empty($r['lotti'])): foreach ($r['lotti'] as $lot): ?>
                           <option value="<?= $lot['id'] ?>"><?= e($lot['codice_lotto_interno']) ?> (Scad: <?= e($lot['data_scadenza'] ?? 'N/D') ?>)</option>
-                        <?php endforeach; ?>
+                        <?php endforeach; endif; ?>
                       </select>
                     </div>
 
@@ -173,7 +169,7 @@ $isBozza = $rc['stato'] === 'bozza';
   </div>
 
   <?php if ($isBozza): ?>
-    <div class="d-flex justify-content-between align-items-center mb-5">
+    <div class="qk-flex-row qk-justify-between mb-5">
       <span class="qk-text-muted small"><i class="fa-solid fa-circle-info"></i> Nota: La conferma della ricezione aggiornerà immediatamente le giacenze fisiche in magazzino.</span>
       <button type="submit" class="btn-qk btn-qk-success px-4 fw-bold">
         <i class="fa-solid fa-circle-check me-1"></i> Conferma Ricezione e Carica Magazzino

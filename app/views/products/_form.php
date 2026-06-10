@@ -202,7 +202,7 @@ $kit_componenti = $kit_componenti ?? [];
                 <!-- Tipo prodotto -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">Tipo prodotto <span class="required">*</span></label>
-                  <div class="d-flex gap-2 flex-wrap mt-1">
+                  <div class="qk-flex-row qk-gap-sm flex-wrap mt-1">
                     <label class="qk-radio-card <?= $v['tipo'] === 'semplice' ? 'is-selected' : '' ?>">
                       <input type="radio" name="tipo" value="semplice"
                              <?= $v['tipo'] === 'semplice' ? 'checked' : '' ?>>
@@ -220,7 +220,7 @@ $kit_componenti = $kit_componenti ?? [];
                 <div class="qk-form-group">
                   <label class="qk-form-label">Stato visibilità</label>
                   <div class="mt-2">
-                    <label class="d-flex align-items-center gap-2" style="font-size:.875rem; cursor:pointer; font-weight:600;">
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
                       <input type="checkbox" name="attivo" value="1" <?= ($v['attivo'] ?? '1') === '1' ? 'checked' : '' ?>>
                       Prodotto attivo
                     </label>
@@ -305,7 +305,7 @@ $kit_componenti = $kit_componenti ?? [];
                 <div class="qk-form-group">
                   <label class="qk-form-label">Tracciabilità</label>
                   <div class="mt-2">
-                    <label class="d-flex align-items-center gap-2" style="font-size:.875rem; cursor:pointer; font-weight:600;">
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
                       <input type="checkbox" name="traccia_lotti" value="1"
                              <?= ($v['traccia_lotti'] ?? '1') === '1' ? 'checked' : '' ?>>
                       Traccia lotti
@@ -511,7 +511,7 @@ $kit_componenti = $kit_componenti ?? [];
           </div>
           <?php else: ?>
           <div class="qk-card mt-3">
-            <div class="qk-card-header d-flex justify-content-between align-items-center" style="border-bottom:1px solid var(--qk-border); padding:.75rem 1.25rem;">
+            <div class="qk-card-header qk-flex-row qk-justify-between" style="border-bottom:1px solid var(--qk-border); padding:.75rem 1.25rem;">
               <div>
                 <span class="qk-card-title">Listini e regole di vendita</span>
                 <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted);">Regole di prezzo e sconti configurati per questo prodotto in tutti i listini</span>
@@ -957,7 +957,7 @@ $kit_componenti = $kit_componenti ?? [];
                     </td>
                     <td><?= $kc['note'] ? e($kc['note']) : '<span class="qk-text-muted">—</span>' ?></td>
                     <td class="col-actions">
-                      <div class="d-flex gap-1 justify-content-end">
+                      <div class="qk-flex-row qk-gap-xs justify-content-end">
                         <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-edit-componente"
                                 data-componente-id="<?= (int)$kc['componente_id'] ?>"
                                 data-nome="<?= e($kc['nome']) ?>"
@@ -1030,7 +1030,7 @@ $kit_componenti = $kit_componenti ?? [];
                       </option>
                       <?php endforeach; ?>
                     </select>
-                    <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
+                    <div class="mt-1 qk-flex-row qk-gap-sm flex-wrap">
                       <a href="<?= url('adr/sostanze/create') ?>" target="_blank" class="small qk-text-accent text-decoration-none">
                         <i class="fa-solid fa-plus me-1"></i>Crea nuova sostanza chimica
                       </a>
@@ -1080,17 +1080,18 @@ $kit_componenti = $kit_componenti ?? [];
           </div>
 
           <!-- Pannello informativo -->
-          <div class="qk-guidance-box mt-3 mb-0 p-3 border-start border-4 rounded d-flex align-items-start gap-3"
-               style="background:var(--qk-bg-subtle);border-color:var(--qk-accent)!important">
-            <div class="fs-5" style="color:var(--qk-accent);flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
-            <div style="font-size:.875rem;color:var(--qk-text-secondary)">
-              <strong style="color:var(--qk-text-primary)">Le restrizioni vanno gestite sulla sostanza chimica, non qui.</strong><br>
-              Se questo prodotto contiene una sostanza soggetta a limiti di vendita (precursori di esplosivi, stupefacenti, biocidi ecc.),
-              vai sulla <a href="<?= !empty($v['sostanza_chimica_id']) ? url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) : url('adr/sostanze') ?>"
-              target="_blank" class="qk-text-accent fw-semibold text-decoration-none">scheda sostanza chimica</a> e aggiungile lì —
-              si applicano automaticamente a tutti i prodotti che usano quella sostanza.<br>
-              <span class="qk-text-muted">Usa la sezione qui sotto solo per restrizioni specifiche di <em>questo</em> prodotto
-              che non dipendono dalla sostanza (es. prodotto biocida non ADR, fitofarmaco, ecc.).</span>
+          <div class="qk-guidance-box mt-3 mb-0 p-3">
+            <div class="fs-4 text-primary" style="flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+            <div>
+              <h6 class="mb-1 fw-bold text-primary">Le restrizioni vanno gestite sulla sostanza chimica, non qui</h6>
+              <p class="mb-0 text-muted" style="font-size:0.875rem">
+                Se questo prodotto contiene una sostanza soggetta a limiti di vendita (precursori di esplosivi, stupefacenti, biocidi ecc.),
+                vai sulla <a href="<?= !empty($v['sostanza_chimica_id']) ? url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) : url('adr/sostanze') ?>"
+                target="_blank" class="qk-text-accent fw-semibold text-decoration-none">scheda sostanza chimica</a> e aggiungile lì —
+                si applicano automaticamente a tutti i prodotti che usano quella sostanza.<br>
+                <span style="font-size:.85rem; display:block; margin-top:0.4rem">Usa la sezione qui sotto solo per restrizioni specifiche di <em>questo</em> prodotto
+                che non dipendono dalla sostanza (es. prodotto biocida non ADR, fitofarmaco, ecc.).</span>
+              </p>
             </div>
           </div>
 
@@ -1398,7 +1399,7 @@ $kit_componenti = $kit_componenti ?? [];
                style="color:var(--qk-text-muted)"></p>
           </div>
 
-          <div class="d-flex gap-2 mt-2 flex-wrap">
+          <div class="qk-flex-row qk-gap-sm mt-2 flex-wrap">
             <button type="button" id="btn-choose-foto" class="btn-qk btn-qk-secondary btn-qk-sm">
               <i class="fa-solid fa-upload me-1"></i>
               <?= !empty($immagini) ? 'Cambia foto' : 'Scegli foto' ?>

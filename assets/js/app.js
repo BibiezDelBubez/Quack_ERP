@@ -15,6 +15,7 @@
     cleanModalState();
     initSidebar();
     initScrollTitle();
+    initRadioOptions();
     /* ── Rimuovi blocco transizioni dopo il primo frame renderizzato ─────── */
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
@@ -27,6 +28,7 @@
     initAlertAutoDismiss();
     initDropdownActionLinks();
     initFormValidation();
+    initFormDirtyTracker();
   });
 
   /* Scatta anche su navigazione back/forward dalla cache del browser */
@@ -152,6 +154,18 @@
      Mostra il titolo nella topbar solo quando il page header h1 è uscito
      dal viewport (come Gmail con il titolo dell'email).
   ──────────────────────────────────────────────────────────────────────── */
+  /* ── Radio option cards: aggiorna is-selected al click ───────────────── */
+  function initRadioOptions() {
+    document.querySelectorAll('.qk-radio-option input[type=radio]').forEach(function(radio) {
+      radio.addEventListener('change', function() {
+        var name = this.name;
+        document.querySelectorAll('.qk-radio-option input[name="' + name + '"]').forEach(function(r) {
+          r.closest('.qk-radio-option').classList.toggle('is-selected', r.checked);
+        });
+      });
+    });
+  }
+
   function initScrollTitle() {
     const html   = document.documentElement;
     const header = document.querySelector('.qk-page-header');
@@ -183,12 +197,7 @@
     // QK_THEMES e QK_THEME_LEGACY sono iniettati da header.php (config.php).
     // Non modificare qui: aggiungere temi e alias SOLO in config.php.
     const allowed   = (typeof QK_THEMES       !== 'undefined') ? QK_THEMES       : [];
-    const legacyMap = (typeof QK_THEME_LEGACY !== 'undefined') ? QK_THEME_LEGACY : {};
     let saved = localStorage.getItem(LS_THEME);
-    if (saved && legacyMap[saved]) {
-      saved = legacyMap[saved];
-      localStorage.setItem(LS_THEME, saved);
-    }
     if (saved && allowed.indexOf(saved) === -1) {
       localStorage.removeItem(LS_THEME);
       saved = null;
@@ -295,6 +304,59 @@
         if (btn) {
           btn.disabled = true;
           btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Salvataggio…';
+        }
+      });
+    });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────
+     FORM DIRTY TRACKER: warn users of unsaved changes before leaving/printing
+     ──────────────────────────────────────────────────────────────────────── */
+  function initFormDirtyTracker() {
+    const warning = document.getElementById('dirty-warn-badge');
+    if (!warning) return;
+
+    const form = warning.closest('form') || document.getElementById('form-offerta') || document.getElementById('form-rfq') || document.querySelector('form');
+    if (!form) return;
+
+    let isDirty = false;
+
+    function markDirty() {
+      if (!isDirty) {
+        isDirty = true;
+        warning.classList.add('show');
+      }
+    }
+
+    form.addEventListener('input', markDirty);
+    form.addEventListener('change', markDirty);
+
+    form.addEventListener('click', function(e) {
+      if (e.target.closest('.btn-elimina-riga') || e.target.closest('[data-action="delete"]') || e.target.closest('.qk-btn-row-delete')) {
+        markDirty();
+      }
+    });
+
+    window.addEventListener('beforeunload', function (e) {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = 'Ci sono modifiche non salvate in questa pagina.';
+        return e.returnValue;
+      }
+    });
+
+    form.addEventListener('submit', function () {
+      isDirty = false;
+    });
+
+    const docLinks = document.querySelectorAll('a[href*="/pdf"], a[href*="/docx"]');
+    docLinks.forEach(function (link) {
+      link.addEventListener('click', function (e) {
+        if (isDirty) {
+          const confirmGen = confirm("Attenzione:\nHai modifiche non salvate nel form. Il file PDF/Word generato conterrà soltanto i dati dell'ultimo salvataggio effettuato.\n\nVuoi procedere comunque col download?");
+          if (!confirmGen) {
+            e.preventDefault();
+          }
         }
       });
     });

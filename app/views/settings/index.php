@@ -55,7 +55,7 @@
 
   <!-- Integrazioni & WooCommerce -->
   <div class="qk-card qk-settings-card">
-    <div class="qk-settings-card-icon"><i class="fa-brands fa-wordpress" style="color:#3858e9"></i></div>
+    <div class="qk-settings-card-icon"><i class="fa-brands fa-wordpress" style="color:var(--qk-accent)"></i></div>
     <div class="qk-settings-card-body">
       <h3>Integrazioni & WooCommerce</h3>
       <p>Configura le chiavi API di WooCommerce e i parametri di sincronizzazione automatica dei prodotti e ordini.</p>

@@ -71,7 +71,7 @@ $nIndirizzi = count($indirizzi_preload);
           <div class="qk-card mb-3 mt-3">
             <div class="qk-card-header"><span class="qk-card-title">Tipo soggetto</span></div>
             <div class="qk-card-body">
-              <div class="d-flex gap-2 flex-wrap">
+              <div class="qk-flex-row qk-gap-sm flex-wrap">
                 <label class="qk-radio-card <?= $v['type'] === 'privato' ? 'is-selected' : '' ?>">
                   <input type="radio" name="type" value="privato" <?= $v['type'] === 'privato' ? 'checked' : '' ?>>
                   <i class="fa-solid fa-user"></i> Privato
@@ -198,7 +198,7 @@ $nIndirizzi = count($indirizzi_preload);
               </div>
               
               <div class="qk-form-group mt-2">
-                <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+                <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                   <input type="checkbox" name="newsletter" value="1" <?= $v['newsletter'] === '1' ? 'checked' : '' ?>>
                   Iscritto alla newsletter
                 </label>
@@ -253,7 +253,7 @@ $nIndirizzi = count($indirizzi_preload);
 
         <!-- Listini prezzi associati molti-a-molti -->
         <div class="qk-card mt-3 mb-3">
-          <div class="qk-card-header d-flex justify-content-between align-items-center">
+          <div class="qk-card-header qk-flex-row qk-justify-between">
             <span class="qk-card-title"><i class="fa-solid fa-tags me-1"></i>Listini prezzi associati</span>
             <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-add-listino">
               <i class="fa-solid fa-plus"></i> Aggiungi listino

@@ -64,10 +64,6 @@ This document establishes the UI/UX standards for Quack ERP. **All developers an
       </a>
     </td>
     ```
-* **Row Interactions**: Tables implement `.qk-table tbody tr:hover` transition. They automatically highlight with a 4% overlay of the active theme accent color.
-* **Sticky Header Tables**: Use `.qk-table-sticky` wrapper around a `.qk-table` for container scroll with locked column headers.
-* **Total Rows**: Apply `.qk-table-total-row` on transaction bottom rows (e.g. subtotal, tax, grand total).
-
 ---
 
 ## 4. Buttons & Actions Design Token Map

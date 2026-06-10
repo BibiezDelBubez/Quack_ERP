@@ -238,7 +238,7 @@ unset($_db_file, $_e, $_info_user);
         <span style="font-size:.75rem;color:var(--qk-text-muted)">
           &copy; <?= date('Y') ?> Quack ERP
         </span>
-        <button type="button" class="btn btn-sm btn-secondary"
+        <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm"
                 data-bs-dismiss="modal">Chiudi</button>
       </div>
 

@@ -18,12 +18,10 @@
 
       <div class="modal-body pt-2">
         <!-- Search bar -->
-        <div class="input-group mb-3">
-          <span class="input-group-text bg-transparent border-end-0">
-            <i class="fa-solid fa-magnifying-glass" style="color:var(--qk-text-muted)"></i>
-          </span>
+        <div class="qk-search-wrap mb-3">
+          <i class="fa-solid fa-magnifying-glass"></i>
           <input type="search" id="qk-picker-search"
-                 class="form-control border-start-0 ps-0"
+                 class="qk-form-control qk-search-input"
                  placeholder="Ricerca…" autocomplete="off">
         </div>
 
@@ -39,8 +37,8 @@
              style="font-size:.82rem;color:var(--qk-text-muted)">
           <span id="qk-picker-count"></span>
           <div class="d-flex gap-1">
-            <button class="btn btn-sm btn-outline-secondary" id="qk-picker-prev">&lsaquo; Prec.</button>
-            <button class="btn btn-sm btn-outline-secondary" id="qk-picker-next">Succ. &rsaquo;</button>
+            <button class="btn-qk btn-qk-secondary btn-qk-sm" id="qk-picker-prev">&lsaquo; Prec.</button>
+            <button class="btn-qk btn-qk-secondary btn-qk-sm" id="qk-picker-next">Succ. &rsaquo;</button>
           </div>
         </div>
       </div>

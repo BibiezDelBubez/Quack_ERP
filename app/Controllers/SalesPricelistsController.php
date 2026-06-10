@@ -42,6 +42,23 @@ final class SalesPricelistsController extends BaseController
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         $pricelists = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Calcola lo stato effettivo di ciascun listino nel controller
+        $oggi = date('Y-m-d');
+        foreach ($pricelists as &$ls) {
+            $isAttivo = (bool)$ls['attivo'];
+            $inRange  = (!$ls['valido_dal'] || $ls['valido_dal'] <= $oggi)
+                     && (!$ls['valido_al']  || $ls['valido_al']  >= $oggi);
+            if ($isAttivo && $inRange) {
+                $ls['stato_effettivo'] = 'active';
+            } elseif (!$isAttivo) {
+                $ls['stato_effettivo'] = 'disattivato';
+            } else {
+                $ls['stato_effettivo'] = 'expired';
+            }
+        }
+        unset($ls);
+
         $total = count($pricelists);
 
         $this->page(APP_ROOT_DIR . '/app/views/sales/pricelists_list.php', [

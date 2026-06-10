@@ -1,15 +1,14 @@
 <?php /** @var array $sostanze @var string|null $search */ ?>
 
-<div class="qk-guidance-box mb-4 p-3 border-start border-4 rounded d-flex align-items-start gap-3"
-     style="background:var(--qk-bg-subtle);border-color:var(--qk-accent)!important">
-  <div class="fs-4" style="color:var(--qk-accent);flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
-  <div style="font-size:.875rem">
-    <p class="fw-semibold mb-1" style="color:var(--qk-text-primary)">A cosa serve questa sezione?</p>
-    <p class="mb-0" style="color:var(--qk-text-secondary)">
+<div class="qk-guidance-box mb-4 p-3">
+  <div class="fs-4 text-primary" style="flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+  <div>
+    <h6 class="mb-1 fw-bold text-primary">A cosa serve questa sezione?</h6>
+    <p class="mb-0 text-muted" style="font-size:0.875rem">
       Qui raggruppiamo i prodotti composti dalla stessa identica sostanza. <strong>Serve per unificare l'assegnazione
       del codice ONU, delle schede di sicurezza (SDS) e delle restrizioni di vendita — così non devi ripetere
       le stesse informazioni su ogni singolo prodotto.</strong><br>
-      <span class="qk-text-muted" style="font-size:.85rem">
+      <span style="font-size:.85rem; display:block; margin-top:0.4rem">
         Esempio: il Codice ONU 1791 è una categoria generica che copre <em>qualsiasi</em> soluzione di ipoclorito.
         Qui invece si registra la formulazione specifica — <strong>Ipoclorito di sodio 14%</strong> — con il suo CAS,
         la sua scheda di sicurezza, la classificazione CLP/GHS (pittogrammi, frasi H e P) e i dati ADR.

@@ -49,7 +49,7 @@ foreach ($ricezioni as $rc) {
 <?php unset($_SESSION['flash_error']); endif; ?>
 
 <!-- Guidance Box -->
-<div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
+<div class="qk-guidance-box mb-4 p-3 ">
   <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
   <div>
     <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
@@ -74,9 +74,9 @@ foreach ($ricezioni as $rc) {
 </div>
 
 <!-- StatusBar -->
-<div class="qk-statusbar d-flex justify-content-between align-items-center mb-4 p-2 bg-light border rounded">
+<div class="qk-statusbar qk-flex-row qk-justify-between mb-4" style="padding:.5rem .75rem;background:var(--qk-table-head-bg);border:1px solid var(--qk-card-border);border-radius:var(--qk-radius)">
   
-  <div class="qk-statusbar-buttons d-flex gap-2">
+  <div class="qk-statusbar-buttons qk-flex-row qk-gap-sm">
     <?php if ($isBozza || $isInAppr): ?>
       <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
@@ -193,7 +193,7 @@ foreach ($ricezioni as $rc) {
   <?php endif; ?>
 
   <div class="qk-card mb-4">
-    <div class="qk-card-header d-flex justify-content-between align-items-center">
+    <div class="qk-card-header qk-flex-row qk-justify-between">
       <span class="qk-card-title">
         <i class="fa-solid fa-file-circle-check me-2"></i> Ordine d'Acquisto <?= e($o['numero']) ?>
       </span>
@@ -217,7 +217,7 @@ foreach ($ricezioni as $rc) {
 
           <div class="qk-form-group mb-2">
             <label class="qk-form-label">Contatti Referente</label>
-            <div class="d-flex gap-2">
+            <div class="qk-flex-row qk-gap-sm">
               <input type="text" class="qk-form-control" style="font-size:0.8rem;" value="<?= e($o['contatto_telefono'] ?: $o['fornitore_telefono'] ?: '—') ?>" placeholder="Telefono" readonly>
               <input type="text" class="qk-form-control" style="font-size:0.8rem;" value="<?= e($o['contatto_email'] ?: $o['fornitore_email'] ?: '—') ?>" placeholder="Email" readonly>
             </div>
@@ -320,7 +320,7 @@ foreach ($ricezioni as $rc) {
                 <td colspan="10" style="padding-left: 2rem; border-top:none">
                   <div class="small">
                     <strong>Pianificazione consegne (Tranche):</strong>
-                    <div class="d-flex flex-wrap gap-3 mt-1">
+                    <div class="qk-flex-row qk-gap-md mt-1">
                       <?php foreach ($r['pianificazione'] as $p): ?>
                         <span class="qk-badge <?= $p['stato'] === 'completata' ? 'confirmed' : 'pending' ?>" style="font-size:0.75rem">
                           Data: <strong><?= e($p['data_consegna_prevista'] ?? 'Non definita') ?></strong> |
@@ -340,19 +340,19 @@ foreach ($ricezioni as $rc) {
     </div>
 
     <!-- Totali -->
-    <div class="d-flex justify-content-end p-3">
+    <div class="qk-flex-row qk-justify-end p-3">
       <div class="qk-card" style="width:300px; margin:0">
         <div class="qk-card-body" style="padding: 0.75rem 1rem">
-          <div class="d-flex justify-content-between mb-2">
+          <div class="qk-flex-row qk-justify-between mb-2">
             <span class="text-muted">Imponibile:</span>
             <span class="fw-semibold">€ <?= number_format((float)$o['imponibile'], 2, ',', '.') ?></span>
           </div>
-          <div class="d-flex justify-content-between mb-2">
+          <div class="qk-flex-row qk-justify-between mb-2">
             <span class="text-muted">IVA:</span>
             <span class="fw-semibold">€ <?= number_format((float)$o['totale_iva'], 2, ',', '.') ?></span>
           </div>
           <hr class="my-2">
-          <div class="d-flex justify-content-between">
+          <div class="qk-flex-row qk-justify-between">
             <span class="fw-bold">Totale:</span>
             <span class="fw-bold h5 mb-0" style="color:var(--qk-accent-text)">€ <?= number_format((float)$o['totale'], 2, ',', '.') ?></span>
           </div>
@@ -428,7 +428,7 @@ foreach ($ricezioni as $rc) {
   <?php endif; ?>
 
   <?php if ($canSave): ?>
-    <div class="d-flex justify-content-end mb-5">
+    <div class="qk-flex-row qk-justify-end mb-5">
       <button type="submit" class="btn-qk btn-qk-primary px-4 fw-bold">
         <i class="fa-solid fa-floppy-disk me-1"></i> Salva Note e Riferimenti
       </button>

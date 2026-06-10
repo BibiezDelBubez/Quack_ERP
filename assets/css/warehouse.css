@@ -170,7 +170,6 @@
 .qkwh-giacenza-negativa { color: var(--qk-danger) !important; }
 .qkwh-giacenza-zero { color: var(--qk-warning) !important; }
 
-/* ── Tabella stock overview ───────────────────────────────────────────────── */
 .qkwh-sku code { font-size: .78rem; color: var(--qk-text-muted); }
 .qkwh-uom { font-size: .8rem; color: var(--qk-text-muted); }
 
@@ -309,3 +308,92 @@
 }
 .qk-empty-state i { font-size: 2.5rem; display: block; margin-bottom: .75rem; opacity: .3; }
 .qk-empty-state p { margin: 0; font-size: .9rem; }
+
+/* ── Sliding Drawer for Lots (UX Improvement) ─────────────────────────────── */
+.qk-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--qk-overlay);
+  z-index: 1040;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.qk-drawer-backdrop.show {
+  display: block;
+  opacity: 1;
+}
+.qk-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 450px;
+  background: var(--qk-card-bg);
+  border-left: 1px solid var(--qk-card-border);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.qk-drawer.open {
+  transform: translateX(0);
+}
+.qk-drawer-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--qk-card-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--qk-table-head-bg);
+}
+.qk-drawer-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--qk-text-primary);
+}
+.qk-drawer-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--qk-text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  transition: color var(--qk-transition);
+}
+.qk-drawer-close:hover {
+  color: var(--qk-text-primary);
+}
+.qk-drawer-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.qk-drawer-lot-card {
+  padding: 1rem;
+  background: var(--qk-bg-subtle);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.qk-drawer-lot-code {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--qk-accent-text);
+  font-family: monospace;
+}
+.qk-drawer-lot-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--qk-text-secondary);
+}

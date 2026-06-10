@@ -479,10 +479,36 @@ html.sidebar-collapsed .qk-main { margin-left: var(--qk-sidebar-w-col); }
   border-bottom: 1px solid var(--qk-card-border);
   transition: background .12s;
 }
-.qk-table tbody tr:last-child { border-bottom: none; }
-.qk-table tbody tr:hover { background: rgba(128,128,128,.04); }
+.qk-table tbody tr:nth-child(even) {
+  background-color: var(--qk-row-alt, rgba(0, 0, 0, 0.015));
+}
+.qk-table tbody tr:hover {
+  background-color: rgba(128, 128, 128, 0.05) !important;
+}
+.qk-table td, .qk-table thead th {
+  border-right: 1px solid color-mix(in srgb, var(--qk-card-border) 30%, transparent);
+}
+.qk-table td:last-child, .qk-table thead th:last-child {
+  border-right: none;
+}
 .qk-table td { padding: .8rem 1rem; vertical-align: middle; }
 .qk-table .col-actions { width: 50px; text-align: right; white-space: nowrap; }
+
+/* ── Utility colonne per tabelle lista ERP ──────────────────────────────────
+   Classi semantiche per fissare larghezze tipiche nelle liste.
+   Usare su <th> (la larghezza si propaga all'intera colonna via table-layout).
+   ─────────────────────────────────────────────────────────────────────────── */
+.qk-col-date    { width: 100px; white-space: nowrap; }  /* date (gg/mm/aaaa) */
+.qk-col-num     { width: 130px; white-space: nowrap; }  /* numero documento */
+.qk-col-status  { width: 120px; white-space: nowrap; }  /* badge stato */
+.qk-col-amount  { width: 110px; white-space: nowrap; text-align: right; }  /* importi € */
+.qk-col-qty     { width: 90px;  white-space: nowrap; text-align: right; }  /* quantità */
+.qk-col-narrow  { width: 80px;  white-space: nowrap; }  /* colonne strette generiche */
+.qk-col-actions { width: 60px;  white-space: nowrap; text-align: right; }  /* azioni riga */
+
+/* Garantisce che la cella segua l'allineamento definito sull'header */
+.qk-col-amount ~ td,
+.qk-table td.qk-col-amount { text-align: right; }
 
 /* Pagination */
 .qk-pagination {
@@ -523,6 +549,16 @@ html.sidebar-collapsed .qk-main { margin-left: var(--qk-sidebar-w-col); }
 .qk-badge.delivered { background: var(--qk-success-bg);  color: var(--qk-success); }
 .qk-badge.cancelled { background: var(--qk-danger-bg);   color: var(--qk-danger); }
 .qk-badge.adr       { background: var(--qk-adr-bg); color: var(--qk-adr-text); }
+.qk-badge.active    { background: var(--qk-success-bg);  color: var(--qk-success); }
+.qk-badge.inactive  { background: rgba(100,116,139,.12); color: #64748b; }
+.qk-badge.suspended { background: var(--qk-danger-bg);   color: var(--qk-danger); }
+.qk-badge.in_lavorazione       { background: var(--qk-warning-bg);  color: var(--qk-warning); }
+.qk-badge.parzialmente_spedito { background: var(--qk-accent-light);color: var(--qk-accent); }
+.qk-badge.completato           { background: var(--qk-success-bg);  color: var(--qk-success); }
+.qk-badge.annullato            { background: var(--qk-danger-bg);   color: var(--qk-danger); }
+.qk-badge.expired              { background: var(--qk-warning-bg);  color: var(--qk-warning); }
+.qk-badge.disattivato          { background: rgba(100,116,139,.12); color: #64748b; }
+
 
 /* ADR inline warning — arancio normativo, non decorativo */
 .qk-adr-tag {
@@ -669,14 +705,105 @@ html.sidebar-collapsed .qk-main { margin-left: var(--qk-sidebar-w-col); }
 .is-overridden { border-color: var(--qk-warning) !important; background-color: var(--qk-warning-bg) !important; }
 select.qk-form-control { appearance: none; cursor: pointer; }
 textarea.qk-form-control { resize: vertical; min-height: 90px; }
+input[type="file"].qk-form-control {
+  padding: .35rem .5rem;
+}
+input[type="file"].qk-form-control::file-selector-button {
+  border: none;
+  background: var(--qk-border, #e2e8f0);
+  color: var(--qk-text-primary);
+  border-radius: var(--qk-radius-sm);
+  padding: .2rem .6rem;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: .5rem;
+  transition: all .15s ease;
+}
+input[type="file"].qk-form-control::file-selector-button:hover {
+  background: var(--qk-accent);
+  color: #fff;
+}
+
+
+/* Size variants */
+.qk-form-control-sm {
+  display: block; width: 100%;
+  background: var(--qk-body-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .25rem .5rem;
+  font-size: .8rem; color: var(--qk-text-primary);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.qk-form-control-sm:focus {
+  border-color: var(--qk-accent);
+  box-shadow: 0 0 0 3px var(--qk-focus-ring, rgba(37,99,235,.1));
+}
+.qk-form-control-sm::placeholder { color: var(--qk-text-muted); }
+select.qk-form-control-sm { appearance: none; cursor: pointer; }
+
+.qk-form-control-xs {
+  display: block; width: 100%;
+  background: var(--qk-body-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  padding: .15rem .35rem;
+  font-size: .75rem; color: var(--qk-text-primary);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.qk-form-control-xs:focus {
+  border-color: var(--qk-accent);
+  box-shadow: 0 0 0 3px var(--qk-focus-ring, rgba(37,99,235,.1));
+}
+.qk-form-control-xs::placeholder { color: var(--qk-text-muted); }
+select.qk-form-control-xs { appearance: none; cursor: pointer; }
+
+/* Plaintext — read-only inline display */
+.qk-form-control-plaintext {
+  display: block; width: 100%;
+  padding: .48rem 0;
+  font-size: .875rem; color: var(--qk-text-primary);
+  background: transparent; border: 1px solid transparent;
+}
+
+/* Utility: monospace font */
+.qk-font-mono { font-family: ui-monospace, 'Cascadia Code', 'Fira Mono', monospace; }
+
+/* Utility: text alignment */
+.qk-text-right { text-align: right !important; }
 
 .qk-form-hint {
   font-size: .75rem; color: var(--qk-text-muted); margin-top: .25rem;
 }
-.qk-form-error {
+.qk-form-error,
+.qk-field-error {
   font-size: .75rem; color: var(--qk-danger); margin-top: .25rem;
   display: flex; align-items: center; gap: .3rem;
 }
+
+/* ── Radio option card (selezione ruolo, stato, tipo) ─────────────────────── */
+.qk-radio-option {
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .65rem .9rem;
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius-sm);
+  cursor: pointer;
+  background: var(--qk-card-bg);
+  transition: border-color .15s, background .15s;
+}
+.qk-radio-option input[type=radio] { margin-top: .2rem; flex-shrink: 0; accent-color: var(--qk-accent); }
+.qk-radio-option:hover { border-color: var(--qk-accent); background: var(--qk-accent-light); }
+.qk-radio-option.is-selected { border-color: var(--qk-accent); background: var(--qk-accent-light); }
+.qk-radio-option-body { display: flex; flex-direction: column; gap: .1rem; }
+.qk-radio-option-label { font-size: .88rem; font-weight: 600; color: var(--qk-text-primary); }
+.qk-radio-option-desc  { font-size: .78rem; color: var(--qk-text-muted); }
+/* Variante orizzontale compatta (es. Attivo/Disabilitato) */
+.qk-radio-option.horizontal { flex-direction: row; align-items: center; }
+.qk-radio-option.horizontal .qk-radio-option-body { flex-direction: row; align-items: center; gap: .4rem; }
+.qk-radio-option.horizontal .qk-radio-option-desc { display: none; }
 
 /* Status panel (col destra del form) */
 .qk-status-panel {
@@ -1347,8 +1474,10 @@ a, button, input, select, textarea, .qk-filter-pill, .qk-page-btn, .qk-status-pa
 .qk-gap-lg { gap: 1.5rem !important; }
 
 .qk-flex-row    { display: flex; flex-direction: row; align-items: center; }
+.qk-flex-col    { display: flex; flex-direction: column; }
 .qk-flex-wrap   { flex-wrap: wrap; }
 .qk-justify-between { justify-content: space-between; }
+.qk-justify-end     { justify-content: flex-end; }
 .qk-align-center    { align-items: center; }
 
 /* Grid Responsive Senza Media Queries */
@@ -1805,6 +1934,10 @@ h3, .qk-title-h3 { font-size: 1.1rem; font-weight: 600; color: var(--qk-text-pri
   padding: 0 .25rem;
 }
 
+
+
+
+/* ─── Date range toolbar ─────────────────────────────────────────────────── */
 /* ─── Sort header ────────────────────────────────────────────────────────── */
 th.qk-sortable {
   cursor: pointer;
@@ -1818,11 +1951,41 @@ th.qk-sortable a {
   align-items: center;
   gap: .3rem;
 }
+th.qk-sortable.text-end a {
+  justify-content: flex-end;
+}
+th.qk-sortable.text-center a {
+  justify-content: center;
+}
 th.qk-sortable a:hover {
   color: var(--qk-accent);
 }
 
-/* ─── Date range toolbar ─────────────────────────────────────────────────── */
+/* ── Guidance / Info Box ─────────────────────────────────────────────────── */
+.qk-guidance-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: var(--qk-bg-subtle, rgba(0, 0, 0, 0.02));
+  border-left: 4px solid var(--qk-accent) !important;
+  border-radius: var(--qk-radius, 6px);
+  margin-bottom: 1.5rem;
+}
+.qk-guidance-box .fs-4,
+.qk-guidance-box .fs-5 {
+  color: var(--qk-accent) !important;
+  flex-shrink: 0;
+}
+.qk-guidance-box h6,
+.qk-guidance-box .title-text {
+  color: var(--qk-text-primary) !important;
+  font-weight: 600 !important;
+}
+.qk-guidance-box p,
+.qk-guidance-box .desc-text {
+  color: var(--qk-text-secondary) !important;
+}
+
 .qk-date-range {
   display: flex;
   align-items: center;
@@ -1889,4 +2052,43 @@ th.qk-sortable a:hover {
 }
 .qk-filter-date-group:focus-within .qk-filter-date {
   border-color: var(--qk-accent);
+}
+
+/* ── Unsaved Changes Warning Badge (UX Improvement) ─────────────────────── */
+.qk-dirty-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--qk-warning);
+  background: var(--qk-warning-bg);
+  border: 1px solid var(--qk-warning);
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--qk-radius-sm);
+  margin-left: 0.5rem;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.qk-dirty-warning.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ── Modern Table Row Hover Actions & Transitions ──────────────────────── */
+.qk-table tbody tr {
+  transition: background-color var(--qk-transition), transform 0.1s ease;
+}
+.qk-table tbody tr:hover {
+  background-color: color-mix(in srgb, var(--qk-accent) 4%, transparent) !important;
+}
+.qk-table tbody tr .col-actions .btn-qk,
+.qk-table tbody tr .qk-table-actions .btn-qk {
+  opacity: 0;
+  transition: opacity var(--qk-transition), background-color var(--qk-transition);
+}
+.qk-table tbody tr:hover .col-actions .btn-qk,
+.qk-table tbody tr:hover .qk-table-actions .btn-qk {
+  opacity: 1;
 }

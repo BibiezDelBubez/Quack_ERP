@@ -39,10 +39,10 @@ $canSave = !$isCompletato && !$isAnnullato;
 <?php unset($_SESSION['flash_error']); endif; ?>
 
 <!-- Guidance Box -->
-<div class="qk-guidance-box mb-4 p-3 bg-light border-start border-primary border-4 rounded d-flex align-items-center gap-3">
-  <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
+<div class="qk-guidance-box qk-flex-row qk-gap-md mb-4" style="padding:.75rem 1rem;background:var(--qk-info-light,rgba(37,99,235,.06));border-left:4px solid var(--qk-info);border-radius:var(--qk-radius)">
+  <div style="font-size:1.4rem;color:var(--qk-info)"><i class="fa-solid fa-circle-info"></i></div>
   <div>
-    <h6 class="mb-1 fw-bold text-primary">Stato Avanzamento Documento</h6>
+    <h6 class="mb-1 fw-bold" style="color:var(--qk-info)">Stato Avanzamento Documento</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       <?php if ($isInLavorazione): ?>
         L'ordine è <strong>in lavorazione</strong>. Verifica la merce ed effettua le spedizioni necessarie. Puoi contrassegnarlo come completato o fatturato.
@@ -62,9 +62,9 @@ $canSave = !$isCompletato && !$isAnnullato;
 </div>
 
 <!-- StatusBar -->
-<div class="qk-statusbar d-flex justify-content-between align-items-center mb-4 p-2 bg-light border rounded">
+<div class="qk-statusbar qk-flex-row qk-justify-between mb-4" style="padding:.5rem .75rem;background:var(--qk-table-head-bg);border:1px solid var(--qk-card-border);border-radius:var(--qk-radius)">
   
-  <div class="qk-statusbar-buttons d-flex gap-2 align-items-center">
+  <div class="qk-statusbar-buttons qk-flex-row qk-gap-sm">
     <?php if (!$isCompletato && !$isAnnullato): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
@@ -164,11 +164,11 @@ $canSave = !$isCompletato && !$isAnnullato;
   <?= csrf_field() ?>
 
   <div class="qk-card mb-4">
-    <div class="qk-card-header d-flex justify-content-between align-items-center">
+    <div class="qk-card-header qk-flex-row qk-justify-between">
       <span class="qk-card-title">
         <i class="fa-solid fa-file-contract me-2"></i> Ordine Cliente <?= e($o['numero_ordine']) ?>
       </span>
-      <div class="d-flex gap-2">
+      <div class="qk-flex-row qk-gap-sm">
         <span class="qk-badge <?= $isFatturato ? 'confirmed' : 'draft' ?> fw-bold" style="font-size:0.85rem">
           <i class="fa-solid <?= $isFatturato ? 'fa-circle-check' : 'fa-hourglass' ?> me-1"></i>
           Fatturazione: <?= $isFatturato ? 'Fatturato' : 'Da Fatturare' ?>
@@ -189,7 +189,7 @@ $canSave = !$isCompletato && !$isAnnullato;
           <?php if (!empty($o['preventivo_id'])): ?>
             <div class="qk-form-group mb-2">
               <label class="qk-form-label">Preventivo Originale</label>
-              <div class="d-flex align-items-center gap-2">
+              <div class="qk-flex-row qk-gap-sm">
                 <a href="<?= url('sales/quotes/edit?id=' . $o['preventivo_id']) ?>" class="qk-text-accent fw-bold text-decoration-none">
                   <i class="fa-solid fa-file-invoice-dollar me-1"></i> <?= e($o['preventivo_numero'] ?? 'Vedi Preventivo') ?>
                 </a>
@@ -199,7 +199,7 @@ $canSave = !$isCompletato && !$isAnnullato;
 
           <div class="qk-form-group mb-2">
             <label class="qk-form-label">Contatti Cliente</label>
-            <div class="d-flex gap-2">
+            <div class="qk-flex-row qk-gap-sm">
               <input type="text" class="qk-form-control" style="font-size:0.8rem;" value="<?= e($o['cliente_telefono'] ?: '—') ?>" placeholder="Telefono" readonly>
               <input type="text" class="qk-form-control" style="font-size:0.8rem;" value="<?= e($o['cliente_email'] ?: '—') ?>" placeholder="Email" readonly>
             </div>
@@ -211,7 +211,7 @@ $canSave = !$isCompletato && !$isAnnullato;
           <div class="qk-form-group mb-2">
             <label class="qk-form-label">Destinazione Merce</label>
             <?php if ($address): ?>
-              <div class="p-2 bg-light border rounded" style="font-size: 0.85rem; line-height: 1.4;">
+              <div style="padding:.5rem .75rem;background:var(--qk-table-head-bg);border:1px solid var(--qk-card-border);border-radius:var(--qk-radius);font-size:.85rem;line-height:1.4">
                 <?php if (!empty($address['nome_sede'])): ?>
                   <strong><?= e($address['nome_sede']) ?></strong><br>
                 <?php endif; ?>
@@ -272,39 +272,23 @@ $canSave = !$isCompletato && !$isAnnullato;
           </tr>
         </thead>
         <tbody>
-          <?php 
-          $totImponibile = 0.0;
-          $totCosto = 0.0;
-          foreach ($righe as $r): 
-            $qta = (float)$r['quantita_ordinata'];
-            $prezzo = (float)$r['prezzo_unitario'];
-            $costo = (float)$r['costo_unitario'];
-            
-            $imponibileRiga = $prezzo * $qta;
-            $costoRiga = $costo * $qta;
-            
-            $totImponibile += $imponibileRiga;
-            $totCosto += $costoRiga;
-            
-            $margineUnit = $prezzo - $costo;
-            $marginePerc = $prezzo > 0 ? ($margineUnit / $prezzo) * 100 : 0.0;
-          ?>
+          <?php foreach ($righe as $r): ?>
             <tr>
               <td>
                 <strong><?= e($r['prodotto_codice'] ?? 'N/D') ?></strong><br>
                 <span class="text-muted"><?= e($r['prodotto_nome'] ?? '') ?></span>
               </td>
               <td><?= e($r['descrizione'] ?? '') ?></td>
-              <td class="qk-text-right" style="font-weight:600"><?= e($qta) ?></td>
+              <td class="qk-text-right" style="font-weight:600"><?= e((float)$r['quantita_ordinata']) ?></td>
               <td class="qk-text-right text-success" style="font-weight:600"><?= e((float)$r['quantita_spedita']) ?></td>
               <td class="qk-text-center"><span class="qk-badge draft"><?= e($r['uom_simbolo'] ?? 'N/D') ?></span></td>
-              <td class="qk-text-right">€ <?= number_format($prezzo, 2, ',', '.') ?></td>
-              <td class="qk-text-right text-muted">€ <?= number_format($costo, 2, ',', '.') ?></td>
-              <td class="qk-text-right fw-semibold <?= $margineUnit >= 0 ? 'text-success' : 'text-danger' ?>">
-                € <?= number_format($margineUnit, 2, ',', '.') ?> 
-                <small>(<?= number_format($marginePerc, 1) ?>%)</small>
+              <td class="qk-text-right">€ <?= number_format((float)$r['prezzo_unitario'], 2, ',', '.') ?></td>
+              <td class="qk-text-right text-muted">€ <?= number_format((float)$r['costo_unitario'], 2, ',', '.') ?></td>
+              <td class="qk-text-right fw-semibold <?= ((float)($r['margine_unit'] ?? 0.0)) >= 0 ? 'text-success' : 'text-danger' ?>">
+                € <?= number_format((float)($r['margine_unit'] ?? 0.0), 2, ',', '.') ?>
+                <small>(<?= number_format((float)($r['margine_perc'] ?? 0.0), 1) ?>%)</small>
               </td>
-              <td class="qk-text-right" style="font-weight:600">€ <?= number_format($imponibileRiga, 2, ',', '.') ?></td>
+              <td class="qk-text-right" style="font-weight:600">€ <?= number_format((float)($r['imponibile_riga'] ?? 0.0), 2, ',', '.') ?></td>
             </tr>
           <?php endforeach; ?>
         </tbody>
@@ -312,31 +296,27 @@ $canSave = !$isCompletato && !$isAnnullato;
     </div>
 
     <!-- Totali & Margine Globale -->
-    <?php 
-    $margineTot = $totImponibile - $totCosto;
-    $margineTotPerc = $totImponibile > 0 ? ($margineTot / $totImponibile) * 100 : 0.0;
-    ?>
-    <div class="d-flex justify-content-between align-items-center p-3">
+    <div class="qk-flex-row qk-justify-between" style="padding:.75rem 1rem">
       <div>
         <span class="text-muted">Margine Globale dell'Ordine:</span>
-        <strong class="h6 mb-0 ms-2 <?= $margineTot >= 0 ? 'text-success' : 'text-danger' ?>">
-          € <?= number_format($margineTot, 2, ',', '.') ?> (<?= number_format($margineTotPerc, 1) ?>%)
+        <strong class="h6 mb-0 ms-2 <?= ((float)($margineTot ?? 0.0)) >= 0 ? 'text-success' : 'text-danger' ?>">
+          € <?= number_format((float)($margineTot ?? 0.0), 2, ',', '.') ?> (<?= number_format((float)($margineTotPerc ?? 0.0), 1) ?>%)
         </strong>
       </div>
       <div class="qk-card" style="width:300px; margin:0">
         <div class="qk-card-body" style="padding: 0.75rem 1rem">
-          <div class="d-flex justify-content-between mb-2">
+          <div class="qk-flex-row qk-justify-between mb-2">
             <span class="text-muted">Imponibile:</span>
-            <span class="fw-semibold">€ <?= number_format($totImponibile, 2, ',', '.') ?></span>
+            <span class="fw-semibold">€ <?= number_format((float)($totImponibile ?? 0.0), 2, ',', '.') ?></span>
           </div>
-          <div class="d-flex justify-content-between mb-2">
+          <div class="qk-flex-row qk-justify-between mb-2">
             <span class="text-muted">Costo Totale:</span>
-            <span class="fw-semibold text-muted">€ <?= number_format($totCosto, 2, ',', '.') ?></span>
+            <span class="fw-semibold text-muted">€ <?= number_format((float)($totCosto ?? 0.0), 2, ',', '.') ?></span>
           </div>
           <hr class="my-2">
-          <div class="d-flex justify-content-between">
+          <div class="qk-flex-row qk-justify-between">
             <span class="fw-bold">Totale Ordine:</span>
-            <span class="fw-bold h5 mb-0" style="color:var(--qk-accent-text)">€ <?= number_format($totImponibile, 2, ',', '.') ?></span>
+            <span class="fw-bold h5 mb-0" style="color:var(--qk-accent-text)">€ <?= number_format((float)($totImponibile ?? 0.0), 2, ',', '.') ?></span>
           </div>
         </div>
       </div>
@@ -356,7 +336,7 @@ $canSave = !$isCompletato && !$isAnnullato;
   </div>
 
   <?php if ($canSave): ?>
-    <div class="d-flex justify-content-end mb-5">
+    <div class="qk-flex-row qk-justify-end mb-5">
       <button type="submit" class="btn-qk btn-qk-primary px-4 fw-bold">
         <i class="fa-solid fa-floppy-disk me-1"></i> Salva Note e Data Consegna
       </button>
@@ -369,7 +349,7 @@ $canSave = !$isCompletato && !$isAnnullato;
      SEZIONE SPEDIZIONI
      ═══════════════════════════════════════════════════════════════════ -->
 <div class="qk-card mb-4">
-  <div class="qk-card-header d-flex justify-content-between align-items-center">
+  <div class="qk-card-header qk-flex-row qk-justify-between">
     <span class="qk-card-title"><i class="fa-solid fa-truck-fast me-2"></i> Spedizioni e DDT</span>
     <?php if (!$isAnnullato && !$isCompletato): ?>
       <a href="<?= url('sales/shipments/new') ?>?order_id=<?= $id ?>"
@@ -394,6 +374,7 @@ $canSave = !$isCompletato && !$isAnnullato;
             <th>Vettore</th>
             <th>Tracking</th>
             <th>Stato</th>
+            <th>Foto Pallet</th>
             <th>DDT</th>
           </tr>
         </thead>
@@ -414,6 +395,22 @@ $canSave = !$isCompletato && !$isAnnullato;
               <td><?= !empty($s['tracking']) ? '<code>' . e($s['tracking']) . '</code>' : '—' ?></td>
               <td><span class="qk-badge <?= $statoClass ?>"><?= e(ucfirst($s['stato'])) ?></span></td>
               <td>
+                <?php 
+                $photos = $shipment_photos[(int)$s['id']] ?? [];
+                if (!empty($photos)): 
+                ?>
+                  <div class="qk-flex-row qk-gap-xs">
+                    <?php foreach ($photos as $ph): ?>
+                      <a href="<?= url('uploads') ?>?path=<?= urlencode($ph['file_path']) ?>" target="_blank" title="<?= e($ph['file_name']) ?>">
+                        <img src="<?= url('uploads') ?>?path=<?= urlencode($ph['file_path']) ?>" style="width:32px;height:32px;object-fit:cover;border-radius:var(--qk-radius-sm);border:1px solid var(--qk-card-border)" alt="Pallet">
+                      </a>
+                    <?php endforeach; ?>
+                  </div>
+                <?php else: ?>
+                  <span class="text-muted">—</span>
+                <?php endif; ?>
+              </td>
+              <td>
                 <?php foreach ($dttsForSped as $ddt): ?>
                   <a href="<?= url('sales/shipments/ddt/view?id=' . $ddt['id']) ?>"
                      class="qk-text-accent fw-semibold text-decoration-none me-2" target="_blank">
@@ -430,3 +427,4 @@ $canSave = !$isCompletato && !$isAnnullato;
   <?php endif; ?>
 </div>
 
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       

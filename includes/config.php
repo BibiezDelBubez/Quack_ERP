@@ -64,18 +64,8 @@ define('QK_THEMES', [
    Usata da: config.php, ThemeController (via costante), app.js (via header.php).
    Per aggiungere un alias: aggiungere qui, non nei file sopra citati.
  ─────────────────────────────────────────────────────────────────────────── */
-define('QK_THEME_LEGACY', [
-    'standard' => 'svedese-blu',        // vecchio nome pre-rinomina
-    'whio'     => 'svedese-blu',        // vecchio nome pre-rinomina
-    'cozze'    => 'orco-marino',        // vecchio nome pre-rinomina
-]);
-
-/* ── Tema attivo + migrazione da vecchi slug ──────────────────────────────── */
+/* ── Tema attivo ─────────────────────────────────────────────────────────── */
 $_qk_theme_raw = $_SESSION['qk_theme'] ?? 'svedese-blu';
-if (isset(QK_THEME_LEGACY[$_qk_theme_raw])) {
-    $_SESSION['qk_theme'] = QK_THEME_LEGACY[$_qk_theme_raw];
-    $_qk_theme_raw        = $_SESSION['qk_theme'];
-}
 if (!in_array($_qk_theme_raw, array_column(QK_THEMES, 'slug'), true)) {
     $_SESSION['qk_theme'] = 'svedese-blu';
     $_qk_theme_raw        = 'svedese-blu';
@@ -113,24 +103,20 @@ define('QK_ERROR_REPORT_ENABLED',   true);
 // Destinatario delle mail di errore
 define('QK_ERROR_EMAIL_TO',         'michel.papetti@campioni.com');
 
-// Mittente — deve corrispondere a un indirizzo verificato su Brevo
-define('QK_ERROR_EMAIL_FROM',       '***SMTP_USER_RIMOSSO***');
+// Mittente — deve essere un sender verificato su Brevo
+define('QK_ERROR_EMAIL_FROM',       'michel.papetti@campioni.com');
 
 // Path del file di log (non serve cambiare)
 define('QK_ERROR_LOG_FILE',         APP_ROOT_DIR . '/logs/errors.md');
 
-// Provider: 'smtp' (Brevo configurato sotto) | 'resend' | 'mailgun'
-define('QK_ERROR_MAIL_PROVIDER',    'smtp');
+// Provider: 'brevo' (API key) | 'smtp' | 'resend' | 'mailgun'
+define('QK_ERROR_MAIL_PROVIDER',    'brevo');
 
 // Minuti di pausa tra una mail e l'altra per lo stesso identico errore
 define('QK_ERROR_THROTTLE_MINUTES', 30);
 
-// ── Credenziali SMTP Brevo ────────────────────────────────────────────────
-define('QK_SMTP_HOST',   'smtp-relay.brevo.com');
-define('QK_SMTP_PORT',   587);
-define('QK_SMTP_USER',   '***SMTP_USER_RIMOSSO***');
-define('QK_SMTP_PASS',   '***SMTP_PASS_RIMOSSA***');
-define('QK_SMTP_SECURE', 'tls');
+// ── Brevo API key ─────────────────────────────────────────────────────────
+define('QK_BREVO_API_KEY', '***BREVO_API_KEY_RIMOSSA***');
 
 /* ── Charset ──────────────────────────────────────────────────────────────── */
 header('Content-Type: text/html; charset=UTF-8');

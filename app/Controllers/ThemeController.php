@@ -7,10 +7,6 @@ final class ThemeController extends BaseController
     public function set(): void
     {
         $theme = $_POST['theme'] ?? $_GET['theme'] ?? '';
-        // Migrazione slug obsoleti — definita in config.php (QK_THEME_LEGACY)
-        if (isset(QK_THEME_LEGACY[$theme])) {
-            $theme = QK_THEME_LEGACY[$theme];
-        }
 
         if (in_array($theme, array_column(QK_THEMES, 'slug'), true)) {
             $_SESSION['qk_theme'] = $theme;

@@ -43,7 +43,7 @@ class WarehouseController extends BaseController
 
         // 3. Conta la merce in Arrivo (ordini acquisto pendenti)
         $in_arrivo_count = (int) $this->pdo->query("
-            SELECT COUNT(*) FROM ordini_acquisto WHERE stato IN ('inviato', 'parzialmente_ricevuto')
+            SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')
         ")->fetchColumn();
 
         // 4. Conta la merce in Partenza (spedizioni non ancora completate/consegnate)
@@ -80,9 +80,11 @@ class WarehouseController extends BaseController
         $breadcrumbs   = [['label' => 'Magazzino']];
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/dashboard.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/dashboard.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'recent_movements', 'understock_items', 'valore_magazzino',
+            'sottoscorta_count', 'in_arrivo_count', 'in_partenza_count'
+        ));
     }
 
     /* ── Stock list ───────────────────────────────────────────────────────── */
@@ -98,13 +100,13 @@ class WarehouseController extends BaseController
         $stock = [];
         $ordini_in_arrivo = [];
 
-        $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_acquisto WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
+        $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
 
         if ($filter === 'in_arrivo') {
             $sql = "SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
                            COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
                            (SELECT rt.id FROM ricevimento_merce rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
-                      FROM ordini_acquisto ot
+                      FROM ordini_testata ot
                  LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
                      WHERE ot.stato IN ('inviato', 'parzialmente_ricevuto')
                        AND (ot.numero LIKE :q OR COALESCE(cf.ragione_sociale, cf.nome) LIKE :q)
@@ -128,9 +130,10 @@ class WarehouseController extends BaseController
         </a>';
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/stock.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/stock.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions', 'extra_css',
+            'search', 'filter', 'stock', 'ordini_in_arrivo', 'nInArrivo', 'total', 'pag'
+        ));
     }
 
     /* ── Storico movimenti ────────────────────────────────────────────────── */
@@ -165,31 +168,74 @@ class WarehouseController extends BaseController
         </a>';
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/movements.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/movements.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions', 'extra_css',
+            'search', 'tipo', 'dal', 'al', 'prodotto_id', 'movements', 'total', 'base', 'pag'
+        ));
     }
 
     /* ── Physical Inventory Sessions ──────────────────────────────────────── */
 
     public function inventari(): void
     {
-        $stmt = $this->pdo->query("
-            SELECT i.*, u.username AS creatore_username
-            FROM inventari i
-            JOIN utenti u ON u.id = i.creato_da
-            ORDER BY i.id DESC
-        ");
-        $inventari = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $base = url('warehouse/inventories');
+
+        // ── Parametri ────────────────────────────────────────────────────────
+        $search = trim(filter_input(INPUT_GET, 'q',     FILTER_DEFAULT) ?? '');
+        $stato  = trim(filter_input(INPUT_GET, 'stato', FILTER_DEFAULT) ?? '');
+
+        $sortColMap = [
+            'id'      => 'i.id',
+            'data'    => 'i.data_inventario',
+            'stato'   => 'i.stato',
+            'creatore'=> 'u.username',
+        ];
+        $pag     = qk_pagination_params(array_keys($sortColMap), 'id', 'desc');
+        $sort    = $pag['sort'];
+        $dir     = $pag['dir'];
+        $page    = $pag['page'];
+        $limit   = $pag['limit'];
+        $offset  = $pag['offset'];
+        $sortCol = $sortColMap[$sort];
+
+        // ── WHERE dinamico ───────────────────────────────────────────────────
+        $where  = [];
+        $params = [];
+        if ($search !== '') {
+            $where[]  = "(u.username LIKE ? OR i.note LIKE ?)";
+            $params[] = "%$search%";
+            $params[] = "%$search%";
+        }
+        if (in_array($stato, ['bozza', 'convalidato'], true)) {
+            $where[]  = "i.stato = ?";
+            $params[] = $stato;
+        }
+        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $stmtC = $this->pdo->prepare("SELECT COUNT(*) FROM inventari i JOIN utenti u ON u.id = i.creato_da " . $whereSql);
+        $stmtC->execute($params);
+        $total = (int)$stmtC->fetchColumn();
+
+        $stmtQ = $this->pdo->prepare(
+            "SELECT i.*, u.username AS creatore_username
+             FROM inventari i
+             JOIN utenti u ON u.id = i.creato_da
+             " . $whereSql . "
+             ORDER BY " . $sortCol . " " . $dir . "
+             LIMIT " . $limit . " OFFSET " . $offset
+        );
+        $stmtQ->execute($params);
+        $inventari = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
 
         $page_title    = 'Inventario Fisico';
         $page_subtitle = 'Gestione e convalida dei conteggi fisici';
         $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Inventario fis.']];
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/inventories_list.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/inventories_list.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'search', 'stato', 'inventari', 'total', 'base', 'pag'
+        ));
     }
 
     public function createInventario(): void
@@ -375,6 +421,7 @@ class WarehouseController extends BaseController
             }
         }
 
+        $isConvalidato = $inventario && $inventario['stato'] === 'convalidato';
         $page_title    = $id ? ($isConvalidato ? 'Dettaglio Inventario' : 'Modifica Inventario') : 'Nuovo Inventario Fisico';
         $page_subtitle = 'Gestione conteggio giacenze fisiche';
         $breadcrumbs   = [
@@ -384,49 +431,87 @@ class WarehouseController extends BaseController
         ];
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/inventories_form.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/inventories_form.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'id', 'errors', 'inventario', 'values', 'prodotti_inventario', 'isConvalidato'
+        ));
     }
 
     /* ── Reorder Proposals ────────────────────────────────────────────────── */
 
     public function reorder(): void
     {
-        // Trova i prodotti sottoscorta
-        // Per ogni prodotto calcoliamo la quantità libera (disponibile - riservata)
-        // E cerchiamo il fornitore preferenziale + ultimo prezzo di acquisto
-        $sql = "
-            SELECT p.id, p.nome, p.sku_interno, u.codice AS uom,
-                   COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
-                   COALESCE(g.quantita_riservata, 0) AS qta_riservata,
-                   COALESCE(g.quantita_in_arrivo, 0) AS qta_in_arrivo,
-                   (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) AS qta_libera,
-                   p.scorta_minima,
-                   pf.fornitore_id,
-                   COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
-                   (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                    WHERE pfp.prodotto_fornitore_id = pf.id AND pfp.quantita_minima = 0
-                    ORDER BY pfp.id DESC LIMIT 1) AS ultimo_prezzo
-            FROM prodotti p
-            LEFT JOIN giacenze g ON g.prodotto_id = p.id
-            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-            LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
-            LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
-            WHERE p.attivo = 1 AND p.scorta_minima > 0
-              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
-            ORDER BY p.nome COLLATE NOCASE
-        ";
-        $proposals = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+        $base   = url('warehouse/reorder');
+        $search = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
+
+        $sortColMap = [
+            'nome'     => 'p.nome',
+            'libera'   => '(COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0))',
+            'minima'   => 'p.scorta_minima',
+            'arrivo'   => 'COALESCE(g.quantita_in_arrivo,0)',
+            'fornitore'=> 'fornitore_nome',
+        ];
+        $pag     = qk_pagination_params(array_keys($sortColMap), 'nome', 'asc');
+        $sort    = $pag['sort'];
+        $dir     = $pag['dir'];
+        $page    = $pag['page'];
+        $limit   = $pag['limit'];
+        $offset  = $pag['offset'];
+        $sortCol = $sortColMap[$sort];
+
+        $whereExtra = '';
+        $params     = [];
+        if ($search !== '') {
+            $whereExtra = 'AND (p.nome LIKE ? OR p.sku_interno LIKE ?)';
+            $params[]   = "%$search%";
+            $params[]   = "%$search%";
+        }
+
+        $baseSql =
+            "FROM prodotti p
+             LEFT JOIN giacenze g ON g.prodotto_id = p.id
+             LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+             LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
+             LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
+             WHERE p.attivo = 1 AND p.scorta_minima > 0
+               AND (COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0)) < p.scorta_minima
+               " . $whereExtra;
+
+        $stmtC = $this->pdo->prepare("SELECT COUNT(*) " . $baseSql);
+        $stmtC->execute($params);
+        $total = (int)$stmtC->fetchColumn();
+
+        $stmtQ = $this->pdo->prepare(
+            "SELECT p.id, p.nome, p.sku_interno, u.codice AS uom,
+                    COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                    COALESCE(g.quantita_riservata, 0) AS qta_riservata,
+                    COALESCE(g.quantita_in_arrivo, 0) AS qta_in_arrivo,
+                    (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) AS qta_libera,
+                    p.scorta_minima,
+                    pf.fornitore_id,
+                    COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
+                    (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
+                     WHERE pfp.prodotto_fornitore_id = pf.id AND pfp.quantita_minima = 0
+                     ORDER BY pfp.id DESC LIMIT 1) AS ultimo_prezzo
+             " . $baseSql . "
+             ORDER BY " . $sortCol . " COLLATE NOCASE " . $dir . "
+             LIMIT " . $limit . " OFFSET " . $offset
+        );
+        $stmtQ->execute($params);
+        $proposals = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+
+        $pag = compact('page', 'limit', 'sort', 'dir');
 
         $page_title    = 'Proposte di Riordino';
         $page_subtitle = 'Generazione ordini e RFQ per articoli sottoscorta';
         $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Riordino']];
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/reorder.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/reorder.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'search', 'proposals', 'total', 'base', 'pag'
+        ));
     }
 
     /* ── Crea movimento ───────────────────────────────────────────────────── */
@@ -560,9 +645,10 @@ class WarehouseController extends BaseController
         ];
         $extra_css = ['warehouse.css'];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/warehouse/_movement_form.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/_movement_form.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'errors', 'values'
+        ));
     }
 
     /* ── API: info prodotto per JS ────────────────────────────────────────── */

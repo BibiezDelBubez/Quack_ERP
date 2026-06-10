@@ -66,6 +66,20 @@ class ReceiptsController extends BaseController
         $detail = qk_ricezione_detail($this->pdo, $id);
         if (!$detail) redirect(url('purchases/receipts'));
 
+        // Pre-query lotti for each product to comply with MVC pattern (no SQL in views)
+        if (!empty($detail['righe'])) {
+            $stLotti = $this->pdo->prepare('SELECT id, codice_lotto_interno, data_scadenza FROM lotti WHERE prodotto_id = ?');
+            foreach ($detail['righe'] as &$r) {
+                if ($r['traccia_lotti'] == 1) {
+                    $stLotti->execute([(int)$r['prodotto_id']]);
+                    $r['lotti'] = $stLotti->fetchAll(PDO::FETCH_ASSOC);
+                } else {
+                    $r['lotti'] = [];
+                }
+            }
+            unset($r);
+        }
+
         $page_title = 'Ricezione ' . $detail['ricezione']['numero'];
         $breadcrumbs = [
             ['label' => 'Acquisti', 'url' => url('purchases/receipts')],

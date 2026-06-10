@@ -159,15 +159,15 @@ $v = $values;
             </div>
           </div>
 
-          <div class="qk-form-row align-items-center mt-2 mb-3">
+          <div class="qk-form-row mt-2 mb-3">
             <div class="qk-form-group">
-              <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+              <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                 <input type="checkbox" name="socio_unico" value="1" <?= !empty($v['socio_unico']) ? 'checked' : '' ?>>
                 SRL a socio unico
               </label>
             </div>
             <div class="qk-form-group">
-              <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+              <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                 <input type="checkbox" name="in_liquidazione" value="1" <?= !empty($v['in_liquidazione']) ? 'checked' : '' ?>>
                 In liquidazione
               </label>
@@ -177,7 +177,7 @@ $v = $values;
           <!-- Logo upload -->
           <div class="qk-form-group">
             <label class="qk-form-label">Logo Aziendale</label>
-            <div id="logo-preview-container" class="mb-2 d-flex align-items-center gap-2" style="<?= empty($v['logo_path']) ? 'display:none !important;' : '' ?>">
+            <div id="logo-preview-container" class="mb-2 qk-flex-row qk-gap-sm" style="<?= empty($v['logo_path']) ? 'display:none !important;' : '' ?>">
               <img id="logo-preview" src="<?= !empty($v['logo_path']) ? url('uploads?path=' . urlencode($v['logo_path'])) : '#' ?>" alt="Logo anteprima" style="max-height:60px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px">
               <span class="small text-muted font-monospace" id="logo-status-text"><?= !empty($v['logo_path']) ? '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Logo caricato: ' . e($v['logo_path']) . '</span>' : '' ?></span>
             </div>
@@ -188,7 +188,7 @@ $v = $values;
           <!-- Header stampati upload -->
           <div class="qk-form-group">
             <label class="qk-form-label">Intestazione per Documenti (Header)</label>
-            <div id="header-preview-container" class="mb-2 d-flex align-items-center gap-2" style="<?= empty($v['header_path']) ? 'display:none !important;' : '' ?>">
+            <div id="header-preview-container" class="mb-2 qk-flex-row qk-gap-sm" style="<?= empty($v['header_path']) ? 'display:none !important;' : '' ?>">
               <img id="header-preview" src="<?= !empty($v['header_path']) ? url('uploads?path=' . urlencode($v['header_path'])) : '#' ?>" alt="Header anteprima" style="max-height:80px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px;width:auto;max-width:100%;">
               <span class="small text-muted font-monospace" id="header-status-text"><?= !empty($v['header_path']) ? '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Header caricato: ' . e($v['header_path']) . '</span>' : '' ?></span>
             </div>
@@ -233,7 +233,7 @@ $v = $values;
       <div class="qk-status-panel-hd">Impostazioni ERP</div>
       <div class="qk-status-panel-body">
         <div class="qk-form-group mb-3">
-          <label class="d-flex align-items-center gap-2" style="font-size:.875rem;cursor:pointer">
+          <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
             <input type="checkbox" name="predefinita" value="1" <?= !empty($v['predefinita']) ? 'checked' : '' ?>>
             Azienda principale (Default)
           </label>

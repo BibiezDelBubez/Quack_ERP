@@ -71,6 +71,15 @@ final class PurchasesController extends BaseController
         $stmt->execute($params);
         $pricelists = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // Calcola lo stato effettivo nel controller
+        $oggi = date('Y-m-d');
+        foreach ($pricelists as &$la) {
+            $inRange  = (!$la['valido_dal'] || $la['valido_dal'] <= $oggi)
+                     && (!$la['valido_al']  || $la['valido_al']  >= $oggi);
+            $la['stato_effettivo'] = $inRange ? 'active' : 'expired';
+        }
+        unset($la);
+
         $this->page(APP_ROOT_DIR . '/app/views/purchases/pricelists_list.php', [
             'page_title'    => 'Listini acquisto',
             'page_subtitle' => "Gestione dei listini di acquisto e delle tariffe concordate con i fornitori",

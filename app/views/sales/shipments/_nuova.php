@@ -35,6 +35,7 @@ $totRighe = count($righe);
 <form id="formNuovaSpedizione"
       action="<?= url('sales/orders/action') ?>"
       method="post"
+      enctype="multipart/form-data"
       novalidate>
   <?= csrf_field() ?>
   <input type="hidden" name="id" value="<?= $orderId ?>">
@@ -325,6 +326,12 @@ $totRighe = count($righe);
             <label class="qk-form-label">Peso lordo (kg)</label>
             <input type="number" name="peso_lordo_kg" class="qk-form-control"
                    step="0.001" min="0" value="0">
+          </div>
+
+          <div class="qk-form-group">
+            <label class="qk-form-label"><i class="fa-solid fa-camera me-1 text-muted"></i> Foto Pallet / Carico</label>
+            <input type="file" name="pallet_foto[]" class="qk-form-control" accept="image/*" multiple>
+            <small class="qk-text-muted" style="font-size:0.75rem">Seleziona una o più foto da associare alla spedizione</small>
           </div>
         </div>
 

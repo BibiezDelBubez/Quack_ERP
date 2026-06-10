@@ -3,13 +3,6 @@
  * sales/quotes/_list.php
  * Variabili: $offers, $total, $search, $status, $dal, $al, $pag
  */
-function prev_stato_badge(string $stato): string {
-    $map = ['bozza' => ['draft','Bozza'], 'inviata' => ['confirmed','Inviata'],
-            'accettata' => ['active','Accettata'], 'rifiutata' => ['cancelled','Rifiutata'],
-            'scaduta' => ['warning','Scaduta'], 'annullata' => ['cancelled','Annullata']];
-    [$cls, $lbl] = $map[$stato] ?? ['draft', ucfirst($stato)];
-    return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
-}
 $statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviata' => 'Inviata',
                 'accettata' => 'Accettata', 'rifiutata' => 'Rifiutata',
                 'scaduta' => 'Scaduta', 'annullata' => 'Annullata'];
@@ -18,7 +11,7 @@ $sort = $pag['sort']; $dir = $pag['dir'];
 $hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
 
-<?php include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
+<?php $active_tab = 'quotes'; include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
 
 <div class="qk-card">
 
@@ -91,7 +84,20 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
                 echo '<span' . ($scaduta ? ' class="qk-text-danger"' : '') . '>' . fmt_date($o['data_scadenza']) . '</span>';
             } else { echo '—'; }
           ?></td>
-          <td class="col-actions"></td>
+          <td class="col-actions">
+            <div class="qk-flex-row qk-gap-xs justify-content-end">
+              <form method="post" action="<?= url('sales/quotes/edit') . '?id=' . $o['id'] ?>" style="display:inline">
+                <?= csrf_field() ?>
+                <input type="hidden" name="azione" value="duplica">
+                <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Duplica preventivo">
+                  <i class="fa-regular fa-copy text-success"></i>
+                </button>
+              </form>
+              <a href="<?= url('sales/quotes/edit?id=' . $o['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Modifica">
+                <i class="fa-solid fa-pencil"></i>
+              </a>
+            </div>
+          </td>
         </tr>
         <?php endforeach; ?>
       </tbody>

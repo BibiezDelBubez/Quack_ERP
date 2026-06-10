@@ -6,7 +6,7 @@
 <div class="qk-card">
   <div class="qk-table-toolbar">
     <div class="qk-table-toolbar-left">
-      <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
+      <form method="get" class="qk-flex-row qk-gap-sm flex-wrap align-items-center">
         <div class="qk-filter-wrap">
           <i class="fa-solid fa-magnifying-glass"></i>
           <input type="text" name="q" class="qk-filter-input" placeholder="Cerca nome, SKU..." value="<?= e($search) ?>">
@@ -25,7 +25,7 @@
           <?php endforeach; ?>
         </select>
         <?php endif; ?>
-        <label class="d-flex align-items-center gap-1 fw-medium" style="font-size:.85rem;cursor:pointer">
+        <label class="qk-flex-row qk-gap-xs fw-medium" style="font-size:.85rem;cursor:pointer">
           <input type="checkbox" name="adr" value="1" <?= $adr_only ? 'checked' : '' ?>> Solo ADR
         </label>
         <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-filter"></i> Filtra</button>
@@ -133,7 +133,7 @@
           </div>
         </div>
 
-        <div class="d-flex gap-2 mb-3">
+        <div class="qk-flex-row qk-gap-sm mb-3">
           <button type="button" id="btnDownloadTracciato" class="btn-qk btn-qk-secondary btn-qk-sm">
             <i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Tracciato
           </button>
@@ -144,7 +144,7 @@
         </div>
 
         <div id="importPreviewWrap" style="display:none">
-          <div class="d-flex align-items-center justify-content-between mb-1">
+          <div class="qk-flex-row qk-justify-between mb-1">
             <span class="fw-semibold" style="font-size:.875rem">Anteprima (<span id="importPreviewCount">0</span> righe)</span>
             <button type="button" id="btnClearFile" class="btn-qk btn-qk-secondary btn-qk-sm">
               <i class="fa-solid fa-xmark"></i> Rimuovi

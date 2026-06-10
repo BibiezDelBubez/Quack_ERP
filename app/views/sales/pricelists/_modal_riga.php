@@ -35,14 +35,14 @@
           </div>
           <div class="qk-form-group">
             <label class="qk-form-label">Prezzo unitario <span class="required">*</span></label>
-            <div style="display:flex;gap:.4rem;align-items:center">
+            <div class="qk-flex-row qk-gap-xs">
               <input type="number" id="mr-prezzo" class="qk-form-control" min="0" step="0.0001" placeholder="0.0000">
               <span style="font-size:.78rem;color:var(--qk-text-muted);white-space:nowrap"><?= e($values['valuta'] ?? 'EUR') ?></span>
             </div>
           </div>
           <div class="qk-form-group">
             <label class="qk-form-label">Sconto %</label>
-            <div style="display:flex;gap:.4rem;align-items:center">
+            <div class="qk-flex-row qk-gap-xs">
               <input type="number" id="mr-sconto" class="qk-form-control" min="0" max="100" step="0.01" value="0">
               <span style="font-size:.78rem;color:var(--qk-text-muted)">%</span>
             </div>

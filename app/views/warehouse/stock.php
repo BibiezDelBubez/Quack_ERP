@@ -38,7 +38,7 @@ $base = url('warehouse/stock');
       <?php elseif ($k === 'esauriti' && $nEsauriti > 0): ?>
         <span class="qk-pill-count"><?= $nEsauriti ?></span>
       <?php elseif ($k === 'in_arrivo' && $nInArrivo > 0): ?>
-        <span class="qk-pill-count bg-primary text-white" style="border-radius:10px; padding: 2px 6px; font-size:0.75rem"><?= $nInArrivo ?></span>
+        <span class="qk-pill-count"><?= $nInArrivo ?></span>
       <?php endif; ?>
     </a>
     <?php endforeach; ?>
@@ -62,7 +62,7 @@ $base = url('warehouse/stock');
     <?php if ($filter === 'in_arrivo'): ?>
       <!-- Visualizzazione Merce in Arrivo (Ordini Acquisto pendenti) -->
       <?php if (empty($ordini_in_arrivo)): ?>
-      <div class="qk-empty-state">
+      <div class="qk-empty">
         <i class="fa-solid fa-dolly"></i>
         <p>Nessun ordine in arrivo o parzialmente ricevuto trovato.</p>
       </div>
@@ -120,7 +120,7 @@ $base = url('warehouse/stock');
     <?php else: ?>
       <!-- Tabella standard giacenze -->
       <?php if (empty($stock)): ?>
-      <div class="qk-empty-state">
+      <div class="qk-empty">
         <i class="fa-solid fa-boxes-stacked"></i>
         <p>Nessun prodotto trovato.</p>
       </div>
@@ -157,7 +157,7 @@ $base = url('warehouse/stock');
                 <?= e($r['nome']) ?>
               </a>
               <?php if ($r['traccia_lotti']): ?>
-              <span class="qkwh-badge-lotti" title="Tracciatura lotti attiva">
+              <span class="qkwh-badge-lotti" style="cursor:pointer" title="Vedi lotti disponibili" onclick="openLotsDrawer(<?= $r['id'] ?>, '<?= e(addslashes($r['nome'])) ?>')">
                 <i class="fa-solid fa-tag"></i> lotti
               </span>
               <?php endif; ?>
@@ -203,3 +203,84 @@ $base = url('warehouse/stock');
     <i class="fa-solid fa-clock-rotate-left"></i> Vedi storico movimenti
   </a>
 </div>
+
+<!-- Drawer per i Lotti -->
+<div id="qk-drawer-backdrop" class="qk-drawer-backdrop"></div>
+<div id="qk-lots-drawer" class="qk-drawer">
+  <div class="qk-drawer-header">
+    <h3 id="qk-drawer-title" class="qk-drawer-title">Dettaglio Lotti</h3>
+    <button type="button" class="qk-drawer-close" onclick="closeLotsDrawer()">&times;</button>
+  </div>
+  <div id="qk-drawer-body" class="qk-drawer-body">
+    <div class="qk-text-muted">Caricamento in corso...</div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+  
+  const backdrop = document.getElementById('qk-drawer-backdrop');
+  const drawer   = document.getElementById('qk-lots-drawer');
+  const titleEl  = document.getElementById('qk-drawer-title');
+  const bodyEl   = document.getElementById('qk-drawer-body');
+  
+  window.openLotsDrawer = async function(prodottoId, prodottoNome) {
+    titleEl.textContent = `Lotti di: ${prodottoNome}`;
+    bodyEl.innerHTML = '<div class="qk-text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Caricamento lotti in corso...</div>';
+    
+    backdrop.classList.add('show');
+    drawer.classList.add('open');
+    
+    try {
+      const res = await fetch(`<?= url('warehouse/api/prodotto-info') ?>?id=${prodottoId}`);
+      const data = await res.json();
+      
+      if (!data.ok) {
+        bodyEl.innerHTML = `<div class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Errore: ${data.error}</div>`;
+        return;
+      }
+      
+      const lotti = data.lotti || [];
+      const disponibili = lotti.filter(l => l.quantita_disponibile > 0);
+      
+      if (disponibili.length === 0) {
+        bodyEl.innerHTML = '<div class="qk-empty-state"><i class="fa-solid fa-box-open"></i><p>Nessun lotto con giacenza disponibile.</p></div>';
+        return;
+      }
+      
+      bodyEl.innerHTML = disponibili.map(l => {
+        const scadenzaStr = l.data_scadenza ? new Date(l.data_scadenza).toLocaleDateString('it-IT') : 'Nessuna scadenza';
+        const isScaduto = l.data_scadenza && new Date(l.data_scadenza) < new Date();
+        const badgeScaduto = isScaduto ? '<span class="badge bg-danger text-white ms-2">Scaduto</span>' : '';
+        
+        return `
+          <div class="qk-drawer-lot-card">
+            <div class="qk-drawer-lot-code">
+              <i class="fa-solid fa-tag text-muted"></i> ${l.codice_lotto_interno}
+            </div>
+            ${l.codice_lotto_fornitore ? `<div style="font-size:0.75rem;color:var(--qk-text-muted)">Cod. Fornitore: ${l.codice_lotto_fornitore}</div>` : ''}
+            <div class="qk-drawer-lot-meta">
+              <span>Disponibile: <strong>${l.quantita_disponibile}</strong></span>
+              <span class="${isScaduto ? 'text-danger fw-bold' : ''}">
+                <i class="fa-solid fa-calendar-days"></i> ${scadenzaStr}${badgeScaduto}
+              </span>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+    } catch (err) {
+      bodyEl.innerHTML = `<div class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Errore di caricamento.</div>`;
+    }
+  };
+  
+  window.closeLotsDrawer = function() {
+    backdrop.classList.remove('show');
+    drawer.classList.remove('open');
+  };
+  
+  backdrop.addEventListener('click', closeLotsDrawer);
+})();
+</script>
+                                                                                                  

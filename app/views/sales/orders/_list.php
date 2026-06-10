@@ -14,7 +14,7 @@ $statiLabels = [
 $sort = $pag['sort']; $dir = $pag['dir'];
 $hasFilters = $search !== '' || $dal !== '' || $al !== '';
 ?>
-<?php include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
+<?php $active_tab = 'orders'; include APP_ROOT_DIR . '/app/views/sales/_subnav.php'; ?>
 
 <div class="qk-card">
   <div class="qk-table-toolbar">

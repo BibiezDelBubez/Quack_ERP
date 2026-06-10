@@ -63,7 +63,7 @@
 
       <div class="qk-form-group mb-0">
         <label class="qk-form-label">Stato</label>
-        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;width:fit-content">
+        <label class="qk-flex-row qk-gap-sm" style="cursor:pointer;width:fit-content">
           <input type="hidden" name="attivo" value="0">
           <input class="form-check-input" type="checkbox" name="attivo" id="pl-attivo"
                  value="1" <?= ($values['attivo'] ?? 1) ? 'checked' : '' ?>
@@ -76,7 +76,7 @@
 
     </div>
 
-    <div class="qk-card-footer" style="display:flex;justify-content:space-between;align-items:center">
+    <div class="qk-card-footer qk-flex-row qk-justify-between">
       <a href="<?= url('sales/pricelists') ?>" class="btn-qk btn-qk-secondary">
         <i class="fa-solid fa-arrow-left me-1"></i>Annulla
       </a>

@@ -87,7 +87,7 @@
 
         </div>
 
-        <div class="qk-card-footer" style="display:flex;justify-content:space-between;align-items:center">
+        <div class="qk-card-footer qk-flex-row qk-justify-between"">
           <a href="<?= url('purchases/pricelists') ?>" class="btn-qk btn-qk-secondary">
             <i class="fa-solid fa-arrow-left me-1"></i>Annulla
           </a>
@@ -205,3 +205,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (hiddenEl.value) {
       clearBtn.classList.remove('d-none');
     }
+  }
+});
+</script>

@@ -15,7 +15,7 @@
       </div>
       <div class="modal-body">
         <label class="qk-form-label">Nome <span class="text-danger">*</span></label>
-        <input type="text" id="new-cat-nome" class="form-control"
+        <input type="text" id="new-cat-nome" class="qk-form-control"
                placeholder="es. Prodotti per la disinfezione"
                maxlength="100" autocomplete="off">
         <div id="new-cat-error" class="qk-form-error d-none"></div>
@@ -67,7 +67,7 @@
           </div>
           <div class="col-sm-4">
             <label class="qk-form-label">SKU fornitore</label>
-            <input type="text" id="mf-sku" class="form-control font-monospace"
+            <input type="text" id="mf-sku" class="qk-form-control font-monospace"
                    placeholder="Codice articolo fornitore" maxlength="50">
           </div>
         </div>
@@ -76,7 +76,7 @@
         <div class="row g-3 mb-3">
           <div class="col-sm-8">
             <label class="qk-form-label">Nome prodotto presso il fornitore</label>
-            <input type="text" id="mf-nome-prod-forn" class="form-control"
+            <input type="text" id="mf-nome-prod-forn" class="qk-form-control"
                    placeholder="Come lo chiama il fornitore" maxlength="150">
           </div>
           <div class="col-sm-4">
@@ -84,7 +84,7 @@
               Ordine preferenza
               <span class="text-muted small" style="font-weight:normal">(1 = preferito)</span>
             </label>
-            <input type="number" id="mf-ordine-pref" class="form-control"
+            <input type="number" id="mf-ordine-pref" class="qk-form-control"
                    value="1" min="1" step="1">
           </div>
         </div>
@@ -93,15 +93,15 @@
         <div class="row g-3 mb-3">
           <div class="col-sm-4">
             <label class="qk-form-label">Q.tà minima ordine (MOQ)</label>
-            <input type="number" id="mf-qta-min" class="form-control"
+            <input type="number" id="mf-qta-min" class="qk-form-control"
                    placeholder="0,00" min="0" step="0.001">
           </div>
           <div class="col-sm-4">
             <label class="qk-form-label">Lead time (giorni)</label>
-            <input type="number" id="mf-lead-time" class="form-control"
+            <input type="number" id="mf-lead-time" class="qk-form-control"
                    placeholder="es. 7" min="0" step="1">
           </div>
-          <div class="col-sm-4 d-flex align-items-end pb-1">
+          <div class="col-sm-4 qk-flex-row pb-1">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="mf-attivo" value="1" checked>
               <label class="form-check-label" for="mf-attivo">Attivo</label>
@@ -113,12 +113,12 @@
         <div class="row g-3 mb-3">
           <div class="col-sm-4">
             <label class="qk-form-label">RRP min. consigliato</label>
-            <input type="number" id="mf-rrp-min" class="form-control"
+            <input type="number" id="mf-rrp-min" class="qk-form-control"
                    placeholder="0,00" min="0" step="0.0001">
           </div>
           <div class="col-sm-4">
             <label class="qk-form-label">RRP max. consigliato</label>
-            <input type="number" id="mf-rrp-max" class="form-control"
+            <input type="number" id="mf-rrp-max" class="qk-form-control"
                    placeholder="0,00" min="0" step="0.0001">
           </div>
         </div>
@@ -127,13 +127,13 @@
         <div class="row g-3 mb-3">
           <div class="col-12">
             <label class="qk-form-label">Note</label>
-            <textarea id="mf-note" class="form-control" rows="2"
+            <textarea id="mf-note" class="qk-form-control" rows="2"
                       placeholder="Note specifiche per questo fornitore…"></textarea>
           </div>
         </div>
 
         <!-- Info prezzi ─────────────────────────────────────────────── -->
-        <div class="d-flex align-items-center gap-2 small text-muted mt-1">
+        <div class="qk-flex-row qk-gap-sm small text-muted mt-1">
           <i class="fa-solid fa-circle-info text-primary opacity-75"></i>
           I prezzi si gestiscono direttamente nel tab <strong>Fornitori</strong>:
           usa il pulsante <strong>+ Prezzo</strong> accanto al nome del fornitore.
@@ -188,13 +188,13 @@
         <div class="row g-3 mb-3">
           <div class="col-sm-6">
             <label class="qk-form-label">Quantità <span class="text-danger">*</span></label>
-            <input type="number" id="mc-quantita" class="form-control"
+            <input type="number" id="mc-quantita" class="qk-form-control"
                    placeholder="es. 1" min="0.001" step="0.001">
             <div class="qk-form-hint" style="font-size:0.75rem">Nell'unità di stoccaggio del prodotto da aggiungere</div>
           </div>
           <div class="col-sm-6">
             <label class="qk-form-label">Note</label>
-            <input type="text" id="mc-note" class="form-control"
+            <input type="text" id="mc-note" class="qk-form-control"
                    placeholder="Opzionale" maxlength="255">
           </div>
         </div>
@@ -213,4 +213,4 @@
     </div>
   </div>
 </div>
-<?php endif; ?>
+<?php endif; ?>

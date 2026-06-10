@@ -32,10 +32,10 @@ function asset(string $path): string {
  * Restituisce la classe CSS 'active' se il path corrente contiene $match.
  * Usato per evidenziare il link attivo nella sidebar.
  */
-function nav_active(string $match, string $class = 'active'): string {
+function nav_active(string $match, string $class = 'active', bool $exact = false): string {
     $path = request_path();
-    if ($match === '/purchases') {
-        return $path === '/purchases' ? $class : '';
+    if ($exact || $match === '/purchases') {
+        return $path === $match ? $class : '';
     }
     return str_contains($path, $match) ? $class : '';
 }
@@ -291,8 +291,14 @@ function status_label(string $status): string {
         'active'    => 'Attivo',
         'inactive'  => 'Inattivo',
         'suspended' => 'Sospeso',
+        'in_lavorazione'       => 'In lavorazione',
+        'parzialmente_spedito' => 'Parz. spedito',
+        'completato'           => 'Completato',
+        'annullato'            => 'Annullato',
+        'expired'              => 'Scaduto',
+        'disattivato'          => 'Disattivato',
     ];
-    return $map[$status] ?? ucfirst($status);
+    return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
 }
 
 /* ── Upload helpers ───────────────────────────────────────────────────────── */
@@ -337,3 +343,57 @@ function status_badge(string $status): string {
     $slug  = e($status);
     return "<span class=\"qk-badge {$slug}\">{$label}</span>";
 }
+
+/**
+ * Genera il prossimo numero progressivo per un tipo di sequenza centralizzato.
+ *
+ * @param PDO $pdo
+ * @param string $tipo Il tipo di sequenza (es: 'preventivo', 'ordine_cliente', 'rfq', ecc.)
+ * @return string
+ */
+function qk_next_sequence_number(PDO $pdo, string $tipo): string
+{
+    $anno = (int) date('Y');
+
+    $st = $pdo->prepare(
+        'SELECT id, prefisso, anno, numero_corrente, padding
+           FROM sequenze WHERE tipo = ? LIMIT 1'
+    );
+    $st->execute([$tipo]);
+    $seq = $st->fetch(PDO::FETCH_ASSOC);
+
+    if (!$seq) {
+        throw new \RuntimeException("Sequenza '$tipo' non trovata nella tabella sequenze.");
+    }
+
+    if ((int) $seq['anno'] !== $anno) {
+        $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
+            ->execute([$anno, $seq['id']]);
+        $seq['numero_corrente'] = 0;
+    }
+
+    $next = (int) $seq['numero_corrente'] + 1;
+    $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
+        ->execute([$next, $seq['id']]);
+
+    $pad = (int) $seq['padding'];
+    return $seq['prefisso'] . $anno . '/' . str_pad((string) $next, $pad, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Badge di stato per le offerte di vendita.
+ * Spostata da quotes/_list.php a functions.php globale.
+ */
+function prev_stato_badge(string $stato): string {
+    $map = [
+        'bozza'     => ['draft', 'Bozza'],
+        'inviata'   => ['confirmed', 'Inviata'],
+        'accettata' => ['active', 'Accettata'],
+        'rifiutata' => ['cancelled', 'Rifiutata'],
+        'scaduta'   => ['warning', 'Scaduta'],
+        'annullata' => ['cancelled', 'Annullata']
+    ];
+    [$cls, $lbl] = $map[$stato] ?? ['draft', ucfirst($stato)];
+    return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
+}
+

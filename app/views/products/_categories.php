@@ -61,7 +61,18 @@ $_qk_export_cat  = url('products/categories/export');
       <?php foreach ($categories as $cat): ?>
         <tr>
           <td><span class="text-monospace small">#<?= e($cat['id']) ?></span></td>
-          <td class="fw-semibold"><?= e($cat['nome']) ?></td>
+          <td class="fw-semibold">
+            <a href="#" class="qk-link-strong text-decoration-none"
+               data-bs-toggle="modal" data-bs-target="#modal-categoria"
+               data-mode="edit"
+               data-id="<?= e($cat['id']) ?>"
+               data-nome="<?= e($cat['nome']) ?>"
+               data-parent-id="<?= e($cat['parent_id'] ?? '') ?>"
+               data-posizione="<?= e($cat['posizione_categoria']) ?>"
+               data-immagine="<?= e($cat['immagine_path'] ?? '') ?>">
+              <?= e($cat['nome']) ?>
+            </a>
+          </td>
           <td>
             <?php if (!empty($cat['parent_nome'])): ?>
               <span class="qk-badge draft"><?= e($cat['parent_nome']) ?></span>
@@ -121,7 +132,7 @@ $_qk_export_cat  = url('products/categories/export');
 <!-- ── MODAL COMPILAZIONE CATEGORIA ── -->
 <div class="modal fade" id="modal-categoria" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
-    <form method="post" class="modal-content">
+    <form method="post" enctype="multipart/form-data" class="modal-content">
       <?= csrf_field() ?>
       <input type="hidden" name="id" id="cat-id" value="">
 
@@ -167,9 +178,20 @@ $_qk_export_cat  = url('products/categories/export');
         </div>
 
         <div class="qk-form-group">
-          <label for="cat-immagine" class="qk-form-label">Percorso Immagine</label>
-          <input type="text" name="immagine_path" id="cat-immagine" class="qk-form-control" maxlength="500" placeholder="es. assets/img/categoria.svg">
-          <div class="qk-form-hint">Percorso relativo alla root del progetto oppure URL assoluto.</div>
+          <label class="qk-form-label">Immagine Categoria</label>
+          <div id="cat-preview-container" class="mb-2 qk-flex-row qk-gap-sm" style="display:none !important; align-items: center;">
+            <img id="cat-preview" src="#" alt="Anteprima categoria" style="max-height:60px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px">
+            <span class="small text-muted font-monospace" id="cat-status-text"></span>
+            <button type="button" class="btn-qk btn-qk-secondary btn-qk-xs ms-auto" id="btn-remove-cat-img" style="padding: 2px 6px; font-size: 0.75rem;">
+              <i class="fa-solid fa-trash-can"></i> Rimuovi
+            </button>
+          </div>
+          <input type="file" name="immagine_file" id="cat-immagine-file" class="qk-form-control" accept="image/*">
+          <input type="hidden" name="immagine_path" id="cat-immagine" value="">
+          <?php if (isset($errors['immagine_file'])): ?>
+            <div class="qk-form-error"><?= e($errors['immagine_file']) ?></div>
+          <?php endif; ?>
+          <span class="qk-form-hint">Seleziona un'immagine dal computer. Formati supportati: JPEG, PNG, GIF, SVG, WEBP.</span>
         </div>
       </div>
 
@@ -255,7 +277,7 @@ $_qk_export_cat  = url('products/categories/export');
   var CAT_COLS = ['nome','parent_nome','posizione_categoria','immagine_path'];
   var CAT_HEADERS = ['nome *','parent_nome','posizione_categoria','immagine_path'];
 
-  // ── Modale edit: popola immagine_path ───────────────────────────────
+  // ── Modale edit: popola immagine_path e preview ───────────────────────────────
   var modalCatEl = document.getElementById('modal-categoria');
   if (modalCatEl) {
     modalCatEl.addEventListener('show.bs.modal', function(e) {
@@ -268,6 +290,13 @@ $_qk_export_cat  = url('products/categories/export');
       var parentSelect = document.getElementById('cat-parent');
       var posizioneInput = document.getElementById('cat-posizione');
       var immagineInput = document.getElementById('cat-immagine');
+      
+      var fileInput = document.getElementById('cat-immagine-file');
+      var previewContainer = document.getElementById('cat-preview-container');
+      var previewImg = document.getElementById('cat-preview');
+      var statusText = document.getElementById('cat-status-text');
+
+      if (fileInput) fileInput.value = '';
 
       if (mode === 'create') {
         titleEl.innerText = 'Nuova Categoria';
@@ -277,19 +306,73 @@ $_qk_export_cat  = url('products/categories/export');
         posizioneInput.value = '0';
         immagineInput.value = '';
         Array.from(parentSelect.options).forEach(function(o){ o.style.display=''; });
+        
+        previewImg.src = '#';
+        statusText.innerText = '';
+        previewContainer.style.setProperty('display', 'none', 'important');
       } else {
         titleEl.innerText = 'Modifica Categoria';
         idInput.value = trigger.getAttribute('data-id');
         nomeInput.value = trigger.getAttribute('data-nome');
         parentSelect.value = trigger.getAttribute('data-parent-id') || '';
         posizioneInput.value = trigger.getAttribute('data-posizione') || '0';
-        immagineInput.value = trigger.getAttribute('data-immagine') || '';
+        
+        var immaginePath = trigger.getAttribute('data-immagine') || '';
+        immagineInput.value = immaginePath;
+        
+        if (immaginePath) {
+          var imgSrc = immaginePath;
+          if (immaginePath.indexOf('http://') !== 0 && immaginePath.indexOf('https://') !== 0) {
+            if (immaginePath.indexOf('assets/') === 0) {
+              imgSrc = '<?= BASE_URL ?>/' + immaginePath;
+            } else {
+              imgSrc = '<?= url("uploads?path=") ?>' + encodeURIComponent(immaginePath);
+            }
+          }
+          previewImg.src = imgSrc;
+          statusText.innerHTML = '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Immagine presente</span>';
+          previewContainer.style.setProperty('display', 'flex', 'important');
+        } else {
+          previewImg.src = '#';
+          statusText.innerText = '';
+          previewContainer.style.setProperty('display', 'none', 'important');
+        }
+        
         var selfId = trigger.getAttribute('data-id');
         Array.from(parentSelect.options).forEach(function(o){
           o.style.display = (o.value === selfId) ? 'none' : '';
         });
       }
     });
+
+    // File input preview setup
+    var catFileInput = document.getElementById('cat-immagine-file');
+    if (catFileInput) {
+      catFileInput.addEventListener('change', function() {
+        var file = this.files[0];
+        if (file) {
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            document.getElementById('cat-preview').src = e.target.result;
+            document.getElementById('cat-status-text').innerHTML = '<span class="text-success font-monospace" style="font-weight:600;"><i class="fa-solid fa-circle-check"></i> Anteprima (' + (file.size / 1024).toFixed(1) + ' KB)</span>';
+            document.getElementById('cat-preview-container').style.setProperty('display', 'flex', 'important');
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
+
+    // Remove button setup
+    var removeBtn = document.getElementById('btn-remove-cat-img');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function() {
+        document.getElementById('cat-immagine').value = '';
+        document.getElementById('cat-preview').src = '#';
+        document.getElementById('cat-preview-container').style.setProperty('display', 'none', 'important');
+        var fileInput = document.getElementById('cat-immagine-file');
+        if (fileInput) fileInput.value = '';
+      });
+    }
   }
 
   // ── Esporta ─────────────────────────────────────────────────────────

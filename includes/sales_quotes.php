@@ -9,31 +9,7 @@ require_once __DIR__ . '/prodotti.php';
  */
 function qk_next_numero_offerta(PDO $pdo): string
 {
-    $anno = (int) date('Y');
-
-    $st = $pdo->prepare(
-        'SELECT id, prefisso, anno, numero_corrente, padding
-           FROM sequenze WHERE tipo = ? LIMIT 1'
-    );
-    $st->execute(['preventivo']);
-    $seq = $st->fetch(PDO::FETCH_ASSOC);
-
-    if (!$seq) {
-        throw new \RuntimeException("Sequenza 'preventivo' non trovata nella tabella sequenze.");
-    }
-
-    if ((int) $seq['anno'] !== $anno) {
-        $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
-            ->execute([$anno, $seq['id']]);
-        $seq['numero_corrente'] = 0;
-    }
-
-    $next = (int) $seq['numero_corrente'] + 1;
-    $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
-        ->execute([$next, $seq['id']]);
-
-    $pad = (int) $seq['padding'];
-    return $seq['prefisso'] . $anno . '/' . str_pad((string) $next, $pad, '0', STR_PAD_LEFT);
+    return qk_next_sequence_number($pdo, 'preventivo');
 }
 
 /**
@@ -220,7 +196,7 @@ function qk_denormalize_offerta_details(PDO $pdo, array $values): array
                    az.iban_default
             FROM aziende_interne az
             JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'legale'
+            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'sede_legale'
             WHERE az.id = ?
             LIMIT 1
         ");
@@ -234,7 +210,7 @@ function qk_denormalize_offerta_details(PDO $pdo, array $values): array
             SELECT cf.ragione_sociale, cf.nome, cf.cognome, cf.partita_iva, cf.codice_fiscale,
                    ind.via, ind.civico, ind.cap, ind.citta, ind.provincia, ind.nazione
             FROM clienti_fornitori cf
-            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'legale'
+            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'sede_legale'
             WHERE cf.id = ?
             LIMIT 1
         ");
@@ -305,6 +281,101 @@ function qk_denormalize_offerta_details(PDO $pdo, array $values): array
 }
 
 /**
+ * Calcola i valori economici e logistici di una riga preventivo.
+ */
+function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
+{
+    $prodotto_id = $r['prodotto_id'] ? (int)$r['prodotto_id'] : null;
+    $qta = (float)($r['quantita'] ?? 0);
+    $pu = (float)($r['prezzo_unitario'] ?? 0);
+    $sconto = (float)($r['sconto_perc'] ?? 0);
+    $iva = (float)($r['iva_perc'] ?? 22);
+
+    $prezzo_netto = round($pu * (1 - $sconto / 100), 4);
+    $imponibile_riga = round($prezzo_netto * $qta, 2);
+    $iva_riga = round($imponibile_riga * ($iva / 100), 2);
+    $totale_riga = round($imponibile_riga + $iva_riga, 2);
+
+    // Ottieni UoM id
+    $um_codice = $r['unita_misura'] ?? 'pz';
+    $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
+    $stUm->execute([$um_codice]);
+    $um_id = $stUm->fetchColumn() ?: null;
+
+    // Calcola equivalenti in unità stock
+    $quantita_stock = $qta;
+    $unita_misura_stock_id = $um_id;
+    $quantita_contenuto_snapshot = 1.0;
+    if ($prodotto_id && $um_id) {
+        $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
+        $stProdUm->execute([$prodotto_id]);
+        $prodUm = $stProdUm->fetch();
+        if ($prodUm) {
+            $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
+            $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
+            $quantita_contenuto_snapshot = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
+            if ((int)$um_id === $unita_misura_stock_id) {
+                $quantita_stock = $qta;
+            } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
+                // Q_stock = Q_comm / F_conv
+                $quantita_stock = (float)bcdiv((string)$qta, (string)$quantita_contenuto_snapshot, 3);
+            }
+        }
+    }
+
+    // Calcolo costo d'acquisto stimato
+    $costo_unitario = 0.0;
+    if ($prodotto_id) {
+        $stCost = $pdo->prepare('
+            SELECT MIN(pfp.prezzo) 
+            FROM prodotti_fornitori_prezzi pfp
+            JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+            WHERE pf.prodotto_id = ? AND pf.attivo = 1
+        ');
+        $stCost->execute([$prodotto_id]);
+        $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
+    }
+    $totale_costo_riga = round($costo_unitario * $quantita_stock, 2);
+    $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
+
+    // Verifica classificazione ADR
+    $is_adr = 0;
+    if ($prodotto_id) {
+        $stAdr = $pdo->prepare('
+            SELECT COALESCE(is_adr, 0)
+            FROM prodotti
+            WHERE id = ?
+        ');
+        $stAdr->execute([$prodotto_id]);
+        $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
+    }
+
+    return [
+        'prodotto_id' => $prodotto_id,
+        'descrizione' => trim($r['descrizione']),
+        'descrizione_confezione' => isset($r['quantita_confezione']) ? trim($r['quantita_confezione']) : null,
+        'quantita' => $qta,
+        'unita_misura_id' => $um_id,
+        'prezzo_unitario' => $pu,
+        'sconto_perc' => $sconto,
+        'prezzo_netto' => $prezzo_netto,
+        'iva_perc' => $iva,
+        'imponibile_riga' => $imponibile_riga,
+        'totale_riga' => $totale_riga,
+        'costo_unitario' => $costo_unitario,
+        'totale_costo_riga' => $totale_costo_riga,
+        'margine_riga' => $margine_riga,
+        'is_adr' => $is_adr,
+        'quantita_stock' => $quantita_stock,
+        'unita_misura_stock_id' => $unita_misura_stock_id,
+        'quantita_contenuto_snapshot' => $quantita_contenuto_snapshot,
+        'posizione_riga' => $pos,
+        'note_riga' => trim($r['note_riga'] ?? ''),
+        'iva_riga' => $iva_riga
+    ];
+}
+
+/**
  * Inserimento preventivo e relative righe.
  */
 function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id): int
@@ -324,97 +395,12 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         // Prepariamo i dati per ciascuna riga
         $righe_preparate = [];
         foreach ($righe as $pos => $r) {
-            $prodotto_id = $r['prodotto_id'] ? (int)$r['prodotto_id'] : null;
-            $qta = (float)($r['quantita'] ?? 0);
-            $pu = (float)($r['prezzo_unitario'] ?? 0);
-            $sconto = (float)($r['sconto_perc'] ?? 0);
-            $iva = (float)($r['iva_perc'] ?? 22);
+            $r_calc = qk_calcola_riga_offerta($pdo, $r, $pos);
+            $righe_preparate[] = $r_calc;
 
-            $prezzo_netto = round($pu * (1 - $sconto / 100), 4);
-            $imponibile_riga = round($prezzo_netto * $qta, 2);
-            $iva_riga = round($imponibile_riga * ($iva / 100), 2);
-            $totale_riga = round($imponibile_riga + $iva_riga, 2);
-
-            // Ottieni UoM id
-            $um_codice = $r['unita_misura'] ?? 'pz';
-            $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
-            $stUm->execute([$um_codice]);
-            $um_id = $stUm->fetchColumn() ?: null;
-
-            // Calcola equivalenti in unità stock
-            $quantita_stock = $qta;
-            $unita_misura_stock_id = $um_id;
-            $quantita_contenuto_snapshot = 1.0;
-            if ($prodotto_id && $um_id) {
-                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, quantita_contenuto FROM prodotti WHERE id = ?');
-                $stProdUm->execute([$prodotto_id]);
-                $prodUm = $stProdUm->fetch();
-                if ($prodUm) {
-                    $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
-                    $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                    $quantita_contenuto_snapshot = $prodUm['quantita_contenuto'] ? (float)$prodUm['quantita_contenuto'] : 1.0;
-                    if ((int)$um_id === $unita_misura_stock_id) {
-                        $quantita_stock = $qta;
-                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
-                        // Q_stock = Q_comm / F_conv (usando bcdiv per massima precisione finanziaria)
-                        $quantita_stock = (float)bcdiv((string)$qta, (string)$quantita_contenuto_snapshot, 3);
-                    }
-                }
-            }
-
-            // Calcolo costo d'acquisto stimato (standard/minimo da listini fornitore)
-            $costo_unitario = 0.0;
-            if ($prodotto_id) {
-                $stCost = $pdo->prepare('
-                    SELECT MIN(pfp.prezzo) 
-                    FROM prodotti_fornitori_prezzi pfp
-                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
-                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
-                ');
-                $stCost->execute([$prodotto_id]);
-                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
-            }
-            $totale_costo_riga = round($costo_unitario * $quantita_stock, 2);
-            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
-
-            // Verifica classificazione ADR
-            $is_adr = 0;
-            if ($prodotto_id) {
-                $stAdr = $pdo->prepare('
-                    SELECT COALESCE(is_adr, 0)
-                    FROM prodotti
-                    WHERE id = ?
-                ');
-                $stAdr->execute([$prodotto_id]);
-                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
-            }
-
-            $righe_preparate[] = [
-                'prodotto_id' => $prodotto_id,
-                'descrizione' => trim($r['descrizione']),
-                'descrizione_confezione' => isset($r['quantita_confezione']) ? trim($r['quantita_confezione']) : null,
-                'quantita' => $qta,
-                'unita_misura_id' => $um_id,
-                'prezzo_unitario' => $pu,
-                'sconto_perc' => $sconto,
-                'prezzo_netto' => $prezzo_netto,
-                'iva_perc' => $iva,
-                'imponibile_riga' => $imponibile_riga,
-                'totale_riga' => $totale_riga,
-                'costo_unitario' => $costo_unitario,
-                'totale_costo_riga' => $totale_costo_riga,
-                'margine_riga' => $margine_riga,
-                'is_adr' => $is_adr,
-                'quantita_stock' => $quantita_stock,
-                'unita_misura_stock_id' => $unita_misura_stock_id,
-                'quantita_contenuto_snapshot' => $quantita_contenuto_snapshot,
-                'posizione_riga' => $pos,
-                'note_riga' => trim($r['note_riga'] ?? ''),
-            ];
-
-            $raw_imponibile += $imponibile_riga;
-            $raw_iva += $iva_riga;
-            $totale_costo += $totale_costo_riga;
+            $raw_imponibile += $r_calc['imponibile_riga'];
+            $raw_iva += $r_calc['iva_riga'];
+            $totale_costo += $r_calc['totale_costo_riga'];
         }
 
         // Applica sconto globale della testata
@@ -623,90 +609,12 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
 
         $righe_preparate = [];
         foreach ($righe as $pos => $r) {
-            $prodotto_id = $r['prodotto_id'] ? (int)$r['prodotto_id'] : null;
-            $qta = (float)($r['quantita'] ?? 0);
-            $pu = (float)($r['prezzo_unitario'] ?? 0);
-            $sconto = (float)($r['sconto_perc'] ?? 0);
-            $iva = (float)($r['iva_perc'] ?? 22);
+            $r_calc = qk_calcola_riga_offerta($pdo, $r, $pos);
+            $righe_preparate[] = $r_calc;
 
-            $prezzo_netto = round($pu * (1 - $sconto / 100), 4);
-            $imponibile_riga = round($prezzo_netto * $qta, 2);
-            $iva_riga = round($imponibile_riga * ($iva / 100), 2);
-            $totale_riga = round($imponibile_riga + $iva_riga, 2);
-
-            $um_codice = $r['unita_misura'] ?? 'pz';
-            $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
-            $stUm->execute([$um_codice]);
-            $um_id = $stUm->fetchColumn() ?: null;
-
-            $quantita_stock = $qta;
-            $unita_misura_stock_id = $um_id;
-            if ($prodotto_id && $um_id) {
-                $stProdUm = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
-                $stProdUm->execute([$prodotto_id]);
-                $prodUm = $stProdUm->fetch();
-                if ($prodUm) {
-                    $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
-                    $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                    $factor = qk_prodotto_get_conversion_factor($pdo, (int)$prodotto_id);
-                    if ((int)$um_id === $unita_misura_stock_id) {
-                        $quantita_stock = $qta;
-                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
-                        $quantita_stock = round($qta / $factor, 3);
-                    }
-                }
-            }
-
-            $costo_unitario = 0.0;
-            if ($prodotto_id) {
-                $stCost = $pdo->prepare('
-                    SELECT MIN(pfp.prezzo) 
-                    FROM prodotti_fornitori_prezzi pfp
-                    JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
-                    WHERE pf.prodotto_id = ? AND pf.attivo = 1
-                ');
-                $stCost->execute([$prodotto_id]);
-                $costo_unitario = (float)($stCost->fetchColumn() ?? 0.0);
-            }
-            $totale_costo_riga = round($costo_unitario * $quantita_stock, 2);
-            $margine_riga = round($imponibile_riga - $totale_costo_riga, 2);
-
-            $is_adr = 0;
-            if ($prodotto_id) {
-                $stAdr = $pdo->prepare('
-                    SELECT COALESCE(is_adr, 0)
-                    FROM prodotti
-                    WHERE id = ?
-                ');
-                $stAdr->execute([$prodotto_id]);
-                $is_adr = $stAdr->fetchColumn() > 0 ? 1 : 0;
-            }
-
-            $righe_preparate[] = [
-                'prodotto_id' => $prodotto_id,
-                'descrizione' => trim($r['descrizione']),
-                'descrizione_confezione' => isset($r['quantita_confezione']) ? trim($r['quantita_confezione']) : null,
-                'quantita' => $qta,
-                'unita_misura_id' => $um_id,
-                'prezzo_unitario' => $pu,
-                'sconto_perc' => $sconto,
-                'prezzo_netto' => $prezzo_netto,
-                'iva_perc' => $iva,
-                'imponibile_riga' => $imponibile_riga,
-                'totale_riga' => $totale_riga,
-                'costo_unitario' => $costo_unitario,
-                'totale_costo_riga' => $totale_costo_riga,
-                'margine_riga' => $margine_riga,
-                'is_adr' => $is_adr,
-                'quantita_stock' => $quantita_stock,
-                'unita_misura_stock_id' => $unita_misura_stock_id,
-                'posizione_riga' => $pos,
-                'note_riga' => trim($r['note_riga'] ?? ''),
-            ];
-
-            $raw_imponibile += $imponibile_riga;
-            $raw_iva += $iva_riga;
-            $totale_costo += $totale_costo_riga;
+            $raw_imponibile += $r_calc['imponibile_riga'];
+            $raw_iva += $r_calc['iva_riga'];
+            $totale_costo += $r_calc['totale_costo_riga'];
         }
 
         $sconto_globale_perc = (float)($values['sconto_globale_perc'] ?? 0.0);
@@ -876,31 +784,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
  */
 function qk_next_numero_ordine_cliente(PDO $pdo): string
 {
-    $anno = (int) date('Y');
-
-    $st = $pdo->prepare(
-        'SELECT id, prefisso, anno, numero_corrente, padding
-           FROM sequenze WHERE tipo = ? LIMIT 1'
-    );
-    $st->execute(['ordine_cliente']);
-    $seq = $st->fetch(PDO::FETCH_ASSOC);
-
-    if (!$seq) {
-        throw new \RuntimeException("Sequenza 'ordine_cliente' non trovata nella tabella sequenze.");
-    }
-
-    if ((int) $seq['anno'] !== $anno) {
-        $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
-            ->execute([$anno, $seq['id']]);
-        $seq['numero_corrente'] = 0;
-    }
-
-    $next = (int) $seq['numero_corrente'] + 1;
-    $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
-        ->execute([$next, $seq['id']]);
-
-    $pad = (int) $seq['padding'];
-    return $seq['prefisso'] . $anno . '/' . str_pad((string) $next, $pad, '0', STR_PAD_LEFT);
+    return qk_next_sequence_number($pdo, 'ordine_cliente');
 }
 
 /**

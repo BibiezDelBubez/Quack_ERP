@@ -41,7 +41,7 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
   </div>
 
   <div class="qk-card mb-4">
-    <div class="qk-card-header d-flex justify-content-between align-items-center">
+    <div class="qk-card-header qk-flex-row qk-justify-between">
       <span class="qk-card-title">Articoli e Lotti da Conteggiare</span>
       <?php if ($isConvalidato): ?>
         <span class="qk-badge confirmed">Convalidato / Sigillato</span>
@@ -122,13 +122,13 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
     </div>
   </div>
 
-  <div class="d-flex justify-content-between align-items-center mb-5">
+  <div class="qk-flex-row qk-justify-between mb-5">
     <a href="<?= url('warehouse/inventories') ?>" class="btn-qk btn-qk-secondary">
       <i class="fa-solid fa-arrow-left me-1"></i> Torna alla lista
     </a>
     
     <?php if (!$isConvalidato): ?>
-      <div class="d-flex gap-2">
+      <div class="qk-flex-row qk-gap-sm">
         <button type="submit" name="azione" value="salva" class="btn-qk btn-qk-secondary">
           <i class="fa-solid fa-floppy-disk me-1"></i> Salva in Bozza
         </button>

@@ -17,7 +17,7 @@
 <!-- ── LISTA PRINCIPALE ── -->
 <div class="qk-card">
   <div class="qk-table-toolbar">
-    <div class="qk-table-toolbar-left d-flex align-items-center gap-3">
+    <div class="qk-table-toolbar-left qk-flex-row qk-gap-md">
       <a href="<?= url('purchases/pricelists/create') ?>" class="btn-qk btn-qk-primary btn-qk-sm">
         <i class="fa-solid fa-plus"></i> Nuovo
       </a>
@@ -26,7 +26,7 @@
 
     <!-- Ricerca & Filtri -->
     <div class="qk-table-toolbar-right">
-      <form action="<?= url('purchases/pricelists') ?>" method="get" class="d-flex align-items-center gap-2">
+      <form action="<?= url('purchases/pricelists') ?>" method="get" class="qk-flex-row qk-gap-sm">
         <div class="qk-search-input">
           <i class="fa-solid fa-magnifying-glass"></i>
           <input type="text" name="q" placeholder="Cerca per listino o fornitore..." value="<?= e($search ?? '') ?>">
@@ -53,6 +53,7 @@
         <tr>
           <th>Nome Listino</th>
           <th>Fornitore</th>
+          <th style="width:80px" class="text-center">Stato</th>
           <th style="width:180px">Valido Dal</th>
           <th style="width:180px">Valido Al</th>
           <th>Note</th>
@@ -69,6 +70,9 @@
           </td>
           <td>
             <div class="fw-semibold"><?= e($la['fornitore_nome'] ?? 'Fornitore non trovato') ?></div>
+          </td>
+          <td class="text-center">
+            <?= status_badge($la['stato_effettivo']) ?>
           </td>
           <td>
             <span class="text-monospace small">

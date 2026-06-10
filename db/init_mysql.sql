@@ -454,15 +454,6 @@ CREATE TABLE IF NOT EXISTS prodotto_classificazioni_adr (
     created_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS schede_sicurezza (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_id   INTEGER     NOT NULL REFERENCES prodotti(id) ON DELETE CASCADE,
-    language      VARCHAR(3)  NOT NULL,   -- ISO 639-2: 'ITA','ENG', ...
-    revision_date DATE,                   -- data revisione SDS
-    file_path     TEXT,                   -- percorso file PDF
-    is_active     BOOLEAN     NOT NULL DEFAULT 1,
-    created_at    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 
 CREATE TABLE IF NOT EXISTS prodotti_immagini (
     id                INT AUTO_INCREMENT PRIMARY KEY,
@@ -940,6 +931,15 @@ CREATE TABLE IF NOT EXISTS spedizioni_righe (
     lotto_id       INTEGER       REFERENCES lotti(id),   -- NULL se il prodotto non traccia lotti
     quantita       DECIMAL(10,3) NOT NULL,
     note           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS spedizioni_foto (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    spedizione_id INTEGER      NOT NULL REFERENCES spedizioni(id) ON DELETE CASCADE,
+    file_path     VARCHAR(255) NOT NULL,
+    file_name     VARCHAR(255) NOT NULL,
+    creato_da     INTEGER      NOT NULL REFERENCES utenti(id),
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS documenti_trasporto (

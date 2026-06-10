@@ -8,11 +8,11 @@ $isAdr = !empty(array_filter($righe, fn($r) => (int)$r['is_adr'] === 1));
 ?>
 
 <!-- Toolbar stampa (non stampata) -->
-<div class="d-flex justify-content-between align-items-center mb-4 no-print">
+<div class="qk-flex-row qk-justify-between mb-4 no-print">
   <a href="<?= url('sales/shipments') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
     <i class="fa-solid fa-arrow-left me-1"></i> Lista Spedizioni
   </a>
-  <div class="d-flex gap-2">
+  <div class="qk-flex-row qk-gap-sm">
     <a href="<?= url('sales/orders/edit?id=' . (int)$d['ordine_id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
       <i class="fa-solid fa-file-contract me-1"></i> Vedi Ordine <?= e($d['numero_ordine']) ?>
     </a>

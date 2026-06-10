@@ -106,7 +106,6 @@ if (!empty($aziende_topbar)) {
   <script>
     const QK_BASE         = '<?= BASE_URL ?>';
     const QK_THEMES       = <?= json_encode(array_column(QK_THEMES, 'slug')) ?>;
-    const QK_THEME_LEGACY = <?= json_encode(QK_THEME_LEGACY) ?>;
     const QK_SESSION_THEME = '<?= e($_current_theme) ?>';
   </script>
 </head>

@@ -16,32 +16,7 @@ declare(strict_types=1);
  */
 function qk_next_numero_acquisto(PDO $pdo, string $tipo): string
 {
-    $anno = (int) date('Y');
-
-    $st = $pdo->prepare(
-        'SELECT id, prefisso, anno, numero_corrente, padding
-           FROM sequenze WHERE tipo = ? LIMIT 1'
-    );
-    $st->execute([$tipo]);
-    $seq = $st->fetch(PDO::FETCH_ASSOC);
-
-    if (!$seq) {
-        throw new \RuntimeException("Sequenza '$tipo' non trovata nella tabella sequenze.");
-    }
-
-    if ((int) $seq['anno'] !== $anno) {
-        // Nuovo anno: reset a 1
-        $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
-            ->execute([$anno, $seq['id']]);
-        $seq['numero_corrente'] = 0;
-    }
-
-    $next = (int) $seq['numero_corrente'] + 1;
-    $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
-        ->execute([$next, $seq['id']]);
-
-    $pad = (int) $seq['padding'];
-    return $seq['prefisso'] . $anno . '/' . str_pad((string) $next, $pad, '0', STR_PAD_LEFT);
+    return qk_next_sequence_number($pdo, $tipo);
 }
 
 /**

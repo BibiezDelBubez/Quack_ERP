@@ -1,32 +1,3 @@
-2) clienti | listini
-Posso associare solo 1 listino per cliente. rivedere questa cosa. studia come fa sga
-Sga vedo che per 1 listino 1 solo cliente, ma 1 cliente può avere più listini (di solito con periodi di valitida diversi)
-
-
-
 3) preventivi clienti
 errore ${data, prezzo_sorgente} quando inserisco prezzo su preventivo cliente
 
-PREVENTIVI e ORDINI (sia di vendita che di acquisto)
-Riconsidera testo, layout e disposizione dei bottoni (conferma, duplica, annulla, crea versione, fattura).
-
-SPEDIZIONI
-Aggiungere possibilità di caricare foto del pallet prima di spedire.
-
-PRODOTTI E ADR
-Manca ancora controller di associazione Prodtti - Sostanze ADR - Codici ONU
-
-Controlla ordine di precursori di esplosivo
-
-Tutte le liste e i contenitori di righe:
-c'è possibilità di ordinare gli elementi cliccando su una qualche colonna?
-per preventivi o oggetti per cui è importante la data: posso ordinare o filtrare per data?
-
-
-MAGAZZINO E LOTTI
-Al momento le giacenze sono per prodotto. Ma quale e è la ux prevista dei best ERP per i prodotti traccciati in lotti? Come mostrano quanti ne ho di ogni lotto? Devo cliccare su un prodotto e si apre il dettaglio? come funziona?
-
-PER TUTTI I DOCUMENTI PDF E DOCX
-Controlla se la best practice è
-A) aspettarsi che l'utente prima salvi e poi stampi il pdf/docx
-B) stampare i pdf/docx non usando i dati dell'ultimo salvataggio ma usando i dati inseriti in quel momento nei form

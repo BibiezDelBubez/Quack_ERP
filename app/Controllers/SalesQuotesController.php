@@ -62,9 +62,10 @@ final class SalesQuotesController extends BaseController
             <i class="fa-solid fa-plus"></i> Nuovo preventivo
         </a>';
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/sales/quotes/_list.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/sales/quotes/_list.php', compact(
+            'offers', 'total', 'search', 'status', 'dal', 'al', 'pag',
+            'active_tab', 'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions'
+        ));
     }
 
     /* ── Creazione ────────────────────────────────────────────────────────── */
@@ -175,9 +176,18 @@ final class SalesQuotesController extends BaseController
             ['label' => 'Nuovo'],
         ];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/sales/quotes/_form.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/sales/quotes/_form.php', [
+            'errors' => $errors,
+            'values' => $values,
+            'numero_offerta' => $numero_offerta,
+            'aziende' => $aziende,
+            'listini' => $listini,
+            'active_tab' => $active_tab,
+            'page_title' => $page_title,
+            'page_subtitle' => $page_subtitle,
+            'breadcrumbs' => $breadcrumbs,
+            'extra_css' => ['sales-common.css']
+        ]);
     }
 
     /* ── Modifica ─────────────────────────────────────────────────────────── */
@@ -293,9 +303,22 @@ final class SalesQuotesController extends BaseController
             ['label' => '#' . $id],
         ];
 
-        require INCLUDES_DIR . '/header.php';
-        require APP_ROOT_DIR . '/app/views/sales/quotes/_form.php';
-        require INCLUDES_DIR . '/footer.php';
+        $this->page(APP_ROOT_DIR . '/app/views/sales/quotes/_form.php', [
+            'id' => $id,
+            'detail' => $detail,
+            'linkedOrder' => $linkedOrder,
+            'errors' => $errors,
+            'values' => $values,
+            'preloadedRighe' => $preloadedRighe,
+            'numero_offerta' => $numero_offerta,
+            'listini' => $listini,
+            'aziende' => $aziende,
+            'active_tab' => $active_tab,
+            'page_title' => $page_title,
+            'page_subtitle' => $page_subtitle,
+            'breadcrumbs' => $breadcrumbs,
+            'extra_css' => ['sales-common.css']
+        ]);
     }
 
     public function action(): void

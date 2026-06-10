@@ -158,7 +158,7 @@
 
       <li class="qk-nav-item">
         <a href="<?= url('warehouse') ?>" title="Magazzino"
-           class="<?= nav_active('/warehouse') ?>">
+           class="<?= nav_active('/warehouse', 'active', true) ?>">
           <i class="fa-solid fa-warehouse"></i>
           <span class="qk-nav-label">Magazzino</span>
         </a>
@@ -280,5 +280,5 @@
       </li>
 
     </ul>
-  </div>
-</nav>
+  </nav>
+</aside>

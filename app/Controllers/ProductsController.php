@@ -553,6 +553,28 @@ final class ProductsController extends BaseController
                     $errors['parent_id'] = 'Una categoria non può essere genitore di se stessa.';
                 }
 
+                // Handle image upload
+                if (empty($errors) && isset($_FILES['immagine_file']) && $_FILES['immagine_file']['error'] === UPLOAD_ERR_OK) {
+                    $tmp = $_FILES['immagine_file']['tmp_name'];
+                    $name = $_FILES['immagine_file']['name'];
+                    $ext = pathinfo($name, PATHINFO_EXTENSION);
+                    $allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
+                    if (!in_array(strtolower($ext), $allowedExts, true)) {
+                        $errors['immagine_file'] = 'Formato immagine non valido. Consentiti: ' . implode(', ', $allowedExts);
+                    } else {
+                        $subDir = 'categorie';
+                        $absDir = upload_ensure_dir($subDir);
+                        $safeName = preg_replace('/[^a-zA-Z0-9_.-]/', '_', pathinfo($name, PATHINFO_FILENAME));
+                        $finalName = $safeName . '_' . time() . '.' . $ext;
+                        $destAbs = $absDir . DIRECTORY_SEPARATOR . $finalName;
+                        if (move_uploaded_file($tmp, $destAbs)) {
+                            $immagine_path = $subDir . '/' . $finalName;
+                        } else {
+                            $errors['immagine_file'] = 'Impossibile salvare l\'immagine caricata.';
+                        }
+                    }
+                }
+
                 if (empty($errors)) {
                     try {
                         if ($id) {

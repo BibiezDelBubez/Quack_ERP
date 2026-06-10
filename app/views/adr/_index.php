@@ -700,13 +700,13 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         <div class="modal-body">
           <div class="mb-3">
             <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
-            <input type="text" name="codice" id="mc-codice" class="form-control font-monospace"
+            <input type="text" name="codice" id="mc-codice" class="qk-form-control qk-font-mono"
                    placeholder="es. 3, 4.1, 6.1" maxlength="5" required>
             <div class="qk-form-hint">Per classi con divisioni, usa il codice padre (es. <code>1</code> non <code>1.1</code>).</div>
           </div>
           <div class="mb-3">
             <label class="qk-form-label">Denominazione <span class="text-danger">*</span></label>
-            <input type="text" name="denominazione" id="mc-denom" class="form-control" maxlength="100" required>
+            <input type="text" name="denominazione" id="mc-denom" class="qk-form-control" maxlength="100" required>
           </div>
           <div class="mb-3">
             <div class="form-check">
@@ -741,12 +741,12 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
         <div class="modal-body">
           <div class="mb-3">
             <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
-            <input type="text" name="codice" id="mi-codice" class="form-control font-monospace text-uppercase"
+            <input type="text" name="codice" id="mi-codice" class="qk-form-control qk-font-mono text-uppercase"
                    placeholder="I, II, III" maxlength="3" required>
           </div>
           <div class="mb-3">
             <label class="qk-form-label">Descrizione <span class="text-danger">*</span></label>
-            <input type="text" name="descrizione" id="mi-desc" class="form-control" maxlength="100" required>
+            <input type="text" name="descrizione" id="mi-desc" class="qk-form-control" maxlength="100" required>
           </div>
         </div>
         <div class="modal-footer">
@@ -776,19 +776,19 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
               <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
-              <input type="text" name="codice" id="mg-codice" class="form-control font-monospace"
+              <input type="text" name="codice" id="mg-codice" class="qk-form-control qk-font-mono"
                      placeholder="es. B, C/D" maxlength="10" required>
             </div>
             <div class="col-sm-8">
               <label class="qk-form-label">Codice cisterna</label>
-              <input type="text" name="si_applica_a_cisterna" id="mg-cisterna" class="form-control font-monospace"
+              <input type="text" name="si_applica_a_cisterna" id="mg-cisterna" class="qk-form-control qk-font-mono"
                      placeholder="Codice diverso per cisterne">
               <div class="qk-form-hint">Lascia vuoto se il codice è lo stesso per colli e cisterne.</div>
             </div>
           </div>
           <div class="mb-3">
             <label class="qk-form-label">Descrizione</label>
-            <input type="text" name="descrizione" id="mg-desc" class="form-control" maxlength="255">
+            <input type="text" name="descrizione" id="mg-desc" class="qk-form-control" maxlength="255">
           </div>
         </div>
         <div class="modal-footer">
@@ -819,23 +819,23 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
               <label class="qk-form-label">Categoria <span class="text-danger">*</span></label>
-              <input type="number" name="categoria" id="mcat-cat" class="form-control font-monospace"
+              <input type="number" name="categoria" id="mcat-cat" class="qk-form-control qk-font-mono"
                      placeholder="0–4" min="0" max="4" required>
             </div>
             <div class="col-sm-4">
               <label class="qk-form-label">Moltiplicatore punti <span class="text-danger">*</span></label>
-              <input type="number" name="moltiplicatore_punti" id="mcat-molt" class="form-control"
+              <input type="number" name="moltiplicatore_punti" id="mcat-molt" class="qk-form-control"
                      placeholder="es. 50" min="0">
             </div>
             <div class="col-sm-4">
               <label class="qk-form-label">Soglia esenzione (kg/l)</label>
-              <input type="number" name="soglia_esenzione_kg_l" id="mcat-soglia" class="form-control"
+              <input type="number" name="soglia_esenzione_kg_l" id="mcat-soglia" class="qk-form-control"
                      placeholder="Lascia vuoto se nessuna" min="0">
             </div>
           </div>
           <div class="mb-3">
             <label class="qk-form-label">Descrizione</label>
-            <input type="text" name="descrizione" id="mcat-desc" class="form-control" maxlength="255">
+            <input type="text" name="descrizione" id="mcat-desc" class="qk-form-control" maxlength="255">
           </div>
         </div>
         <div class="modal-footer">
@@ -865,7 +865,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
               <label class="qk-form-label">Codice <span class="text-danger">*</span></label>
-              <input type="text" name="codice" id="mcl-codice" class="form-control font-monospace text-uppercase"
+              <input type="text" name="codice" id="mcl-codice" class="qk-form-control qk-font-mono text-uppercase"
                      placeholder="es. F1, TF1, 2A" maxlength="20" required>
             </div>
             <div class="col-sm-4">
@@ -879,19 +879,19 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
             </div>
             <div class="col-sm-4">
               <label class="qk-form-label">Pericolo primario</label>
-              <input type="text" name="pericolo_primario" id="mcl-prim" class="form-control"
+              <input type="text" name="pericolo_primario" id="mcl-prim" class="qk-form-control"
                      placeholder="es. Infiammabile" maxlength="50">
             </div>
           </div>
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
               <label class="qk-form-label">Pericolo secondario</label>
-              <input type="text" name="pericolo_secondario" id="mcl-sec" class="form-control"
+              <input type="text" name="pericolo_secondario" id="mcl-sec" class="qk-form-control"
                      placeholder="es. Tossico" maxlength="50">
             </div>
             <div class="col-sm-8">
               <label class="qk-form-label">Descrizione</label>
-              <input type="text" name="descrizione" id="mcl-desc" class="form-control" maxlength="255">
+              <input type="text" name="descrizione" id="mcl-desc" class="qk-form-control" maxlength="255">
             </div>
           </div>
         </div>
