@@ -18,33 +18,50 @@ $can_edit = ($stato === 'bozza');
 </div>
 <?php endif; ?>
 
-<?php if (!empty($_SESSION['flash_success'])): ?>
-<div class="qk-alert qk-alert-success" data-auto-dismiss="7000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
 
-<?php if (!empty($_SESSION['flash_error'])): ?>
-<div class="qk-alert qk-alert-danger" data-auto-dismiss="7000">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
+<!-- Guidance Box -->
+<div class="qk-guidance-box mb-4">
+  <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
+  <div>
+    <h6 class="mb-1 fw-bold">Cosa fare adesso?</h6>
+    <p class="mb-0 text-muted" style="font-size:0.875rem">
+      <?php if (empty($id)): ?>
+        Inserisci i dettagli del preventivo per il cliente, aggiungi i prodotti, e clicca su "Salva bozza" o "Salva e invia".
+      <?php elseif ($stato === 'bozza'): ?>
+        Il preventivo è in Bozza. Clicca su <strong>"Invia al Cliente"</strong> per inviare il preventivo e segnarlo come inviato.
+      <?php elseif ($stato === 'inviata'): ?>
+        Il preventivo è stato inviato al cliente. Quando il cliente accetta, clicca su <strong>"Accetta e Crea Ordine"</strong> per generare l'ordine di vendita. Se il cliente lo rifiuta, clicca su <strong>"Rifiuta"</strong>.
+      <?php elseif ($stato === 'accettata'): ?>
+        Questo preventivo è stato accettato ed è stato generato l'ordine di vendita collegato.
+      <?php elseif ($stato === 'rifiutata'): ?>
+        Questo preventivo è stato rifiutato dal cliente. Puoi creare una nuova versione se desideri inviare una proposta aggiornata.
+      <?php else: ?>
+        Questo preventivo è in stato <strong><?= e($stato) ?></strong>.
+      <?php endif; ?>
+    </p>
+  </div>
 </div>
-<?php unset($_SESSION['flash_error']); endif; ?>
 
-<!-- Barra Azioni e Stato (Odoo style) -->
-<div class="qk-flex-row qk-justify-between mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
-  <!-- Bottoni Azione / Workflow e Stampe (a sinistra) -->
-  <div class="qk-flex-row qk-gap-sm flex-wrap">
+<!-- Barra Azioni e Stato Sticky -->
+<div class="qk-sticky-action-bar mb-4">
+  <div class="qk-sticky-action-bar-left">
+    <?php if ($can_edit): ?>
+      <button type="submit" form="form-offerta" name="stato" value="bozza" class="btn-qk btn-qk-primary">
+        <i class="fa-solid fa-floppy-disk"></i> Salva bozza
+      </button>
+      <button type="submit" form="form-offerta" name="stato" value="inviata" class="btn-qk btn-qk-success">
+        <i class="fa-solid fa-paper-plane"></i> Salva e invia
+      </button>
+      <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+    <?php endif; ?>
+
     <?php if (isset($id) && $id > 0): ?>
       <?php if ($stato === 'bozza'): ?>
         <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
           <?= csrf_field() ?>
           <input type="hidden" name="id" value="<?= $id ?>">
           <input type="hidden" name="azione" value="invia">
-          <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm" title="Segna come inviato al cliente">
+          <button type="submit" class="btn-qk btn-qk-primary" title="Segna come inviato al cliente">
             <i class="fa-solid fa-paper-plane"></i> Invia al Cliente
           </button>
         </form>
@@ -54,7 +71,7 @@ $can_edit = ($stato === 'bozza');
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="azione" value="nuova_versione">
-            <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Crea una nuova versione di questo preventivo">
+            <button type="submit" class="btn-qk btn-qk-secondary" title="Crea una nuova versione di questo preventivo">
               <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
             </button>
           </form>
@@ -64,7 +81,7 @@ $can_edit = ($stato === 'bozza');
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="azione" value="conferma_ordine">
-            <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm" title="Accetta il preventivo e genera l'ordine di vendita">
+            <button type="submit" class="btn-qk btn-qk-success" title="Accetta il preventivo e genera l'ordine di vendita">
               <i class="fa-solid fa-circle-check"></i> Accetta e Crea Ordine
             </button>
           </form>
@@ -80,76 +97,74 @@ $can_edit = ($stato === 'bozza');
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="duplica">
-        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Duplica questo preventivo in una nuova bozza indipendente">
+        <button type="submit" class="btn-qk btn-qk-secondary" title="Duplica questo preventivo in una nuova bozza indipendente">
           <i class="fa-regular fa-copy text-success"></i> Duplica
         </button>
       </form>
       
-      <a href="<?= url('sales/quotes/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank" title="Stampa o scarica il preventivo in formato PDF">
+      <a href="<?= url('sales/quotes/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Stampa o scarica il preventivo in formato PDF">
         <i class="fa-solid fa-file-pdf text-danger"></i> PDF
       </a>
-      <a href="<?= url('sales/quotes/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank" title="Scarica il documento in formato Microsoft Word (DOCX)">
+      <a href="<?= url('sales/quotes/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Scarica il documento in formato Microsoft Word (DOCX)">
         <i class="fa-solid fa-file-word text-primary"></i> Word (DOCX)
       </a>
       <span class="qk-dirty-warning" id="dirty-warn-badge"><i class="fa-solid fa-triangle-exclamation"></i> Modifiche non salvate (salva per aggiornare i PDF)</span>
     <?php endif; ?>
   </div>
 
-  <!-- Bottoni Esci / Pericolosi (a destra) -->
-  <div class="qk-flex-row qk-gap-sm flex-wrap ms-auto">
+  <div class="qk-sticky-action-bar-right">
     <?php if (isset($id) && $id > 0 && $stato === 'inviata'): ?>
       <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Segnare il preventivo come rifiutato?')">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="rifiuta">
-        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm text-danger" title="Segna come rifiutato">
+        <button type="submit" class="btn-qk btn-qk-secondary text-danger" title="Segna come rifiutato">
           <i class="fa-solid fa-ban"></i> Rifiuta
         </button>
       </form>
     <?php endif; ?>
-    <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+    <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary">
       <i class="fa-solid fa-arrow-left"></i> Torna alla lista
     </a>
-  </div>
-</div>
 
-  <!-- Pipeline visivo stati -->
-  <ul class="qk-status-path d-none d-sm-flex">
-    <?php
-    $steps = [
-      ['bozza',     'Bozza'],
-      ['inviata',   'Inviata'],
-      ['accettata', 'Accettata'],
-    ];
-    if ($stato === 'rifiutata') {
-        $steps[] = ['rifiutata', 'Rifiutata'];
-    } elseif ($stato === 'scaduta') {
-        $steps[] = ['scaduta', 'Scaduta'];
-    } elseif ($stato === 'annullata') {
-        $steps[] = ['annullata', 'Annullata'];
-    }
-    
-    $currentIdx = 0;
-    foreach ($steps as $idx => [$s, $lbl]) {
-        if ($stato === $s) {
-            $currentIdx = $idx;
-            break;
-        }
-    }
-    foreach ($steps as $idx => [$s, $lbl]):
-        if ($stato === $s) {
-            $statusClass = 'active';
-        } elseif ($idx < $currentIdx) {
-            $statusClass = 'completed';
-        } else {
-            $statusClass = 'pending';
-        }
-    ?>
-      <li class="qk-status-path-item <?= $statusClass ?>">
-        <?= e($lbl) ?>
-      </li>
-    <?php endforeach; ?>
-  </ul>
+    <!-- Pipeline visivo stati -->
+    <ul class="qk-status-path d-none d-sm-flex" style="margin: 0; padding: 0;">
+      <?php
+      $steps = [
+        ['bozza',     'Bozza'],
+        ['inviata',   'Inviata'],
+        ['accettata', 'Accettata'],
+      ];
+      if ($stato === 'rifiutata') {
+          $steps[] = ['rifiutata', 'Rifiutata'];
+      } elseif ($stato === 'scaduta') {
+          $steps[] = ['scaduta', 'Scaduta'];
+      } elseif ($stato === 'annullata') {
+          $steps[] = ['annullata', 'Annullata'];
+      }
+      
+      $currentIdx = 0;
+      foreach ($steps as $idx => [$s, $lbl]) {
+          if ($stato === $s) {
+              $currentIdx = $idx;
+              break;
+          }
+      }
+      foreach ($steps as $idx => [$s, $lbl]):
+          if ($stato === $s) {
+              $statusClass = 'active';
+          } elseif ($idx < $currentIdx) {
+              $statusClass = 'completed';
+          } else {
+              $statusClass = 'pending';
+          }
+      ?>
+        <li class="qk-status-path-item <?= $statusClass ?>">
+          <?= e($lbl) ?>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
 </div>
 
 <form method="post" id="form-offerta" action="">
@@ -692,23 +707,6 @@ $can_edit = ($stato === 'bozza');
     </div>
   </div>
 
-  <!-- Sticky Actions -->
-  <div class="qk-form-sticky-actions">
-    <?php if ($can_edit): ?>
-      <button type="submit" name="stato" value="bozza" class="btn-qk btn-qk-secondary">
-        <i class="fa-solid fa-floppy-disk"></i> Salva bozza
-      </button>
-      <button type="submit" name="stato" value="inviata" class="btn-qk btn-qk-primary">
-        <i class="fa-solid fa-paper-plane"></i> Salva e invia
-      </button>
-    <?php else: ?>
-      <span class="qk-text-muted"><i class="fa-solid fa-lock me-1"></i> Questo preventivo non è più in stato bozza ed è bloccato in sola lettura.</span>
-    <?php endif; ?>
-    <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary" style="margin-left:auto">
-      <i class="fa-solid fa-xmark"></i> Torna alla lista
-    </a>
-  </div>
-
 </form><!-- /form-offerta -->
 
 
@@ -828,7 +826,7 @@ $can_edit = ($stato === 'bozza');
       </div>
     </div>
   </div>
-</div>
+</div>
 <script>
 window.QK_QUOTES_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,

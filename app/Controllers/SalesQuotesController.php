@@ -97,7 +97,7 @@ final class SalesQuotesController extends BaseController
                         }
                         
                         if ($is_bozza) {
-                            $_SESSION['flash_warning'] = "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs);
+                            flash_set('warning', "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs));
                         } else {
                             $customer_url = url('customers/edit?id=' . $values['cliente_id']);
                             $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='alert-link' style='color:#721c24;font-weight:bold;text-decoration:underline;'>Gestisci autorizzazioni cliente →</a>";
@@ -216,7 +216,7 @@ final class SalesQuotesController extends BaseController
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $oldStato = $detail['offerta']['stato'] ?? 'bozza';
             if ($oldStato !== 'bozza') {
-                $_SESSION['flash_danger'] = 'Impossibile salvare modifiche: questo preventivo non è più in stato bozza ed è bloccato.';
+                flash_set('danger', 'Impossibile salvare modifiche: questo preventivo non è più in stato bozza ed è bloccato.');
                 redirect(url('sales/quotes/edit?id=' . $id));
             }
             if (!csrf_verify()) {
@@ -240,7 +240,7 @@ final class SalesQuotesController extends BaseController
                         }
                         
                         if ($is_bozza) {
-                            $_SESSION['flash_warning'] = "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs);
+                            flash_set('warning', "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs));
                         } else {
                             $customer_url = url('customers/edit?id=' . $values['cliente_id']);
                             $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='alert-link' style='color:#721c24;font-weight:bold;text-decoration:underline;'>Gestisci autorizzazioni cliente →</a>";
@@ -334,40 +334,40 @@ final class SalesQuotesController extends BaseController
             switch ($azione) {
                 case 'invia':
                     $this->pdo->prepare("UPDATE preventivi SET stato = 'inviata', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Preventivo segnato come Inviato.';
+                    flash_set('success', 'Preventivo segnato come Inviato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;
 
                 case 'conferma_ordine':
                     $nuovoOrderId = qk_preventivo_conferma_ordine($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Preventivo accettato e Ordine di Vendita creato.';
+                    flash_set('success', 'Preventivo accettato e Ordine di Vendita creato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;
 
                 case 'nuova_versione':
                     $nuovoId = qk_preventivo_nuova_versione($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Nuova versione creata.';
+                    flash_set('success', 'Nuova versione creata.');
                     redirect(url('sales/quotes/edit') . '?id=' . $nuovoId);
                     break;
 
                 case 'duplica':
                     $nuovoId = qk_preventivo_duplica($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Preventivo duplicato correttamente in una nuova bozza.';
+                    flash_set('success', 'Preventivo duplicato correttamente in una nuova bozza.');
                     redirect(url('sales/quotes/edit') . '?id=' . $nuovoId);
                     break;
 
                 case 'rifiuta':
                     $this->pdo->prepare("UPDATE preventivi SET stato = 'rifiutata', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Preventivo segnato come Rifiutato.';
+                    flash_set('success', 'Preventivo segnato come Rifiutato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;
 
                 default:
-                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+                    flash_set('error', "Azione '$azione' non riconosciuta.");
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('error', $e->getMessage());
             redirect(url('sales/quotes/edit') . '?id=' . $id);
         }
     }

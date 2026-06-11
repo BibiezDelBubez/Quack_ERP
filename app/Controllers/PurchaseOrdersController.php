@@ -53,7 +53,7 @@ class PurchaseOrdersController extends BaseController
             $id = qk_ordine_da_offerta($this->pdo, $offerta_id, (int)current_user()['id']);
             redirect(url('purchases/orders/edit') . '?id=' . $id . '&saved=1');
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
             redirect(url('purchases/quotes/edit') . '?id=' . $offerta_id);
         }
     }
@@ -96,7 +96,7 @@ class PurchaseOrdersController extends BaseController
                         $id,
                     ]);
                     $detail = qk_ordine_detail($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'Ordine aggiornato.';
+                    flash_set('success', 'Ordine aggiornato.');
                 } catch (\Throwable $e) {
                     $errors['_global'] = $e->getMessage();
                 }
@@ -130,11 +130,11 @@ class PurchaseOrdersController extends BaseController
             switch ($azione) {
                 case 'approva':
                     qk_ordine_approva($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Ordine approvato.';
+                    flash_set('success', 'Ordine approvato.');
                     break;
 
                 case 'invia':
-                    // Verifica che tutte le righe abbiano prezzo e quantità maggiori di zero
+                    // Verification
                     $stCheck = $this->pdo->prepare('SELECT COUNT(*) FROM ordini_righe WHERE ordine_id = ? AND (prezzo_unitario <= 0 OR quantita_ordinata <= 0)');
                     $stCheck->execute([$id]);
                     if ((int)$stCheck->fetchColumn() > 0) {
@@ -142,9 +142,9 @@ class PurchaseOrdersController extends BaseController
                     }
 
                     qk_ordine_invia($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'Ordine confirmed e inviato al fornitore.';
+                    flash_set('success', 'Ordine confirmed e inviato al fornitore.');
 
-                    // Crea automaticamente la bozza di ricezione merce se non esiste già
+                    // Create dynamic reception
                     require_once INCLUDES_DIR . '/purchases_receipts.php';
                     $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
                     $stCheckRec->execute([$id]);
@@ -155,19 +155,19 @@ class PurchaseOrdersController extends BaseController
 
                 case 'forza_chiusura':
                     qk_ordine_forza_chiusura($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Ordine chiuso forzatamente e residui annullati.';
+                    flash_set('success', 'Ordine chiuso forzatamente e residui annullati.');
                     break;
 
                 case 'annulla':
                     qk_ordine_annulla($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'Ordine annullato.';
+                    flash_set('success', 'Ordine annullato.');
                     break;
 
                 default:
-                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+                    flash_set('danger', "Azione '$azione' non riconosciuta.");
             }
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
         }
 
         redirect(url('purchases/orders/edit') . '?id=' . $id);
@@ -177,7 +177,7 @@ class PurchaseOrdersController extends BaseController
     {
         // TODO: generazione PDF ordine di acquisto
         $id = (int) get_param('id', '0');
-        $_SESSION['flash_error'] = 'La stampa PDF degli ordini non è ancora disponibile.';
+        flash_set('danger', 'La stampa PDF degli ordini non è ancora disponibile.');
         redirect(url('purchases/orders/edit') . '?id=' . $id);
     }
 

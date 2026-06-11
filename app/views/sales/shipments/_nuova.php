@@ -24,13 +24,21 @@ foreach ($righe as $r) {
 $totRighe = count($righe);
 ?>
 
-<?php if (!empty($_SESSION['flash_error'])): ?>
-<div class="qk-alert qk-alert-danger mb-3">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
+
+<!-- Barra Azioni Sticky -->
+<div class="qk-sticky-action-bar mb-4">
+  <div class="qk-sticky-action-bar-left">
+    <button type="submit" form="formNuovaSpedizione" class="btn-qk btn-qk-primary" id="pp-btn-conferma">
+      <i class="fa-solid fa-truck-fast"></i> Conferma Spedizione &amp; Genera DDT
+    </button>
+    <a href="<?= url('sales/orders/edit') ?>?id=<?= $orderId ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+  </div>
+  <div class="qk-sticky-action-bar-right">
+    <a href="<?= url('sales/orders/edit') ?>?id=<?= $orderId ?>" class="btn-qk btn-qk-secondary">
+      <i class="fa-solid fa-arrow-left"></i> Torna all'Ordine
+    </a>
+  </div>
 </div>
-<?php unset($_SESSION['flash_error']); endif; ?>
 
 <form id="formNuovaSpedizione"
       action="<?= url('sales/orders/action') ?>"

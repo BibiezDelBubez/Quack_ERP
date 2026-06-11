@@ -18,22 +18,27 @@ $v = $values;
 </div>
 <?php endif; ?>
 
-<?php if (!empty($_SESSION['flash_success'])): ?>
-<div class="qk-alert qk-alert-success" data-auto-dismiss="6000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
 
-<!-- Barra azioni -->
-<div class="qk-flex-row qk-justify-between mb-4 p-3 border rounded shadow-xs"
-     style="background:var(--qk-bg-subtle); border-color:var(--qk-border)!important; :wrap; gap:.75rem;">
-  <div class="qk-flex-row qk-gap-sm">
-    <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+<!-- Barra Azioni Sticky -->
+<div class="qk-sticky-action-bar mb-4">
+  <div class="qk-sticky-action-bar-left">
+    <button type="submit" form="form-ordine-diretto" class="btn-qk btn-qk-primary">
+      <i class="fa-solid fa-circle-check"></i> Conferma Ordine
+    </button>
+    <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+  </div>
+  <div class="qk-sticky-action-bar-right">
+    <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary">
       <i class="fa-solid fa-arrow-left"></i> Lista Ordini
     </a>
+    <ul class="qk-status-path d-none d-sm-flex" style="margin:0; padding:0;">
+      <li class="qk-status-path-item active">Bozza</li>
+      <li class="qk-status-path-item pending">In Lavorazione</li>
+      <li class="qk-status-path-item pending">Spedito</li>
+      <li class="qk-status-path-item pending">Completato</li>
+    </ul>
   </div>
+</div>
   <ul class="qk-status-path d-none d-sm-flex">
     <li class="qk-status-path-item active">Bozza</li>
     <li class="qk-status-path-item pending">In Lavorazione</li>
@@ -437,15 +442,7 @@ $v = $values;
     </div>
   </div>
 
-  <!-- ── STICKY FOOTER ─────────────────────────────────────────────────── -->
-  <div class="qk-form-sticky-actions">
-    <button type="submit" class="btn-qk btn-qk-primary fw-bold">
-      <i class="fa-solid fa-circle-check me-1"></i> Conferma Ordine
-    </button>
-    <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary" style="margin-left:auto">
-      <i class="fa-solid fa-xmark"></i> Annulla
-    </a>
-  </div>
+
 
 </form><!-- /form-ordine-diretto -->
 

@@ -94,13 +94,13 @@ final class SpedizioniController extends BaseController
         $order = $stOrd->fetch(PDO::FETCH_ASSOC);
 
         if (!$order) {
-            $_SESSION['flash_error'] = 'Ordine non trovato.';
+            flash_set('error', 'Ordine non trovato.');
             redirect(url('sales/orders'));
         }
 
         // Blocca solo gli stati terminali
         if (in_array($order['stato'], ['annullato', 'completato'])) {
-            $_SESSION['flash_error'] = 'Impossibile creare spedizioni per un ordine ' . $order['stato'] . '.';
+            flash_set('error', 'Impossibile creare spedizioni per un ordine ' . $order['stato'] . '.');
             redirect(url('sales/orders/edit') . '?id=' . $orderId);
         }
 
@@ -123,7 +123,7 @@ final class SpedizioniController extends BaseController
         $righe = $stLines->fetchAll(PDO::FETCH_ASSOC);
 
         if (empty($righe)) {
-            $_SESSION['flash_error'] = 'Tutte le righe di questo ordine sono già state spedite.';
+            flash_set('error', 'Tutte le righe di questo ordine sono già state spedite.');
             redirect(url('sales/orders/edit') . '?id=' . $orderId);
         }
 
@@ -202,7 +202,7 @@ final class SpedizioniController extends BaseController
         $ddt = $st->fetch(PDO::FETCH_ASSOC);
 
         if (!$ddt) {
-            $_SESSION['flash_error'] = 'DDT non trovato.';
+            flash_set('error', 'DDT non trovato.');
             redirect(url('sales/shipments'));
         }
 

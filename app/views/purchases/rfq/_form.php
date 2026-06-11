@@ -40,21 +40,6 @@ $statoLabel = [
 $savedOk = isset($saved) && $saved;
 ?>
 
-<?php if (!empty($_SESSION['flash_success'])): ?>
-<div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
-
-<?php if (!empty($_SESSION['flash_error'])): ?>
-<div class="qk-alert qk-alert-danger mb-3" data-auto-dismiss="6000">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_error']); endif; ?>
 
 <style>
 /* Miglioramento UX per righe RFQ */
@@ -94,10 +79,10 @@ $savedOk = isset($saved) && $saved;
 </style>
 
 <!-- ════════════════════════════════════════════════════════════════════  <!-- Guidance Box -->
-<div class="qk-guidance-box mb-4 p-3 ">
-  <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
+<div class="qk-guidance-box mb-4">
+  <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
   <div>
-    <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
+    <h6 class="mb-1 fw-bold">Cosa fare adesso?</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       <?php if (!$isEdit): ?>
         Crea una nuova richiesta di offerta (RFQ) per richiedere prezzi e disponibilità ai fornitori. Aggiungi i prodotti e clicca su "Salva".
@@ -114,69 +99,73 @@ $savedOk = isset($saved) && $saved;
   </div>
 </div>
 
-<!-- Barra Azioni e Stato (Odoo style) -->
-  <div class="qk-flex-row qk-justify-between mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; flex-wrap: wrap; gap: .75rem;">
-    <!-- Bottoni Azione / Workflow e Stampe (a sinistra) -->
-    <div class="qk-flex-row qk-gap-sm flex-wrap">
-      <?php if ($isEdit): ?>
-        <?php if ($isBozza): ?>
-          <button type="button" class="btn-qk btn-qk-primary" id="btn-invia-rfq" title="Invia la richiesta di preventivo al fornitore (genera il PDF e segna il documento come Inviato)">
-            <i class="fa-solid fa-paper-plane"></i> Invia al Fornitore
-          </button>
-        <?php endif; ?>
+<!-- Barra Azioni e Stato Sticky -->
+<div class="qk-sticky-action-bar mb-4">
+  <div class="qk-sticky-action-bar-left">
+    <?php if ($canEdit): ?>
+      <button type="submit" form="form-rfq" class="btn-qk btn-qk-primary">
+        <i class="fa-solid fa-floppy-disk"></i> <?= $isEdit ? 'Salva modifiche' : 'Crea RFQ' ?>
+      </button>
+      <a href="<?= url('purchases/rfq') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+    <?php endif; ?>
 
-        <?php if ($isInviata): ?>
-          <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <input type="hidden" name="azione" value="nuova_versione">
-            <button type="submit" class="btn-qk btn-qk-secondary" title="Crea una nuova versione di questa RFQ (ad esempio se il fornitore chiede modifiche alle righe prima di quotare)">
-              <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
-            </button>
-          </form>
-          <a href="<?= url('purchases/quotes/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-primary" title="Registra l'offerta economica con i prezzi ricevuti dal fornitore per questa richiesta">
-            <i class="fa-solid fa-file-invoice-dollar"></i> Registra Preventivo Ricevuto
-          </a>
-          <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline"
-                onsubmit="return confirm('Chiudere la RFQ senza registrare un\'offerta?')">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <input type="hidden" name="azione" value="chiudi">
-            <button type="submit" class="btn-qk btn-qk-secondary" title="Chiudi la richiesta senza registrare alcuna offerta (ad esempio se il fornitore non risponde o ha rifiutato)">
-              <i class="fa-solid fa-lock text-muted"></i> Chiudi
-            </button>
-          </form>
-        <?php endif; ?>
-
-        <a href="<?= url('purchases/rfq/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Stampa o scarica la richiesta di preventivo in formato PDF">
-          <i class="fa-solid fa-file-pdf text-danger"></i> PDF
-        </a>
-        <a href="<?= url('purchases/rfq/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Scarica il documento in formato Microsoft Word (DOCX)">
-          <i class="fa-solid fa-file-word text-primary"></i> Word (DOCX)
-        </a>
-        <span class="qk-dirty-warning" id="dirty-warn-badge"><i class="fa-solid fa-triangle-exclamation"></i> Modifiche non salvate (salva per aggiornare i PDF)</span>
+    <?php if ($isEdit): ?>
+      <?php if ($isBozza): ?>
+        <button type="button" class="btn-qk btn-qk-secondary" id="btn-invia-rfq" title="Invia la richiesta di preventivo al fornitore (genera il PDF e segna il documento come Inviato)">
+          <i class="fa-solid fa-paper-plane"></i> Invia al Fornitore
+        </button>
       <?php endif; ?>
-    </div>
 
-    <!-- Bottoni Esci / Pericolosi (a destra) -->
-    <div class="qk-flex-row qk-gap-sm flex-wrap ms-auto">
-      <?php if ($isEdit && $isBozza): ?>
-        <form method="post" action="<?= url('purchases/rfq/delete') ?>" class="d-inline"
-              onsubmit="return confirm('Eliminare definitivamente la RFQ <?= e($rfq['numero']) ?>?')">
+      <?php if ($isInviata): ?>
+        <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline">
           <?= csrf_field() ?>
           <input type="hidden" name="id" value="<?= $id ?>">
-          <button type="submit" class="btn-qk btn-qk-secondary text-danger" title="Elimina definitivamente questa richiesta in bozza">
-            <i class="fa-solid fa-trash"></i> Elimina
+          <input type="hidden" name="azione" value="nuova_versione">
+          <button type="submit" class="btn-qk btn-qk-secondary" title="Crea una nuova versione di questa RFQ (ad esempio se il fornitore chiede modifiche alle righe prima di quotare)">
+            <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
+          </button>
+        </form>
+        <a href="<?= url('purchases/quotes/create') . '?rfq_id=' . $id ?>" class="btn-qk btn-qk-primary" title="Registra l'offerta economica con i prezzi ricevuti dal fornitore per questa richiesta">
+          <i class="fa-solid fa-file-invoice-dollar"></i> Registra Preventivo Ricevuto
+        </a>
+        <form method="post" action="<?= url('purchases/rfq/action') ?>" class="d-inline"
+              onsubmit="return confirm('Chiudere la RFQ senza registrare un\'offerta?')">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= $id ?>">
+          <input type="hidden" name="azione" value="chiudi">
+          <button type="submit" class="btn-qk btn-qk-secondary" title="Chiudi la richiesta senza registrare alcuna offerta (ad esempio se il fornitore non risponde o ha rifiutato)">
+            <i class="fa-solid fa-lock text-muted"></i> Chiudi
           </button>
         </form>
       <?php endif; ?>
-      <a href="<?= url('purchases/rfq') ?>" class="btn-qk btn-qk-secondary">
-        <i class="fa-solid fa-arrow-left"></i> Torna alla lista
+
+      <a href="<?= url('purchases/rfq/pdf') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Stampa o scarica la richiesta di preventivo in formato PDF">
+        <i class="fa-solid fa-file-pdf text-danger"></i> PDF
       </a>
-    </div>
+      <a href="<?= url('purchases/rfq/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary" target="_blank" title="Scarica il documento in formato Microsoft Word (DOCX)">
+        <i class="fa-solid fa-file-word text-primary"></i> Word (DOCX)
+      </a>
+      <span class="qk-dirty-warning" id="dirty-warn-badge"><i class="fa-solid fa-triangle-exclamation"></i> Modifiche non salvate (salva per aggiornare i PDF)</span>
+    <?php endif; ?>
+  </div>
+
+  <div class="qk-sticky-action-bar-right">
+    <?php if ($isEdit && $isBozza): ?>
+      <form method="post" action="<?= url('purchases/rfq/delete') ?>" class="d-inline"
+            onsubmit="return confirm('Eliminare definitivamente la RFQ <?= e($rfq['numero']) ?>?')">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <button type="submit" class="btn-qk btn-qk-secondary text-danger" title="Elimina definitivamente questa richiesta in bozza">
+          <i class="fa-solid fa-trash"></i> Elimina
+        </button>
+      </form>
+    <?php endif; ?>
+    <a href="<?= url('purchases/rfq') ?>" class="btn-qk btn-qk-secondary">
+      <i class="fa-solid fa-arrow-left"></i> Torna alla lista
+    </a>
 
     <!-- Pipeline visivo stati -->
-    <ul class="qk-status-path d-none d-sm-flex">
+    <ul class="qk-status-path d-none d-sm-flex" style="margin: 0; padding: 0;">
       <?php
       $steps = [
         ['bozza',       'Bozza'],
@@ -206,6 +195,7 @@ $savedOk = isset($saved) && $saved;
       <?php endforeach; ?>
     </ul>
   </div>
+</div>
 
   <!-- Form principale (bozza/editabile) -->
   <form method="post"
@@ -697,16 +687,7 @@ $savedOk = isset($saved) && $saved;
     </div><!-- /qk-card (document sheet) -->
 
 
-  <!-- ── Pulsante salva (solo in bozza) ────────────────────────────────── -->
-  <?php if ($canEdit): ?>
-  <div class="qk-flex-row qk-justify-end qk-gap-sm" style="margin-bottom:2rem">
-    <a href="<?= url('purchases/rfq') ?>" class="btn-qk btn-qk-ghost">Annulla</a>
-    <button type="submit" class="btn-qk btn-qk-primary">
-      <i class="fa-solid fa-floppy-disk"></i>
-      <?= $isEdit ? 'Salva modifiche' : 'Crea RFQ' ?>
-    </button>
-  </div>
-  <?php endif; ?>
+
 
 </form><!-- /form-rfq -->
 

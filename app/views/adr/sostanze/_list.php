@@ -1,9 +1,9 @@
 <?php /** @var array $sostanze @var string|null $search */ ?>
 
-<div class="qk-guidance-box mb-4 p-3">
-  <div class="fs-4 text-primary" style="flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+<div class="qk-guidance-box mb-4">
+  <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
   <div>
-    <h6 class="mb-1 fw-bold text-primary">A cosa serve questa sezione?</h6>
+    <h6 class="mb-1 fw-bold">A cosa serve questa sezione?</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       Qui raggruppiamo i prodotti composti dalla stessa identica sostanza. <strong>Serve per unificare l'assegnazione
       del codice ONU, delle schede di sicurezza (SDS) e delle restrizioni di vendita — così non devi ripetere

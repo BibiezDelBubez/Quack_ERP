@@ -115,7 +115,7 @@ final class SostanzeChimicheController extends BaseController
 
         $row = $this->loadSostanza($id);
         if (!$row) {
-            $_SESSION['flash_error'] = 'Sostanza non trovata.';
+            flash_set('error', 'Sostanza non trovata.');
             redirect(url('adr/sostanze'));
         }
 
@@ -294,13 +294,13 @@ final class SostanzeChimicheController extends BaseController
         $scheda = $st->fetch(PDO::FETCH_ASSOC);
 
         if (!$scheda) {
-            $_SESSION['flash_error'] = 'File non trovato.';
+            flash_set('error', 'File non trovato.');
             redirect(url('adr/sostanze'));
         }
 
         $abs = rtrim(UPLOAD_DIR, '/\\') . '/' . ltrim(str_replace('\\', '/', $scheda['file_path']), '/');
         if (!is_file($abs)) {
-            $_SESSION['flash_error'] = 'File fisico non trovato sul server.';
+            flash_set('error', 'File fisico non trovato sul server.');
             redirect(url('adr/sostanze/edit?id=' . $scheda['sostanza_id']));
         }
 

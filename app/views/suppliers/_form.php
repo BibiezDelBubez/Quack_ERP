@@ -53,6 +53,15 @@ $nIndirizzi = count($indirizzi_preload);
                 id="badge-contatti"><?= $nContatti ?></span>
         </button>
       </li>
+      <?php if ($isEdit): ?>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="stab-btn-listini"
+                data-bs-toggle="tab" data-bs-target="#stab-listini"
+                type="button" role="tab" aria-selected="false">
+          <i class="fa-solid fa-tags fa-fw me-1"></i>Listini acquisto
+        </button>
+      </li>
+      <?php endif; ?>
     </ul>
 
     <div class="tab-content mt-0" id="supplierTabsContent">
@@ -254,6 +263,79 @@ $nIndirizzi = count($indirizzi_preload);
         <?php endif; ?>
 
       </div><!-- /stab-indirizzi -->
+
+      <!-- TAB 4: LISTINI ACQUISTO -->
+      <?php if ($isEdit): ?>
+      <div class="tab-pane fade" id="stab-listini" role="tabpanel">
+        
+        <div class="qk-card mt-3 mb-3">
+          <div class="qk-card-header qk-flex-row qk-justify-between">
+            <div>
+              <span class="qk-card-title"><i class="fa-solid fa-tags me-1"></i>Listini Acquisto Contrattualizzati</span>
+              <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted); margin-top:.2rem;">
+                Visualizza i listini d'acquisto contrattualizzati con questo fornitore. I listini e i relativi prezzi speciali degli articoli si gestiscono in <a href="<?= url('purchases/pricelists') ?>" target="_blank">Gestione Listini Acquisto <i class="fa-solid fa-external-link"></i></a>.
+              </span>
+            </div>
+            <a href="<?= url('purchases/pricelists/create') ?>?fornitore_id=<?= $entity_id ?>&fornitore_label=<?= urlencode($v['company']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+              <i class="fa-solid fa-plus"></i> Nuovo listino
+            </a>
+          </div>
+          <div class="qk-card-body p-0">
+            <table class="qk-table mb-0" id="table-listini-fornitore">
+              <thead>
+                <tr>
+                  <th>Nome Listino</th>
+                  <th style="width: 140px;">Valido Dal</th>
+                  <th style="width: 140px;">Valido Al</th>
+                  <th style="width: 120px; text-align: center;">Stato</th>
+                  <th>Note</th>
+                  <th style="width: 80px; text-align: center;">Azione</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if (empty($listini_acquisto)): ?>
+                  <tr>
+                    <td colspan="6" class="text-center py-4" style="color: var(--qk-text-muted);">
+                      Nessun listino d'acquisto registrato per questo fornitore.
+                    </td>
+                  </tr>
+                <?php else: ?>
+                  <?php foreach ($listini_acquisto as $la): ?>
+                    <tr>
+                      <td>
+                        <a href="<?= url('purchases/pricelists/edit?id=' . $la['id']) ?>" style="font-weight: 600;">
+                          <?= e($la['nome_listino']) ?>
+                        </a>
+                      </td>
+                      <td><?= $la['valido_dal'] ? fmt_date($la['valido_dal']) : '—' ?></td>
+                      <td><?= $la['valido_al'] ? fmt_date($la['valido_al']) : '—' ?></td>
+                      <td class="text-center">
+                        <?php 
+                        $oggi = date('Y-m-d');
+                        $isActive = (!$la['valido_dal'] || $la['valido_dal'] <= $oggi) && (!$la['valido_al'] || $la['valido_al'] >= $oggi);
+                        ?>
+                        <span class="qk-badge <?= $isActive ? 'active' : 'inactive' ?>">
+                          <?= $isActive ? 'Attivo' : 'Scaduto' ?>
+                        </span>
+                      </td>
+                      <td style="font-size: .8rem; color: var(--qk-text-muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <?= e($la['note'] ?? '') ?>
+                      </td>
+                      <td class="text-center">
+                        <a href="<?= url('purchases/pricelists/edit?id=' . $la['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-xs" title="Modifica listino">
+                          <i class="fa-solid fa-pen-to-square"></i>
+                        </a>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /stab-listini -->
+      <?php endif; ?>
 
     </div><!-- /tab-content -->
 

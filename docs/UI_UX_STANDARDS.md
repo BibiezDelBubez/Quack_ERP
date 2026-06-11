@@ -79,6 +79,29 @@ Use the following CSS classes exclusively:
 
 * **Prohibited**: Avoid using `.btn-qk-ghost` inside top action bars. Ghost buttons are reserved for inline link-like secondary elements (like removing split rows).
 
+### Transactional Forms & Sticky Action Bar Layout
+For document forms (such as Quotes, Orders, RFQs, and Shipments), use the sticky header `.qk-sticky-action-bar` to keep operations accessible:
+
+* **Placement Rules**:
+  * **Left Container (`.qk-sticky-action-bar-left`)**: Holds positive, progressive, or saving actions (e.g., *Save*, *Approve*, *Complete*, *Confirm*). The most important primary confirmation action goes first on the left.
+  * **Right Container (`.qk-sticky-action-bar-right`)**: Holds negative, destructive, fallback, or navigation actions (e.g., *Annulla Ordine*, *Rifiuta*, *Torna alla lista*), separating them physically to avoid accidental destructive clicks.
+  * **Workflow Pipeline (`.qk-status-path`)**: Must be placed in the right container to display the document's progress.
+
+* **Example Structure**:
+  ```html
+  <div class="qk-sticky-action-bar mb-4">
+    <div class="qk-sticky-action-bar-left">
+      <button type="submit" class="btn-qk btn-qk-primary"><i class="fa-solid fa-floppy-disk"></i> Salva</button>
+      <button type="submit" class="btn-qk btn-qk-success btn-qk-sm fw-bold">Completa Ordine</button>
+    </div>
+    <div class="qk-sticky-action-bar-right">
+      <button class="btn-qk btn-qk-secondary text-danger btn-qk-sm"><i class="fa-solid fa-ban"></i> Annulla</button>
+      <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary">Torna alla lista</a>
+      <ul class="qk-status-path">...</ul>
+    </div>
+  </div>
+  ```
+
 ---
 
 ## 5. Spacing & Flexbox Custom Utilities

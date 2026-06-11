@@ -1353,6 +1353,7 @@ input[type=number] {
   border-radius: 5px;
   width: fit-content;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .qk-status-path-item {
@@ -1966,19 +1967,20 @@ th.qk-sortable a:hover {
   display: flex;
   align-items: flex-start;
   gap: 1rem;
-  background: var(--qk-bg-subtle, rgba(0, 0, 0, 0.02));
-  border-left: 4px solid var(--qk-accent) !important;
+  background: var(--qk-info-bg, rgba(37, 99, 235, 0.06));
+  border-left: 4px solid var(--qk-info, #0284c7) !important;
   border-radius: var(--qk-radius, 6px);
   margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem !important;
 }
 .qk-guidance-box .fs-4,
 .qk-guidance-box .fs-5 {
-  color: var(--qk-accent) !important;
+  color: var(--qk-info, #0284c7) !important;
   flex-shrink: 0;
 }
 .qk-guidance-box h6,
 .qk-guidance-box .title-text {
-  color: var(--qk-text-primary) !important;
+  color: var(--qk-info, #0284c7) !important;
   font-weight: 600 !important;
 }
 .qk-guidance-box p,
@@ -2092,3 +2094,28 @@ th.qk-sortable a:hover {
 .qk-table tbody tr:hover .qk-table-actions .btn-qk {
   opacity: 1;
 }
+
+/* ── Sticky Action Bar for Document Forms ───────────────────────────────── */
+.qk-sticky-action-bar {
+  position: sticky;
+  top: var(--qk-topbar-h);
+  background: var(--qk-card-bg);
+  border-bottom: 1px solid var(--qk-card-border);
+  padding: 0.75rem 1.25rem;
+  margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+  z-index: 990;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+.qk-sticky-action-bar-left,
+.qk-sticky-action-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+

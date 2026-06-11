@@ -20,29 +20,31 @@ $statoFatturazione = $o['stato_fatturazione'] ?? 'da_fatturare';
 $isFatturato = $statoFatturazione === 'fatturato';
 
 $canSave = !$isCompletato && !$isAnnullato;
+
+$soSteps = [
+  ['in_lavorazione',       'In Lavorazione'],
+  ['parzialmente_spedito', 'Parz. Spedito'],
+  ['spedito',              'Spedito'],
+  ['completato',           'Completato'],
+];
+if ($currStato === 'annullato') {
+  $soSteps[] = ['annullato', 'Annullato'];
+}
+$soCurrentIdx = 0;
+foreach ($soSteps as $idx => [$s, $lbl]) {
+  if ($currStato === $s) {
+    $soCurrentIdx = $idx;
+    break;
+  }
+}
 ?>
 
-<?php if (!empty($_SESSION['flash_success'])): ?>
-<div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
-
-<?php if (!empty($_SESSION['flash_error'])): ?>
-<div class="qk-alert qk-alert-danger mb-3" data-auto-dismiss="6000">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_error']); endif; ?>
 
 <!-- Guidance Box -->
-<div class="qk-guidance-box qk-flex-row qk-gap-md mb-4" style="padding:.75rem 1rem;background:var(--qk-info-light,rgba(37,99,235,.06));border-left:4px solid var(--qk-info);border-radius:var(--qk-radius)">
-  <div style="font-size:1.4rem;color:var(--qk-info)"><i class="fa-solid fa-circle-info"></i></div>
+<div class="qk-guidance-box mb-4">
+  <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
   <div>
-    <h6 class="mb-1 fw-bold" style="color:var(--qk-info)">Stato Avanzamento Documento</h6>
+    <h6 class="mb-1 fw-bold">Stato Avanzamento Documento</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       <?php if ($isInLavorazione): ?>
         L'ordine è <strong>in lavorazione</strong>. Verifica la merce ed effettua le spedizioni necessarie. Puoi contrassegnarlo come completato o fatturato.
@@ -61,10 +63,15 @@ $canSave = !$isCompletato && !$isAnnullato;
   </div>
 </div>
 
-<!-- StatusBar -->
-<div class="qk-statusbar qk-flex-row qk-justify-between mb-4" style="padding:.5rem .75rem;background:var(--qk-table-head-bg);border:1px solid var(--qk-card-border);border-radius:var(--qk-radius)">
-  
-  <div class="qk-statusbar-buttons qk-flex-row qk-gap-sm">
+<!-- Barra Azioni Sticky -->
+<div class="qk-sticky-action-bar mb-4">
+  <div class="qk-sticky-action-bar-left">
+    <?php if ($canSave): ?>
+      <button type="submit" form="form-edit-ordine" class="btn-qk btn-qk-primary">
+        <i class="fa-solid fa-floppy-disk"></i> Salva Note
+      </button>
+    <?php endif; ?>
+
     <?php if (!$isCompletato && !$isAnnullato): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
@@ -87,13 +94,12 @@ $canSave = !$isCompletato && !$isAnnullato;
       </form>
     <?php endif; ?>
 
-    <!-- Fatturazione Semplificata -->
     <?php if (!$isFatturato): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="segna_fatturato">
-        <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
+        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm fw-bold">
           <i class="fa-solid fa-file-invoice-dollar me-1"></i> Segna come Fatturato
         </button>
       </form>
@@ -107,60 +113,44 @@ $canSave = !$isCompletato && !$isAnnullato;
         </button>
       </form>
     <?php endif; ?>
+  </div>
 
+  <div class="qk-sticky-action-bar-right">
     <?php if (!$isAnnullato && !$isCompletato): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline"
             onsubmit="return confirm('Sei sicuro di voler annullare questo ordine di vendita?');">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="annulla">
-        <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm">
-          <i class="fa-solid fa-ban me-1"></i> Annulla
+        <button type="submit" class="btn-qk btn-qk-secondary text-danger btn-qk-sm">
+          <i class="fa-solid fa-ban me-1"></i> Annulla Ordine
         </button>
       </form>
     <?php endif; ?>
-    
-    <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
-      <i class="fa-solid fa-arrow-left me-1"></i> Lista Ordini
-    </a>
-  </div>
 
-  <?php
-  $soSteps = [
-    ['in_lavorazione',       'In Lavorazione'],
-    ['parzialmente_spedito', 'Parz. Spedito'],
-    ['spedito',              'Spedito'],
-    ['completato',           'Completato'],
-  ];
-  if ($currStato === 'annullato') {
-    $soSteps[] = ['annullato', 'Annullato'];
-  }
-  $soCurrentIdx = 0;
-  foreach ($soSteps as $idx => [$s, $lbl]) {
-    if ($currStato === $s) {
-      $soCurrentIdx = $idx;
-      break;
-    }
-  }
-  ?>
-  <ul class="qk-status-path">
-    <?php foreach ($soSteps as $idx => [$s, $lbl]):
-      if ($currStato === $s) {
-        $statusClass = 'active';
-      } elseif ($idx < $soCurrentIdx) {
-        $statusClass = 'completed';
-      } else {
-        $statusClass = 'pending';
-      }
-    ?>
-      <li class="qk-status-path-item <?= $statusClass ?>">
-        <?= $lbl ?>
-      </li>
-    <?php endforeach; ?>
-  </ul>
+    <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary">
+      <i class="fa-solid fa-arrow-left"></i> Torna alla lista
+    </a>
+
+    <ul class="qk-status-path d-none d-sm-flex" style="margin:0; padding:0;">
+      <?php foreach ($soSteps as $idx => [$s, $lbl]):
+        if ($currStato === $s) {
+          $statusClass = 'active';
+        } elseif ($idx < $soCurrentIdx) {
+          $statusClass = 'completed';
+        } else {
+          $statusClass = 'pending';
+        }
+      ?>
+        <li class="qk-status-path-item <?= $statusClass ?>">
+          <?= $lbl ?>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
 </div>
 
-<form action="<?= url('sales/orders/edit') . '?id=' . $id ?>" method="post">
+<form action="<?= url('sales/orders/edit') . '?id=' . $id ?>" method="post" id="form-edit-ordine">
   <?= csrf_field() ?>
 
   <div class="qk-card mb-4">
@@ -335,13 +325,7 @@ $canSave = !$isCompletato && !$isAnnullato;
     </div>
   </div>
 
-  <?php if ($canSave): ?>
-    <div class="qk-flex-row qk-justify-end mb-5">
-      <button type="submit" class="btn-qk btn-qk-primary px-4 fw-bold">
-        <i class="fa-solid fa-floppy-disk me-1"></i> Salva Note e Data Consegna
-      </button>
-    </div>
-  <?php endif; ?>
+
 
 </form>
 

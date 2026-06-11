@@ -254,16 +254,32 @@ $nIndirizzi = count($indirizzi_preload);
         <!-- Listini prezzi associati molti-a-molti -->
         <div class="qk-card mt-3 mb-3">
           <div class="qk-card-header qk-flex-row qk-justify-between">
-            <span class="qk-card-title"><i class="fa-solid fa-tags me-1"></i>Listini prezzi associati</span>
-            <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-add-listino">
-              <i class="fa-solid fa-plus"></i> Aggiungi listino
+            <div>
+              <span class="qk-card-title"><i class="fa-solid fa-tags me-1"></i>Associa Listini Vendita Esistenti</span>
+              <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted); margin-top:.2rem;">
+                Associa listini vendita già configurati nel sistema per applicare prezzi o sconti dedicati a questo cliente. 
+                I listini si creano e gestiscono in <a href="<?= url('sales/pricelists') ?>" target="_blank">Gestione Listini Vendita <i class="fa-solid fa-external-link"></i></a>.
+              </span>
+            </div>
+            <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-add-listino" <?= empty($listini) ? 'disabled' : '' ?>>
+              <i class="fa-solid fa-plus"></i> Associa listino
             </button>
           </div>
-          <div class="qk-card-body p-0">
+          
+          <?php if (empty($listini)): ?>
+            <div class="qk-card-body">
+              <div class="qk-alert qk-alert-warning mb-0">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>Nessun listino vendita attivo configurato nel sistema. Prima di poter effettuare un'associazione, devi definire almeno un listino in <a href="<?= url('sales/pricelists') ?>" style="font-weight: 700; text-decoration: underline;">Gestione Listini Vendita</a>.</span>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <div class="qk-card-body p-0" style="<?= empty($listini) ? 'display: none;' : '' ?>">
             <table class="qk-table mb-0" id="table-listini-clienti">
               <thead>
                 <tr>
-                  <th>Listino <span class="required">*</span></th>
+                  <th>Seleziona Listino Esistente <span class="required">*</span></th>
                   <th style="width: 120px;">Priorità</th>
                   <th style="width: 180px;">Data Inizio</th>
                   <th style="width: 180px;">Data Fine</th>
@@ -283,7 +299,7 @@ $nIndirizzi = count($indirizzi_preload);
                   <?php foreach ($listini_rules as $index => $rule): ?>
                     <tr class="listino-row" data-index="<?= $index ?>">
                       <td>
-                        <select name="listini[<?= $index ?>][listino_id]" form="formCliente" class="qk-form-control qk-form-control-sm" required>
+                        <select name="listini[<?= $index ?>][listino_id]" form="formCliente" class="qk-form-control qk-form-control-sm searchable-select" required>
                           <option value="">— Seleziona Listino —</option>
                           <?php foreach ($listini as $lst): ?>
                             <option value="<?= $lst['id'] ?>" <?= (string)$rule['listino_id'] === (string)$lst['id'] ? 'selected' : '' ?>>
@@ -361,18 +377,18 @@ $nIndirizzi = count($indirizzi_preload);
 
               tr.innerHTML = `
                 <td>
-                  <select name="listini[\${nextIdx}][listino_id]" form="formCliente" class="qk-form-control qk-form-control-sm" required>
-                    \${optionsHtml}
+                  <select name="listini[${nextIdx}][listino_id]" form="formCliente" class="qk-form-control qk-form-control-sm searchable-select" required>
+                    ${optionsHtml}
                   </select>
                 </td>
                 <td>
-                  <input type="number" name="listini[\${nextIdx}][priorita]" form="formCliente" class="qk-form-control qk-form-control-sm" value="10" min="1" step="1" required>
+                  <input type="number" name="listini[${nextIdx}][priorita]" form="formCliente" class="qk-form-control qk-form-control-sm" value="10" min="1" step="1" required>
                 </td>
                 <td>
-                  <input type="date" name="listini[\${nextIdx}][data_inizio]" form="formCliente" class="qk-form-control qk-form-control-sm">
+                  <input type="date" name="listini[${nextIdx}][data_inizio]" form="formCliente" class="qk-form-control qk-form-control-sm">
                 </td>
                 <td>
-                  <input type="date" name="listini[\${nextIdx}][data_fine]" form="formCliente" class="qk-form-control qk-form-control-sm">
+                  <input type="date" name="listini[${nextIdx}][data_fine]" form="formCliente" class="qk-form-control qk-form-control-sm">
                 </td>
                 <td class="text-center">
                   <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-listino-row">
@@ -383,10 +399,23 @@ $nIndirizzi = count($indirizzi_preload);
               
               tbody.appendChild(tr);
               reindexRows();
+
+              // Inizializza il searchable-select per la nuova riga
+              var newSelect = tr.querySelector('.searchable-select');
+              if (newSelect && typeof SearchableSelect !== 'undefined') {
+                new SearchableSelect(newSelect);
+              }
             });
           }
 
           if (tbody) {
+            // Inizializza i select già presenti al caricamento
+            tbody.querySelectorAll('.searchable-select').forEach(function(el) {
+              if (typeof SearchableSelect !== 'undefined') {
+                new SearchableSelect(el);
+              }
+            });
+
             tbody.addEventListener('click', function(e) {
               var btn = e.target.closest('.btn-delete-listino-row');
               if (btn) {
@@ -643,6 +672,7 @@ window.QkCustomerCompliance = {
   csrfToken:  <?= json_encode(csrf_token()) ?>,
 };
 </script>
+<script src="<?= url('assets/js/searchable-select.js') ?>"></script>
 <script src="<?= url('assets/js/customers-addresses.js') ?>"></script>
 <script src="<?= url('assets/js/customers-compliance.js') ?>"></script>
 

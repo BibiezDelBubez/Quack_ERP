@@ -1,0 +1,141 @@
+/* =============================================================================
+   SEARCHABLE-SELECT.CSS — Componente di selezione con ricerca predittiva (offline)
+   ============================================================================= */
+
+.searchable-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Input di ricerca che sostituisce graficamente il select */
+.searchable-select-input {
+  cursor: pointer;
+  padding-right: 2.2rem !important; /* Spazio per la freccia */
+  background-color: var(--qk-body-bg, #f8fafc) !important;
+  border: 1px solid var(--qk-card-border, #e2e8f0) !important;
+  border-radius: var(--qk-radius-sm, 6px) !important;
+  font-family: inherit;
+  transition: all 0.15s ease-in-out;
+}
+
+.searchable-select-input:focus {
+  background-color: var(--qk-card-bg, #ffffff) !important;
+  border-color: var(--qk-accent, #3b82f6) !important;
+  box-shadow: 0 0 0 3px var(--qk-focus-ring, rgba(59, 130, 246, 0.15)) !important;
+}
+
+/* Indicatore della freccia (dropdown indicator) */
+.searchable-select-wrapper::after {
+  content: '\f107'; /* fa-chevron-down */
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  position: absolute;
+  right: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--qk-text-muted, #64748b);
+  pointer-events: none;
+  font-size: 0.8rem;
+  transition: transform 0.2s ease;
+}
+
+.searchable-select-wrapper.is-open::after {
+  transform: translateY(-50%) rotate(180deg);
+  color: var(--qk-accent, #3b82f6);
+}
+
+/* Il menu a comparsa delle opzioni - STILE PREMIUM */
+.searchable-select-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--qk-card-bg, #ffffff) !important;
+  border: 1px solid var(--qk-card-border, #e2e8f0) !important;
+  border-radius: var(--qk-radius-sm, 6px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  z-index: 1060 !important; /* Superiore a elementi circostanti */
+  margin-top: 5px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: none;
+  padding: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--qk-card-border, #e2e8f0) transparent;
+}
+
+/* Personalizzazione barra di scorrimento */
+.searchable-select-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+.searchable-select-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.searchable-select-dropdown::-webkit-scrollbar-thumb {
+  background: var(--qk-card-border, #cbd5e1);
+  border-radius: 99px;
+}
+
+/* Opzioni del dropdown */
+.searchable-select-item {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.825rem;
+  color: var(--qk-text-primary, #1e293b);
+  cursor: pointer;
+  border-radius: var(--qk-radius-sm, 4px);
+  margin-bottom: 2px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.searchable-select-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Icone all'interno degli item */
+.searchable-select-item i {
+  font-size: 0.8rem;
+  width: 1.1rem;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* Hover e evidenziazione da tastiera */
+.searchable-select-item:hover,
+.searchable-select-item.is-highlighted {
+  background: var(--qk-sidebar-hover-bg, rgba(59, 130, 246, 0.08)) !important;
+  color: var(--qk-accent-text, #1e40af) !important;
+}
+
+/* Item selezionato */
+.searchable-select-item.is-selected {
+  background: var(--qk-accent, #3b82f6) !important;
+  color: #ffffff !important;
+}
+.searchable-select-item.is-selected i {
+  color: #ffffff !important;
+  opacity: 1;
+}
+
+/* Segnaposto vuoto o di caricamento */
+.searchable-select-item.is-empty-placeholder {
+  color: var(--qk-text-muted, #94a3b8);
+  font-style: italic;
+  justify-content: center;
+  padding: 1rem;
+  cursor: default;
+  background: transparent !important;
+}
+
+/* Item segnaposto principale (es: - Seleziona Listino -) */
+.searchable-select-item.is-placeholder {
+  color: var(--qk-text-muted, #64748b);
+  border-bottom: 1px dashed var(--qk-card-border, #e2e8f0);
+  border-radius: 0;
+  margin-bottom: 4px;
+  padding-bottom: 0.5rem;
+}

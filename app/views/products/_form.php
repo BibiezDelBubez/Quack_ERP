@@ -1080,10 +1080,10 @@ $kit_componenti = $kit_componenti ?? [];
           </div>
 
           <!-- Pannello informativo -->
-          <div class="qk-guidance-box mt-3 mb-0 p-3">
-            <div class="fs-4 text-primary" style="flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+          <div class="qk-guidance-box mt-3 mb-0">
+            <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
             <div>
-              <h6 class="mb-1 fw-bold text-primary">Le restrizioni vanno gestite sulla sostanza chimica, non qui</h6>
+              <h6 class="mb-1 fw-bold">Le restrizioni vanno gestite sulla sostanza chimica, non qui</h6>
               <p class="mb-0 text-muted" style="font-size:0.875rem">
                 Se questo prodotto contiene una sostanza soggetta a limiti di vendita (precursori di esplosivi, stupefacenti, biocidi ecc.),
                 vai sulla <a href="<?= !empty($v['sostanza_chimica_id']) ? url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) : url('adr/sostanze') ?>"

@@ -5,10 +5,10 @@
  */
 ?>
 
-<div class="qk-guidance-box mb-4 p-3">
-  <div class="fs-4 text-primary" style="flex-shrink:0"><i class="fa-solid fa-circle-info"></i></div>
+<div class="qk-guidance-box mb-4">
+  <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
   <div>
-    <h6 class="mb-1 fw-bold text-primary">Regola dei 1000 punti (ADR 1.1.3.6)</h6>
+    <h6 class="mb-1 fw-bold">Regola dei 1000 punti (ADR 1.1.3.6)</h6>
     <p class="mb-1 text-muted" style="font-size:0.875rem">
       Una spedizione è <strong>esente dal regime ADR completo</strong> se la somma dei punti di tutte le merci pericolose a bordo è inferiore a 1000.
       I punti di ogni sostanza si calcolano come: <strong>quantità (kg o L) × moltiplicatore della categoria di trasporto</strong>.

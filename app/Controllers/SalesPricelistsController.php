@@ -655,8 +655,8 @@ final class SalesPricelistsController extends BaseController
                 'sconto_perc'     => 0.0,
                 'valuta'          => 'EUR',
                 'listino_id'      => 0,
-                'listino_nome'    => 'Ricarico Emergenza Costo',
-                'prezzo_sorgente' => 'Ricarico emergenza su costo (+20%)',
+                'listino_nome'    => 'Ricarico automatico su costo',
+                'prezzo_sorgente' => 'Prezzo calcolato: costo d\'acquisto +20% (listino di vendita non configurato)',
                 'origine'         => 'costo',
                 'unita_misura_id' => null,
             ];

@@ -79,6 +79,8 @@ class CustomersController extends BaseController
         ];
         $record_meta = null;
 
+        $extra_css = ['searchable-select.css'];
+
         $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
 
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
@@ -154,7 +156,7 @@ class CustomersController extends BaseController
         // Dati pre-caricati per gli indirizzi (PHP → JS via window.QkCustomerAddr)
         $indirizzi_preload = qk_list_indirizzi_cliente($this->pdo, $entity_id);
 
-        $extra_css = ['customers-addresses.css', 'customers-compliance.css'];
+        $extra_css = ['customers-addresses.css', 'customers-compliance.css', 'searchable-select.css'];
 
         $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
 

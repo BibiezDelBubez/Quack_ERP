@@ -168,7 +168,7 @@ class PurchasesQuotesController extends BaseController
                         $detail = qk_offerta_detail($this->pdo, $id);
                         $righe  = $detail['righe'];
                         $values = $this->mapDetailToValues($detail['offerta']);
-                        $_SESSION['flash_success'] = 'Offerta salvata.';
+                        flash_set('success', 'Offerta salvata.');
                     } catch (\Throwable $e) {
                         $errors['_global'] = $e->getMessage();
                     }
@@ -205,13 +205,13 @@ class PurchasesQuotesController extends BaseController
             switch ($azione) {
                 case 'accetta':
                     qk_offerta_accetta($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Offerta accettata.';
+                    flash_set('success', 'Offerta accettata.');
 
                     // Se richiesto, genera subito l'ordine
                     if (post('genera_ordine', '') === '1') {
                         require_once INCLUDES_DIR . '/purchases_orders.php';
                         $ordine_id = qk_ordine_da_offerta($this->pdo, $id, (int)current_user()['id']);
-                        $_SESSION['flash_success'] = 'Offerta accettata e ordine generato.';
+                        flash_set('success', 'Offerta accettata e ordine generato.');
                         redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);
                     }
                     redirect(url('purchases/quotes/edit') . '?id=' . $id);
@@ -223,16 +223,16 @@ class PurchasesQuotesController extends BaseController
                         $motivo = post('motivo_rifiuto_altro', '');
                     }
                     qk_offerta_rifiuta($this->pdo, $id, (int)current_user()['id'], $motivo);
-                    $_SESSION['flash_success'] = 'Offerta rifiutata.';
+                    flash_set('success', 'Offerta rifiutata.');
                     redirect(url('purchases/quotes/edit') . '?id=' . $id);
                     break;
 
                 default:
-                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+                    flash_set('danger', "Azione '$azione' non riconosciuta.");
                     redirect(url('purchases/quotes/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
             redirect(url('purchases/quotes/edit') . '?id=' . $id);
         }
     }

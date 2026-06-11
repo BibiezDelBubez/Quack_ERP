@@ -32,21 +32,6 @@ foreach ($ricezioni as $rc) {
 }
 ?>
 
-<?php if (!empty($_SESSION['flash_success'])): ?>
-<div class="qk-alert qk-alert-success mb-3" data-auto-dismiss="4000">
-  <i class="fa-solid fa-circle-check"></i>
-  <span><?= e($_SESSION['flash_success']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_success']); endif; ?>
-
-<?php if (!empty($_SESSION['flash_error'])): ?>
-<div class="qk-alert qk-alert-danger mb-3" data-auto-dismiss="6000">
-  <i class="fa-solid fa-circle-xmark"></i>
-  <span><?= e($_SESSION['flash_error']) ?></span>
-  <button class="qk-alert-close"><i class="fa-solid fa-xmark"></i></button>
-</div>
-<?php unset($_SESSION['flash_error']); endif; ?>
 
 <!-- Guidance Box -->
 <div class="qk-guidance-box mb-4 p-3 ">

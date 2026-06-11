@@ -98,7 +98,7 @@ final class SalesOrdersController extends BaseController
                     try {
                         $userId   = (int)(current_user()['id'] ?? 0);
                         $ordineId = qk_insert_ordine_diretto($this->pdo, $values, $righe, $userId);
-                        $_SESSION['flash_success'] = 'Ordine ' . e($values['numero_ordine']) . ' creato con successo!';
+                        flash_set('success', 'Ordine ' . e($values['numero_ordine']) . ' creato con successo!');
                         redirect(url('sales/orders/edit') . '?id=' . $ordineId);
                     } catch (\Throwable $e) {
                         $errors['_global'] = 'Errore durante la creazione: ' . $e->getMessage();
@@ -357,7 +357,7 @@ final class SalesOrdersController extends BaseController
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!csrf_verify()) {
-                $_SESSION['flash_error'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
+                flash_set('error', 'Sessione scaduta. Ricarica la pagina e riprova.');
             } else {
                 $note                   = post('note', '');
                 $data_consegna_prevista = post('data_consegna_prevista', '');
@@ -371,9 +371,9 @@ final class SalesOrdersController extends BaseController
                         $data_consegna_prevista !== '' ? $data_consegna_prevista : null,
                         $id,
                     ]);
-                    $_SESSION['flash_success'] = 'Ordine aggiornato correttamente.';
+                    flash_set('success', 'Ordine aggiornato correttamente.');
                 } catch (\Throwable $e) {
-                    $_SESSION['flash_error'] = 'Errore: ' . $e->getMessage();
+                    flash_set('error', 'Errore: ' . $e->getMessage());
                 }
             }
             redirect(url('sales/orders/edit') . '?id=' . $id);
@@ -393,7 +393,7 @@ final class SalesOrdersController extends BaseController
         ");
         $st->execute([$id]);
         $order = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$order) { $_SESSION['flash_error'] = 'Ordine non trovato.'; redirect(url('sales/orders')); }
+        if (!$order) { redirect_with('sales/orders', 'error', 'Ordine non trovato.'); }
 
         $address = null;
         if (!empty($order['indirizzo_spedizione_id'])) {
@@ -472,32 +472,32 @@ final class SalesOrdersController extends BaseController
             switch ($azione) {
                 case 'completa':
                     $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'completato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Ordine completato.';
+                    flash_set('success', 'Ordine completato.');
                     break;
                 case 'riapri':
                     $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'in_lavorazione', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Ordine rimesso in lavorazione.';
+                    flash_set('success', 'Ordine rimesso in lavorazione.');
                     break;
                 case 'annulla':
                     $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'annullato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Ordine annullato.';
+                    flash_set('success', 'Ordine annullato.');
                     break;
                 case 'segna_fatturato':
                     $this->pdo->prepare("UPDATE ordini_clienti SET stato_fatturazione = 'fatturato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Ordine segnato come fatturato.';
+                    flash_set('success', 'Ordine segnato come fatturato.');
                     break;
                 case 'segna_da_fatturare':
                     $this->pdo->prepare("UPDATE ordini_clienti SET stato_fatturazione = 'da_fatturare', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
-                    $_SESSION['flash_success'] = 'Ordine ripristinato a "Da Fatturare".';
+                    flash_set('success', 'Ordine ripristinato a "Da Fatturare".');
                     break;
                 case 'crea_spedizione':
                     $this->elaboraCreaSpedizione($id);
                     break;
                 default:
-                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+                    flash_set('error', "Azione '$azione' non riconosciuta.");
             }
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('error', $e->getMessage());
         }
 
         redirect(url('sales/orders/edit') . '?id=' . $id);
@@ -659,7 +659,7 @@ final class SalesOrdersController extends BaseController
             $this->pdo->prepare("UPDATE ordini_clienti SET stato = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$nuovoStato, $orderId]);
 
             $this->pdo->commit();
-            $_SESSION['flash_success'] = "Spedizione {$numSped} e DDT {$numDdt} registrati correttamente.";
+            flash_set('success', "Spedizione {$numSped} e DDT {$numDdt} registrati correttamente.");
         } catch (\Throwable $e) {
             $this->pdo->rollBack();
             throw $e;

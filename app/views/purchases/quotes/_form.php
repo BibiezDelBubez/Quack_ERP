@@ -43,10 +43,10 @@ $statoLabel = [
   <?php endif; ?>
 
 <!-- Guidance Box -->
-<div class="qk-guidance-box mb-4 p-3 ">
-  <div class="fs-4 text-primary"><i class="fa-solid fa-circle-info"></i></div>
+<div class="qk-guidance-box mb-4">
+  <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
   <div>
-    <h6 class="mb-1 fw-bold text-primary">Cosa fare adesso?</h6>
+    <h6 class="mb-1 fw-bold">Cosa fare adesso?</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       <?php if (!$isEdit): ?>
         Inserisci i dettagli del preventivo spontaneo o della quotazione del fornitore, compresi i prezzi unitari concordati, quindi clicca su "Salva".
@@ -61,10 +61,16 @@ $statoLabel = [
   </div>
 </div>
 
-  <!-- Barra Azioni e Stato (Odoo style) -->
-  <div class="qk-flex-row qk-justify-between mb-4 p-3 border rounded shadow-xs" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important; : wrap; gap: .75rem;">
-    <!-- Bottoni Azione -->
-    <div class="qk-flex-row qk-gap-sm">
+  <!-- Barra Azioni e Stato Sticky -->
+  <div class="qk-sticky-action-bar mb-4">
+    <div class="qk-sticky-action-bar-left">
+      <?php if ($canEdit): ?>
+        <button type="submit" form="form-offerta" class="btn-qk btn-qk-primary">
+          <i class="fa-solid fa-floppy-disk"></i> Salva Preventivo
+        </button>
+        <a href="<?= url('purchases/quotes') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+      <?php endif; ?>
+
       <?php if ($isEdit && $isInValutazione): ?>
         <!-- Accetta ed eventualmente genera ordine -->
         <form method="post" action="<?= url('purchases/quotes/action') ?>" class="d-inline">
@@ -72,10 +78,15 @@ $statoLabel = [
           <input type="hidden" name="id" value="<?= $id ?>">
           <input type="hidden" name="azione" value="accetta">
           <input type="hidden" name="genera_ordine" value="1">
-          <button type="submit" class="btn-qk btn-qk-primary">
+          <button type="submit" class="btn-qk btn-qk-success">
             <i class="fa-solid fa-circle-check"></i> Accetta e Genera Ordine
           </button>
         </form>
+      <?php endif; ?>
+    </div>
+
+    <div class="qk-sticky-action-bar-right">
+      <?php if ($isEdit && $isInValutazione): ?>
         <!-- Rifiuta (triggers modal) -->
         <button type="button" class="btn-qk btn-qk-secondary text-danger" onclick="document.getElementById('modal-rifiuta-offerta').style.display='flex'">
           <i class="fa-solid fa-ban"></i> Rifiuta
@@ -85,44 +96,44 @@ $statoLabel = [
       <a href="<?= url('purchases/quotes') ?>" class="btn-qk btn-qk-secondary">
         <i class="fa-solid fa-arrow-left"></i> Elenco Preventivi
       </a>
-    </div>
 
-    <!-- Pipeline visivo stati -->
-    <ul class="qk-status-path d-none d-sm-flex">
-      <?php
-      $steps = [
-        ['in_valutazione', 'In valutazione'],
-        ['accettata',      'Accettata'],
-        ['rifiutata',      'Rifiutata'],
-      ];
-      $currentIdx = 0;
-      foreach ($steps as $idx => [$s, $lbl]) {
-        if ($stato === $s) {
-          $currentIdx = $idx;
-          break;
+      <!-- Pipeline visivo stati -->
+      <ul class="qk-status-path d-none d-sm-flex" style="margin: 0; padding: 0;">
+        <?php
+        $steps = [
+          ['in_valutazione', 'In valutazione'],
+          ['accettata',      'Accettata'],
+          ['rifiutata',      'Rifiutata'],
+        ];
+        $currentIdx = 0;
+        foreach ($steps as $idx => [$s, $lbl]) {
+          if ($stato === $s) {
+            $currentIdx = $idx;
+            break;
+          }
         }
-      }
-      foreach ($steps as $idx => [$s, $lbl]):
-        if ($stato === $s) {
-          $statusClass = 'active';
-        } elseif ($s === 'rifiutata' && $stato === 'accettata') {
-          $statusClass = 'pending';
-        } elseif ($s === 'accettata' && $stato === 'rifiutata') {
-          $statusClass = 'pending';
-        } elseif ($idx < $currentIdx) {
-          $statusClass = 'completed';
-        } else {
-          $statusClass = 'pending';
-        }
-        
-        if ($s === 'rifiutata' && $stato !== 'rifiutata') continue;
-        if ($s === 'accettata' && $stato === 'rifiutata') continue;
-      ?>
-        <li class="qk-status-path-item <?= $statusClass ?>">
-          <?= $lbl ?>
-        </li>
-      <?php endforeach; ?>
-    </ul>
+        foreach ($steps as $idx => [$s, $lbl]):
+          if ($stato === $s) {
+            $statusClass = 'active';
+          } elseif ($s === 'rifiutata' && $stato === 'accettata') {
+            $statusClass = 'pending';
+          } elseif ($s === 'accettata' && $stato === 'rifiutata') {
+            $statusClass = 'pending';
+          } elseif ($idx < $currentIdx) {
+            $statusClass = 'completed';
+          } else {
+            $statusClass = 'pending';
+          }
+          
+          if ($s === 'rifiutata' && $stato !== 'rifiutata') continue;
+          if ($s === 'accettata' && $stato === 'rifiutata') continue;
+        ?>
+          <li class="qk-status-path-item <?= $statusClass ?>">
+            <?= $lbl ?>
+          </li>
+        <?php endforeach; ?>
+      </ul>
+    </div>
   </div>
 
 <form method="post" action="<?= $isEdit ? url('purchases/quotes/edit') . '?id=' . $id : url('purchases/quotes/create') ?>" id="form-offerta" enctype="multipart/form-data">
@@ -610,14 +621,7 @@ $statoLabel = [
     </div> <!-- Fine pane-note -->
   </div> <!-- Fine tab-content -->
 
-  <?php if ($canEdit): ?>
-  <div class="qk-flex-row qk-justify-end qk-gap-sm" style="margin-bottom:2rem">
-    <a href="<?= url('purchases/quotes') ?>" class="btn-qk btn-qk-ghost">Annulla</a>
-    <button type="submit" class="btn-qk btn-qk-primary">
-      <i class="fa-solid fa-floppy-disk"></i> Salva Preventivo
-    </button>
-  </div>
-  <?php endif; ?>
+
 </form>
 
 <?php if ($canEdit && empty($values['rfq_id'])): ?>

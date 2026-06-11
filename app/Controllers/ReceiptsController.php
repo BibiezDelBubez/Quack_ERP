@@ -50,7 +50,7 @@ class ReceiptsController extends BaseController
             $id = qk_ricezione_apri($this->pdo, $ordine_id, (int)current_user()['id']);
             redirect(url('purchases/receipts/edit') . '?id=' . $id);
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
             redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);
         }
     }
@@ -109,7 +109,7 @@ class ReceiptsController extends BaseController
 
         try {
             qk_ricezione_conferma($this->pdo, $id, $righeInput, (int)current_user()['id']);
-            $_SESSION['flash_success'] = 'Ricezione confermata. Giacenze aggiornate.';
+            flash_set('success', 'Ricezione confermata. Giacenze aggiornate.');
 
             // Recupera l'ordine padre per reindirizzare
             $st = $this->pdo->prepare('SELECT ordine_id FROM ricezioni_testata WHERE id = ?');
@@ -118,7 +118,7 @@ class ReceiptsController extends BaseController
             redirect(url('purchases/orders/edit') . '?id=' . ($row['ordine_id'] ?? 0));
 
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
             redirect(url('purchases/receipts/edit') . '?id=' . $id);
         }
     }

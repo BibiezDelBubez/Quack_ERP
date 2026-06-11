@@ -141,6 +141,11 @@ class SuppliersController extends BaseController
         // Dati pre-caricati per gli indirizzi (PHP → JS via window.QkSupplierAddr)
         $indirizzi_preload = qk_list_indirizzi_fornitore($this->pdo, $entity_id);
 
+        // Recupera i listini d'acquisto associati a questo fornitore
+        $stmtListini = $this->pdo->prepare("SELECT * FROM listini_acquisto WHERE fornitore_id = ? ORDER BY id DESC");
+        $stmtListini->execute([$entity_id]);
+        $listini_acquisto = $stmtListini->fetchAll(PDO::FETCH_ASSOC);
+
         $extra_css = ['suppliers-contacts.css', 'suppliers-addresses.css'];
 
         $this->page(APP_ROOT_DIR . '/app/views/suppliers/_form.php', get_defined_vars());

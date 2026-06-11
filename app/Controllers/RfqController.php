@@ -161,7 +161,7 @@ class RfqController extends BaseController
                         // Ricarica dopo salvataggio
                         $detail = qk_rfq_detail($this->pdo, $id);
                         $righe  = $detail['righe'];
-                        $_SESSION['flash_success'] = 'RFQ salvata.';
+                        flash_set('success', 'RFQ salvata.');
                     } catch (\Throwable $e) {
                         $errors['_global'] = $e->getMessage();
                     }
@@ -191,9 +191,9 @@ class RfqController extends BaseController
         $id = (int) post('id', '0');
         try {
             qk_rfq_delete($this->pdo, $id);
-            $_SESSION['flash_success'] = 'RFQ eliminata.';
+            flash_set('success', 'RFQ eliminata.');
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
         }
         redirect(url('purchases/rfq'));
     }
@@ -221,28 +221,28 @@ class RfqController extends BaseController
             switch ($azione) {
                 case 'invia':
                     qk_rfq_invia($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'RFQ inviata.';
+                    flash_set('success', 'RFQ inviata.');
                     redirect(url('purchases/rfq/edit') . '?id=' . $id);
                     break;
 
                 case 'chiudi':
                     qk_rfq_chiudi($this->pdo, $id);
-                    $_SESSION['flash_success'] = 'RFQ chiusa.';
+                    flash_set('success', 'RFQ chiusa.');
                     redirect(url('purchases/rfq/edit') . '?id=' . $id);
                     break;
 
                 case 'nuova_versione':
                     $nuovoId = qk_rfq_nuova_versione($this->pdo, $id, (int)current_user()['id']);
-                    $_SESSION['flash_success'] = 'Nuova versione creata.';
+                    flash_set('success', 'Nuova versione creata.');
                     redirect(url('purchases/rfq/edit') . '?id=' . $nuovoId);
                     break;
 
                 default:
-                    $_SESSION['flash_error'] = "Azione '$azione' non riconosciuta.";
+                    flash_set('danger', "Azione '$azione' non riconosciuta.");
                     redirect(url('purchases/rfq/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = $e->getMessage();
+            flash_set('danger', $e->getMessage());
             redirect(url('purchases/rfq/edit') . '?id=' . $id);
         }
     }

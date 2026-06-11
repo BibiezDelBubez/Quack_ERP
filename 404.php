@@ -7,14 +7,18 @@ require_once __DIR__ . '/includes/error_reporter.php';
 http_response_code(404);
 
 // Logga la 404 (solo file MD, niente mail — le 404 sono rumorose)
-_qk_handle_error(
-    'NOT FOUND',
-    '404',
-    'Pagina non trovata: ' . ($_SERVER['REQUEST_URI'] ?? '?'),
-    __FILE__,
-    0,
-    'Referrer: ' . ($_SERVER['HTTP_REFERER'] ?? 'diretto')
-);
+// Esclude i file di source mapping (.map) delle librerie JS/CSS richiesti dai browser DevTools
+$request_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+if (!str_ends_with(strtolower($request_path), '.map')) {
+    _qk_handle_error(
+        'NOT FOUND',
+        '404',
+        'Pagina non trovata: ' . ($_SERVER['REQUEST_URI'] ?? '?'),
+        __FILE__,
+        0,
+        'Referrer: ' . ($_SERVER['HTTP_REFERER'] ?? 'diretto')
+    );
+}
 
 // Percorso specifico per la paperella
 $img_url = asset('img/dabbling_duck.svg');
