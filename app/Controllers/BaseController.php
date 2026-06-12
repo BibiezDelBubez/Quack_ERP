@@ -49,4 +49,16 @@ abstract class BaseController
         require $viewFile;
         require INCLUDES_DIR . '/footer.php';
     }
+
+    protected function dbMessage(PDOException $e): string
+    {
+        $msg = $e->getMessage();
+        if (str_contains($msg, 'FOREIGN KEY')) {
+            return 'Impossibile completare l\'operazione: vincolo di chiave esterna (Foreign Key) violato. Verificare che tutti i codici/relazioni inseriti esistano già a sistema, oppure che il record non sia referenziato da altri dati.';
+        }
+        if (str_contains($msg, 'UNIQUE')) {
+            return 'Esiste già un record con questo codice/chiave.';
+        }
+        return APP_ENV === 'development' ? 'Errore DB: ' . $msg : 'Errore nel salvataggio. Riprova.';
+    }
 }

@@ -78,7 +78,7 @@ $kit_componenti = $kit_componenti ?? [];
           <button class="nav-link" id="ptab-btn-fornitori"
                   data-bs-toggle="tab" data-bs-target="#ptab-fornitori"
                   type="button" role="tab" aria-selected="false">
-            <i class="fa-solid fa-handshake fa-fw me-1"></i>Fornitori
+            <i class="fa-solid fa-handshake fa-fw me-1"></i>Prezzi d'Acquisto & Fornitori
             <?php if (!empty($prodotto_fornitori)): ?>
             <span class="badge bg-secondary ms-1" id="badge-fornitori"><?= count($prodotto_fornitori) ?></span>
             <?php else: ?>
@@ -90,7 +90,7 @@ $kit_componenti = $kit_componenti ?? [];
           <button class="nav-link" id="ptab-btn-listini"
                   data-bs-toggle="tab" data-bs-target="#ptab-listini"
                   type="button" role="tab" aria-selected="false">
-            <i class="fa-solid fa-tag fa-fw me-1"></i>Listini & Sconti
+            <i class="fa-solid fa-tag fa-fw me-1"></i>Prezzi di Vendita & Listini
             <?php if (!empty($prezzi_vendita_regole)): ?>
             <span class="badge bg-secondary ms-1" id="badge-listini"><?= count($prezzi_vendita_regole) ?></span>
             <?php else: ?>
@@ -243,6 +243,28 @@ $kit_componenti = $kit_componenti ?? [];
             </div>
           </div>
 
+          <!-- Prezzo di Vendita -->
+          <div class="qk-card mb-3">
+            <div class="qk-card-header"><span class="qk-card-title">Prezzo di Vendita</span></div>
+            <div class="qk-card-body">
+              <div class="qk-form-row">
+                <!-- Prezzo di vendita base -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">
+                    Prezzo di vendita base (€)
+                    <span class="qk-form-hint">Imposta il prezzo nel listino standard (ID 1)</span>
+                  </label>
+                  <input type="number" name="prezzo_vendita_base"
+                         class="qk-form-control"
+                         value="<?= e($v['prezzo_vendita_base'] ?? '') ?>"
+                         placeholder="0.00" min="0" step="0.01">
+                </div>
+                <!-- Spazio vuoto per allineamento layout -->
+                <div class="qk-form-group"></div>
+              </div>
+            </div>
+          </div>
+
           <!-- 2. Identificatori e Tracciabilità -->
           <div class="qk-card mb-3">
             <div class="qk-card-header"><span class="qk-card-title">Identificatori e Tracciabilità</span></div>
@@ -357,19 +379,7 @@ $kit_componenti = $kit_componenti ?? [];
                          value="<?= e($v['descrizione_confezione'] ?? '') ?>">
                 </div>
               </div>
-
               <div class="qk-form-row">
-                <!-- Prezzo di vendita base -->
-                <div class="qk-form-group">
-                  <label class="qk-form-label">
-                    Prezzo di vendita base (€)
-                    <span class="qk-form-hint">Imposta il prezzo nel listino standard (ID 1)</span>
-                  </label>
-                  <input type="number" name="prezzo_vendita_base"
-                         class="qk-form-control"
-                         value="<?= e($v['prezzo_vendita_base'] ?? '') ?>"
-                         placeholder="0.00" min="0" step="0.01">
-                </div>
                 <!-- Scorta minima -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">
@@ -381,6 +391,8 @@ $kit_componenti = $kit_componenti ?? [];
                          value="<?= e($v['scorta_minima'] ?? '0') ?>"
                          placeholder="0.000" min="0" step="0.001">
                 </div>
+                <!-- Spazio vuoto per allineamento layout -->
+                <div class="qk-form-group"></div>
               </div>
 
               <div class="qk-form-row">
@@ -510,55 +522,290 @@ $kit_componenti = $kit_componenti ?? [];
             </div>
           </div>
           <?php else: ?>
+
+          <style>
+            .pricing-matrix-container {
+              overflow-x: auto;
+              margin-top: 1rem;
+              border-radius: var(--qk-radius);
+              border: 1px solid #cbd5e1;
+              background: #fff;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .pricing-matrix-table {
+              width: auto;
+              border-collapse: collapse;
+              font-size: 0.82rem;
+              background: #fff;
+              table-layout: fixed;
+            }
+            .pricing-matrix-table th, .pricing-matrix-table td {
+              border: 1px solid #cbd5e1;
+              padding: 0.6rem 0.8rem;
+              vertical-align: middle;
+              overflow: visible; /* Per consentire la visualizzazione dei popover */
+            }
+            .pricing-matrix-table th {
+              background: #f8f9fa;
+              font-weight: 600;
+              color: var(--qk-text-primary);
+              text-align: left;
+              border-bottom: 2px solid #cbd5e1;
+            }
+            .pricing-matrix-table td.listino-info-cell {
+              background: #f8fafc;
+              font-weight: 600;
+              color: var(--qk-text-primary);
+            }
+            .matrix-cell-wrapper {
+              position: relative;
+              background: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 6px;
+              padding: 4px;
+              transition: all 0.2s ease;
+            }
+            .matrix-cell-wrapper:hover {
+              border-color: #94a3b8;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            }
+            .matrix-cell-wrapper:focus-within {
+              border-color: var(--qk-primary);
+              background: #fff;
+              box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+            }
+            .matrix-price-input-group {
+              display: flex;
+              align-items: center;
+              background: transparent;
+              width: 100%;
+            }
+            .matrix-price-addon {
+              font-size: 0.75rem;
+              font-weight: 600;
+              color: #64748b;
+              padding-left: 4px;
+              user-select: none;
+            }
+            .matrix-input-price {
+              border: none;
+              background: transparent;
+              padding: 4px 6px;
+              font-family: monospace;
+              font-size: 0.88rem;
+              font-weight: 600;
+              width: 100%;
+              text-align: right;
+              color: #1e293b;
+            }
+            .matrix-input-price:focus {
+              outline: none;
+            }
+            .btn-cell-details {
+              background: none;
+              border: none;
+              color: #94a3b8;
+              cursor: pointer;
+              padding: 2px 6px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: color 0.2s, background-color 0.2s;
+              border-radius: 4px;
+            }
+            .btn-cell-details:hover {
+              color: var(--qk-primary);
+              background-color: rgba(13, 110, 253, 0.08);
+            }
+            .btn-cell-details.has-details {
+              color: var(--qk-primary);
+              background-color: rgba(13, 110, 253, 0.12);
+            }
+
+            /* Stile Popover per Dettagli Cella */
+            .matrix-cell-popover {
+              position: absolute;
+              top: 100%;
+              left: 50%;
+              transform: translateX(-50%);
+              margin-top: 8px;
+              width: 210px;
+              background: #fff;
+              border: 1px solid #cbd5e1;
+              border-radius: 8px;
+              box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+              z-index: 1050;
+              padding: 10px;
+              text-align: left;
+            }
+            .matrix-popover-arrow {
+              position: absolute;
+              top: -6px;
+              left: 50%;
+              transform: translateX(-50%) rotate(45deg);
+              width: 10px;
+              height: 10px;
+              background: #fff;
+              border-top: 1px solid #cbd5e1;
+              border-left: 1px solid #cbd5e1;
+            }
+            .matrix-popover-content {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+            }
+
+            .matrix-cell-wrapper.saving {
+              border-color: #ffc107;
+              background: #fffef0;
+            }
+            .matrix-cell-wrapper.saved {
+              border-color: #28a745;
+              background: #f0fff4;
+              animation: matrix-flash-green 1s ease;
+            }
+            .matrix-cell-wrapper.error {
+              border-color: #dc3545;
+              background: #fff5f5;
+            }
+            @keyframes matrix-flash-green {
+              0% { box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.4); }
+              100% { box-shadow: 0 0 0 0 transparent; }
+            }
+            .btn-delete-qty-column {
+              background: none;
+              border: none;
+              color: var(--qk-danger);
+              cursor: pointer;
+              padding: 0 4px;
+              border-radius: 3px;
+              font-size: 0.75rem;
+            }
+            .btn-delete-qty-column:hover {
+              background: rgba(220, 53, 69, 0.1);
+            }
+          </style>
+
+          <?php
+          // Estrai tutti gli scaglioni di quantità (escluso 0)
+          $qty_tiers = [];
+          foreach ($prezzi_vendita_regole as $regola) {
+              $qty = (float)$regola['quantita_minima'];
+              if ($qty > 0) {
+                  $qty_tiers[] = $qty;
+              }
+          }
+          $qty_tiers = array_unique($qty_tiers);
+          sort($qty_tiers);
+
+          // Costruisci mappa listino_id -> quantita_minima -> regola
+          $rules_map = [];
+          foreach ($prezzi_vendita_regole as $regola) {
+              $lid = (int)$regola['listino_id'];
+              $qty = (string)(float)$regola['quantita_minima'];
+              $rules_map[$lid][$qty] = $regola;
+          }
+
+          // Mostra tutti i listini attivi a sistema
+          $listini_da_mostrare = $listini;
+          ?>
+
           <div class="qk-card mt-3">
-            <div class="qk-card-header qk-flex-row qk-justify-between" style="border-bottom:1px solid var(--qk-border); padding:.75rem 1.25rem;">
+            <div class="qk-card-header qk-flex-row qk-justify-between qk-align-center" style="border-bottom:1px solid var(--qk-border); padding:.6rem 1.25rem;">
               <div>
-                <span class="qk-card-title">Listini e regole di vendita</span>
-                <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted);">Regole di prezzo e sconti configurati per questo prodotto in tutti i listini</span>
+                <span class="qk-card-title">Matrice Prezzi di Vendita & Listini</span>
+                <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted);">
+                  Griglia dei prezzi per scaglione. I valori si salvano in automatico all'uscita dal campo (blur) o premendo Invio. Clicca sull'icona ingranaggio per sconti e note.
+                </span>
               </div>
-              <button type="button" class="btn-qk btn-qk-primary btn-qk-sm" id="btn-add-sales-price-rule">
-                <i class="fa-solid fa-plus"></i> Aggiungi regola
-              </button>
             </div>
+            
             <div class="qk-card-body p-0">
-              <div class="table-responsive">
-                <table class="qk-table mb-0" id="table-sales-price-rules" style="font-size:.85rem">
+              <div class="pricing-matrix-container">
+                <table class="pricing-matrix-table" id="pricing-matrix-table">
                   <thead>
                     <tr>
-                      <th>Listino <span class="required">*</span></th>
-                      <th class="text-end" style="width: 140px;">Quantità Minima</th>
-                      <th class="text-end" style="width: 160px;">Prezzo Unitario</th>
-                      <th class="text-end" style="width: 120px;">Sconto %</th>
-                      <th>Note</th>
-                      <th style="width: 100px; text-align: center;">Azioni</th>
+                      <th style="width: 250px; background: #e2e8f0; color: #1e293b; border-bottom: 2px solid #cbd5e1;">Listino (Valuta)</th>
+                      <th style="width: 200px; background: #f1f5f9; color: #0f172a; border-bottom: 2px solid #cbd5e1; font-weight: 700; text-align: center;">PREZZO BASE [Qtà 0+]</th>
+                      <?php foreach ($qty_tiers as $qty): ?>
+                      <th class="qty-column-header" data-qty="<?= $qty ?>" style="width: 200px;">
+                        <div class="d-flex align-items-center justify-content-between">
+                          <span>Qtà <?= number_format($qty, 0, ',', '.') ?>+</span>
+                          <button type="button" class="btn-delete-qty-column" data-qty="<?= $qty ?>" title="Elimina questo scaglione per tutti i listini">
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                      </th>
+                      <?php endforeach; ?>
+                      <!-- Bottone aggiunta scaglione in testata -->
+                      <th style="width: 60px; text-align: center; border-bottom: 2px solid #cbd5e1; background: #f8f9fa;">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-add-qty-column" title="Aggiungi scaglione (colonna)" style="padding: 2px 6px; font-size: 0.75rem;">
+                          <i class="fa-solid fa-plus"></i>
+                        </button>
+                      </th>
                     </tr>
                   </thead>
-                  <tbody id="tbody-sales-price-rules">
-                    <?php if (empty($prezzi_vendita_regole)): ?>
-                    <tr class="empty-rules-placeholder">
-                      <td colspan="6" class="text-center py-4 text-muted">
-                        Nessuna regola speciale configurata per questo prodotto. Verrà applicato il prezzo di vendita base o il ricarico di emergenza.
+                  <tbody>
+                    <?php foreach ($listini_da_mostrare as $listino): 
+                        $lid = (int)$listino['id'];
+                        $isStandard = ($lid === 1);
+                        
+                        // Cerca regola base (qty = 0)
+                        $baseRule = $rules_map[$lid]['0'] ?? null;
+                        $basePrice = $baseRule ? (float)$baseRule['prezzo_unitario'] : ($isStandard ? (float)($v['prezzo_vendita_base'] ?? 0) : null);
+                        $baseDiscount = $baseRule ? (float)$baseRule['sconto_perc'] : 0.0;
+                        $baseNote = $baseRule ? $baseRule['note'] : '';
+                        $baseRowId = $baseRule ? $baseRule['id'] : ($isStandard ? -1 : 0);
+                        $hasBaseDetails = ($baseDiscount > 0 || $baseNote !== '');
+                    ?>
+                    <tr class="listino-row" data-listino-id="<?= $lid ?>" data-valuta="<?= e($listino['valuta']) ?>">
+                      <td class="listino-info-cell" style="<?= $isStandard ? 'background: #f1f5f9; border-left: 4px solid var(--qk-primary);' : '' ?>">
+                        <div class="d-flex flex-column gap-1">
+                          <span style="font-size: 0.85rem; font-weight: 700; color: #1e293b;"><?= e($listino['nome']) ?></span>
+                          <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-light text-dark border" style="font-size: 0.68rem;"><?= e($listino['valuta']) ?></span>
+                            <?php if ($isStandard): ?>
+                              <span class="badge bg-primary text-white" style="font-size: 0.65rem; padding: 2px 5px; font-weight: 600;">LISTINO PRINCIPALE</span>
+                            <?php else: ?>
+                              <span class="badge bg-secondary text-white" style="font-size: 0.65rem; padding: 2px 5px; font-weight: 500;">Listino Speciale</span>
+                            <?php endif; ?>
+                          </div>
+                        </div>
                       </td>
-                    </tr>
-                    <?php else: ?>
-                      <?php foreach ($prezzi_vendita_regole as $regola): ?>
-                      <tr class="sales-rule-row" data-id="<?= $regola['id'] ?>" data-listino-id="<?= $regola['listino_id'] ?>">
-                        <td><strong><?= e($regola['listino_nome']) ?></strong> (<?= e($regola['valuta']) ?>)</td>
-                        <td class="text-end"><?= number_format((float)$regola['quantita_minima'], 3, ',', '.') ?></td>
-                        <td class="text-end" style="font-family:monospace;font-weight:600;"><?= number_format((float)$regola['prezzo_unitario'], 4, ',', '.') ?> <?= e($regola['valuta']) ?></td>
-                        <td class="text-end" style="color:var(--qk-danger); font-weight:600;"><?= number_format((float)$regola['sconto_perc'], 2, ',', '.') ?>%</td>
-                        <td><span class="text-muted small"><?= e($regola['note'] ?: '—') ?></span></td>
-                        <td class="text-center">
-                          <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-edit-sales-rule-row" title="Modifica">
-                            <i class="fa-solid fa-pen"></i>
-                          </button>
-                          <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-sales-rule-row" title="Elimina">
-                            <i class="fa-solid fa-trash-can"></i>
-                          </button>
-                        </td>
-                      </tr>
+                      
+                      <!-- Colonna prezzo base [0+] -->
+                      <td>
+                        <div class="matrix-cell-wrapper" data-qty="0" data-riga-id="<?= $baseRowId ?>">
+                          <div class="matrix-price-input-group">
+                            <span class="matrix-price-addon"><?= e($listino['valuta']) ?></span>
+                            <input type="number" class="matrix-input-price cell-price-input" 
+                                   step="0.0001" min="0" placeholder="—"
+                                   value="<?= $basePrice !== null ? number_format($basePrice, 4, '.', '') : '' ?>">
+                          </div>
+                        </div>
+                      </td>
+
+                      <!-- Colonne quantità scaglionate -->
+                      <?php foreach ($qty_tiers as $qty): 
+                          $rule = $rules_map[$lid][(string)$qty] ?? null;
+                          $price = $rule ? (float)$rule['prezzo_unitario'] : null;
+                          $rowId = $rule ? $rule['id'] : 0;
+                      ?>
+                      <td>
+                        <div class="matrix-cell-wrapper" data-qty="<?= $qty ?>" data-riga-id="<?= $rowId ?>">
+                          <div class="matrix-price-input-group">
+                            <span class="matrix-price-addon"><?= e($listino['valuta']) ?></span>
+                            <input type="number" class="matrix-input-price cell-price-input" 
+                                   step="0.0001" min="0" placeholder="Ereditato..."
+                                   value="<?= $price !== null ? number_format($price, 4, '.', '') : '' ?>">
+                          </div>
+                        </div>
+                      </td>
                       <?php endforeach; ?>
-                    <?php endif; ?>
+                      <!-- Cella vuota per colonna bottone "+" -->
+                      <td style="background: #f8f9fa; border-left: none; border-right: none;"></td>
+                    </tr>
+                    <?php endforeach; ?>
                   </tbody>
                 </table>
               </div>
@@ -567,100 +814,144 @@ $kit_componenti = $kit_componenti ?? [];
 
           <script>
           (function() {
-            const tbody = document.getElementById('tbody-sales-price-rules');
-            const btnAdd = document.getElementById('btn-add-sales-price-rule');
-            const listini = <?= json_encode($listini) ?>;
+            const table = document.getElementById('pricing-matrix-table');
             const prodottoId = <?= (int)$entity_id ?>;
             const csrfToken = <?= json_encode(csrf_token()) ?>;
             const baseUrl = <?= json_encode(url()) ?>;
+            
+            // Riferimento all'input del Prezzo Base sul Tab 1
+            const tab1BaseInput = document.querySelector('input[name="prezzo_vendita_base"]');
 
-            function hidePlaceholder() {
-              const p = tbody.querySelector('.empty-rules-placeholder');
-              if (p) p.remove();
-            }
-
-            function showPlaceholderIfEmpty() {
-              if (tbody.querySelectorAll('tr').length === 0) {
-                tbody.innerHTML = `
-                  <tr class="empty-rules-placeholder">
-                    <td colspan="6" class="text-center py-4 text-muted">
-                      Nessuna regola speciale configurata per questo prodotto. Verrà applicato il prezzo di vendita base o il ricarico di emergenza.
-                    </td>
-                  </tr>
-                `;
-              }
-            }
-
-            if (btnAdd) {
-              btnAdd.addEventListener('click', function() {
-                hidePlaceholder();
-                // Check if there is already an unsaved row in edit mode
-                if (tbody.querySelector('.editing-row[data-id="0"]')) return;
-
-                const tr = document.createElement('tr');
-                tr.className = 'sales-rule-row editing-row';
-                tr.dataset.id = '0';
-                tr.dataset.listinoId = '';
-
-                renderEditRow(tr, {
-                  listino_id: '',
-                  quantita_minima: '0',
-                  prezzo_unitario: '',
-                  sconto_perc: '0',
-                  note: ''
-                });
-
-                tbody.appendChild(tr);
-              });
-            }
-
-            tbody.addEventListener('click', async function(e) {
-              const btnEdit = e.target.closest('.btn-edit-sales-rule-row');
-              const btnDelete = e.target.closest('.btn-delete-sales-rule-row');
-              const btnCancel = e.target.closest('.btn-cancel-sales-rule-row');
-              const btnSave = e.target.closest('.btn-save-sales-rule-row');
-
-              if (btnEdit) {
-                const tr = btnEdit.closest('.sales-rule-row');
-                if (tr.classList.contains('editing-row')) return;
-                
-                // Get current values from text to fill inputs
-                const id = tr.dataset.id;
-                const listinoId = tr.dataset.listinoId;
-                const minQty = parseLocalFloat(tr.cells[1].textContent);
-                const price = parseLocalFloat(tr.cells[2].textContent);
-                const discount = parseLocalFloat(tr.cells[3].textContent);
-                const note = tr.cells[4].querySelector('.small')?.textContent === '—' ? '' : tr.cells[4].textContent.trim();
-
-                tr.classList.add('editing-row');
-                renderEditRow(tr, {
-                  listino_id: listinoId,
-                  quantita_minima: minQty,
-                  prezzo_unitario: price,
-                  sconto_perc: discount,
-                  note: note
-                });
-              }
-
-              if (btnCancel) {
-                const tr = btnCancel.closest('.sales-rule-row');
-                const id = tr.dataset.id;
-                if (id === '0') {
-                  tr.remove();
-                  showPlaceholderIfEmpty();
-                } else {
-                  // Reload original row by refreshing page or restoring original cells
-                  window.location.reload();
+            // Aggiorna dinamicamente i placeholder grigi per l'ereditarietà dei prezzi
+            function updatePlaceholders() {
+              // Prendi il prezzo base corrente dal Tab 1 o dal Listino 1 Qty 0
+              let standardBaseVal = 0;
+              if (tab1BaseInput) {
+                standardBaseVal = parseFloat(tab1BaseInput.value) || 0;
+              } else {
+                const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+                if (standardRow) {
+                  const standardBaseInput = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"] .cell-price-input');
+                  standardBaseVal = parseFloat(standardBaseInput.value) || 0;
                 }
               }
 
-              if (btnDelete) {
-                const tr = btnDelete.closest('.sales-rule-row');
-                const id = tr.dataset.id;
-                if (confirm('Sei sicuro di voler eliminare questa regola di prezzo?')) {
+              const rows = table.querySelectorAll('.listino-row');
+              rows.forEach(row => {
+                const lid = row.dataset.listinoId;
+                const isStandard = (lid === "1");
+                
+                const baseCell = row.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+                if (!baseCell) return;
+                const baseInput = baseCell.querySelector('.cell-price-input');
+                const listinoBaseVal = baseInput.value !== '' ? parseFloat(baseInput.value) : (isStandard ? standardBaseVal : null);
+
+                if (!isStandard) {
+                  if (baseInput.value === '') {
+                    baseInput.placeholder = standardBaseVal.toFixed(4) + ' (Base)';
+                  } else {
+                    baseInput.placeholder = "—";
+                  }
+                }
+
+                // Scaglioni successivi (Qty > 0)
+                const cells = row.querySelectorAll('.matrix-cell-wrapper[data-qty]:not([data-qty="0"])');
+                cells.forEach(cell => {
+                  const qty = cell.dataset.qty;
+                  const priceInput = cell.querySelector('.cell-price-input');
+
+                  let fallbackVal = listinoBaseVal !== null ? listinoBaseVal : standardBaseVal;
+                  
+                  // Se il Listino 1 (Standard) ha uno specifico prezzo inserito per questo scaglione, prendilo come ereditarietà
+                  const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+                  if (standardRow) {
+                    const standardTierInput = standardRow.querySelector(`.matrix-cell-wrapper[data-qty="${qty}"] .cell-price-input`);
+                    if (standardTierInput && standardTierInput.value !== '') {
+                      fallbackVal = parseFloat(standardTierInput.value);
+                    }
+                  }
+
+                  priceInput.placeholder = fallbackVal.toFixed(4) + ' (Ered.)';
+                });
+              });
+            }
+
+            // Inizializza i valori correnti come "last" per evitare salvataggi duplicati al primo focusout
+            function cacheCellValues(cell) {
+              const price = cell.querySelector('.cell-price-input').value.trim();
+              cell.dataset.lastPrice = price;
+            }
+
+            table.querySelectorAll('.matrix-cell-wrapper').forEach(cell => {
+              cacheCellValues(cell);
+            });
+
+            // Sincronizzazione Bidirezionale Tab 1 <-> Tab 3 (Listino 1, Qty 0)
+            if (tab1BaseInput) {
+              tab1BaseInput.addEventListener('input', function() {
+                const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+                if (standardRow) {
+                  const standardBaseInput = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"] .cell-price-input');
+                  standardBaseInput.value = tab1BaseInput.value;
+                  updatePlaceholders();
+                }
+              });
+
+              tab1BaseInput.addEventListener('change', function() {
+                const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+                if (standardRow) {
+                  const cell = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+                  handleCellAutosave(cell);
+                }
+              });
+            }
+
+            // Delegazione eventi per input e blurs
+            table.addEventListener('focusout', function(e) {
+              const input = e.target.closest('.cell-price-input');
+              if (input) {
+                const cell = input.closest('.matrix-cell-wrapper');
+                // Se modifico il listino base, allineo il Tab 1
+                const row = cell.closest('.listino-row');
+                if (row.dataset.listinoId === "1" && cell.dataset.qty === "0" && tab1BaseInput) {
+                  tab1BaseInput.value = input.value;
+                }
+                handleCellAutosave(cell);
+              }
+            });
+
+            table.addEventListener('keydown', function(e) {
+              if (e.key === 'Enter') {
+                const input = e.target.closest('.cell-price-input');
+                if (input) {
+                  input.blur();
+                  e.preventDefault();
+                }
+              }
+            });
+
+            // Gestore per l'autosave di una cella
+            async function handleCellAutosave(cell) {
+              const row = cell.closest('.listino-row');
+              const listinoId = row.dataset.listinoId;
+              const qty = cell.dataset.qty;
+              const rigaId = cell.dataset.rigaId;
+
+              const priceInput = cell.querySelector('.cell-price-input');
+              const priceVal = priceInput.value.trim();
+              const prevPrice = cell.dataset.lastPrice || '';
+
+              if (priceVal === prevPrice) {
+                return; // Nessun cambiamento
+              }
+
+              // Elimina la riga se il prezzo viene svuotato
+              if (priceVal === '') {
+                if (rigaId && rigaId !== "0" && rigaId !== "-1") {
+                  cell.classList.add('saving');
                   try {
                     const fd = new FormData();
-                    fd.append('riga_id', id);
+                    fd.append('riga_id', rigaId);
                     fd.append('csrf_token', csrfToken);
 
                     const res = await fetch(`${baseUrl}/sales/pricelists/righe/delete`, {
@@ -669,129 +960,186 @@ $kit_componenti = $kit_componenti ?? [];
                     });
                     const data = await res.json();
                     if (data.ok) {
-                      tr.remove();
-                      showPlaceholderIfEmpty();
+                      cell.classList.remove('saving');
+                      cell.classList.add('saved');
+                      cell.dataset.rigaId = "0";
+                      cacheCellValues(cell);
+                      setTimeout(() => cell.classList.remove('saved'), 1500);
+                      updatePlaceholders();
                     } else {
+                      cell.classList.remove('saving');
+                      cell.classList.add('error');
                       alert(data.error || 'Errore durante la cancellazione.');
                     }
                   } catch (err) {
-                    alert('Errore di connessione.');
+                    cell.classList.remove('saving');
+                    cell.classList.add('error');
                   }
                 }
+                return;
               }
 
-              if (btnSave) {
-                const tr = btnSave.closest('.sales-rule-row');
-                const id = tr.dataset.id;
-                const listinoSelect = tr.querySelector('.cell-listino-select');
-                const qtyInput = tr.querySelector('.cell-qty-input');
-                const priceInput = tr.querySelector('.cell-price-input');
-                const discountInput = tr.querySelector('.cell-discount-input');
-                const noteInput = tr.querySelector('.cell-note-input');
+              if (parseFloat(priceVal) < 0) {
+                cell.classList.add('error');
+                alert('Il prezzo deve essere maggiore o uguale a 0.');
+                return;
+              }
 
-                if (!listinoSelect.value) {
-                  alert('Seleziona un listino.');
-                  return;
-                }
-                if (!priceInput.value || parseFloat(priceInput.value) < 0) {
-                  alert('Inserisci un prezzo valido (>= 0).');
-                  return;
-                }
+              cell.classList.remove('error');
+              cell.classList.add('saving');
 
-                btnSave.disabled = true;
-                btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+              try {
+                const fd = new FormData();
+                fd.append('listino_id', listinoId);
+                fd.append('riga_id', (rigaId === "-1" || rigaId === "0") ? '0' : rigaId);
+                fd.append('prodotto_id', prodottoId);
+                fd.append('quantita_minima', qty);
+                fd.append('prezzo_unitario', priceVal);
+                fd.append('sconto_perc', '0');
+                fd.append('note', '');
+                fd.append('csrf_token', csrfToken);
 
-                try {
-                  const fd = new FormData();
-                  fd.append('listino_id', listinoSelect.value);
-                  fd.append('riga_id', id === '0' ? '0' : id);
-                  fd.append('prodotto_id', prodottoId);
-                  fd.append('quantita_minima', qtyInput.value || '0');
-                  fd.append('prezzo_unitario', priceInput.value);
-                  fd.append('sconto_perc', discountInput.value || '0');
-                  fd.append('note', noteInput.value);
-                  fd.append('csrf_token', csrfToken);
+                const res = await fetch(`${baseUrl}/sales/pricelists/righe/save`, {
+                  method: 'POST',
+                  body: fd
+                });
+                const data = await res.json();
 
-                  const res = await fetch(`${baseUrl}/sales/pricelists/righe/save`, {
-                    method: 'POST',
-                    body: fd
-                  });
-                  const data = await res.json();
-                  if (data.ok) {
-                    // Turn row back to read-only with new data
-                    const rule = data.riga;
-                    tr.dataset.id = rule.id;
-                    tr.dataset.listinoId = rule.listino_id;
-                    tr.classList.remove('editing-row');
-                    renderReadOnlyRow(tr, rule);
-                  } else {
-                    alert(data.error || 'Errore nel salvataggio della regola.');
-                    btnSave.disabled = false;
-                    btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>';
+                if (data.ok) {
+                  cell.classList.remove('saving');
+                  cell.classList.add('saved');
+                  
+                  if (rigaId !== "-1") {
+                    cell.dataset.rigaId = data.riga.id;
                   }
-                } catch(err) {
-                  alert('Errore di connessione.');
-                  btnSave.disabled = false;
-                  btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>';
+                  cacheCellValues(cell);
+
+                  setTimeout(() => cell.classList.remove('saved'), 1500);
+                  updatePlaceholders();
+                } else {
+                  cell.classList.remove('saving');
+                  cell.classList.add('error');
+                  alert(data.error || 'Errore durante il salvataggio.');
                 }
+              } catch (err) {
+                cell.classList.remove('saving');
+                cell.classList.add('error');
               }
+            }
+
+            // Gestore Aggiunta Colonna Scaglione
+            document.getElementById('btn-add-qty-column').addEventListener('click', function() {
+              const qtyStr = prompt("Inserisci la quantità minima per il nuovo scaglione (es. 10, 50, 100):");
+              if (qtyStr === null) return;
+              const qty = parseFloat(qtyStr.replace(',', '.'));
+              if (isNaN(qty) || qty <= 0) {
+                alert("Quantità non valida. Inserire un numero maggiore di 0.");
+                return;
+              }
+
+              if (table.querySelector(`thead th[data-qty="${qty}"]`)) {
+                alert("Questo scaglione di quantità esiste già.");
+                return;
+              }
+
+              insertQtyColumn(qty);
             });
 
-            function renderEditRow(tr, values) {
-              const id = tr.dataset.id;
+            function insertQtyColumn(qty) {
+              const theadRow = table.querySelector('thead tr');
+              const headers = Array.from(theadRow.querySelectorAll('th.qty-column-header'));
               
-              let selectHtml = `<select class="qk-form-control qk-form-control-sm cell-listino-select" required ${id !== '0' ? 'disabled' : ''}>`;
-              selectHtml += '<option value="">— Seleziona —</option>';
-              listini.forEach(l => {
-                selectHtml += `<option value="${l.id}" ${String(l.id) === String(values.listino_id) ? 'selected' : ''}>${escapeHtml(l.nome)} (${escapeHtml(l.valuta)})</option>`;
+              // Determina la posizione corretta in base alla quantità per mantenere l'ordine numerico
+              let insertIndex = headers.length;
+              for (let i = 0; i < headers.length; i++) {
+                if (parseFloat(headers[i].dataset.qty) > qty) {
+                  insertIndex = i;
+                  break;
+                }
+              }
+
+              // Crea l'header cell
+              const th = document.createElement('th');
+              th.classList.add('qty-column-header');
+              th.dataset.qty = qty;
+              th.style.width = "200px";
+              th.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between">
+                  <span>Qtà ${qty.toLocaleString('it-IT')}+</span>
+                  <button type="button" class="btn-delete-qty-column" data-qty="${qty}" title="Elimina questo scaglione per tutti i listini">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              `;
+
+              // Inserisci l'header prima dell'ultima colonna del bottone "+"
+              const refHeader = headers[insertIndex] || theadRow.querySelector('th:last-child');
+              theadRow.insertBefore(th, refHeader);
+
+              // Inserisci le cells corrispondenti per ogni riga prima dell'ultima cella vuota
+              const rows = table.querySelectorAll('.listino-row');
+              rows.forEach(row => {
+                const valuta = row.dataset.valuta;
+                const td = document.createElement('td');
+                td.innerHTML = `
+                  <div class="matrix-cell-wrapper" data-qty="${qty}" data-riga-id="0">
+                    <div class="matrix-price-input-group">
+                      <span class="matrix-price-addon">${escapeHtml(valuta)}</span>
+                      <input type="number" class="matrix-input-price cell-price-input" 
+                             step="0.0001" min="0" placeholder="Ereditato..." value="">
+                    </div>
+                  </div>
+                `;
+
+                const refCell = row.cells[insertIndex + 2] || row.querySelector('td:last-child');
+                row.insertBefore(td, refCell);
+
+                cacheCellValues(td.querySelector('.matrix-cell-wrapper'));
               });
-              selectHtml += '</select>';
 
-              tr.innerHTML = `
-                <td>${selectHtml}</td>
-                <td><input type="number" class="qk-form-control qk-form-control-sm text-end cell-qty-input" value="${values.quantita_minima}" step="0.001" min="0"></td>
-                <td><input type="number" class="qk-form-control qk-form-control-sm text-end cell-price-input" value="${values.prezzo_unitario}" step="0.0001" min="0" placeholder="0.00"></td>
-                <td><input type="number" class="qk-form-control qk-form-control-sm text-end cell-discount-input" value="${values.sconto_perc}" step="0.01" min="0" max="100" placeholder="0"></td>
-                <td><input type="text" class="qk-form-control qk-form-control-sm cell-note-input" value="${escapeHtml(values.note)}" placeholder="Note..."></td>
-                <td class="text-center">
-                  <button type="button" class="btn-qk btn-qk-success btn-qk-sm btn-save-sales-rule-row" title="Salva"><i class="fa-solid fa-floppy-disk"></i></button>
-                  <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-cancel-sales-rule-row" title="Annulla"><i class="fa-solid fa-xmark"></i></button>
-                </td>
-              `;
+              updatePlaceholders();
             }
 
-            function renderReadOnlyRow(tr, rule) {
-              tr.innerHTML = `
-                <td><strong>${escapeHtml(rule.prodotto_nome || rule.listino_nome)}</strong> (${escapeHtml(rule.valuta)})</td>
-                <td class="text-end">${formatLocalQty(rule.quantita_minima)}</td>
-                <td class="text-end" style="font-family:monospace;font-weight:600;">${formatLocalPrice(rule.prezzo_unitario)} ${escapeHtml(rule.valuta)}</td>
-                <td class="text-end" style="color:var(--qk-danger); font-weight:600;">${formatLocalDiscount(rule.sconto_perc)}%</td>
-                <td><span class="text-muted small">${escapeHtml(rule.note || '—')}</span></td>
-                <td class="text-center">
-                  <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm btn-edit-sales-rule-row" title="Modifica"><i class="fa-solid fa-pen"></i></button>
-                  <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-sales-rule-row" title="Elimina"><i class="fa-solid fa-trash-can"></i></button>
-                </td>
-              `;
-            }
+            // Gestore eliminazione colonna scaglione
+            table.addEventListener('click', async function(e) {
+              const delBtn = e.target.closest('.btn-delete-qty-column');
+              if (!delBtn) return;
+              
+              const qty = delBtn.dataset.qty;
+              if (!confirm(`Sei sicuro di voler eliminare lo scaglione quantità ${qty}+ e tutte le sue regole per tutti i listini?`)) {
+                return;
+              }
 
-            function parseLocalFloat(str) {
-              if (!str) return 0;
-              const clean = str.replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
-              return parseFloat(clean) || 0;
-            }
+              const cellsToDelete = Array.from(table.querySelectorAll(`.matrix-cell-wrapper[data-qty="${qty}"]`))
+                .filter(cell => {
+                  const rid = cell.dataset.rigaId;
+                  return rid && rid !== "0" && rid !== "-1";
+                });
 
-            function formatLocalQty(val) {
-              return parseFloat(val).toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-            }
+              for (const cell of cellsToDelete) {
+                const rigaId = cell.dataset.rigaId;
+                const fd = new FormData();
+                fd.append('riga_id', rigaId);
+                fd.append('csrf_token', csrfToken);
+                await fetch(`${baseUrl}/sales/pricelists/righe/delete`, { method: 'POST', body: fd });
+              }
 
-            // Standardize output to 4 decimals for precision chemical sales prices
-            function formatLocalPrice(val) {
-              return parseFloat(val).toLocaleString('it-IT', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-            }
+              const th = table.querySelector(`thead th[data-qty="${qty}"]`);
+              if (th) {
+                const headers = Array.from(table.querySelectorAll('thead th'));
+                const colIndex = headers.indexOf(th);
+                th.remove();
 
-            function formatLocalDiscount(val) {
-              return parseFloat(val).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            }
+                const rows = table.querySelectorAll('tr');
+                rows.forEach(row => {
+                  if (row.cells[colIndex]) {
+                    row.cells[colIndex].remove();
+                  }
+                });
+              }
+
+              updatePlaceholders();
+            });
 
             function escapeHtml(str) {
               if (!str) return '';
@@ -801,6 +1149,9 @@ $kit_componenti = $kit_componenti ?? [];
                         .replace(/"/g, "&quot;")
                         .replace(/'/g, "&#039;");
             }
+
+            // Esegui il calcolo dei placeholder iniziali
+            updatePlaceholders();
           })();
           </script>
           <?php endif; ?>

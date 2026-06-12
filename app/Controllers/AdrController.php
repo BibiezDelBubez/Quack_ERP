@@ -704,6 +704,18 @@ final class AdrController extends BaseController
         $skipped   = 0;
         $rowErrors = [];
 
+        // Pre-carica tabelle di lookup per validazione
+        $classi = array_column($this->pdo->query('SELECT codice FROM adr_classi_pericolo')->fetchAll(PDO::FETCH_ASSOC), 'codice');
+        $gruppi = array_column($this->pdo->query('SELECT codice FROM adr_gruppi_imballaggio')->fetchAll(PDO::FETCH_ASSOC), 'codice');
+        $catTrasporto = array_column($this->pdo->query('SELECT categoria FROM adr_categorie_trasporto')->fetchAll(PDO::FETCH_ASSOC), 'categoria');
+        $gallerie = array_column($this->pdo->query('SELECT codice FROM adr_codici_restrizione_gallerie')->fetchAll(PDO::FETCH_ASSOC), 'codice');
+        $qtaEsente = array_column($this->pdo->query('SELECT codice FROM adr_quantita_esenti')->fetchAll(PDO::FETCH_ASSOC), 'codice');
+        
+        $classificazioni = [];
+        foreach ($this->pdo->query('SELECT codice, codice_classe FROM adr_codici_classificazione')->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $classificazioni[strtolower($r['codice']) . '|' . strtolower($r['codice_classe'])] = true;
+        }
+
         $this->pdo->beginTransaction();
         try {
             foreach ($rows as $i => $row) {
@@ -713,6 +725,53 @@ final class AdrController extends BaseController
                     $rowErrors[] = 'Riga ' . ($i + 1) . ': numero ONU non valido ("' . htmlspecialchars($onu) . '") — saltata.';
                     continue;
                 }
+
+                // Validazione relazioni/foreign keys
+                $classe = trim((string)($row['classe_pericolo'] ?? ''));
+                if ($classe !== '' && !in_array($classe, $classi, true)) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': la classe di pericolo "' . htmlspecialchars($classe) . '" non esiste.';
+                    continue;
+                }
+                
+                $gruppo = trim((string)($row['gruppo_imballaggio'] ?? ''));
+                if ($gruppo !== '' && !in_array($gruppo, $gruppi, true)) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': il gruppo imballaggio "' . htmlspecialchars($gruppo) . '" non esiste.';
+                    continue;
+                }
+
+                $cat = trim((string)($row['categoria_trasporto'] ?? ''));
+                if ($cat !== '' && !in_array((int)$cat, $catTrasporto, true)) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': la categoria trasporto "' . htmlspecialchars($cat) . '" non esiste.';
+                    continue;
+                }
+
+                $gall = trim((string)($row['codice_restrizione_gallerie'] ?? ''));
+                if ($gall !== '' && !in_array($gall, $gallerie, true)) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': il codice restrizione gallerie "' . htmlspecialchars($gall) . '" non esiste.';
+                    continue;
+                }
+
+                $qe = trim((string)($row['codice_quantita_esente'] ?? ''));
+                if ($qe !== '' && !in_array($qe, $qtaEsente, true)) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': il codice quantità esente "' . htmlspecialchars($qe) . '" non esiste.';
+                    continue;
+                }
+
+                $classif = trim((string)($row['codice_classificazione'] ?? ''));
+                if ($classif !== '' && $classe !== '') {
+                    $key = strtolower($classif) . '|' . strtolower($classe);
+                    if (!isset($classificazioni[$key])) {
+                        $skipped++;
+                        $rowErrors[] = 'Riga ' . ($i + 1) . ': la combinazione di codice classificazione "' . htmlspecialchars($classif) . '" e classe pericolo "' . htmlspecialchars($classe) . '" non esiste.';
+                        continue;
+                    }
+                }
+
                 $bool = fn(string $k): string => ((string)($row[$k] ?? '') === '1') ? '1' : '0';
                 $this->insertCodice([
                     'codice_onu'                      => $onu,
@@ -724,7 +783,7 @@ final class AdrController extends BaseController
                     'codice_restrizione_gallerie'     => $row['codice_restrizione_gallerie'] ?? '',
                     'quantita_limitata'               => $row['quantita_limitata'] ?? '',
                     'codice_quantita_esente'          => $row['codice_quantita_esente'] ?? '',
-                    'id_unita_misura_qta_limitata'                 => $row['id_unita_misura_qta_limitata'] ?? '',
+                    'id_unita_misura_qta_limitata'    => $row['id_unita_misura_qta_limitata'] ?? '',
                     'e_merce_alto_rischio'            => $bool('e_merce_alto_rischio'),
                     'e_inquinante_marino'             => $bool('e_inquinante_marino'),
                     'e_pericoloso_ambiente_acquatico' => $bool('e_pericoloso_ambiente_acquatico'),
@@ -901,17 +960,5 @@ final class AdrController extends BaseController
         $stmt->execute($params);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit;
-    }
-
-    private function dbMessage(PDOException $e): string
-    {
-        $msg = $e->getMessage();
-        if (str_contains($msg, 'FOREIGN KEY')) {
-            return 'Impossibile eliminare: il record è referenziato da altri dati.';
-        }
-        if (str_contains($msg, 'UNIQUE')) {
-            return 'Esiste già un record con questo codice.';
-        }
-        return APP_ENV === 'development' ? 'Errore DB: ' . $msg : 'Errore nel salvataggio. Riprova.';
     }
 }

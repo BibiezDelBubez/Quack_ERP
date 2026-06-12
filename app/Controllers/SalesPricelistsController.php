@@ -380,6 +380,8 @@ final class SalesPricelistsController extends BaseController
                 $newId = (int)$this->pdo->lastInsertId();
             }
 
+
+
             // Restituisce la riga aggiornata con nome prodotto e UoM
             $stmtRow = $this->pdo->prepare(
                 "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, 
