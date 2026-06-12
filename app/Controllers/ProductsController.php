@@ -1031,7 +1031,7 @@ final class ProductsController extends BaseController
 
                 $sku  = trim((string)($row['sku_interno'] ?? ''));
                 $nome = trim((string)($row['nome'] ?? ''));
-                $um   = strtolower(trim((string)($row['unita_misura'] ?? 'pz')));
+                $um   = strtolower(trim((string)($row['unita_misura_stock'] ?? $row['unita_misura'] ?? 'pz')));
 
                 if ($sku === '') {
                     $skipped++;
@@ -1061,6 +1061,10 @@ final class ProductsController extends BaseController
                     continue;
                 }
 
+                // Risolvi UoM Commerciale (opzionale)
+                $umComm   = strtolower(trim((string)($row['unita_misura_commerciale'] ?? '')));
+                $umCommId = ($umComm !== '') ? ($umMap[$umComm] ?? null) : null;
+
                 // Risolvi categoria (opzionale)
                 $catNome = strtolower(trim((string)($row['categoria'] ?? '')));
                 $catId   = ($catNome !== '') ? ($catMap[$catNome] ?? null) : null;
@@ -1079,30 +1083,32 @@ final class ProductsController extends BaseController
                     'INSERT INTO prodotti
                        (sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione,
                         tipo, categoria_id, note_interne, attivo, traccia_lotti,
-                        unita_misura_stock_id, peso_netto_kg, peso_lordo_kg, ean,
-                        scorta_minima, is_adr, created_at)
+                        unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
+                        peso_netto_kg, peso_lordo_kg, ean, scorta_minima, is_adr, created_at)
                      VALUES
                        (:sku, :sku_ec, :nome, :desc_b, :desc_conf,
                         :tipo, :cat_id, :note, :attivo, :traccia,
-                        :um_id, :peso_n, :peso_l, :ean,
-                        :scorta, :is_adr, CURRENT_TIMESTAMP)'
+                        :um_id, :um_comm_id, :qta_cont,
+                        :peso_n, :peso_l, :ean, :scorta, :is_adr, CURRENT_TIMESTAMP)'
                 )->execute([
-                    ':sku'       => $sku,
-                    ':sku_ec'    => ($row['sku_ecommerce'] ?? '') !== '' ? trim($row['sku_ecommerce']) : null,
-                    ':nome'      => $nome,
-                    ':desc_b'    => ($row['descrizione_breve'] ?? '') !== '' ? trim($row['descrizione_breve']) : null,
-                    ':desc_conf' => ($row['descrizione_confezione'] ?? '') !== '' ? trim($row['descrizione_confezione']) : null,
-                    ':tipo'      => $tipo,
-                    ':cat_id'    => $catId,
-                    ':note'      => ($row['note_interne'] ?? '') !== '' ? trim($row['note_interne']) : null,
-                    ':attivo'    => $attivo,
-                    ':traccia'   => $traccia,
-                    ':um_id'     => $umId,
-                    ':peso_n'    => $toFloat($row['peso_netto_kg'] ?? null),
-                    ':peso_l'    => $toFloat($row['peso_lordo_kg'] ?? null),
-                    ':ean'       => ($row['ean'] ?? '') !== '' ? trim($row['ean']) : null,
-                    ':scorta'    => $toFloat($row['scorta_minima'] ?? null) ?? 0.0,
-                    ':is_adr'    => $isAdr,
+                    ':sku'        => $sku,
+                    ':sku_ec'     => ($row['sku_ecommerce'] ?? '') !== '' ? trim($row['sku_ecommerce']) : null,
+                    ':nome'       => $nome,
+                    ':desc_b'     => ($row['descrizione_breve'] ?? '') !== '' ? trim($row['descrizione_breve']) : null,
+                    ':desc_conf'  => ($row['descrizione_confezione'] ?? '') !== '' ? trim($row['descrizione_confezione']) : null,
+                    ':tipo'       => $tipo,
+                    ':cat_id'     => $catId,
+                    ':note'       => ($row['note_interne'] ?? '') !== '' ? trim($row['note_interne']) : null,
+                    ':attivo'     => $attivo,
+                    ':traccia'    => $traccia,
+                    ':um_id'      => $umId,
+                    ':um_comm_id' => $umCommId,
+                    ':qta_cont'   => $toFloat($row['quantita_contenuto'] ?? null),
+                    ':peso_n'     => $toFloat($row['peso_netto_kg'] ?? null),
+                    ':peso_l'     => $toFloat($row['peso_lordo_kg'] ?? null),
+                    ':ean'        => ($row['ean'] ?? '') !== '' ? trim($row['ean']) : null,
+                    ':scorta'     => $toFloat($row['scorta_minima'] ?? null) ?? 0.0,
+                    ':is_adr'     => $isAdr,
                 ]);
 
                 $prodId = (int) $this->pdo->lastInsertId();

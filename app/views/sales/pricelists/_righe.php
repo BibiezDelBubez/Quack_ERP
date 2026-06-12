@@ -494,7 +494,7 @@ document.addEventListener('DOMContentLoaded', function () {
       apiUrl:   BASE + '/sales/pricelists/api/prodotti',
       labelKey: 'label',
       columns: [{ key: 'label', label: 'Prodotto' }, { key: 'sku', label: 'SKU' }],
-      onSelect: (item) => {
+      onSelect: (id, item) => {
         const selectEl = tr.querySelector('.r-unita-misura-id');
         if (selectEl) {
           selectEl.innerHTML = '';

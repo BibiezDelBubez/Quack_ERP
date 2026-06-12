@@ -1,58 +1,10 @@
 <?php
 /**
  * sales/pricelists/_sidebar.php
- * Colonna destra del qk-form-grid: info box + clienti assegnati.
+ * Modal ed handler JS per associazione clienti.
  * Variabili attese: $isEdit (bool), $clienti_assegnati (array)
  */
 ?>
-<div>
-
-  <div class="qk-card shadow-sm mb-3" style="border-left:3px solid var(--qk-info)">
-    <div class="qk-card-header" style="padding:.75rem 1rem">
-      <span class="qk-card-title" style="font-size:.8rem">
-        <i class="fa-solid fa-circle-info me-2" style="color:var(--qk-info)"></i>Come funzionano i listini
-      </span>
-    </div>
-    <div class="qk-card-body" style="padding:.85rem 1rem;font-size:.82rem;color:var(--qk-text-muted);line-height:1.55">
-      <p style="margin:0 0 .5rem">Prezzi unitari per prodotto con supporto scaglioni di quantità e sconto %.</p>
-      <p style="margin:0 0 .5rem">Assegnabile come predefinito a un cliente o selezionabile manualmente su ogni preventivo.</p>
-      <p style="margin:0">Se un prodotto non ha un prezzo in listino è sempre possibile inserirlo manualmente nel preventivo.</p>
-    </div>
-  </div>
-
-  <div class="qk-card shadow-sm">
-    <div class="qk-card-header qk-flex-row qk-justify-between" style="padding:.75rem 1rem">
-      <span class="qk-card-title" style="font-size:.8rem">
-        <i class="fa-solid fa-address-book me-2" style="color:var(--qk-accent)"></i>Clienti assegnati
-      </span>
-      <span class="badge bg-secondary"><?= count($clienti_assegnati) ?></span>
-    </div>
-    <div class="qk-card-body" style="padding:.75rem 1rem">
-      <?php if ($isEdit): ?>
-        <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm w-100 mb-3" id="btn-gestisci-assegnazioni">
-          <i class="fa-solid fa-users-gear me-1"></i> Gestisci assegnazioni
-        </button>
-      <?php endif; ?>
-      
-      <div id="sidebar-assigned-clients">
-        <?php if (!empty($clienti_assegnati)): ?>
-          <?php foreach ($clienti_assegnati as $cl): ?>
-          <a href="<?= url('customers/edit?id=' . $cl['id']) ?>"
-             class="qk-flex-row qk-gap-sm"
-             style="padding:.3rem 0;font-size:.83rem;color:var(--qk-accent-text);text-decoration:none;border-bottom:1px solid var(--qk-card-border)">
-            <i class="fa-solid fa-user" style="font-size:.72rem;color:var(--qk-text-muted);flex-shrink:0"></i>
-            <?= e($cl['nome_cliente']) ?>
-          </a>
-          <?php endforeach; ?>
-        <?php else: ?>
-          <span style="font-size:.83rem;color:var(--qk-text-muted)">Nessun cliente assegnato.</span>
-        <?php endif; ?>
-      </div>
-    </div>
-  </div>
-
-</div>
-
 <?php if ($isEdit): ?>
 <!-- Modal per assegnazioni massive clienti -->
 <div class="modal fade" id="modalAssegnaClienti" tabindex="-1" aria-labelledby="modalAssegnaClientiTitle" aria-hidden="true">
@@ -212,19 +164,22 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (data.ok) {
         bsModal.hide();
-        // Aggiorna la sidebar
         if (sidebarClientsList) {
           if (data.clienti_assegnati.length > 0) {
             sidebarClientsList.innerHTML = data.clienti_assegnati.map(cl => `
-              <a href="${baseUrl}/customers/edit?id=${cl.id}"
-                 class="qk-flex-row qk-gap-sm"
-                 style="padding:.3rem 0;font-size:.83rem;color:var(--qk-accent-text);text-decoration:none;border-bottom:1px solid var(--qk-card-border)">
-                <i class="fa-solid fa-user" style="font-size:.72rem;color:var(--qk-text-muted);flex-shrink:0"></i>
-                \${escapeHtml(cl.nome_cliente)}
-              </a>
+              <tr>
+                <td>
+                  <a href="${baseUrl}/customers/edit?id=${cl.id}" class="fw-semibold qk-text-accent" style="text-decoration:none">
+                    <i class="fa-solid fa-user me-2 text-muted" style="font-size:.85rem"></i>${escapeHtml(cl.nome_cliente)}
+                  </a>
+                </td>
+                <td style="text-align:right">
+                  <span class="badge bg-secondary-subtle text-secondary small">Assegnato</span>
+                </td>
+              </tr>
             `).join('');
           } else {
-            sidebarClientsList.innerHTML = '<span style="font-size:.83rem;color:var(--qk-text-muted)">Nessun cliente assegnato.</span>';
+            sidebarClientsList.innerHTML = '<tr><td colspan="2" class="py-4 text-center text-muted"><i class="fa-solid fa-users-slash me-2"></i>Nessun cliente assegnato direttamente a questo listino.</td></tr>';
           }
         }
         if (countBadge) {

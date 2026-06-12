@@ -194,23 +194,25 @@ $_qk_import = url('products/import');
   }
 
   var COLS = [
-    {key:'sku_interno',            note:'Obbligatorio. Deve essere univoco.',                  esempio:'PROD-001'},
-    {key:'nome',                   note:'Obbligatorio.',                                       esempio:'Acido Cloridrico 37%'},
-    {key:'descrizione_breve',      note:'Testo breve per preventivi.',                         esempio:'HCl 37% - Tanica 25L'},
-    {key:'descrizione_confezione', note:'Formato confezione per documenti commerciali.',       esempio:'Tanica HDPE 25 litri'},
-    {key:'tipo',                   note:'"semplice" o "kit". Default: semplice.',              esempio:'semplice'},
-    {key:'categoria',              note:'Nome esatto della categoria (case-insensitive).',     esempio:'Acidi'},
-    {key:'unita_misura',           note:'Codice UoM (es. kg, l, pz, ml). Default: pz.',       esempio:'l'},
-    {key:'peso_netto_kg',          note:'Peso del contenuto in kg.',                          esempio:'25.000'},
-    {key:'peso_lordo_kg',          note:'Peso imballo incluso in kg.',                        esempio:'26.200'},
-    {key:'ean',                    note:'Codice EAN-13 della confezione.',                    esempio:'8012345678901'},
-    {key:'sku_ecommerce',          note:'SKU usato su WooCommerce (opzionale).',              esempio:'WOO-HCL-25L'},
-    {key:'prezzo_vendita_base',    note:'Prezzo nel listino base (listino 1).',               esempio:'45.00'},
-    {key:'scorta_minima',          note:'Quantita minima di riordino. Default: 0.',           esempio:'5'},
-    {key:'is_adr',                 note:'"1" se ADR, altrimenti "0".',                        esempio:'1'},
-    {key:'traccia_lotti',          note:'"1" per attivare la gestione lotti.',                esempio:'1'},
-    {key:'attivo',                 note:'"1" attivo, "0" disabilitato. Default: 1.',          esempio:'1'},
-    {key:'note_interne',           note:'Annotazioni ad uso interno.',                       esempio:''},
+    {key:'sku_interno',              note:'Obbligatorio. Deve essere univoco.',                  esempio:'PROD-001'},
+    {key:'nome',                     note:'Obbligatorio.',                                       esempio:'Acido Cloridrico 37%'},
+    {key:'descrizione_breve',        note:'Testo breve per preventivi.',                         esempio:'HCl 37% - Tanica 25L'},
+    {key:'descrizione_confezione',   note:'Formato confezione per documenti commerciali.',       esempio:'Tanica HDPE 25 litri'},
+    {key:'tipo',                     note:'"semplice" o "kit". Default: semplice.',              esempio:'semplice'},
+    {key:'categoria',                note:'Nome esatto della categoria (case-insensitive).',     esempio:'Acidi'},
+    {key:'unita_misura_stock',       note:'Codice UoM di magazzino (es. kg, l, pz). Default: pz.', esempio:'kg'},
+    {key:'unita_misura_commerciale', note:'Codice UoM commerciale (es. tanica, sacco, pz).',      esempio:'tanica'},
+    {key:'quantita_contenuto',       note:'Quantità del contenuto (es. 25.00 se tanica da 25kg).', esempio:'25.00'},
+    {key:'peso_netto_kg',            note:'Peso netto del contenuto in kg.',                     esempio:'25.000'},
+    {key:'peso_lordo_kg',            note:'Peso lordo imballo incluso in kg.',                  esempio:'26.200'},
+    {key:'ean',                      note:'Codice EAN-13 della confezione.',                    esempio:'8012345678901'},
+    {key:'sku_ecommerce',            note:'SKU usato su WooCommerce (opzionale).',              esempio:'WOO-HCL-25L'},
+    {key:'prezzo_vendita_base',      note:'Prezzo nel listino base (listino 1).',               esempio:'45.00'},
+    {key:'scorta_minima',            note:'Quantita minima di riordino. Default: 0.',           esempio:'5'},
+    {key:'is_adr',                   note:'"1" se ADR, altrimenti "0".',                        esempio:'1'},
+    {key:'traccia_lotti',            note:'"1" per attivare la gestione lotti.',                esempio:'1'},
+    {key:'attivo',                   note:'"1" attivo, "0" disabilitato. Default: 1.',          esempio:'1'},
+    {key:'note_interne',             note:'Annotazioni ad uso interno.',                        esempio:''},
   ];
 
   document.getElementById('btnDownloadTracciato').addEventListener('click', async function(){
@@ -329,15 +331,82 @@ $_qk_import = url('products/import');
     document.getElementById('btnClearFile').click();
   });
 
+  function normalizeHeader(h) {
+    var clean = String(h || '').trim().toLowerCase()
+      .replace(/[\s\-\_]+/g, '_')
+      .replace(/[\(\)]/g, '');
+    
+    var map = {
+      'sku': 'sku_interno',
+      'sku_interno': 'sku_interno',
+      'codice': 'sku_interno',
+      'codice_articolo': 'sku_interno',
+      'nome': 'nome',
+      'nome_prodotto': 'nome',
+      'prodotto': 'nome',
+      'descrizione': 'descrizione_breve',
+      'descrizione_breve': 'descrizione_breve',
+      'confezione': 'descrizione_confezione',
+      'formato': 'descrizione_confezione',
+      'descrizione_confezione': 'descrizione_confezione',
+      'categoria': 'categoria',
+      'categorie': 'categoria',
+      
+      'unita_misura_stock': 'unita_misura_stock',
+      'unita_misura': 'unita_misura_stock',
+      'um': 'unita_misura_stock',
+      'uom': 'unita_misura_stock',
+      
+      'unita_misura_commerciale': 'unita_misura_commerciale',
+      'unita_commerciale': 'unita_misura_commerciale',
+      'um_commerciale': 'unita_misura_commerciale',
+      'uom_commerciale': 'unita_misura_commerciale',
+      
+      'quantita_contenuto': 'quantita_contenuto',
+      'quantità_contenuto': 'quantita_contenuto',
+      'quantita': 'quantita_contenuto',
+      'quantità': 'quantita_contenuto',
+      
+      'peso_netto': 'peso_netto_kg',
+      'peso_netto_kg': 'peso_netto_kg',
+      'peso': 'peso_netto_kg',
+      'peso_lordo': 'peso_lordo_kg',
+      'peso_lordo_kg': 'peso_lordo_kg',
+      'ean_13': 'ean',
+      'ean': 'ean',
+      'codice_ean': 'ean',
+      'scorta_minima': 'scorta_minima',
+      'scorta': 'scorta_minima',
+      'adr': 'is_adr',
+      'is_adr': 'is_adr',
+      'lotti': 'traccia_lotti',
+      'traccia_lotti': 'traccia_lotti',
+      'gestione_lotti': 'traccia_lotti',
+      'attivo': 'attivo',
+      'stato': 'attivo'
+    };
+    return map[clean] || clean;
+  }
+
   document.getElementById('btnImportaProdotti').addEventListener('click', async function(){
     if (!parsedRows.length) return;
     var btn = this;
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Importazione...';
 
+    // Normalizziamo le chiavi dell'oggetto da inviare in base ai sinonimi
+    var normalizedRows = parsedRows.map(function(row) {
+      var normObj = {};
+      Object.keys(row).forEach(function(key) {
+        var normKey = normalizeHeader(key);
+        normObj[normKey] = row[key];
+      });
+      return normObj;
+    });
+
     var fd = new FormData();
     fd.append('csrf_token', CSRF_TOKEN);
-    fd.append('rows', JSON.stringify(parsedRows));
+    fd.append('rows', JSON.stringify(normalizedRows));
 
     try {
       var resp   = await fetch(IMPORT_URL, {method:'POST', body:fd});

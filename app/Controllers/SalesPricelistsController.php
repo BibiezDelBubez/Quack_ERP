@@ -438,9 +438,20 @@ final class SalesPricelistsController extends BaseController
         header('Content-Type: application/json; charset=utf-8');
 
         $q = trim(get_param('q') ?? '');
-        if (strlen($q) < 2) {
-            echo json_encode([]);
-            exit;
+        
+        $where = "WHERE p.attivo = 1";
+        $params = [];
+
+        if ($q !== '') {
+            if (mb_strlen($q) === 1) {
+                // Ricerca ottimizzata per singolo carattere (inizia con o SKU esatto)
+                $where .= " AND (p.nome LIKE :q_start OR p.sku_interno = :q OR p.codice_erp = :q)";
+                $params = [':q' => $q, ':q_start' => $q . '%'];
+            } else {
+                // Ricerca parziale contiene
+                $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.codice_erp LIKE :q)";
+                $params = [':q' => '%' . $q . '%'];
+            }
         }
 
         $stmt = $this->pdo->prepare(
@@ -457,12 +468,11 @@ final class SalesPricelistsController extends BaseController
                     FROM prodotti_fornitori pf2
                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
                 )
-             WHERE p.attivo = 1
-               AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.codice_erp LIKE :q)
+             $where
              ORDER BY p.nome ASC
              LIMIT 20"
         );
-        $stmt->execute([':q' => '%' . $q . '%']);
+        $stmt->execute($params);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit;
     }

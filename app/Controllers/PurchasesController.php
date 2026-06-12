@@ -235,9 +235,8 @@ final class PurchasesController extends BaseController
             }
         }
 
-        // Recupera gli articoli e i prezzi associati a questo listino
         $stmtItems = $this->pdo->prepare(
-            "SELECT pfp.*, p.nome AS prodotto_nome, p.sku_interno, pf.sku_fornitore
+            "SELECT pfp.*, p.nome AS prodotto_nome, p.sku_interno, pf.sku_fornitore, pf.prodotto_id
              FROM prodotti_fornitori_prezzi pfp
              JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
              JOIN prodotti p ON p.id = pf.prodotto_id
@@ -449,6 +448,188 @@ final class PurchasesController extends BaseController
                 'sku_fornitore'   => '',
                 'prezzo_sorgente' => 'Nessun prezzo configurato',
             ]);
+        }
+        exit;
+    }
+
+    public function apiProdotti(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $q = trim(get_param('q') ?? '');
+        
+        $where = "WHERE p.attivo = 1";
+        $params = [];
+
+        if ($q !== '') {
+            if (mb_strlen($q) === 1) {
+                $where .= " AND (p.nome LIKE :q_start OR p.sku_interno = :q OR p.codice_erp = :q)";
+                $params = [':q' => $q, ':q_start' => $q . '%'];
+            } else {
+                $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.codice_erp LIKE :q)";
+                $params = [':q' => '%' . $q . '%'];
+            }
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT p.id, p.nome AS label, p.sku_interno AS sku, um.codice AS unita_misura,
+                    p.unita_misura_stock_id, um_c.codice AS unita_misura_commerciale,
+                    p.unita_contenuto_id, p.quantita_contenuto
+             FROM prodotti p
+             LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+             LEFT JOIN unita_misura um_c ON um_c.id = p.unita_contenuto_id
+             $where
+             ORDER BY p.nome ASC
+             LIMIT 20"
+        );
+        $stmt->execute($params);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        exit;
+    }
+
+    public function apiSaveRiga(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token non valido.']);
+            exit;
+        }
+
+        $listinoId     = filter_input(INPUT_POST, 'listino_acquisto_id', FILTER_VALIDATE_INT);
+        $rigaId        = filter_input(INPUT_POST, 'riga_id',    FILTER_VALIDATE_INT); // 0 = nuova
+        $prodottoId    = filter_input(INPUT_POST, 'prodotto_id', FILTER_VALIDATE_INT);
+        $qMin          = filter_input(INPUT_POST, 'quantita_minima', FILTER_VALIDATE_FLOAT);
+        $prezzo        = filter_input(INPUT_POST, 'prezzo', FILTER_VALIDATE_FLOAT);
+        $sconto        = filter_input(INPUT_POST, 'sconto_perc', FILTER_VALIDATE_FLOAT);
+        $validoDal     = post('valido_dal') ?: null;
+        $validoAl      = post('valido_al') ?: null;
+        $note          = trim(post('note') ?? '');
+        $skuFornitore  = trim(post('sku_fornitore') ?? '');
+
+        if (!$listinoId || !$prodottoId || $prezzo === false || $prezzo === null) {
+            echo json_encode(['ok' => false, 'error' => 'Parametri mancanti o non validi.']);
+            exit;
+        }
+
+        // Recupera fornitore_id del listino
+        $stmtL = $this->pdo->prepare("SELECT fornitore_id FROM listini_acquisto WHERE id = :id");
+        $stmtL->execute([':id' => $listinoId]);
+        $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
+        if (!$listino) {
+            echo json_encode(['ok' => false, 'error' => 'Listino acquisto non trovato.']);
+            exit;
+        }
+        $fornitoreId = (int)$listino['fornitore_id'];
+
+        $qMin   = ($qMin === false || $qMin === null) ? 0.0 : $qMin;
+        $sconto = ($sconto === false || $sconto === null) ? 0.0 : $sconto;
+
+        try {
+            $this->pdo->beginTransaction();
+
+            // Cerca o crea il record in prodotti_fornitori
+            $stmtPf = $this->pdo->prepare("SELECT id, sku_fornitore FROM prodotti_fornitori WHERE prodotto_id = :pid AND fornitore_id = :fid LIMIT 1");
+            $stmtPf->execute([':pid' => $prodottoId, ':fid' => $fornitoreId]);
+            $pfRow = $stmtPf->fetch(PDO::FETCH_ASSOC);
+
+            if ($pfRow) {
+                $pfId = (int)$pfRow['id'];
+                if ($pfRow['sku_fornitore'] !== $skuFornitore) {
+                    $this->pdo->prepare("UPDATE prodotti_fornitori SET sku_fornitore = :sku WHERE id = :id")
+                             ->execute([':sku' => $skuFornitore ?: null, ':id' => $pfId]);
+                }
+            } else {
+                $this->pdo->prepare("INSERT INTO prodotti_fornitori (prodotto_id, fornitore_id, attivo, ordine_preferenza_fornitore, sku_fornitore) VALUES (:pid, :fid, 1, 10, :sku)")
+                         ->execute([':pid' => $prodottoId, ':fid' => $fornitoreId, ':sku' => $skuFornitore ?: null]);
+                $pfId = (int)$this->pdo->lastInsertId();
+            }
+
+            if ($rigaId) {
+                // Aggiorna riga
+                $this->pdo->prepare(
+                    "UPDATE prodotti_fornitori_prezzi SET
+                        prodotto_fornitore_id = :pfid,
+                        quantita_minima       = :qmin,
+                        prezzo                = :prezzo,
+                        sconto_perc           = :sconto,
+                        valido_dal            = :valido_dal,
+                        valido_al             = :valido_al,
+                        note                  = :note
+                     WHERE id = :id AND listino_acquisto_id = :listino_id"
+                )->execute([
+                    ':pfid'       => $pfId,
+                    ':qmin'        => $qMin,
+                    ':prezzo'      => $prezzo,
+                    ':sconto'      => $sconto,
+                    ':valido_dal'  => $validoDal,
+                    ':valido_al'   => $validoAl,
+                    ':note'        => $note ?: null,
+                    ':id'          => $rigaId,
+                    ':listino_id'  => $listinoId,
+                ]);
+                $newId = $rigaId;
+            } else {
+                // Inserisci riga
+                $this->pdo->prepare(
+                    "INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
+                     VALUES (:pfid, :listino_id, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note)"
+                )->execute([
+                    ':pfid'       => $pfId,
+                    ':listino_id' => $listinoId,
+                    ':qmin'        => $qMin,
+                    ':prezzo'      => $prezzo,
+                    ':sconto'      => $sconto,
+                    ':valido_dal'  => $validoDal,
+                    ':valido_al'   => $validoAl,
+                    ':note'        => $note ?: null,
+                ]);
+                $newId = (int)$this->pdo->lastInsertId();
+            }
+
+            $this->pdo->commit();
+
+            // Restituisce la riga inserita/aggiornata con dati prodotto e sku_fornitore
+            $stmtRow = $this->pdo->prepare(
+                "SELECT pfp.*, p.nome AS prodotto_nome, p.sku_interno, pf.sku_fornitore
+                 FROM prodotti_fornitori_prezzi pfp
+                 JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+                 JOIN prodotti p ON p.id = pf.prodotto_id
+                 WHERE pfp.id = :id"
+            );
+            $stmtRow->execute([':id' => $newId]);
+            $riga = $stmtRow->fetch(PDO::FETCH_ASSOC);
+
+            echo json_encode(['ok' => true, 'riga' => $riga]);
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    public function apiDeleteRiga(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token non valido.']);
+            exit;
+        }
+
+        $rigaId = filter_input(INPUT_POST, 'riga_id', FILTER_VALIDATE_INT);
+        if (!$rigaId) {
+            echo json_encode(['ok' => false, 'error' => 'ID riga non valido.']);
+            exit;
+        }
+
+        try {
+            $this->pdo->prepare("DELETE FROM prodotti_fornitori_prezzi WHERE id = :id")->execute([':id' => $rigaId]);
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
         exit;
     }

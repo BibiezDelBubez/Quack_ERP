@@ -293,11 +293,6 @@
         clearTimeout(this._debounce);
         this._debounce = setTimeout(() => {
           const val = inputEl.value.trim();
-          // Best practice: non avviamo query automatiche se c'è 1 solo carattere
-          if (val.length === 1) {
-            this._close();
-            return;
-          }
           this._search(val);
         }, 220);
       });
