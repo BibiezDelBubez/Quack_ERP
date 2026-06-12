@@ -178,7 +178,7 @@ function csrf_field(): string {
 
 /** Verifica il CSRF token su POST */
 function csrf_verify(): bool {
-    $token = $_POST['csrf_token'] ?? '';
+    $token = $_POST['csrf_token'] ?? $_POST['_token'] ?? '';
     return !empty($token) && hash_equals(csrf_token(), $token);
 }
 

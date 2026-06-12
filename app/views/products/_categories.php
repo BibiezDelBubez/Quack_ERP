@@ -305,36 +305,38 @@ $_qk_export_cat  = url('products/categories/export');
       });
   }
 
-  var pInput = document.getElementById('cat-parent-label');
-  var pHidden = document.getElementById('cat-parent-id');
-  var pDropdown = document.getElementById('cat-parent-dropdown');
-  var pClear = document.getElementById('cat-parent-clear');
+  document.addEventListener('DOMContentLoaded', function() {
+    var pInput = document.getElementById('cat-parent-label');
+    var pHidden = document.getElementById('cat-parent-id');
+    var pDropdown = document.getElementById('cat-parent-dropdown');
+    var pClear = document.getElementById('cat-parent-clear');
 
-  if (pInput) {
-    window.qkAutocomplete({
-      input: pInput,
-      dropdown: pDropdown,
-      fetchFn: fetchParentCategories,
-      onSelect: function(sel) {
-        if (sel) {
-          pHidden.value = sel.id;
-          pInput.value = sel.label;
-          pClear.classList.remove('d-none');
-        } else {
-          pHidden.value = '';
-          pInput.value = '';
-          pClear.classList.add('d-none');
+    if (pInput) {
+      window.qkAutocomplete({
+        input: pInput,
+        dropdown: pDropdown,
+        fetchFn: fetchParentCategories,
+        onSelect: function(sel) {
+          if (sel) {
+            pHidden.value = sel.id;
+            pInput.value = sel.label;
+            pClear.classList.remove('d-none');
+          } else {
+            pHidden.value = '';
+            pInput.value = '';
+            pClear.classList.add('d-none');
+          }
         }
-      }
-    });
+      });
 
-    pClear.addEventListener('click', function() {
-      pHidden.value = '';
-      pInput.value = '';
-      pClear.classList.add('d-none');
-      pDropdown.style.display = 'none';
-    });
-  }
+      pClear.addEventListener('click', function() {
+        pHidden.value = '';
+        pInput.value = '';
+        pClear.classList.add('d-none');
+        pDropdown.style.display = 'none';
+      });
+    }
+  });
 
   // ── Modale edit: popola immagine_path e preview ───────────────────────────────
   var modalCatEl = document.getElementById('modal-categoria');

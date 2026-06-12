@@ -432,7 +432,7 @@ document.addEventListener('DOMContentLoaded', function () {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({
-            _token: CSRF,
+            csrf_token: CSRF,
             listino_acquisto_id: LISTINO,
             riga_id: tr.dataset.rigaId,
             prodotto_id: prodottoId,
@@ -476,7 +476,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const res = await fetch(BASE + '/purchases/pricelists/righe/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ _token: CSRF, riga_id: tr.dataset.rigaId })
+          body: new URLSearchParams({ csrf_token: CSRF, riga_id: tr.dataset.rigaId })
         });
         const d = await res.json();
         if (d.ok) {

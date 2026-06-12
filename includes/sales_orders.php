@@ -290,7 +290,7 @@ function qk_search_prodotti_orders(PDO $pdo, string $q): array
           LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
           LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.is_principale = 1
          WHERE p.attivo = 1
-           AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.sku_fornitore LIKE :q)
+           AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR pf.sku_fornitore LIKE :q)
          ORDER BY p.nome
          LIMIT 60
     ");

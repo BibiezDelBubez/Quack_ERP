@@ -463,10 +463,10 @@ final class PurchasesController extends BaseController
 
         if ($q !== '') {
             if (mb_strlen($q) === 1) {
-                $where .= " AND (p.nome LIKE :q_start OR p.sku_interno = :q OR p.codice_erp = :q)";
+                $where .= " AND (p.nome LIKE :q_start OR p.sku_interno = :q OR p.ean = :q)";
                 $params = [':q' => $q, ':q_start' => $q . '%'];
             } else {
-                $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.codice_erp LIKE :q)";
+                $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.ean LIKE :q)";
                 $params = [':q' => '%' . $q . '%'];
             }
         }
