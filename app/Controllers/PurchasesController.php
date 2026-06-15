@@ -633,4 +633,165 @@ final class PurchasesController extends BaseController
         }
         exit;
     }
+
+    public function apiImportPrezzi(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']); exit;
+        }
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido. Ricarica la pagina.']); exit;
+        }
+
+        $listinoId = filter_input(INPUT_POST, 'listino_acquisto_id', FILTER_VALIDATE_INT);
+        $rows      = json_decode(post('rows') ?? '[]', true);
+
+        if (!$listinoId) {
+            echo json_encode(['ok' => false, 'error' => 'ID listino non specificato.']); exit;
+        }
+        if (!is_array($rows) || empty($rows)) {
+            echo json_encode(['ok' => false, 'error' => 'Nessun dato ricevuto.']); exit;
+        }
+
+        // Recupera fornitore_id del listino
+        $stmtL = $this->pdo->prepare("SELECT fornitore_id FROM listini_acquisto WHERE id = :id");
+        $stmtL->execute([':id' => $listinoId]);
+        $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
+        if (!$listino) {
+            echo json_encode(['ok' => false, 'error' => 'Listino acquisto non trovato.']); exit;
+        }
+        $fornitoreId = (int)$listino['fornitore_id'];
+
+        $inserted  = 0;
+        $skipped   = 0;
+        $rowErrors = [];
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($rows as $i => $row) {
+                $lineNum = $i + 2; // +2 perché riga 1 = intestazione Excel
+
+                $sku = trim((string)($row['sku_interno'] ?? ''));
+                if ($sku === '') {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': SKU interno vuoto — saltata.';
+                    continue;
+                }
+
+                // Cerca il prodotto
+                $stmtProd = $this->pdo->prepare('SELECT id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
+                $stmtProd->execute([':s' => $sku]);
+                $prodRow = $stmtProd->fetch(PDO::FETCH_ASSOC);
+                if (!$prodRow) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': prodotto con SKU "' . htmlspecialchars($sku) . '" non trovato o non attivo — saltata.';
+                    continue;
+                }
+                $prodottoId = (int)$prodRow['id'];
+
+                // Risolvi i campi numerici e date
+                $toFloat = function(?string $v): float {
+                    if ($v === null || trim($v) === '') return 0.0;
+                    return (float) str_replace(',', '.', trim($v));
+                };
+
+                $prezzoVal = trim((string)($row['prezzo'] ?? ''));
+                if ($prezzoVal === '' || !is_numeric(str_replace(',', '.', $prezzoVal))) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): prezzo vuoto o non valido — saltata.';
+                    continue;
+                }
+                $prezzo = (float) str_replace(',', '.', $prezzoVal);
+
+                $qMin         = $toFloat($row['quantita_minima'] ?? '0');
+                $sconto       = $toFloat($row['sconto_perc'] ?? '0');
+                $skuFornitore = trim((string)($row['sku_fornitore'] ?? ''));
+                $validoDal    = !empty($row['valido_dal']) ? trim((string)$row['valido_dal']) : null;
+                $validoAl     = !empty($row['valido_al']) ? trim((string)$row['valido_al']) : null;
+                $note         = !empty($row['note']) ? trim((string)$row['note']) : null;
+
+                // Cerca o crea il record in prodotti_fornitori
+                $stmtPf = $this->pdo->prepare("SELECT id, sku_fornitore FROM prodotti_fornitori WHERE prodotto_id = :pid AND fornitore_id = :fid LIMIT 1");
+                $stmtPf->execute([':pid' => $prodottoId, ':fid' => $fornitoreId]);
+                $pfRow = $stmtPf->fetch(PDO::FETCH_ASSOC);
+
+                if ($pfRow) {
+                    $pfId = (int)$pfRow['id'];
+                    if ($pfRow['sku_fornitore'] !== $skuFornitore) {
+                        $this->pdo->prepare("UPDATE prodotti_fornitori SET sku_fornitore = :sku WHERE id = :id")
+                                 ->execute([':sku' => $skuFornitore ?: null, ':id' => $pfId]);
+                    }
+                } else {
+                    $this->pdo->prepare("INSERT INTO prodotti_fornitori (prodotto_id, fornitore_id, attivo, ordine_preferenza_fornitore, sku_fornitore) VALUES (:pid, :fid, 1, 10, :sku)")
+                             ->execute([':pid' => $prodottoId, ':fid' => $fornitoreId, ':sku' => $skuFornitore ?: null]);
+                    $pfId = (int)$this->pdo->lastInsertId();
+                }
+
+                // Cerca se esiste già un prezzo per questo listino, prodotto_fornitore e quantita_minima
+                $stmtCheck = $this->pdo->prepare("
+                    SELECT id FROM prodotti_fornitori_prezzi 
+                    WHERE prodotto_fornitore_id = :pfid 
+                      AND listino_acquisto_id = :lid 
+                      AND quantita_minima = :qmin
+                ");
+                $stmtCheck->execute([
+                    ':pfid' => $pfId,
+                    ':lid'  => $listinoId,
+                    ':qmin' => $qMin
+                ]);
+                $priceRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+                if ($priceRow) {
+                    // Update
+                    $this->pdo->prepare("
+                        UPDATE prodotti_fornitori_prezzi SET
+                            prezzo = :prezzo,
+                            sconto_perc = :sconto,
+                            valido_dal = :valido_dal,
+                            valido_al = :valido_al,
+                            note = :note
+                        WHERE id = :id
+                    ")->execute([
+                        ':prezzo'     => $prezzo,
+                        ':sconto'     => $sconto,
+                        ':valido_dal' => $validoDal,
+                        ':valido_al'  => $validoAl,
+                        ':note'       => $note,
+                        ':id'         => (int)$priceRow['id']
+                    ]);
+                } else {
+                    // Insert
+                    $this->pdo->prepare("
+                        INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
+                        VALUES (:pfid, :lid, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note)
+                    ")->execute([
+                        ':pfid'       => $pfId,
+                        ':lid'        => $listinoId,
+                        ':qmin'        => $qMin,
+                        ':prezzo'      => $prezzo,
+                        ':sconto'      => $sconto,
+                        ':valido_dal'  => $validoDal,
+                        ':valido_al'   => $validoAl,
+                        ':note'        => $note
+                    ]);
+                }
+                $inserted++;
+            }
+            $this->pdo->commit();
+            echo json_encode([
+                'ok'       => true,
+                'inserted' => $inserted,
+                'skipped'  => $skipped,
+                'errors'   => $rowErrors
+            ]);
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
 }

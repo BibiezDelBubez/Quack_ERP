@@ -166,6 +166,7 @@ return [
     '/purchases/pricelists/righe/save'   => ['type' => 'controller', 'controller' => 'PurchasesController', 'action' => 'apiSaveRiga',    'auth' => true],
     '/purchases/pricelists/righe/delete' => ['type' => 'controller', 'controller' => 'PurchasesController', 'action' => 'apiDeleteRiga',  'auth' => true],
     '/purchases/pricelists/api/prodotti' => ['type' => 'controller', 'controller' => 'PurchasesController', 'action' => 'apiProdotti',    'auth' => true],
+    '/purchases/pricelists/api/import'   => ['type' => 'controller', 'controller' => 'PurchasesController', 'action' => 'apiImportPrezzi',  'auth' => true],
 
     '/adr'                  => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'index',       'auth' => true],
     '/adr/codici/create'   => ['type' => 'controller', 'controller' => 'AdrController', 'action' => 'createCodice', 'auth' => true],

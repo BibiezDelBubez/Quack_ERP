@@ -118,9 +118,14 @@
               <span class="qk-card-title">
                 <i class="fa-solid fa-file-spreadsheet me-2" style="color:var(--qk-accent)"></i>Tariffe concordate per articolo
               </span>
-              <button type="button" id="btn-add-riga-acquisto" class="btn-qk btn-qk-primary btn-qk-sm">
-                <i class="fa-solid fa-plus me-1"></i>Aggiungi prodotto
-              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaPrezziAcquisto">
+                  <i class="fa-solid fa-file-import me-1"></i>Importa (XLSX)
+                </button>
+                <button type="button" id="btn-add-riga-acquisto" class="btn-qk btn-qk-primary btn-qk-sm">
+                  <i class="fa-solid fa-plus me-1"></i>Aggiungi prodotto
+                </button>
+              </div>
             </div>
 
             <style>
@@ -603,3 +608,298 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 </script>
+
+<!-- ExcelJS Library for reading/writing xlsx -->
+<script src="<?= asset('js/exceljs.min.js') ?>"></script>
+
+<!-- Modal per Importazione Massiva Prezzi Acquisto -->
+<div class="modal fade" id="modalImportaPrezziAcquisto" tabindex="-1" aria-labelledby="modalImportaPrezziAcquistoTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalImportaPrezziAcquistoTitle">
+          <i class="fa-solid fa-file-import me-2"></i>Importazione Massiva Tariffe Acquisto
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <div class="qk-alert qk-alert-info mb-3">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>Carica un file Excel (.xlsx) per importare o aggiornare le tariffe degli articoli. Se una tariffa d'acquisto esiste già per lo stesso articolo e scaglione quantità, verrà aggiornata con il nuovo prezzo.</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <input type="file" id="inputFilePrezziAcquisto" accept=".xlsx" class="d-none">
+            <label for="inputFilePrezziAcquisto" class="btn-qk btn-qk-primary">
+              <i class="fa-solid fa-file-excel me-1"></i>Seleziona File Excel...
+            </label>
+            <button type="button" class="btn-qk btn-qk-secondary" id="btnClearFilePrezzi">
+              <i class="fa-solid fa-trash me-1"></i>Rimuovi File
+            </button>
+          </div>
+          <button type="button" class="btn-qk btn-qk-secondary" id="btnDownloadTracciatoPrezzi">
+            <i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Modello Tracciato
+          </button>
+        </div>
+
+        <div id="importPreviewWrapPrezzi" style="display:none" class="mb-3">
+          <h6 class="fw-bold mb-2">Anteprima Righe (<span id="importPreviewCountPrezzi">0</span> righe trovate, mostra max 10)</h6>
+          <div class="qk-table-wrap" style="max-height: 250px; overflow-y: auto;">
+            <table class="qk-table mb-0" style="font-size: .8rem">
+              <thead id="importPreviewHeadPrezzi"></thead>
+              <tbody id="importPreviewBodyPrezzi"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="importResultPrezzi" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Chiudi</button>
+        <button type="button" class="btn-qk btn-qk-primary" id="btnImportaPrezziAcquisto" disabled>
+          <i class="fa-solid fa-upload me-1"></i>Avvia Importazione
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var LISTINO_ID = <?= (int)($id ?? 0) ?>;
+  var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
+  var IMPORT_URL = QK_BASE + '/purchases/pricelists/api/import';
+
+  var COLS_PREZZI = [
+    {key:'sku_interno',     note:'Obbligatorio. SKU interno del prodotto in Quack.', esempio:'PROD-001'},
+    {key:'sku_fornitore',   note:'Codice articolo assegnato dal fornitore.',         esempio:'SUPP-PROD-99'},
+    {key:'quantita_minima', note:'Quantità minima per questa tariffa.',              esempio:'1.000'},
+    {key:'prezzo',          note:'Obbligatorio. Prezzo unitario di acquisto.',       esempio:'12.5000'},
+    {key:'sconto_perc',     note:'Sconto percentuale da applicare.',                 esempio:'5.00'},
+    {key:'valido_dal',      note:'Data inizio validità riga (AAAA-MM-GG).',          esempio:'2026-01-01'},
+    {key:'valido_al',       note:'Data fine validità riga (AAAA-MM-GG).',            esempio:'2026-12-31'},
+    {key:'note',            note:'Note specifiche del prezzo.',                      esempio:'Prezzo bloccato da contratto'}
+  ];
+
+  function downloadBuffer(buffer, filename) {
+    var blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1000);
+  }
+
+  document.getElementById('btnDownloadTracciatoPrezzi').addEventListener('click', async function(){
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Generazione...';
+
+    var wb = new ExcelJS.Workbook();
+    wb.creator = 'Quack ERP';
+    var ws = wb.addWorksheet('Tariffe');
+    ws.columns = COLS_PREZZI.map(function(c){ return {header:c.key, key:c.key, width:Math.max(c.key.length+4,22)}; });
+
+    var hr = ws.getRow(1);
+    COLS_PREZZI.forEach(function(c,i){
+      var cell = hr.getCell(i+1);
+      cell.value = c.key;
+      cell.font  = {bold:true, color:{argb:'FFFFFFFF'}};
+      cell.fill  = {type:'pattern', pattern:'solid', fgColor:{argb:'FF2E4057'}};
+      cell.alignment = {vertical:'middle', horizontal:'center'};
+      cell.note  = {texts:[{text:c.note}]};
+    });
+    hr.height = 22;
+
+    var ex = ws.addRow(COLS_PREZZI.reduce(function(a,c){ a[c.key]=c.esempio; return a; }, {}));
+    ex.eachCell(function(cell){
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEAF2FB'}};
+      cell.font = {italic:true, color:{argb:'FF555555'}};
+    });
+    ws.views = [{state:'frozen', ySplit:1}];
+
+    downloadBuffer(await wb.xlsx.writeBuffer(), 'Listino_Acquisti_Tracciato.xlsx');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Modello Tracciato';
+  });
+
+  var parsedRows = [];
+
+  document.getElementById('inputFilePrezziAcquisto').addEventListener('change', async function(){
+    var file = this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = async function(e){
+      var wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(e.target.result);
+      var ws = wb.worksheets[0];
+      if (!ws) { alert('File non valido.'); return; }
+
+      var headers = [];
+      ws.getRow(1).eachCell({includeEmpty:false}, function(cell){
+        headers.push(String(cell.value !== null && cell.value !== undefined ? cell.value : '').trim());
+      });
+
+      parsedRows = [];
+      ws.eachRow(function(row, rn){
+        if (rn === 1) return;
+        var obj = {};
+        headers.forEach(function(h,i){
+          var v = row.getCell(i+1).value;
+          obj[h] = (v !== null && v !== undefined) ? String(v).trim() : '';
+        });
+        if (Object.values(obj).some(function(v){ return v !== ''; })) parsedRows.push(obj);
+      });
+      renderPreview(headers, parsedRows);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  function renderPreview(headers, rows){
+    var th = '<tr>';
+    headers.forEach(function(h){ th += '<th style="white-space:nowrap">'+esc(h)+'</th>'; });
+    th += '</tr>';
+    document.getElementById('importPreviewHeadPrezzi').innerHTML = th;
+
+    var tb = '';
+    rows.slice(0,10).forEach(function(row){
+      tb += '<tr>';
+      headers.forEach(function(h){
+        var v = row[h] !== undefined ? row[h] : '';
+        var bad = (h==='sku_interno'||h==='prezzo') && v==='';
+        tb += '<td style="white-space:nowrap'+(bad?';color:var(--qk-danger);font-weight:600':'')+'">' + esc(v||'--') + '</td>';
+      });
+      tb += '</tr>';
+    });
+    if (rows.length > 10)
+      tb += '<tr><td colspan="'+headers.length+'" class="text-center qk-text-muted" style="font-size:.8rem">... e altre '+(rows.length-10)+' righe</td></tr>';
+
+    document.getElementById('importPreviewBodyPrezzi').innerHTML = tb;
+    document.getElementById('importPreviewCountPrezzi').textContent = rows.length;
+    document.getElementById('importPreviewWrapPrezzi').style.display = 'block';
+    document.getElementById('btnImportaPrezziAcquisto').disabled = rows.length === 0;
+    document.getElementById('importResultPrezzi').style.display  = 'none';
+  }
+
+  document.getElementById('btnClearFilePrezzi').addEventListener('click', function(){
+    parsedRows = [];
+    document.getElementById('inputFilePrezziAcquisto').value = '';
+    document.getElementById('importPreviewWrapPrezzi').style.display = 'none';
+    document.getElementById('btnImportaPrezziAcquisto').disabled = true;
+    document.getElementById('importResultPrezzi').style.display  = 'none';
+  });
+
+  document.getElementById('modalImportaPrezziAcquisto').addEventListener('hidden.bs.modal', function(){
+    document.getElementById('btnClearFilePrezzi').click();
+  });
+
+  function normalizePrezzoHeader(h) {
+    var clean = String(h || '').trim().toLowerCase()
+      .replace(/[\s\-\_]+/g, '_')
+      .replace(/[\(\)]/g, '');
+    
+    var map = {
+      'sku': 'sku_interno',
+      'sku_interno': 'sku_interno',
+      'codice': 'sku_interno',
+      'codice_articolo': 'sku_interno',
+      'prodotto_sku': 'sku_interno',
+      
+      'sku_fornitore': 'sku_fornitore',
+      'codice_fornitore': 'sku_fornitore',
+      'codice_articolo_fornitore': 'sku_fornitore',
+      'part_number': 'sku_fornitore',
+      
+      'quantita_minima': 'quantita_minima',
+      'quantità_minima': 'quantita_minima',
+      'quantita': 'quantita_minima',
+      'qta': 'quantita_minima',
+      
+      'prezzo': 'prezzo',
+      'prezzo_unitario': 'prezzo',
+      'prezzo_acquisto': 'prezzo',
+      'costo': 'prezzo',
+      'costo_unitario': 'prezzo',
+      
+      'sconto': 'sconto_perc',
+      'sconto_perc': 'sconto_perc',
+      'sconto_%': 'sconto_perc',
+      
+      'valido_dal': 'valido_dal',
+      'inizio_validita': 'valido_dal',
+      'data_inizio': 'valido_dal',
+      
+      'valido_al': 'valido_al',
+      'fine_validita': 'valido_al',
+      'data_fine': 'valido_al',
+      
+      'note': 'note',
+      'note_prezzo': 'note',
+      'descrizione': 'note'
+    };
+    return map[clean] || clean;
+  }
+
+  document.getElementById('btnImportaPrezziAcquisto').addEventListener('click', async function(){
+    if (!parsedRows.length) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Importazione...';
+
+    var normalizedRows = parsedRows.map(function(row) {
+      var normObj = {};
+      Object.keys(row).forEach(function(key) {
+        var normKey = normalizePrezzoHeader(key);
+        normObj[normKey] = row[key];
+      });
+      return normObj;
+    });
+
+    var fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    fd.append('listino_acquisto_id', LISTINO_ID);
+    fd.append('rows', JSON.stringify(normalizedRows));
+
+    try {
+      var resp   = await fetch(IMPORT_URL, {method:'POST', body:fd});
+      var result = await resp.json();
+      var box    = document.getElementById('importResultPrezzi');
+      box.style.display = 'block';
+
+      if (!result.ok) {
+        box.innerHTML = '<div class="alert alert-danger py-2"><i class="fa-solid fa-triangle-exclamation me-1"></i>' + esc(result.error) + '</div>';
+      } else {
+        var html = '<div class="alert alert-success py-2 mb-2">'
+                 + '<i class="fa-solid fa-circle-check me-1"></i>'
+                 + '<strong>'+result.inserted+'</strong> tariffe importate/aggiornate'
+                 + (result.skipped>0 ? ', <strong>'+result.skipped+'</strong> saltate' : '') + '.'
+                 + '</div>';
+        if (result.errors && result.errors.length) {
+          html += '<details style="font-size:.8rem"><summary style="cursor:pointer" class="qk-text-muted">Dettaglio righe saltate ('+result.errors.length+')</summary>'
+               + '<ul class="mt-1 mb-0">';
+          result.errors.forEach(function(e){ html += '<li>'+esc(e)+'</li>'; });
+          html += '</ul></details>';
+        }
+        box.innerHTML = html;
+        if (result.inserted > 0) {
+          parsedRows = [];
+          document.getElementById('importPreviewWrapPrezzi').style.display = 'none';
+          setTimeout(function(){ window.location.reload(); }, 1500);
+        }
+      }
+    } catch(err) {
+      document.getElementById('importResultPrezzi').innerHTML =
+        '<div class="alert alert-danger py-2">Errore di rete: '+esc(err.message)+'</div>';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-upload me-1"></i>Avvia Importazione';
+  });
+
+  function esc(str){
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>
+
