@@ -39,18 +39,34 @@ $_note   = $item['note']            ?? '';
   <!-- ── Prodotto ── -->
   <td class="pl-td-product">
     <div class="pl-view">
-      <a href="<?= url('products/edit?id=' . (int)$_pid) ?>" class="fw-semibold qk-text-accent" tabindex="-1">
+      <span class="fw-semibold qk-text-accent" style="cursor: pointer;">
         <?= e($_nome) ?>
+      </span>
+      <a href="<?= url('products/edit?id=' . (int)$_pid) ?>" target="_blank" class="ms-1 text-muted" title="Apri scheda prodotto" style="font-size: 0.72rem;">
+        <i class="fa-solid fa-arrow-up-right-from-square"></i>
       </a>
       <div class="pl-sku"><?= e($_sku) ?></div>
       <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
         <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
       </div>
     </div>
-    <!-- In edit mode il prodotto è bloccato; si elimina e ricrea per cambiarlo -->
+    <!-- In edit mode il prodotto è ora modificabile via Many2One autocomplete -->
     <div class="pl-edit">
-      <div class="fw-semibold" style="font-size:.875rem"><?= e($_nome) ?></div>
-      <div class="pl-sku"><?= e($_sku) ?></div>
+      <div class="qk-m2o-wrap position-relative">
+        <input type="hidden" class="r-prodotto-id" value="<?= e($_pid) ?>">
+        <div class="d-flex align-items-center gap-1">
+          <div class="position-relative flex-grow-1">
+            <input type="text" class="pl-input r-prodotto-label qk-m2o-input"
+                   value="<?= e($_nome) ?>" placeholder="Cerca prodotto…" autocomplete="off" style="text-align:left; padding-right: 24px;">
+            <button type="button" class="qk-m2o-clear r-prodotto-clear" style="right: 8px;">&times;</button>
+          </div>
+          <a href="<?= url('products/edit?id=' . (int)$_pid) ?>" class="btn-qk btn-qk-secondary btn-qk-sm pl-link-scheda" 
+             target="_blank" title="Apri scheda prodotto" style="padding: 0.2rem 0.4rem; font-size: 0.75rem; display: <?= $_pid ? 'inline-block' : 'none' ?>;">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          </a>
+        </div>
+        <div class="qk-m2o-dropdown r-prodotto-dropdown"></div>
+      </div>
       <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
         <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
       </div>

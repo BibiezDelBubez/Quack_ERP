@@ -127,6 +127,15 @@
 .pl-btn-confirm.is-saving i { display: none; }
 @keyframes pl-spin { to { transform: rotate(360deg); } }
 
+/* ── Soft delete state inline ── */
+.pl-riga-deleted-soft td {
+  background-color: var(--qk-danger-bg, rgba(239, 68, 68, 0.08)) !important;
+}
+.pl-riga-deleted-soft.fade-out td {
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+
 /* ── Empty state ── */
 #pl-empty {
   display: flex;
@@ -205,11 +214,19 @@
 
     <td class="pl-td-product">
       <div class="pl-edit">
-        <div class="qk-m2o-wrap">
+        <div class="qk-m2o-wrap position-relative">
           <input type="hidden" class="r-prodotto-id" value="">
-          <input type="text" class="pl-input r-prodotto-label qk-m2o-input"
-                 placeholder="Cerca prodotto…" autocomplete="off" style="text-align:left">
-          <button type="button" class="qk-m2o-clear d-none r-prodotto-clear">&times;</button>
+          <div class="d-flex align-items-center gap-1">
+            <div class="position-relative flex-grow-1">
+              <input type="text" class="pl-input r-prodotto-label qk-m2o-input"
+                     placeholder="Cerca prodotto…" autocomplete="off" style="text-align:left; padding-right: 24px;">
+              <button type="button" class="qk-m2o-clear d-none r-prodotto-clear" style="right: 8px;">&times;</button>
+            </div>
+            <a href="#" class="btn-qk btn-qk-secondary btn-qk-sm pl-link-scheda" 
+               target="_blank" title="Apri scheda prodotto" style="padding: 0.2rem 0.4rem; font-size: 0.75rem; display: none;">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
           <div class="qk-m2o-dropdown r-prodotto-dropdown"></div>
         </div>
       </div>
@@ -261,6 +278,20 @@ document.addEventListener('DOMContentLoaded', function () {
   const tpl     = document.getElementById('pl-tpl-new');
 
   /* ════════════════════════════════════════════════════
+     DISMISS ALL SOFT DELETED ROWS
+  ════════════════════════════════════════════════════ */
+  function dismissAllSoftDeleted() {
+    tbody.querySelectorAll('.pl-riga-deleted-soft').forEach(tr => {
+      if (tr.dataset.dismissTimeoutId) {
+        clearTimeout(parseInt(tr.dataset.dismissTimeoutId));
+      }
+      tr.remove();
+    });
+    syncEmpty();
+    runBusinessValidations();
+  }
+
+  /* ════════════════════════════════════════════════════
      AGGIUNGI NUOVA RIGA
   ════════════════════════════════════════════════════ */
   // Run business validations on load
@@ -276,11 +307,12 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   function addNewRow() {
+    dismissAllSoftDeleted();
     const fragment = tpl.content.cloneNode(true);
     tbody.prepend(fragment);
     const newTr = tbody.firstElementChild;
     syncEmpty();
-    initNewRowM2O(newTr);
+    initRowM2O(newTr);
     newTr.querySelector('.r-prodotto-label')?.focus();
     scrollToRow(newTr);
   }
@@ -295,6 +327,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!tr) return;
 
     // Se stiamo cliccando su bottoni di azione o link
+    if (tr.classList.contains('pl-riga-deleted-soft')) return;
+
     if (e.target.closest('.pl-btn-icon')) {
       if (e.target.closest('.btn-confirm-riga')) { confirmEdit(tr); }
       else if (e.target.closest('.btn-cancel-riga')) { cancelEdit(tr); }
@@ -316,6 +350,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   tbody.addEventListener('focusin', function (e) {
     const tr = e.target.closest('tr.pl-riga');
+    if (tr && tr.classList.contains('pl-riga-deleted-soft')) return;
     if (tr && !tr.classList.contains('is-editing')) {
       enterEdit(tr);
     }
@@ -342,21 +377,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (hasDirty || (isNew && tr.querySelector('.r-prodotto-id')?.value)) {
         confirmEdit(tr);
       } else if (isNew && !tr.querySelector('.r-prodotto-id')?.value) {
-        const searchVal = tr.querySelector('.r-prodotto-label')?.value?.trim() || '';
-        const prezzoVal = tr.querySelector('.r-prezzo')?.value?.trim() || '';
-        const qminVal   = tr.querySelector('.r-qmin')?.value?.trim() || '0';
-        const scontoVal = tr.querySelector('.r-sconto')?.value?.trim() || '0';
-        const noteVal   = tr.querySelector('.r-note')?.value?.trim() || '';
-
-        const isFullyEmpty = (searchVal === '') && 
-                             (prezzoVal === '' || parseFloat(prezzoVal) === 0) &&
-                             (qminVal === '' || parseFloat(qminVal) === 0 || parseFloat(qminVal) === 0) &&
-                             (scontoVal === '' || parseFloat(scontoVal) === 0) &&
-                             (noteVal === '');
-
-        if (isFullyEmpty) {
-          cancelEdit(tr);
-        }
+        // NON cancelliamo la riga sul click-out (blur) per prevenire misclick.
+        // La riga rimarrà aperta in modifica finché non si clicca il cestino/cancella.
       } else {
         tr.classList.remove('is-editing');
       }
@@ -384,6 +406,8 @@ document.addEventListener('DOMContentLoaded', function () {
     } else if (input.classList.contains('r-unita-misura-id')) {
       const savedUom = tr.dataset.uomSelectedId || tr.dataset.uomStockId || '';
       isDirty = val !== savedUom;
+    } else if (input.classList.contains('r-prodotto-id')) {
+      isDirty = val !== (tr.dataset.prodottoId || '');
     }
 
     if (isDirty) {
@@ -424,7 +448,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!input.matches('input, select') || input.tagName === 'SELECT') return;
       if (input.classList.contains('r-prodotto-label')) {
         const m2oDropdown = input.closest('.qk-m2o-wrap')?.querySelector('.qk-m2o-dropdown');
-        if (m2oDropdown && m2oDropdown.classList.contains('open')) return;
+        if (m2oDropdown && m2oDropdown.classList.contains('is-open')) return;
       }
 
       e.preventDefault();
@@ -466,7 +490,7 @@ document.addEventListener('DOMContentLoaded', function () {
       // Don't intercept Enter if autocomplete dropdown is open
       if (input.classList.contains('r-prodotto-label')) {
         const m2oDropdown = input.closest('.qk-m2o-wrap')?.querySelector('.qk-m2o-dropdown');
-        if (m2oDropdown && m2oDropdown.classList.contains('open')) return;
+        if (m2oDropdown && m2oDropdown.classList.contains('is-open')) return;
       }
       e.preventDefault();
       confirmEdit(tr).then((success) => {
@@ -495,6 +519,7 @@ document.addEventListener('DOMContentLoaded', function () {
      ENTER EDIT (riga esistente)
   ════════════════════════════════════════════════════ */
   function enterEdit(tr) {
+    dismissAllSoftDeleted();
     tbody.querySelectorAll('.pl-riga.is-editing').forEach(other => {
       if (other !== tr) {
         // Se l'altra riga ha modifiche pendenti, la salviamo prima di chiuderla
@@ -512,6 +537,19 @@ document.addEventListener('DOMContentLoaded', function () {
     setInput(tr, '.r-sconto', tr.dataset.sconto ?? '0');
     setInput(tr, '.r-note',   tr.dataset.note   ?? '');
     setInput(tr, '.r-unita-misura-id', tr.dataset.uomSelectedId || tr.dataset.uomStockId || '');
+    setInput(tr, '.r-prodotto-id', tr.dataset.prodottoId || '');
+    setInput(tr, '.r-prodotto-label', tr.dataset.prodottoNome || '');
+
+    const linkScheda = tr.querySelector('.pl-link-scheda');
+    if (linkScheda) {
+      if (tr.dataset.prodottoId) {
+        linkScheda.href = BASE + '/products/edit?id=' + tr.dataset.prodottoId;
+        linkScheda.style.display = 'inline-block';
+      } else {
+        linkScheda.href = '#';
+        linkScheda.style.display = 'none';
+      }
+    }
     
     // Reset inputs visual dirty markers
     tr.querySelectorAll('.pl-input').forEach(input => {
@@ -521,6 +559,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     tr.classList.add('is-editing');
+    initRowM2O(tr);
     scrollToRow(tr);
   }
 
@@ -528,10 +567,7 @@ document.addEventListener('DOMContentLoaded', function () {
      CONFIRM EDIT
   ════════════════════════════════════════════════════ */
   async function confirmEdit(tr) {
-    const isNew     = tr.dataset.rigaId === '0';
-    const prodottoId = isNew
-      ? (tr.querySelector('.r-prodotto-id')?.value ?? '')
-      : tr.dataset.prodottoId;
+    const prodottoId = tr.querySelector('.r-prodotto-id')?.value || tr.dataset.prodottoId;
 
     const prezzo = getInput(tr, '.r-prezzo');
 
@@ -600,6 +636,19 @@ document.addEventListener('DOMContentLoaded', function () {
       setInput(tr, '.r-sconto', tr.dataset.sconto);
       setInput(tr, '.r-note', tr.dataset.note);
       setInput(tr, '.r-unita-misura-id', tr.dataset.uomSelectedId || tr.dataset.uomStockId || '');
+      setInput(tr, '.r-prodotto-id', tr.dataset.prodottoId || '');
+      setInput(tr, '.r-prodotto-label', tr.dataset.prodottoNome || '');
+
+      const linkScheda = tr.querySelector('.pl-link-scheda');
+      if (linkScheda) {
+        if (tr.dataset.prodottoId) {
+          linkScheda.href = BASE + '/products/edit?id=' + tr.dataset.prodottoId;
+          linkScheda.style.display = 'inline-block';
+        } else {
+          linkScheda.href = '#';
+          linkScheda.style.display = 'none';
+        }
+      }
       
       tr.querySelectorAll('.pl-input').forEach(input => {
         input.classList.remove('is-dirty');
@@ -615,14 +664,148 @@ document.addEventListener('DOMContentLoaded', function () {
      DELETE ROW
   ════════════════════════════════════════════════════ */
   async function deleteRow(tr) {
-    if (!confirm('Rimuovere questo prezzo dal listino?')) return;
-    const d = await apiPost('/sales/pricelists/righe/delete', { riga_id: tr.dataset.rigaId });
-    if (d.ok) { 
-      tr.remove(); 
-      syncEmpty();
-      runBusinessValidations();
-    } else {
-      alert(d.error ?? 'Errore.');
+    try {
+      const rigaId = tr.dataset.rigaId;
+      const originalHtml = tr.innerHTML;
+      const originalData = {
+        prodottoId: tr.dataset.prodottoId,
+        prodottoNome: tr.dataset.prodottoNome,
+        sku: tr.dataset.sku,
+        um: tr.dataset.um,
+        uomStockId: tr.dataset.uomStockId,
+        uomStockCode: tr.dataset.uomStockCode,
+        uomCommercialId: tr.dataset.uomCommercialId,
+        uomCommercialCode: tr.dataset.uomCommercialCode,
+        unitaMisuraId: tr.dataset.uomSelectedId,
+        qmin: tr.dataset.qmin,
+        prezzo: tr.dataset.prezzo,
+        sconto: tr.dataset.sconto,
+        note: tr.dataset.note,
+        costo: tr.dataset.costo
+      };
+
+      // Invia subito la richiesta di eliminazione al server
+      const d = await apiPost('/sales/pricelists/righe/delete', { riga_id: rigaId });
+      if (!d.ok) {
+        window.qkToast(d.error ?? 'Errore durante l\'eliminazione.', 'danger');
+        return;
+      }
+
+      // Applica la classe e trasforma la riga in un placeholder "Soft Delete"
+      tr.classList.add('pl-riga-deleted-soft');
+      tr.title = '';
+      tr.removeAttribute('title');
+      tr.style.outline = '';
+      tr.innerHTML = `
+        <td colspan="7" class="align-middle text-start" style="padding: 0.6rem 1.2rem !important; height: 44px; border-left: 3px solid var(--qk-danger, #ef4444);">
+          <div class="d-flex justify-content-between align-items-center">
+            <span>
+              <i class="fa-solid fa-trash-can text-danger me-2"></i>
+              Prezzo per <strong>${esc(originalData.prodottoNome)}</strong> rimosso.
+              <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>
+            </span>
+            <button type="button" class="btn-close btn-close-dismiss-soft" aria-label="Chiudi" style="font-size: 0.7rem;"></button>
+          </div>
+        </td>
+      `;
+
+      // Gestione del timeout di sparizione (8 secondi con hover pause)
+      let dismissTimeout = null;
+      
+      function startTimer() {
+        dismissTimeout = setTimeout(() => {
+          tr.classList.add('fade-out');
+          setTimeout(() => {
+            tr.remove();
+            syncEmpty();
+            runBusinessValidations();
+          }, 400);
+        }, 8000);
+        tr.dataset.dismissTimeoutId = dismissTimeout;
+      }
+
+      function stopTimer() {
+        if (dismissTimeout) {
+          clearTimeout(dismissTimeout);
+          dismissTimeout = null;
+        }
+      }
+
+      // Se il mouse è già sopra la riga, non far partire il timer (pausa iniziale)
+      if (tr.matches(':hover')) {
+        console.log("Mouse is already hovering the deleted row; timer initialized in paused state.");
+      } else {
+        startTimer();
+      }
+
+      // Mouse hover events to pause/resume the countdown
+      tr.addEventListener('mouseenter', () => {
+        if (tr.classList.contains('pl-riga-deleted-soft')) {
+          stopTimer();
+        }
+      });
+      tr.addEventListener('mouseleave', () => {
+        if (tr.classList.contains('pl-riga-deleted-soft')) {
+          startTimer();
+        }
+      });
+
+      // Evento Annulla
+      tr.querySelector('.undo-delete-inline').addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        stopTimer();
+
+        try {
+          // Ricrea la riga salvandola nuovamente nel DB
+          const res = await apiPost('/sales/pricelists/righe/save', {
+            listino_id:       LISTINO,
+            riga_id:          0, // Nuova riga
+            prodotto_id:      originalData.prodottoId,
+            prezzo_unitario:  originalData.prezzo,
+            quantita_minima:  originalData.qmin || '0',
+            sconto_perc:      originalData.sconto || '0',
+            unita_misura_id:  originalData.unitaMisuraId || null,
+            note:             originalData.note || '',
+          });
+
+          if (res.ok) {
+            // Ripristina l'HTML e le classi originali
+            tr.innerHTML = originalHtml;
+            tr.classList.remove('pl-riga-deleted-soft', 'fade-out', 'is-editing');
+            
+            // Applica i nuovi dati generati
+            applyRigaData(tr, res.riga);
+            
+            // Aggiungi flash visivo
+            tr.classList.add('pl-riga-saved');
+            setTimeout(() => tr.classList.remove('pl-riga-saved'), 800);
+
+            syncEmpty();
+            runBusinessValidations();
+          } else {
+            window.qkToast('Impossibile ripristinare: ' + (res.error ?? 'Errore.'), 'danger');
+            tr.remove();
+          }
+        } catch (err) {
+          window.qkToast('Errore durante il ripristino.', 'danger');
+          tr.remove();
+        }
+      });
+
+      // Evento Chiudi immediato (X)
+      tr.querySelector('.btn-close-dismiss-soft').addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        stopTimer();
+        tr.remove();
+        syncEmpty();
+        runBusinessValidations();
+      });
+
+    } catch (err) {
+      console.error("Errore durante la cancellazione:", err);
+      alert("Errore durante la cancellazione: " + err.message);
     }
   }
 
@@ -649,9 +832,11 @@ document.addEventListener('DOMContentLoaded', function () {
     tr.dataset.costo       = r.costo ?? '0';
 
     // Aggiorna elementi view
-    const link = tr.querySelector('.pl-view a.qk-text-accent');
+    const spanName = tr.querySelector('.pl-view span.qk-text-accent');
+    const anchorLink = tr.querySelector('.pl-view a[target="_blank"]');
     const sku  = tr.querySelector('.pl-view .pl-sku');
-    if (link) { link.textContent = r.prodotto_nome; link.href = BASE + '/products/edit?id=' + r.prodotto_id; }
+    if (spanName) spanName.textContent = r.prodotto_nome;
+    if (anchorLink) anchorLink.href = BASE + '/products/edit?id=' + r.prodotto_id;
     if (sku)  sku.textContent = r.sku_interno;
 
     setText(tr, '.pl-um-label', r.unita_misura ?? '—');
@@ -685,7 +870,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setText(tr, '.pl-note-val', r.note ?? '');
 
     // Se è una nuova riga, costruisce gli elementi view mancanti
-    if (!tr.querySelector('.pl-view')) {
+    if (!tr.querySelector('.pl-td-product .pl-view')) {
       buildViewElements(tr, r);
     }
   }
@@ -693,15 +878,21 @@ document.addEventListener('DOMContentLoaded', function () {
   function buildViewElements(tr, r) {
     const fmt = (v, d) => parseFloat(v || 0).toLocaleString('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d });
 
-    tr.querySelector('.pl-td-product').innerHTML = `
-      <div class="pl-view">
-        <a href="${BASE}/products/edit?id=${r.prodotto_id}" class="fw-semibold qk-text-accent" tabindex="-1">${esc(r.prodotto_nome)}</a>
-        <div class="pl-sku">${esc(r.sku_interno)}</div>
-        <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
-          <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
-        </div>
+    const tdProduct = tr.querySelector('.pl-td-product');
+    const plEdit = tdProduct.querySelector('.pl-edit');
+    const viewDiv = document.createElement('div');
+    viewDiv.className = 'pl-view';
+    viewDiv.innerHTML = `
+      <span class="fw-semibold qk-text-accent" style="cursor: pointer;">${esc(r.prodotto_nome)}</span>
+      <a href="${BASE}/products/edit?id=${r.prodotto_id}" target="_blank" class="ms-1 text-muted" title="Apri scheda prodotto" style="font-size: 0.72rem;">
+        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+      </a>
+      <div class="pl-sku">${esc(r.sku_interno)}</div>
+      <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
       </div>
-      ${tr.querySelector('.pl-td-product').innerHTML}`;
+    `;
+    tdProduct.insertBefore(viewDiv, plEdit);
 
     setText(tr, '.pl-um-label', r.unita_misura ?? '—');
 
@@ -804,14 +995,15 @@ document.addEventListener('DOMContentLoaded', function () {
   /* ════════════════════════════════════════════════════
      M2O AUTOCOMPLETE per nuova riga
   ════════════════════════════════════════════════════ */
-  function initNewRowM2O(tr) {
+  function initRowM2O(tr) {
     const inputEl    = tr.querySelector('.r-prodotto-label');
     const hiddenEl   = tr.querySelector('.r-prodotto-id');
     const dropdownEl = tr.querySelector('.r-prodotto-dropdown');
     const clearBtn   = tr.querySelector('.r-prodotto-clear');
     const umLabel    = tr.querySelector('.pl-um-label');
 
-    if (!inputEl) return;
+    if (!inputEl || inputEl.dataset.m2oInitialized === 'true') return;
+    inputEl.dataset.m2oInitialized = 'true';
 
     new QkM2O({
       inputEl, hiddenEl, dropdownEl, clearBtn,
@@ -827,7 +1019,7 @@ document.addEventListener('DOMContentLoaded', function () {
             tr.dataset.uomStockCode = item.unita_misura || '';
             tr.dataset.uomCommercialId = item.unita_contenuto_id || '';
             tr.dataset.uomCommercialCode = item.unita_misura_commerciale || '';
-            tr.dataset.costo = item.costo || '0';
+            tr.dataset.costo = item.costo || item.costo_base || '0';
             
             // Add stock option
             const optStock = document.createElement('option');
@@ -848,16 +1040,42 @@ document.addEventListener('DOMContentLoaded', function () {
             tr.dataset.costo = '0';
           }
         }
+
+        // Aggiorna l'icona del link esterno della scheda prodotto
+        const linkScheda = tr.querySelector('.pl-link-scheda');
+        if (linkScheda) {
+          if (item && id) {
+            linkScheda.href = BASE + '/products/edit?id=' + id;
+            linkScheda.style.display = 'inline-block';
+          } else {
+            linkScheda.href = '#';
+            linkScheda.style.display = 'none';
+          }
+        }
+
         if (!item) {
           if (umLabel) umLabel.textContent = '—';
           return;
         }
         // Pre-compila UM
         if (umLabel) umLabel.textContent = item.unita_misura || '—';
+        if (hiddenEl) {
+          checkInputDirty(hiddenEl);
+        }
         runBusinessValidations();
         // Focus su qmin o prezzo
         setTimeout(() => tr.querySelector('.r-qmin')?.focus(), 50);
       },
+      onClear: () => {
+        const linkScheda = tr.querySelector('.pl-link-scheda');
+        if (linkScheda) {
+          linkScheda.href = '#';
+          linkScheda.style.display = 'none';
+        }
+        if (hiddenEl) {
+          checkInputDirty(hiddenEl);
+        }
+      }
     });
   }
 
@@ -907,6 +1125,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   /* ── Filtro di ricerca client-side ── */
   document.getElementById('pl-grid-search')?.addEventListener('input', function (e) {
+    dismissAllSoftDeleted();
     const q = e.target.value.toLowerCase().trim();
     tbody.querySelectorAll('tr.pl-riga').forEach(tr => {
       if (tr.classList.contains('is-editing')) {

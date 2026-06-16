@@ -449,11 +449,7 @@ final class SalesPricelistsController extends BaseController
 
         $q = trim(get_param('q') ?? '');
         
-        // Se query troppo corta (min 2 caratteri, a meno che non sia numerico corto per SKU)
-        if ($q !== '' && mb_strlen($q) < 2 && !is_numeric($q)) {
-            echo json_encode([]);
-            exit;
-        }
+        // Nessun limite di caratteri per favorire autocomplete istantaneo (dry-run o 1 carattere)
         
         $where = "WHERE p.attivo = 1";
         $params = [];
