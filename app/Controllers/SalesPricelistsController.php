@@ -228,7 +228,11 @@ final class SalesPricelistsController extends BaseController
                     p.unita_misura_stock_id AS uom_stock_id,
                     um_stock.codice AS uom_stock_code,
                     p.unita_contenuto_id AS uom_commercial_id,
-                    um_comm.codice AS uom_commercial_code
+                    um_comm.codice AS uom_commercial_code,
+                    (SELECT MIN(pfp.prezzo) 
+                     FROM prodotti_fornitori_prezzi pfp 
+                     JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
+                     WHERE pf2.prodotto_id = lp.prodotto_id AND pf2.attivo = 1) AS costo
              FROM listini_prezzi lp
              JOIN prodotti p ON p.id = lp.prodotto_id
              LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
@@ -389,7 +393,11 @@ final class SalesPricelistsController extends BaseController
                         p.unita_misura_stock_id AS uom_stock_id,
                         um_stock.codice AS uom_stock_code,
                         p.unita_contenuto_id AS uom_commercial_id,
-                        um_comm.codice AS uom_commercial_code
+                        um_comm.codice AS uom_commercial_code,
+                        (SELECT MIN(pfp.prezzo) 
+                         FROM prodotti_fornitori_prezzi pfp 
+                         JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
+                         WHERE pf2.prodotto_id = lp.prodotto_id AND pf2.attivo = 1) AS costo
                  FROM listini_prezzi lp
                  JOIN prodotti p ON p.id = lp.prodotto_id
                  LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
@@ -441,26 +449,29 @@ final class SalesPricelistsController extends BaseController
 
         $q = trim(get_param('q') ?? '');
         
+        // Se query troppo corta (min 2 caratteri, a meno che non sia numerico corto per SKU)
+        if ($q !== '' && mb_strlen($q) < 2 && !is_numeric($q)) {
+            echo json_encode([]);
+            exit;
+        }
+        
         $where = "WHERE p.attivo = 1";
         $params = [];
 
         if ($q !== '') {
-            if (mb_strlen($q) === 1) {
-                // Ricerca ottimizzata per singolo carattere (inizia con o SKU esatto)
-                $where .= " AND (p.nome LIKE :q_start OR p.sku_interno = :q OR p.ean = :q)";
-                $params = [':q' => $q, ':q_start' => $q . '%'];
-            } else {
-                // Ricerca parziale contiene
-                $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.ean LIKE :q)";
-                $params = [':q' => '%' . $q . '%'];
-            }
+            $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.ean LIKE :q)";
+            $params = [':q' => '%' . $q . '%'];
         }
 
         $stmt = $this->pdo->prepare(
             "SELECT p.id, p.nome AS label, p.sku_interno AS sku, um.codice AS unita_misura,
                     p.unita_misura_stock_id, um_c.codice AS unita_misura_commerciale,
                     p.unita_contenuto_id, p.quantita_contenuto,
-                    pf.rrp_min, pf.rrp_max
+                    pf.rrp_min, pf.rrp_max,
+                    (SELECT MIN(pfp.prezzo) 
+                     FROM prodotti_fornitori_prezzi pfp 
+                     JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
+                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1) AS costo
              FROM prodotti p
              LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
              LEFT JOIN unita_misura um_c ON um_c.id = p.unita_contenuto_id
@@ -858,6 +869,139 @@ final class SalesPricelistsController extends BaseController
             $clienti_assegnati = $stmtClienti->fetchAll(PDO::FETCH_ASSOC);
 
             echo json_encode(['ok' => true, 'clienti_assegnati' => $clienti_assegnati]);
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    public function apiImportPrezzi(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']); exit;
+        }
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido. Ricarica la pagina.']); exit;
+        }
+
+        $listinoId = filter_input(INPUT_POST, 'listino_id', FILTER_VALIDATE_INT);
+        $rows      = json_decode(post('rows') ?? '[]', true);
+
+        if (!$listinoId) {
+            echo json_encode(['ok' => false, 'error' => 'ID listino non specificato.']); exit;
+        }
+        if (!is_array($rows) || empty($rows)) {
+            echo json_encode(['ok' => false, 'error' => 'Nessun dato ricevuto.']); exit;
+        }
+
+        // Verifica listino
+        $stmtL = $this->pdo->prepare("SELECT id FROM listini WHERE id = :id");
+        $stmtL->execute([':id' => $listinoId]);
+        if (!$stmtL->fetch()) {
+            echo json_encode(['ok' => false, 'error' => 'Listino non trovato.']); exit;
+        }
+
+        $inserted  = 0;
+        $skipped   = 0;
+        $rowErrors = [];
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($rows as $i => $row) {
+                $lineNum = $i + 2;
+
+                $sku = trim((string)($row['sku_interno'] ?? ''));
+                if ($sku === '') {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': SKU interno vuoto — saltata.';
+                    continue;
+                }
+
+                // Cerca il prodotto
+                $stmtProd = $this->pdo->prepare('SELECT id, unita_misura_stock_id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
+                $stmtProd->execute([':s' => $sku]);
+                $prodRow = $stmtProd->fetch(PDO::FETCH_ASSOC);
+                if (!$prodRow) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ': prodotto con SKU "' . htmlspecialchars($sku) . '" non trovato o non attivo — saltata.';
+                    continue;
+                }
+                $prodottoId = (int)$prodRow['id'];
+                $uomId = (int)$prodRow['unita_misura_stock_id'];
+
+                $toFloat = function(?string $v): float {
+                    if ($v === null || trim($v) === '') return 0.0;
+                    return (float) str_replace(',', '.', trim($v));
+                };
+
+                $prezzoVal = trim((string)($row['prezzo_unitario'] ?? ''));
+                if ($prezzoVal === '' || !is_numeric(str_replace(',', '.', $prezzoVal))) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): prezzo unitario vuoto o non valido — saltata.';
+                    continue;
+                }
+                $prezzo = (float) str_replace(',', '.', $prezzoVal);
+
+                $qMin   = $toFloat($row['quantita_minima'] ?? '0');
+                $sconto = $toFloat($row['sconto_perc'] ?? '0');
+                $note   = !empty($row['note']) ? trim((string)$row['note']) : null;
+
+                // Cerca se esiste già un prezzo per questo listino, prodotto e quantita_minima
+                $stmtCheck = $this->pdo->prepare("
+                    SELECT id FROM listini_prezzi 
+                    WHERE listino_id = :lid AND prodotto_id = :pid AND quantita_minima = :qmin
+                ");
+                $stmtCheck->execute([
+                    ':lid'  => $listinoId,
+                    ':pid'  => $prodottoId,
+                    ':qmin' => $qMin
+                ]);
+                $existingId = $stmtCheck->fetchColumn();
+
+                if ($existingId) {
+                    // UPDATE
+                    $this->pdo->prepare("
+                        UPDATE listini_prezzi SET
+                            prezzo_unitario = :prezzo,
+                            sconto_perc = :sconto,
+                            note = :note
+                        WHERE id = :id
+                    ")->execute([
+                        ':prezzo' => $prezzo,
+                        ':sconto' => $sconto,
+                        ':note'   => $note,
+                        ':id'     => $existingId
+                    ]);
+                } else {
+                    // INSERT
+                    $this->pdo->prepare("
+                        INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note)
+                        VALUES (:lid, :pid, :qmin, :prezzo, :sconto, :umid, :note)
+                    ")->execute([
+                        ':lid'    => $listinoId,
+                        ':pid'    => $prodottoId,
+                        ':qmin'   => $qMin,
+                        ':prezzo' => $prezzo,
+                        ':sconto' => $sconto,
+                        ':umid'   => $uomId ?: null,
+                        ':note'   => $note
+                    ]);
+                }
+                $inserted++;
+            }
+
+            $this->pdo->commit();
+            echo json_encode([
+                'ok' => true,
+                'inserted' => $inserted,
+                'skipped' => $skipped,
+                'errors' => $rowErrors
+            ]);
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();

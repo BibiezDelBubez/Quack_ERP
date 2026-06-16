@@ -22,7 +22,7 @@ $_note   = $item['note']            ?? '';
 <tr class="pl-riga"
     data-riga-id="<?= e($_id) ?>"
     data-prodotto-id="<?= e($_pid) ?>"
-    data-prodotto-name="<?= e($_nome) ?>"
+    data-prodotto-nome="<?= e($_nome) ?>"
     data-sku="<?= e($_sku) ?>"
     data-um="<?= e($_um) ?>"
     data-uom-stock-id="<?= e($item['uom_stock_id'] ?? '') ?>"
@@ -33,7 +33,8 @@ $_note   = $item['note']            ?? '';
     data-qmin="<?= $_qmin ?>"
     data-prezzo="<?= $_prezzo ?>"
     data-sconto="<?= $_sconto ?>"
-    data-note="<?= e($_note) ?>">
+    data-note="<?= e($_note) ?>"
+    data-costo="<?= (float)($item['costo'] ?? 0) ?>">
 
   <!-- ── Prodotto ── -->
   <td class="pl-td-product">
@@ -42,11 +43,17 @@ $_note   = $item['note']            ?? '';
         <?= e($_nome) ?>
       </a>
       <div class="pl-sku"><?= e($_sku) ?></div>
+      <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
+      </div>
     </div>
     <!-- In edit mode il prodotto è bloccato; si elimina e ricrea per cambiarlo -->
     <div class="pl-edit">
       <div class="fw-semibold" style="font-size:.875rem"><?= e($_nome) ?></div>
       <div class="pl-sku"><?= e($_sku) ?></div>
+      <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
+      </div>
     </div>
   </td>
 
@@ -66,21 +73,28 @@ $_note   = $item['note']            ?? '';
   </td>
 
   <!-- ── Q.tà minima ── -->
-  <td class="pl-td-num">
+  <td class="pl-td-qmin">
     <span class="pl-view pl-num"><?= number_format($_qmin, 3, ',', '.') ?></span>
     <input class="pl-edit pl-input r-qmin" type="number" min="0" step="0.001"
            value="<?= $_qmin ?>">
   </td>
 
   <!-- ── Prezzo unitario ── -->
-  <td class="pl-td-num">
-    <span class="pl-view pl-num pl-prezzo-val"><?= number_format($_prezzo, 4, ',', '.') ?></span>
-    <input class="pl-edit pl-input r-prezzo" type="number" min="0" step="0.0001"
-           value="<?= $_prezzo ?>">
+  <td class="pl-td-prezzo position-relative">
+    <div class="pl-view">
+      <span class="pl-num pl-prezzo-val"><?= number_format($_prezzo, 4, ',', '.') ?></span>
+    </div>
+    <div class="pl-edit">
+      <input class="pl-input r-prezzo" type="number" min="0" step="0.0001"
+             value="<?= $_prezzo ?>">
+    </div>
+    <div class="pl-sottocosto-warning text-warning fw-semibold mt-1" style="font-size: 0.75rem; text-align: right; display: none;">
+      <i class="fa-solid fa-triangle-exclamation me-1"></i>Sottocosto (<span class="pl-costo-val">0.00</span> €)
+    </div>
   </td>
 
   <!-- ── Sconto % ── -->
-  <td class="pl-td-num">
+  <td class="pl-td-sconto">
     <span class="pl-view pl-num"><?= number_format($_sconto, 2, ',', '.') ?> %</span>
     <input class="pl-edit pl-input r-sconto" type="number" min="0" max="100" step="0.01"
            value="<?= $_sconto ?>">
@@ -95,22 +109,9 @@ $_note   = $item['note']            ?? '';
 
   <!-- ── Azioni ── -->
   <td class="pl-td-actions">
-    <div class="pl-view pl-actions-view">
-      <button type="button" class="pl-btn-icon btn-edit-riga" title="Modifica">
-        <i class="fa-solid fa-pencil"></i>
-      </button>
-      <button type="button" class="pl-btn-icon pl-btn-danger btn-delete-riga" title="Rimuovi">
-        <i class="fa-solid fa-trash-can"></i>
-      </button>
-    </div>
-    <div class="pl-edit pl-actions-edit">
-      <button type="button" class="pl-btn-icon pl-btn-confirm btn-confirm-riga" title="Salva">
-        <i class="fa-solid fa-check"></i>
-      </button>
-      <button type="button" class="pl-btn-icon pl-btn-cancel btn-cancel-riga" title="Annulla">
-        <i class="fa-solid fa-xmark"></i>
-      </button>
-    </div>
+    <button type="button" class="pl-btn-icon pl-btn-danger btn-delete-riga" title="Rimuovi" style="vertical-align: middle;">
+      <i class="fa-solid fa-trash-can"></i>
+    </button>
   </td>
 
 </tr>

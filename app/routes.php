@@ -68,6 +68,7 @@ return [
     '/sales/pricelists/api/ottieni-prezzo' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiOttieniPrezzo', 'auth' => true],
     '/sales/pricelists/api/clienti-assegnazione' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiClientiAssegnazione', 'auth' => true],
     '/sales/pricelists/api/assegna-clienti'      => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiAssegnaClienti', 'auth' => true],
+    '/sales/pricelists/api/import'             => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiImportPrezzi', 'auth' => true],
     '/products'                    => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'index',            'auth' => true],
     '/products/create'             => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'create',           'auth' => true],
     '/products/edit'               => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'edit',             'auth' => true],

@@ -114,11 +114,12 @@
         <!-- TAB 1: Articoli e Tariffe -->
         <div class="tab-pane fade show active" id="p-items-pane" role="tabpanel" aria-labelledby="p-items-tab" tabindex="0">
           <div class="qk-card shadow-sm">
-            <div class="qk-card-header">
-              <span class="qk-card-title">
+            <div class="qk-card-header d-flex justify-content-between align-items-center">
+              <span class="qk-card-title m-0">
                 <i class="fa-solid fa-file-spreadsheet me-2" style="color:var(--qk-accent)"></i>Tariffe concordate per articolo
               </span>
-              <div class="d-flex gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <input type="text" id="pl-grid-search-acquisto" class="qk-form-control py-1 px-2" placeholder="Filtra per nome o SKU..." style="font-size: .82rem !important; height: auto !important; min-height: 0 !important; width: 220px; margin: 0;">
                 <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaPrezziAcquisto">
                   <i class="fa-solid fa-file-import me-1"></i>Importa (XLSX)
                 </button>
@@ -147,10 +148,14 @@
                 0%   { background-color: var(--qk-success-bg); }
                 100% { background-color: transparent; }
               }
+              #tbl-prezzi-acquisto {
+                table-layout: fixed;
+                width: 100%;
+              }
               /* Riduci padding nelle celle per massimizzare lo spazio */
               #tbl-prezzi-acquisto td, #tbl-prezzi-acquisto th {
-                padding: .4rem .4rem !important;
-                vertical-align: middle;
+                padding: .5rem .4rem !important;
+                vertical-align: top !important;
               }
               /* Rendi gli input in tabella molto compatti */
               #tbl-prezzi-acquisto .qk-form-control,
@@ -167,7 +172,7 @@
               }
             </style>
 
-            <div class="qk-table-wrap">
+            <div class="qk-table-wrap" style="min-height: 320px;">
               <!-- Empty State -->
               <div id="pl-empty-acquisto" class="text-center py-5 qk-text-muted" <?= !empty($items) ? 'style="display:none"' : '' ?>>
                 <i class="fa-solid fa-file-spreadsheet fs-2 mb-2"></i>
@@ -192,19 +197,24 @@
                 <tbody id="pl-tbody-acquisto">
                   <?php foreach ($items as $item): ?>
                     <tr class="pl-riga" data-riga-id="<?= (int)$item['id'] ?>"
-                        data-prodotto-id="<?= (int)$item['prodotto_id'] ?>"
-                        data-sku-fornitore="<?= e($item['sku_fornitore'] ?? '') ?>"
-                        data-qmin="<?= (float)$item['quantita_minima'] ?>"
-                        data-prezzo="<?= (float)$item['prezzo'] ?>"
-                        data-sconto="<?= (float)$item['sconto_perc'] ?>"
-                        data-valido-dal="<?= e($item['valido_dal'] ?? '') ?>"
-                        data-valido-al="<?= e($item['valido_al'] ?? '') ?>"
-                        data-note="<?= e($item['note'] ?? '') ?>">
+                         data-prodotto-id="<?= (int)$item['prodotto_id'] ?>"
+                         data-prodotto-nome="<?= e($item['prodotto_nome']) ?>"
+                         data-sku="<?= e($item['sku_interno']) ?>"
+                         data-sku-fornitore="<?= e($item['sku_fornitore'] ?? '') ?>"
+                         data-qmin="<?= (float)$item['quantita_minima'] ?>"
+                         data-prezzo="<?= (float)$item['prezzo'] ?>"
+                         data-sconto="<?= (float)$item['sconto_perc'] ?>"
+                         data-valido-dal="<?= e($item['valido_dal'] ?? '') ?>"
+                         data-valido-al="<?= e($item['valido_al'] ?? '') ?>"
+                         data-note="<?= e($item['note'] ?? '') ?>">
                       <td>
                         <div class="pl-view">
                           <a href="<?= url('products/edit?id=' . $item['prodotto_id']) ?>" class="fw-semibold qk-text-accent" tabindex="-1">
                             <?= e($item['prodotto_nome']) ?>
                           </a>
+                          <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+                            <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
+                          </div>
                         </div>
                       </td>
                       <td><code><?= e($item['sku_interno']) ?></code></td>
@@ -244,14 +254,9 @@
                         <input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" value="<?= e($item['note'] ?? '') ?>">
                       </td>
                       <td>
-                        <div class="pl-view d-flex gap-1 justify-content-end">
-                          <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-edit-riga" title="Modifica"><i class="fa-solid fa-pencil"></i></button>
-                          <button type="button" class="btn-qk btn-qk-danger btn-qk-sm px-2 btn-delete-riga" title="Rimuovi"><i class="fa-solid fa-trash-can"></i></button>
-                        </div>
-                        <div class="pl-edit d-flex gap-1 justify-content-end">
-                          <button type="button" class="btn-qk btn-qk-success btn-qk-sm px-2 btn-confirm-riga" title="Salva"><i class="fa-solid fa-check"></i></button>
-                          <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-cancel-riga" title="Annulla"><i class="fa-solid fa-xmark"></i></button>
-                        </div>
+                        <button type="button" class="btn-qk btn-qk-danger btn-qk-sm px-2 btn-delete-riga" title="Rimuovi" style="vertical-align: middle;">
+                          <i class="fa-solid fa-trash-can"></i>
+                        </button>
                       </td>
                     </tr>
                   <?php endforeach; ?>
@@ -307,6 +312,9 @@
           <button type="button" class="qk-m2o-clear d-none r-prodotto-clear">&times;</button>
           <div class="qk-m2o-dropdown" style="position:absolute;z-index:100;background:var(--qk-card-bg);border:1px solid var(--qk-card-border);max-height:200px;overflow-y:auto;width:100%"></div>
         </div>
+        <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+          <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
+        </div>
       </div>
     </td>
     <td><code class="r-sku-label">—</code></td>
@@ -322,10 +330,9 @@
     </td>
     <td><input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" placeholder="Note prezzo"></td>
     <td>
-      <div class="pl-edit d-flex gap-1 justify-content-end">
-        <button type="button" class="btn-qk btn-qk-success btn-qk-sm px-2 btn-confirm-riga" title="Salva"><i class="fa-solid fa-check"></i></button>
-        <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-cancel-riga" title="Annulla"><i class="fa-solid fa-xmark"></i></button>
-      </div>
+      <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-cancel-riga" title="Annulla (Esc)" style="vertical-align: middle;">
+        <i class="fa-solid fa-trash-can"></i>
+      </button>
     </td>
   </tr>
 </template>
@@ -367,6 +374,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const empty = document.getElementById('pl-empty-acquisto');
     const tpl = document.getElementById('pl-tpl-new-acquisto');
 
+    // Run duplicate check on load
+    setTimeout(runBusinessValidations, 200);
+
     document.getElementById('btn-add-riga-acquisto').addEventListener('click', () => {
       tbody.querySelectorAll('.pl-riga.is-editing').forEach(tr => cancelEdit(tr));
       addNewRow();
@@ -374,40 +384,229 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function addNewRow() {
       const fragment = tpl.content.cloneNode(true);
-      tbody.appendChild(fragment);
-      const newTr = tbody.lastElementChild;
+      tbody.prepend(fragment);
+      const newTr = tbody.firstElementChild;
       syncEmpty();
       initNewRowM2O(newTr);
       newTr.querySelector('.r-prodotto-label')?.focus();
       newTr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    /* ════════════════════════════════════════════════════
+       CLICK-TO-EDIT & CELL FOCUS TRIGGER
+    ════════════════════════════════════════════════════ */
     tbody.addEventListener('click', function (e) {
+      const td = e.target.closest('td');
+      if (!td) return;
+      const tr = td.closest('tr.pl-riga');
+      if (!tr) return;
+
+      if (e.target.closest('.btn-qk')) {
+        if (e.target.closest('.btn-confirm-riga')) { confirmEdit(tr); }
+        else if (e.target.closest('.btn-cancel-riga')) { cancelEdit(tr); }
+        else if (e.target.closest('.btn-delete-riga')) { deleteRow(tr); }
+        return;
+      }
+      if (e.target.closest('a')) return;
+
+      if (!tr.classList.contains('is-editing')) {
+        enterEdit(tr);
+      }
+
+      const input = td.querySelector('input, select');
+      if (input && document.activeElement !== input) {
+        input.focus();
+        if (input.select && input.tagName !== 'SELECT') input.select();
+      }
+    });
+
+    tbody.addEventListener('focusin', function (e) {
+      const tr = e.target.closest('tr.pl-riga');
+      if (tr && !tr.classList.contains('is-editing')) {
+        enterEdit(tr);
+      }
+    });
+
+    /* ════════════════════════════════════════════════════
+       IMMEDIATE AUTOSAVE ON BLUR (FOCUSOUT FROM ROW)
+    ════════════════════════════════════════════════════ */
+    tbody.addEventListener('focusout', function (e) {
       const tr = e.target.closest('tr.pl-riga');
       if (!tr) return;
 
-      if (e.target.closest('.btn-edit-riga')) { enterEdit(tr); }
-      else if (e.target.closest('.btn-confirm-riga')) { confirmEdit(tr); }
-      else if (e.target.closest('.btn-cancel-riga')) { cancelEdit(tr); }
-      else if (e.target.closest('.btn-delete-riga')) { deleteRow(tr); }
+      const nextFocused = e.relatedTarget;
+      if (!nextFocused || nextFocused.closest('tr.pl-riga') !== tr) {
+        if (nextFocused && nextFocused.closest('.btn-cancel-riga, .btn-delete-riga')) {
+          return;
+        }
+
+        const hasDirty = tr.querySelectorAll('.is-dirty').length > 0;
+        const isNew = tr.dataset.rigaId === '0';
+
+        if (hasDirty || (isNew && tr.querySelector('.r-prodotto-id')?.value)) {
+          confirmEdit(tr);
+        } else if (isNew && !tr.querySelector('.r-prodotto-id')?.value) {
+          const searchVal = tr.querySelector('.r-prodotto-label')?.value?.trim() || '';
+          const prezzoVal = tr.querySelector('.r-prezzo')?.value?.trim() || '';
+          const qminVal   = tr.querySelector('.r-qmin')?.value?.trim() || '0';
+          const scontoVal = tr.querySelector('.r-sconto')?.value?.trim() || '0';
+          const noteVal   = tr.querySelector('.r-note')?.value?.trim() || '';
+
+          const isFullyEmpty = (searchVal === '') && 
+                               (prezzoVal === '' || parseFloat(prezzoVal) === 0) &&
+                               (qminVal === '' || parseFloat(qminVal) === 0) &&
+                               (scontoVal === '' || parseFloat(scontoVal) === 0) &&
+                               (noteVal === '');
+
+          if (isFullyEmpty) {
+            cancelEdit(tr);
+          }
+        } else {
+          tr.classList.remove('is-editing');
+        }
+      }
     });
 
-    tbody.addEventListener('keydown', function (e) {
-      const tr = e.target.closest('tr.pl-riga.is-editing');
+    /* ════════════════════════════════════════════════════
+       DIRTY STATE TRACKING
+    ════════════════════════════════════════════════════ */
+    function checkInputDirty(input) {
+      const tr = input.closest('tr.pl-riga');
       if (!tr) return;
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        confirmEdit(tr);
+
+      let isDirty = false;
+      const val = input.value.trim();
+
+      if (input.classList.contains('r-sku-forn')) {
+        isDirty = val !== (tr.dataset.skuFornitore || '');
+      } else if (input.classList.contains('r-qmin')) {
+        isDirty = parseFloat(val || 0) !== parseFloat(tr.dataset.qmin || 0);
+      } else if (input.classList.contains('r-prezzo')) {
+        isDirty = parseFloat(val || 0) !== parseFloat(tr.dataset.prezzo || 0);
+      } else if (input.classList.contains('r-sconto')) {
+        isDirty = parseFloat(val || 0) !== parseFloat(tr.dataset.sconto || 0);
+      } else if (input.classList.contains('r-valido-dal')) {
+        isDirty = val !== (tr.dataset.validoDal || '');
+      } else if (input.classList.contains('r-valido-al')) {
+        isDirty = val !== (tr.dataset.validoAl || '');
+      } else if (input.classList.contains('r-note')) {
+        isDirty = val !== (tr.dataset.note || '');
       }
+
+      if (isDirty) {
+        input.classList.add('is-dirty');
+        input.style.backgroundColor = '#fef08a'; // Tailwind yellow-200
+        input.style.fontStyle = 'italic';
+      } else {
+        input.classList.remove('is-dirty');
+        input.style.backgroundColor = '';
+        input.style.fontStyle = '';
+      }
+    }
+
+    tbody.addEventListener('input', function (e) {
+      if (e.target.matches('input, select')) {
+        checkInputDirty(e.target);
+        runBusinessValidations();
+      }
+    });
+
+    tbody.addEventListener('change', function (e) {
+      if (e.target.matches('input, select')) {
+        checkInputDirty(e.target);
+        runBusinessValidations();
+      }
+    });
+
+    /* ════════════════════════════════════════════════════
+       KEYBOARD Navigation and events
+    ════════════════════════════════════════════════════ */
+    tbody.addEventListener('keydown', function (e) {
+      const input = e.target;
+      const tr = input.closest('tr.pl-riga');
+      if (!tr) return;
+
+      // Up/Down Arrows navigation
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (!input.matches('input, select') || input.tagName === 'SELECT') return;
+        if (input.classList.contains('r-prodotto-label')) {
+          const m2oDropdown = input.closest('.qk-m2o-wrap')?.querySelector('.qk-m2o-dropdown');
+          if (m2oDropdown && m2oDropdown.classList.contains('open')) return;
+        }
+
+        e.preventDefault();
+        const targetTr = (e.key === 'ArrowUp') ? tr.previousElementSibling : tr.nextElementSibling;
+        if (targetTr && targetTr.classList.contains('pl-riga')) {
+          const classes = Array.from(input.classList).filter(c => c.startsWith('r-') || c.startsWith('pl-'));
+          for (const cls of classes) {
+            const targetInput = targetTr.querySelector('.' + cls);
+            if (targetInput) {
+              enterEdit(targetTr);
+              targetInput.focus();
+              if (targetInput.select) targetInput.select();
+              break;
+            }
+          }
+        }
+        return;
+      }
+
+      // Tab on note -> save and go to next or new row
+      if (e.key === 'Tab' && input.classList.contains('r-note') && !e.shiftKey) {
+        e.preventDefault();
+        confirmEdit(tr).then((success) => {
+          if (success) {
+            const nextTr = tr.nextElementSibling;
+            if (nextTr && nextTr.classList.contains('pl-riga')) {
+              enterEdit(nextTr);
+              nextTr.querySelector('.qk-form-control')?.focus();
+            } else {
+              addNewRow();
+            }
+          }
+        });
+        return;
+      }
+
+      // Enter key -> Save and go to next or new row
+      if (e.key === 'Enter' && !e.shiftKey) {
+        if (input.classList.contains('r-prodotto-label')) {
+          const m2oDropdown = input.closest('.qk-m2o-wrap')?.querySelector('.qk-m2o-dropdown');
+          if (m2oDropdown && m2oDropdown.classList.contains('open')) return;
+        }
+        e.preventDefault();
+        confirmEdit(tr).then((success) => {
+          if (success) {
+            const nextTr = tr.nextElementSibling;
+            if (nextTr && nextTr.classList.contains('pl-riga')) {
+              enterEdit(nextTr);
+              nextTr.querySelector('.qk-form-control')?.focus();
+            } else {
+              addNewRow();
+            }
+          }
+        });
+        return;
+      }
+
+      // Escape -> Discard
       if (e.key === 'Escape') {
         e.preventDefault();
         cancelEdit(tr);
+        return;
       }
     });
 
     function enterEdit(tr) {
       tbody.querySelectorAll('.pl-riga.is-editing').forEach(other => {
-        if (other !== tr) cancelEdit(other);
+        if (other !== tr) {
+          const otherDirty = other.querySelectorAll('.is-dirty').length > 0;
+          if (otherDirty) {
+            confirmEdit(other);
+          } else {
+            cancelEdit(other);
+          }
+        }
       });
       // Popola gli input con i dataset
       tr.querySelector('.r-sku-forn').value = tr.dataset.skuFornitore || '';
@@ -417,8 +616,14 @@ document.addEventListener('DOMContentLoaded', function () {
       tr.querySelector('.r-valido-dal').value = tr.dataset.validoDal || '';
       tr.querySelector('.r-valido-al').value = tr.dataset.validoAl || '';
       tr.querySelector('.r-note').value = tr.dataset.note || '';
+
+      tr.querySelectorAll('.qk-form-control').forEach(input => {
+        input.classList.remove('is-dirty');
+        input.style.backgroundColor = '';
+        input.style.fontStyle = '';
+      });
+
       tr.classList.add('is-editing');
-      tr.querySelector('.r-sku-forn')?.focus();
     }
 
     async function confirmEdit(tr) {
@@ -426,11 +631,18 @@ document.addEventListener('DOMContentLoaded', function () {
       const prodottoId = isNew ? tr.querySelector('.r-prodotto-id').value : tr.dataset.prodottoId;
       const prezzo = tr.querySelector('.r-prezzo').value.trim();
 
-      if (!prodottoId) { flashRow(tr, 'Seleziona un prodotto.'); return; }
-      if (!prezzo || isNaN(parseFloat(prezzo))) { flashRow(tr, 'Inserisci un prezzo valido.'); return; }
+      if (!prodottoId) { flashRow(tr, 'Seleziona un prodotto.'); return false; }
+      if (!prezzo || isNaN(parseFloat(prezzo))) { flashRow(tr, 'Inserisci un prezzo valido.'); return false; }
+
+      // Check duplicates before saving
+      runBusinessValidations();
+      if (tr.dataset.hasDuplicate === 'true') {
+        flashRow(tr, 'Articolo duplicato con lo stesso scaglione di quantità. Salvo bloccato.');
+        return false;
+      }
 
       const btn = tr.querySelector('.btn-confirm-riga');
-      btn.classList.add('is-saving');
+      if (btn) btn.classList.add('is-saving');
 
       try {
         const res = await fetch(BASE + '/purchases/pricelists/righe/save', {
@@ -452,17 +664,20 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         const d = await res.json();
-        if (!d.ok) { flashRow(tr, d.error || 'Errore durante il salvataggio.'); return; }
+        if (!d.ok) { flashRow(tr, d.error || 'Errore durante il salvataggio.'); return false; }
 
         applyRigaData(tr, d.riga);
         tr.classList.remove('is-editing');
         tr.classList.add('pl-riga-saved');
         setTimeout(() => tr.classList.remove('pl-riga-saved'), 800);
         syncEmpty();
+        runBusinessValidations();
+        return true;
       } catch (err) {
         flashRow(tr, 'Errore di rete.');
+        return false;
       } finally {
-        btn.classList.remove('is-saving');
+        if (btn) btn.classList.remove('is-saving');
       }
     }
 
@@ -471,8 +686,22 @@ document.addEventListener('DOMContentLoaded', function () {
         tr.remove();
       } else {
         tr.classList.remove('is-editing');
+        tr.querySelector('.r-sku-forn').value = tr.dataset.skuFornitore || '';
+        tr.querySelector('.r-qmin').value = tr.dataset.qmin || '0';
+        tr.querySelector('.r-prezzo').value = tr.dataset.prezzo || '';
+        tr.querySelector('.r-sconto').value = tr.dataset.sconto || '0';
+        tr.querySelector('.r-valido-dal').value = tr.dataset.validoDal || '';
+        tr.querySelector('.r-valido-al').value = tr.dataset.validoAl || '';
+        tr.querySelector('.r-note').value = tr.dataset.note || '';
+
+        tr.querySelectorAll('.qk-form-control').forEach(input => {
+          input.classList.remove('is-dirty');
+          input.style.backgroundColor = '';
+          input.style.fontStyle = '';
+        });
       }
       syncEmpty();
+      runBusinessValidations();
     }
 
     async function deleteRow(tr) {
@@ -487,6 +716,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (d.ok) {
           tr.remove();
           syncEmpty();
+          runBusinessValidations();
         } else {
           alert(d.error || 'Errore durante l\'eliminazione.');
         }
@@ -498,6 +728,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function applyRigaData(tr, r) {
       tr.dataset.rigaId = r.id;
       tr.dataset.prodottoId = r.prodotto_id;
+      tr.dataset.prodottoNome = r.prodotto_nome || '';
+      tr.dataset.sku = r.sku_interno || '';
       tr.dataset.skuFornitore = r.sku_fornitore || '';
       tr.dataset.qmin = r.quantita_minima;
       tr.dataset.prezzo = r.prezzo;
@@ -513,6 +745,9 @@ document.addEventListener('DOMContentLoaded', function () {
         <td>
           <div class="pl-view">
             <a href="${BASE}/products/edit?id=${r.prodotto_id}" class="fw-semibold qk-text-accent" tabindex="-1">${escapeHtml(r.prodotto_nome)}</a>
+            <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+              <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
+            </div>
           </div>
         </td>
         <td><code>${escapeHtml(r.sku_interno)}</code></td>
@@ -548,16 +783,47 @@ document.addEventListener('DOMContentLoaded', function () {
           <input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" value="${escapeHtml(r.note || '')}">
         </td>
         <td>
-          <div class="pl-view d-flex gap-1 justify-content-end">
-            <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-edit-riga" title="Modifica"><i class="fa-solid fa-pencil"></i></button>
-            <button type="button" class="btn-qk btn-qk-danger btn-qk-sm px-2 btn-delete-riga" title="Rimuovi"><i class="fa-solid fa-trash-can"></i></button>
-          </div>
-          <div class="pl-edit d-flex gap-1 justify-content-end">
-            <button type="button" class="btn-qk btn-qk-success btn-qk-sm px-2 btn-confirm-riga" title="Salva"><i class="fa-solid fa-check"></i></button>
-            <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-cancel-riga" title="Annulla"><i class="fa-solid fa-xmark"></i></button>
-          </div>
+          <button type="button" class="btn-qk btn-qk-danger btn-qk-sm px-2 btn-delete-riga" title="Rimuovi" style="vertical-align: middle;">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
         </td>
       `;
+    }
+
+    /* ════════════════════════════════════════════════════
+       BUSINESS VALIDATIONS (DUPLICATES)
+    ════════════════════════════════════════════════════ */
+    function runBusinessValidations() {
+      const rows = Array.from(tbody.querySelectorAll('tr.pl-riga'));
+      
+      const countMap = {};
+      rows.forEach(tr => {
+        const pid = tr.querySelector('.r-prodotto-id')?.value || tr.dataset.prodottoId;
+        const qminInput = tr.querySelector('.r-qmin');
+        const qminVal = qminInput ? qminInput.value : tr.dataset.qmin;
+        const qmin = parseFloat(qminVal || 0).toFixed(3);
+        
+        if (pid && pid !== '0') {
+          const key = `${pid}_${qmin}`;
+          if (!countMap[key]) countMap[key] = [];
+          countMap[key].push(tr);
+        }
+      });
+      
+      rows.forEach(tr => {
+        tr.querySelectorAll('.pl-duplicate-warning').forEach(el => el.style.display = 'none');
+        tr.dataset.hasDuplicate = 'false';
+      });
+      
+      Object.keys(countMap).forEach(key => {
+        const collisionRows = countMap[key];
+        if (collisionRows.length > 1) {
+          collisionRows.forEach(tr => {
+            tr.querySelectorAll('.pl-duplicate-warning').forEach(el => el.style.display = 'block');
+            tr.dataset.hasDuplicate = 'true';
+          });
+        }
+      });
     }
 
     function initNewRowM2O(tr) {
@@ -574,6 +840,7 @@ document.addEventListener('DOMContentLoaded', function () {
         onSelect: (id, item) => {
           if (item) {
             tr.querySelector('.r-sku-label').textContent = item.sku || '—';
+            runBusinessValidations();
             setTimeout(() => tr.querySelector('.r-sku-forn')?.focus(), 50);
           } else {
             tr.querySelector('.r-sku-label').textContent = '—';
@@ -605,6 +872,24 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!str) return '';
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
+
+    /* ── Filtro di ricerca client-side ── */
+    document.getElementById('pl-grid-search-acquisto')?.addEventListener('input', function (e) {
+      const q = e.target.value.toLowerCase().trim();
+      tbody.querySelectorAll('tr.pl-riga').forEach(tr => {
+        if (tr.classList.contains('is-editing')) {
+          tr.style.display = '';
+          return;
+        }
+        const nome = (tr.dataset.prodottoNome || '').toLowerCase();
+        const sku = (tr.dataset.sku || '').toLowerCase();
+        if (nome.includes(q) || sku.includes(q)) {
+          tr.style.display = '';
+        } else {
+          tr.style.display = 'none';
+        }
+      });
+    });
   }
 });
 </script>

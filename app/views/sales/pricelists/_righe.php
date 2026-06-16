@@ -12,28 +12,35 @@
 .pl-riga.is-editing .pl-view       { display: none !important; }
 
 /* ── Layout tabella ── */
-#tbl-prezzi { table-layout: fixed; }
-#tbl-prezzi .pl-td-product { width: auto; min-width: 200px; }
-#tbl-prezzi .pl-td-um      { width: 60px;  }
-#tbl-prezzi .pl-td-num     { width: 130px; text-align: right; }
-#tbl-prezzi .pl-td-note    { width: 180px; }
-#tbl-prezzi .pl-td-actions { width: 72px;  text-align: right; }
+#tbl-prezzi { table-layout: fixed; width: 100%; }
+#tbl-prezzi .pl-td-product { width: 35%; min-width: 220px; }
+#tbl-prezzi .pl-td-um      { width: 65px;  }
+#tbl-prezzi .pl-td-qmin    { width: 100px; text-align: right; }
+#tbl-prezzi .pl-td-prezzo  { width: 120px; text-align: right; }
+#tbl-prezzi .pl-td-sconto  { width: 90px;  text-align: right; }
+#tbl-prezzi .pl-td-note    { width: auto; min-width: 150px; }
+#tbl-prezzi .pl-td-actions { width: 44px;  text-align: right; }
+
+#tbl-prezzi td, #tbl-prezzi th {
+  vertical-align: top !important;
+  padding: .5rem .4rem !important;
+}
 
 /* ── Stile celle view ── */
 .pl-sku {
   font-family: monospace;
-  font-size: .75rem;
+  font-size: .72rem;
   color: var(--qk-text-muted);
   margin-top: 1px;
 }
 .pl-num {
   font-family: monospace;
-  font-size: .875rem;
+  font-size: .82rem;
   display: block;
-  padding: .35rem .5rem;
+  padding: .2rem .35rem;
 }
 .pl-note-val {
-  font-size: .82rem;
+  font-size: .8rem;
   color: var(--qk-text-muted);
 }
 .pl-um-label {
@@ -44,9 +51,9 @@
 /* ── Input dentro la cella ── */
 .pl-input {
   width: 100%;
-  padding: .28rem .45rem;
-  font-size: .875rem;
-  line-height: 1.4;
+  padding: .2rem .35rem;
+  font-size: .82rem;
+  line-height: 1.3;
   background: var(--qk-card-bg);
   border: 1px solid var(--qk-card-border);
   border-radius: var(--qk-radius-sm);
@@ -54,6 +61,8 @@
   outline: none;
   transition: border-color .12s, box-shadow .12s;
   text-align: right;
+  height: auto !important;
+  min-height: 0 !important;
 }
 .pl-input:focus {
   border-color: var(--qk-accent);
@@ -130,25 +139,27 @@
 #pl-empty i { font-size: 2rem; opacity: .4; }
 #pl-empty p { margin: 0; font-size: .875rem; }
 
-/* ── M2O dentro cella nuova riga ── */
-.pl-riga .qk-m2o-wrap  { position: relative; }
-.pl-riga .qk-m2o-clear { position: absolute; right: .5rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--qk-text-muted); font-size: 1rem; padding: 0; line-height: 1; }
-.pl-riga .qk-m2o-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 600; background: var(--qk-card-bg); border: 1px solid var(--qk-card-border); border-radius: var(--qk-radius); box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 240px; overflow-y: auto; display: none; }
-.pl-riga .qk-m2o-dropdown.open { display: block; }
+
 </style>
 
 <!-- ── Card tabella ── -->
 <div class="qk-card shadow-sm">
-  <div class="qk-card-header">
-    <span class="qk-card-title">
+  <div class="qk-card-header d-flex justify-content-between align-items-center">
+    <span class="qk-card-title m-0">
       <i class="fa-solid fa-badge-percent me-2" style="color:var(--qk-accent)"></i>Prezzi prodotto
     </span>
-    <button type="button" id="btn-add-riga" class="btn-qk btn-qk-primary btn-qk-sm">
-      <i class="fa-solid fa-plus me-1"></i>Aggiungi prodotto
-    </button>
+    <div class="d-flex align-items-center gap-2">
+      <input type="text" id="pl-grid-search" class="pl-input" placeholder="Filtra per nome o SKU..." style="width: 220px; padding: .25rem .5rem; font-size: .8rem; margin: 0; text-align: left;">
+      <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaPrezziSales">
+        <i class="fa-solid fa-file-import me-1"></i>Importa (XLSX)
+      </button>
+      <button type="button" id="btn-add-riga" class="btn-qk btn-qk-primary btn-qk-sm">
+        <i class="fa-solid fa-plus me-1"></i>Aggiungi prodotto
+      </button>
+    </div>
   </div>
 
-  <div class="qk-table-wrap" style="min-height:0">
+  <div class="qk-table-wrap" style="min-height: 320px;">
     <!-- Empty state -->
     <?php if (empty($items)): ?>
     <div id="pl-empty">
@@ -159,6 +170,15 @@
     <?php endif; ?>
 
     <table class="qk-table" id="tbl-prezzi" <?= empty($items) ? 'style="display:none"' : '' ?>>
+      <colgroup>
+        <col class="pl-td-product">
+        <col class="pl-td-um">
+        <col class="pl-td-qmin">
+        <col class="pl-td-prezzo">
+        <col class="pl-td-sconto">
+        <col class="pl-td-note">
+        <col class="pl-td-actions">
+      </colgroup>
       <thead>
         <tr>
           <th>Prodotto</th>
@@ -201,15 +221,15 @@
       </select>
     </td>
 
-    <td class="pl-td-num">
+    <td class="pl-td-qmin">
       <input class="pl-edit pl-input r-qmin" type="number" min="0" step="0.001" value="0" placeholder="0">
     </td>
 
-    <td class="pl-td-num">
+    <td class="pl-td-prezzo">
       <input class="pl-edit pl-input r-prezzo" type="number" min="0" step="0.0001" placeholder="0.0000">
     </td>
 
-    <td class="pl-td-num">
+    <td class="pl-td-sconto">
       <input class="pl-edit pl-input r-sconto" type="number" min="0" max="100" step="0.01" value="0" placeholder="0">
     </td>
 
@@ -218,14 +238,9 @@
     </td>
 
     <td class="pl-td-actions">
-      <div class="pl-edit pl-actions-edit">
-        <button type="button" class="pl-btn-icon pl-btn-confirm btn-confirm-riga" title="Salva (Invio)">
-          <i class="fa-solid fa-check"></i>
-        </button>
-        <button type="button" class="pl-btn-icon pl-btn-cancel btn-cancel-riga" title="Annulla (Esc)">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
+      <button type="button" class="pl-btn-icon pl-btn-cancel btn-cancel-riga" title="Annulla (Esc)">
+        <i class="fa-solid fa-trash-can"></i>
+      </button>
     </td>
 
   </tr>
@@ -248,6 +263,12 @@ document.addEventListener('DOMContentLoaded', function () {
   /* ════════════════════════════════════════════════════
      AGGIUNGI NUOVA RIGA
   ════════════════════════════════════════════════════ */
+  // Run business validations on load
+  setTimeout(runBusinessValidations, 200);
+
+  /* ════════════════════════════════════════════════════
+     AGGIUNGI NUOVA RIGA
+  ════════════════════════════════════════════════════ */
   document.getElementById('btn-add-riga').addEventListener('click', () => {
     // Chiudi eventuale riga già in editing
     tbody.querySelectorAll('.pl-riga.is-editing').forEach(tr => cancelEdit(tr));
@@ -256,41 +277,217 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function addNewRow() {
     const fragment = tpl.content.cloneNode(true);
-    const tr = fragment.querySelector('tr');
-    tbody.appendChild(fragment);
+    tbody.prepend(fragment);
+    const newTr = tbody.firstElementChild;
     syncEmpty();
-    initNewRowM2O(tbody.lastElementChild);
-    tbody.lastElementChild.querySelector('.r-prodotto-label')?.focus();
-    scrollToRow(tbody.lastElementChild);
+    initNewRowM2O(newTr);
+    newTr.querySelector('.r-prodotto-label')?.focus();
+    scrollToRow(newTr);
   }
 
   /* ════════════════════════════════════════════════════
-     DELEGAZIONE CLICK sul tbody
+     CLICK-TO-EDIT & CELL FOCUS TRIGGER
   ════════════════════════════════════════════════════ */
   tbody.addEventListener('click', function (e) {
-    const tr = e.target.closest('tr.pl-riga');
+    const td = e.target.closest('td');
+    if (!td) return;
+    const tr = td.closest('tr.pl-riga');
     if (!tr) return;
 
-    if (e.target.closest('.btn-edit-riga'))    { enterEdit(tr); return; }
-    if (e.target.closest('.btn-confirm-riga')) { confirmEdit(tr); return; }
-    if (e.target.closest('.btn-cancel-riga'))  { cancelEdit(tr); return; }
-    if (e.target.closest('.btn-delete-riga'))  { deleteRow(tr); return; }
+    // Se stiamo cliccando su bottoni di azione o link
+    if (e.target.closest('.pl-btn-icon')) {
+      if (e.target.closest('.btn-confirm-riga')) { confirmEdit(tr); }
+      else if (e.target.closest('.btn-cancel-riga')) { cancelEdit(tr); }
+      else if (e.target.closest('.btn-delete-riga')) { deleteRow(tr); }
+      return;
+    }
+    if (e.target.closest('a')) return;
+
+    if (!tr.classList.contains('is-editing')) {
+      enterEdit(tr);
+    }
+
+    const input = td.querySelector('input, select');
+    if (input && document.activeElement !== input) {
+      input.focus();
+      if (input.select && input.tagName !== 'SELECT') input.select();
+    }
+  });
+
+  tbody.addEventListener('focusin', function (e) {
+    const tr = e.target.closest('tr.pl-riga');
+    if (tr && !tr.classList.contains('is-editing')) {
+      enterEdit(tr);
+    }
   });
 
   /* ════════════════════════════════════════════════════
-     KEYBOARD: Invio salva, Esc annulla, Tab naviga
+     IMMEDIATE AUTOSAVE ON BLUR (FOCUSOUT FROM ROW)
   ════════════════════════════════════════════════════ */
-  tbody.addEventListener('keydown', function (e) {
-    const tr = e.target.closest('tr.pl-riga.is-editing');
+  tbody.addEventListener('focusout', function (e) {
+    const tr = e.target.closest('tr.pl-riga');
     if (!tr) return;
 
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      confirmEdit(tr);
+    const nextFocused = e.relatedTarget;
+    // Se il focus si sposta fuori da questa riga
+    if (!nextFocused || nextFocused.closest('tr.pl-riga') !== tr) {
+      // Se l'elemento correlato è il pulsante Annulla/Rimuovi della stessa riga, non salvare automaticamente
+      if (nextFocused && nextFocused.closest('.btn-cancel-riga, .btn-delete-riga')) {
+        return;
+      }
+      
+      const hasDirty = tr.querySelectorAll('.is-dirty').length > 0;
+      const isNew = tr.dataset.rigaId === '0';
+
+      if (hasDirty || (isNew && tr.querySelector('.r-prodotto-id')?.value)) {
+        confirmEdit(tr);
+      } else if (isNew && !tr.querySelector('.r-prodotto-id')?.value) {
+        const searchVal = tr.querySelector('.r-prodotto-label')?.value?.trim() || '';
+        const prezzoVal = tr.querySelector('.r-prezzo')?.value?.trim() || '';
+        const qminVal   = tr.querySelector('.r-qmin')?.value?.trim() || '0';
+        const scontoVal = tr.querySelector('.r-sconto')?.value?.trim() || '0';
+        const noteVal   = tr.querySelector('.r-note')?.value?.trim() || '';
+
+        const isFullyEmpty = (searchVal === '') && 
+                             (prezzoVal === '' || parseFloat(prezzoVal) === 0) &&
+                             (qminVal === '' || parseFloat(qminVal) === 0 || parseFloat(qminVal) === 0) &&
+                             (scontoVal === '' || parseFloat(scontoVal) === 0) &&
+                             (noteVal === '');
+
+        if (isFullyEmpty) {
+          cancelEdit(tr);
+        }
+      } else {
+        tr.classList.remove('is-editing');
+      }
     }
+  });
+
+  /* ════════════════════════════════════════════════════
+     DIRTY STATE TRACKING
+  ════════════════════════════════════════════════════ */
+  function checkInputDirty(input) {
+    const tr = input.closest('tr.pl-riga');
+    if (!tr) return;
+
+    let isDirty = false;
+    const val = input.value.trim();
+
+    if (input.classList.contains('r-qmin')) {
+      isDirty = parseFloat(val || 0) !== parseFloat(tr.dataset.qmin || 0);
+    } else if (input.classList.contains('r-prezzo')) {
+      isDirty = parseFloat(val || 0) !== parseFloat(tr.dataset.prezzo || 0);
+    } else if (input.classList.contains('r-sconto')) {
+      isDirty = parseFloat(val || 0) !== parseFloat(tr.dataset.sconto || 0);
+    } else if (input.classList.contains('r-note')) {
+      isDirty = val !== (tr.dataset.note || '');
+    } else if (input.classList.contains('r-unita-misura-id')) {
+      const savedUom = tr.dataset.uomSelectedId || tr.dataset.uomStockId || '';
+      isDirty = val !== savedUom;
+    }
+
+    if (isDirty) {
+      input.classList.add('is-dirty');
+      input.style.backgroundColor = '#fef08a'; // Tailwind yellow-200
+      input.style.fontStyle = 'italic';
+    } else {
+      input.classList.remove('is-dirty');
+      input.style.backgroundColor = '';
+      input.style.fontStyle = '';
+    }
+  }
+
+  tbody.addEventListener('input', function (e) {
+    if (e.target.matches('input, select')) {
+      checkInputDirty(e.target);
+      runBusinessValidations();
+    }
+  });
+
+  tbody.addEventListener('change', function (e) {
+    if (e.target.matches('input, select')) {
+      checkInputDirty(e.target);
+      runBusinessValidations();
+    }
+  });
+
+  /* ════════════════════════════════════════════════════
+     KEYBOARD: Navigation and commands
+  ════════════════════════════════════════════════════ */
+  tbody.addEventListener('keydown', function (e) {
+    const input = e.target;
+    const tr = input.closest('tr.pl-riga');
+    if (!tr) return;
+
+    // Arrow keys vertical navigation
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (!input.matches('input, select') || input.tagName === 'SELECT') return;
+      if (input.classList.contains('r-prodotto-label')) {
+        const m2oDropdown = input.closest('.qk-m2o-wrap')?.querySelector('.qk-m2o-dropdown');
+        if (m2oDropdown && m2oDropdown.classList.contains('open')) return;
+      }
+
+      e.preventDefault();
+      const targetTr = (e.key === 'ArrowUp') ? tr.previousElementSibling : tr.nextElementSibling;
+      if (targetTr && targetTr.classList.contains('pl-riga')) {
+        const classes = Array.from(input.classList).filter(c => c.startsWith('r-') || c.startsWith('pl-'));
+        for (const cls of classes) {
+          const targetInput = targetTr.querySelector('.' + cls);
+          if (targetInput) {
+            enterEdit(targetTr);
+            targetInput.focus();
+            if (targetInput.select) targetInput.select();
+            break;
+          }
+        }
+      }
+      return;
+    }
+
+    // Tab key on Note (last field) -> Save and go to next or new row
+    if (e.key === 'Tab' && input.classList.contains('r-note') && !e.shiftKey) {
+      e.preventDefault();
+      confirmEdit(tr).then((success) => {
+        if (success) {
+          const nextTr = tr.nextElementSibling;
+          if (nextTr && nextTr.classList.contains('pl-riga')) {
+            enterEdit(nextTr);
+            nextTr.querySelector('.pl-input')?.focus();
+          } else {
+            addNewRow();
+          }
+        }
+      });
+      return;
+    }
+
+    // Enter key -> Save and go to next or new row
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Don't intercept Enter if autocomplete dropdown is open
+      if (input.classList.contains('r-prodotto-label')) {
+        const m2oDropdown = input.closest('.qk-m2o-wrap')?.querySelector('.qk-m2o-dropdown');
+        if (m2oDropdown && m2oDropdown.classList.contains('open')) return;
+      }
+      e.preventDefault();
+      confirmEdit(tr).then((success) => {
+        if (success) {
+          const nextTr = tr.nextElementSibling;
+          if (nextTr && nextTr.classList.contains('pl-riga')) {
+            enterEdit(nextTr);
+            nextTr.querySelector('.pl-input')?.focus();
+          } else {
+            addNewRow();
+          }
+        }
+      });
+      return;
+    }
+
+    // Escape key -> Discard
     if (e.key === 'Escape') {
       e.preventDefault();
       cancelEdit(tr);
+      return;
     }
   });
 
@@ -299,7 +496,15 @@ document.addEventListener('DOMContentLoaded', function () {
   ════════════════════════════════════════════════════ */
   function enterEdit(tr) {
     tbody.querySelectorAll('.pl-riga.is-editing').forEach(other => {
-      if (other !== tr) cancelEdit(other);
+      if (other !== tr) {
+        // Se l'altra riga ha modifiche pendenti, la salviamo prima di chiuderla
+        const otherDirty = other.querySelectorAll('.is-dirty').length > 0;
+        if (otherDirty) {
+          confirmEdit(other);
+        } else {
+          cancelEdit(other);
+        }
+      }
     });
     // Pre-popola inputs dai data-*
     setInput(tr, '.r-qmin',   tr.dataset.qmin   ?? '0');
@@ -307,8 +512,15 @@ document.addEventListener('DOMContentLoaded', function () {
     setInput(tr, '.r-sconto', tr.dataset.sconto ?? '0');
     setInput(tr, '.r-note',   tr.dataset.note   ?? '');
     setInput(tr, '.r-unita-misura-id', tr.dataset.uomSelectedId || tr.dataset.uomStockId || '');
+    
+    // Reset inputs visual dirty markers
+    tr.querySelectorAll('.pl-input').forEach(input => {
+      input.classList.remove('is-dirty');
+      input.style.backgroundColor = '';
+      input.style.fontStyle = '';
+    });
+
     tr.classList.add('is-editing');
-    tr.querySelector('.r-qmin')?.focus();
     scrollToRow(tr);
   }
 
@@ -323,11 +535,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const prezzo = getInput(tr, '.r-prezzo');
 
-    if (!prodottoId) return flashRow(tr, 'Seleziona un prodotto.');
-    if (!prezzo || isNaN(parseFloat(prezzo))) return flashRow(tr, 'Inserisci un prezzo valido.');
+    if (!prodottoId) { flashRow(tr, 'Seleziona un prodotto.'); return false; }
+    if (!prezzo || isNaN(parseFloat(prezzo))) { flashRow(tr, 'Inserisci un prezzo valido.'); return false; }
+
+    // Run business validations and check duplicate blockers
+    runBusinessValidations();
+    if (tr.dataset.hasDuplicate === 'true') {
+      flashRow(tr, 'Articolo duplicato con lo stesso scaglione di quantità. Salvo bloccato.');
+      return false;
+    }
 
     const btn = tr.querySelector('.btn-confirm-riga');
-    btn.classList.add('is-saving');
+    if (btn) btn.classList.add('is-saving');
 
     try {
       const d = await apiPost('/sales/pricelists/righe/save', {
@@ -341,17 +560,29 @@ document.addEventListener('DOMContentLoaded', function () {
         note:             getInput(tr, '.r-note')    || '',
       });
 
-      if (!d.ok) { flashRow(tr, d.error ?? 'Errore.'); return; }
+      if (!d.ok) { flashRow(tr, d.error ?? 'Errore.'); return false; }
 
       applyRigaData(tr, d.riga);
       tr.classList.remove('is-editing', 'pl-riga-new');
       tr.dataset.rigaId = d.riga.id;
+      
+      // Reset dirty state indicators
+      tr.querySelectorAll('.pl-input').forEach(input => {
+        input.classList.remove('is-dirty');
+        input.style.backgroundColor = '';
+        input.style.fontStyle = '';
+      });
+
       tr.classList.add('pl-riga-saved');
       setTimeout(() => tr.classList.remove('pl-riga-saved'), 800);
       syncEmpty();
-
+      runBusinessValidations();
+      return true;
+    } catch (err) {
+      flashRow(tr, 'Errore di connessione o salvataggio.');
+      return false;
     } finally {
-      btn.classList.remove('is-saving');
+      if (btn) btn.classList.remove('is-saving');
     }
   }
 
@@ -363,8 +594,21 @@ document.addEventListener('DOMContentLoaded', function () {
       tr.remove();
     } else {
       tr.classList.remove('is-editing');
+      // Ripristina i valori precedenti
+      setInput(tr, '.r-qmin', tr.dataset.qmin);
+      setInput(tr, '.r-prezzo', tr.dataset.prezzo);
+      setInput(tr, '.r-sconto', tr.dataset.sconto);
+      setInput(tr, '.r-note', tr.dataset.note);
+      setInput(tr, '.r-unita-misura-id', tr.dataset.uomSelectedId || tr.dataset.uomStockId || '');
+      
+      tr.querySelectorAll('.pl-input').forEach(input => {
+        input.classList.remove('is-dirty');
+        input.style.backgroundColor = '';
+        input.style.fontStyle = '';
+      });
     }
     syncEmpty();
+    runBusinessValidations();
   }
 
   /* ════════════════════════════════════════════════════
@@ -373,8 +617,13 @@ document.addEventListener('DOMContentLoaded', function () {
   async function deleteRow(tr) {
     if (!confirm('Rimuovere questo prezzo dal listino?')) return;
     const d = await apiPost('/sales/pricelists/righe/delete', { riga_id: tr.dataset.rigaId });
-    if (d.ok) { tr.remove(); syncEmpty(); }
-    else alert(d.error ?? 'Errore.');
+    if (d.ok) { 
+      tr.remove(); 
+      syncEmpty();
+      runBusinessValidations();
+    } else {
+      alert(d.error ?? 'Errore.');
+    }
   }
 
   /* ════════════════════════════════════════════════════
@@ -397,6 +646,7 @@ document.addEventListener('DOMContentLoaded', function () {
     tr.dataset.prezzo      = r.prezzo_unitario;
     tr.dataset.sconto      = r.sconto_perc;
     tr.dataset.note        = r.note ?? '';
+    tr.dataset.costo       = r.costo ?? '0';
 
     // Aggiorna elementi view
     const link = tr.querySelector('.pl-view a.qk-text-accent');
@@ -429,9 +679,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
 
-    setText(tr, '.pl-td-num:nth-child(3) .pl-num',  fmt(r.quantita_minima, 3));
-    setText(tr, '.pl-td-num:nth-child(4) .pl-num',  fmt(r.prezzo_unitario, 4));
-    setText(tr, '.pl-td-num:nth-child(5) .pl-num',  fmt(r.sconto_perc, 2) + ' %');
+    setText(tr, '.pl-td-qmin .pl-num',  fmt(r.quantita_minima, 3));
+    setText(tr, '.pl-prezzo-val',  fmt(r.prezzo_unitario, 4));
+    setText(tr, '.pl-td-sconto .pl-num',  fmt(r.sconto_perc, 2) + ' %');
     setText(tr, '.pl-note-val', r.note ?? '');
 
     // Se è una nuova riga, costruisce gli elementi view mancanti
@@ -447,18 +697,32 @@ document.addEventListener('DOMContentLoaded', function () {
       <div class="pl-view">
         <a href="${BASE}/products/edit?id=${r.prodotto_id}" class="fw-semibold qk-text-accent" tabindex="-1">${esc(r.prodotto_nome)}</a>
         <div class="pl-sku">${esc(r.sku_interno)}</div>
+        <div class="pl-duplicate-warning text-danger fw-semibold mt-1" style="font-size: 0.75rem; display: none;">
+          <i class="fa-solid fa-triangle-exclamation me-1"></i>Articolo duplicato per questa quantità
+        </div>
       </div>
       ${tr.querySelector('.pl-td-product').innerHTML}`;
 
     setText(tr, '.pl-um-label', r.unita_misura ?? '—');
 
     // Numeri
-    ['3','4','5'].forEach((n, i) => {
-      const td = tr.querySelector(`.pl-td-num:nth-child(${n})`);
-      if (!td) return;
-      const vals = [fmt(r.quantita_minima,3), fmt(r.prezzo_unitario,4), fmt(r.sconto_perc,2)+' %'];
-      td.insertAdjacentHTML('afterbegin', `<span class="pl-view pl-num">${vals[i]}</span>`);
-    });
+    const tdQmin = tr.querySelector('.pl-td-qmin');
+    if (tdQmin) tdQmin.insertAdjacentHTML('afterbegin', `<span class="pl-view pl-num">${fmt(r.quantita_minima,3)}</span>`);
+
+    const tdPrezzo = tr.querySelector('.pl-td-prezzo');
+    if (tdPrezzo) {
+      tdPrezzo.insertAdjacentHTML('afterbegin', `
+        <div class="pl-view">
+          <span class="pl-num pl-prezzo-val">${fmt(r.prezzo_unitario,4)}</span>
+        </div>`);
+      tdPrezzo.insertAdjacentHTML('beforeend', `
+        <div class="pl-sottocosto-warning text-warning fw-semibold mt-1" style="font-size: 0.75rem; text-align: right; display: none;">
+          <i class="fa-solid fa-triangle-exclamation me-1"></i>Sottocosto (<span class="pl-costo-val">0.00</span> €)
+        </div>`);
+    }
+
+    const tdSconto = tr.querySelector('.pl-td-sconto');
+    if (tdSconto) tdSconto.insertAdjacentHTML('afterbegin', `<span class="pl-view pl-num">${fmt(r.sconto_perc,2)} %</span>`);
 
     // Note
     const tdNote = tr.querySelector('.pl-td-note');
@@ -466,15 +730,75 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Actions view
     const tdActions = tr.querySelector('.pl-td-actions');
-    if (tdActions) tdActions.insertAdjacentHTML('afterbegin', `
-      <div class="pl-view pl-actions-view">
-        <button type="button" class="pl-btn-icon btn-edit-riga" title="Modifica">
-          <i class="fa-solid fa-pencil"></i>
-        </button>
-        <button type="button" class="pl-btn-icon pl-btn-danger btn-delete-riga" title="Rimuovi">
+    if (tdActions) {
+      tdActions.innerHTML = `
+        <button type="button" class="pl-btn-icon pl-btn-danger btn-delete-riga" title="Rimuovi" style="vertical-align: middle;">
           <i class="fa-solid fa-trash-can"></i>
-        </button>
-      </div>`);
+        </button>`;
+    }
+  }
+
+  /* ════════════════════════════════════════════════════
+     BUSINESS VALIDATIONS (DUPLICATES & SOTTOCOSTO)
+  ════════════════════════════════════════════════════ */
+  function runBusinessValidations() {
+    const rows = Array.from(tbody.querySelectorAll('tr.pl-riga'));
+    
+    // 1. Duplicate Check
+    const countMap = {};
+    rows.forEach(tr => {
+      const pid = tr.querySelector('.r-prodotto-id')?.value || tr.dataset.prodottoId;
+      const qminInput = tr.querySelector('.r-qmin');
+      const qminVal = qminInput ? qminInput.value : tr.dataset.qmin;
+      const qmin = parseFloat(qminVal || 0).toFixed(3);
+      
+      if (pid && pid !== '0') {
+        const key = `${pid}_${qmin}`;
+        if (!countMap[key]) countMap[key] = [];
+        countMap[key].push(tr);
+      }
+    });
+    
+    rows.forEach(tr => {
+      tr.querySelectorAll('.pl-duplicate-warning').forEach(el => el.style.display = 'none');
+      tr.dataset.hasDuplicate = 'false';
+    });
+    
+    Object.keys(countMap).forEach(key => {
+      const collisionRows = countMap[key];
+      if (collisionRows.length > 1) {
+        collisionRows.forEach(tr => {
+          tr.querySelectorAll('.pl-duplicate-warning').forEach(el => el.style.display = 'block');
+          tr.dataset.hasDuplicate = 'true';
+        });
+      }
+    });
+    
+    // 2. Sottocosto Check
+    rows.forEach(tr => {
+      const prezzoInput = tr.querySelector('.r-prezzo');
+      const prezzo = parseFloat((prezzoInput ? prezzoInput.value : tr.dataset.prezzo) || 0);
+      
+      const scontoInput = tr.querySelector('.r-sconto');
+      const sconto = parseFloat((scontoInput ? scontoInput.value : tr.dataset.sconto) || 0);
+      
+      const costo = parseFloat(tr.dataset.costo || 0);
+      
+      const warningEl = tr.querySelector('.pl-sottocosto-warning');
+      if (warningEl) {
+        if (costo > 0) {
+          const prezzoNetto = prezzo * (1 - sconto / 100);
+          if (prezzoNetto < costo) {
+            warningEl.querySelector('.pl-costo-val').textContent = costo.toFixed(2);
+            warningEl.style.display = 'block';
+          } else {
+            warningEl.style.display = 'none';
+          }
+        } else {
+          warningEl.style.display = 'none';
+        }
+      }
+    });
   }
 
   /* ════════════════════════════════════════════════════
@@ -503,6 +827,7 @@ document.addEventListener('DOMContentLoaded', function () {
             tr.dataset.uomStockCode = item.unita_misura || '';
             tr.dataset.uomCommercialId = item.unita_contenuto_id || '';
             tr.dataset.uomCommercialCode = item.unita_misura_commerciale || '';
+            tr.dataset.costo = item.costo || '0';
             
             // Add stock option
             const optStock = document.createElement('option');
@@ -520,6 +845,7 @@ document.addEventListener('DOMContentLoaded', function () {
             selectEl.style.display = 'block';
           } else {
             selectEl.style.display = 'none';
+            tr.dataset.costo = '0';
           }
         }
         if (!item) {
@@ -528,7 +854,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         // Pre-compila UM
         if (umLabel) umLabel.textContent = item.unita_misura || '—';
-        // Focus su prezzo
+        runBusinessValidations();
+        // Focus su qmin o prezzo
         setTimeout(() => tr.querySelector('.r-qmin')?.focus(), 50);
       },
     });
@@ -577,7 +904,250 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('pl-attivo-label').textContent =
       this.checked ? 'Listino attivo' : 'Listino disattivato';
   });
-});
+
+  /* ── Filtro di ricerca client-side ── */
+  document.getElementById('pl-grid-search')?.addEventListener('input', function (e) {
+    const q = e.target.value.toLowerCase().trim();
+    tbody.querySelectorAll('tr.pl-riga').forEach(tr => {
+      if (tr.classList.contains('is-editing')) {
+        tr.style.display = '';
+        return;
+      }
+      const nome = (tr.dataset.prodottoNome || '').toLowerCase();
+      const sku = (tr.dataset.sku || '').toLowerCase();
+      if (nome.includes(q) || sku.includes(q)) {
+        tr.style.display = '';
+      } else {
+        tr.style.display = 'none';
+      }
+    });
+  });
+});</script>
+
+<!-- Modal per Importazione Massiva Prezzi Vendita -->
+<div class="modal fade" id="modalImportaPrezziSales" tabindex="-1" aria-labelledby="modalImportaPrezziSalesTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalImportaPrezziSalesTitle">
+          <i class="fa-solid fa-file-import me-2"></i>Importazione Massiva Prezzi Vendita
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <div class="qk-alert qk-alert-info mb-3">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>Carica un file Excel (.xlsx) per importare o aggiornare i prezzi di vendita degli articoli. Se un prezzo esiste già per lo stesso articolo e scaglione quantità, verrà aggiornato.</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <input type="file" id="inputFilePrezziSales" accept=".xlsx" class="d-none">
+            <label for="inputFilePrezziSales" class="btn-qk btn-qk-primary">
+              <i class="fa-solid fa-file-excel me-1"></i>Seleziona File Excel...
+            </label>
+            <button type="button" class="btn-qk btn-qk-secondary" id="btnClearFilePrezziSales">
+              <i class="fa-solid fa-trash me-1"></i>Rimuovi File
+            </button>
+          </div>
+          <button type="button" class="btn-qk btn-qk-secondary" id="btnDownloadTracciatoPrezziSales">
+            <i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Modello Tracciato
+          </button>
+        </div>
+
+        <div id="importPreviewWrapPrezziSales" style="display:none" class="mb-3">
+          <h6 class="fw-bold mb-2">Anteprima Righe (<span id="importPreviewCountPrezziSales">0</span> righe trovate, mostra max 10)</h6>
+          <div class="qk-table-wrap" style="max-height: 250px; overflow-y: auto;">
+            <table class="qk-table mb-0" style="font-size: .8rem">
+              <thead id="importPreviewHeadPrezziSales"></thead>
+              <tbody id="importPreviewBodyPrezziSales"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="importResultPrezziSales" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Chiudi</button>
+        <button type="button" class="btn-qk btn-qk-primary" id="btnImportaPrezziSales" disabled>
+          <i class="fa-solid fa-upload me-1"></i>Avvia Importazione
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ExcelJS Library for reading/writing xlsx -->
+<script src="<?= asset('js/exceljs.min.js') ?>"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  var LISTINO_ID = <?= (int)($id ?? 0) ?>;
+  var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
+  var IMPORT_URL = QK_BASE + '/sales/pricelists/api/import';
+
+  var COLS_PREZZI = [
+    {key:'sku_interno',     note:'Obbligatorio. SKU interno del prodotto in Quack.', esempio:'PROD-001'},
+    {key:'quantita_minima', note:'Quantità minima per questa tariffa.',              esempio:'1.000'},
+    {key:'prezzo_unitario', note:'Obbligatorio. Prezzo unitario di vendita.',       esempio:'15.5000'},
+    {key:'sconto_perc',     note:'Sconto percentuale da applicare.',                 esempio:'5.00'},
+    {key:'note',            note:'Note specifiche del prezzo.',                      esempio:'Prezzo promozionale'}
+  ];
+
+  function downloadBuffer(buffer, filename) {
+    var blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1000);
+  }
+
+  document.getElementById('btnDownloadTracciatoPrezziSales')?.addEventListener('click', async function(){
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Generazione...';
+
+    var wb = new ExcelJS.Workbook();
+    wb.creator = 'Quack ERP';
+    var ws = wb.addWorksheet('Tariffe Vendita');
+    ws.columns = COLS_PREZZI.map(function(c){ return {header:c.key, key:c.key, width:Math.max(c.key.length+4,22)}; });
+
+    var hr = ws.getRow(1);
+    COLS_PREZZI.forEach(function(c,i){
+      var cell = hr.getCell(i+1);
+      cell.value = c.key;
+      cell.font  = {bold:true, color:{argb:'FFFFFFFF'}};
+      cell.fill  = {type:'pattern', pattern:'solid', fgColor:{argb:'FF2E4057'}};
+      cell.alignment = {vertical:'middle', horizontal:'center'};
+      cell.note  = {texts:[{text:c.note}]};
+    });
+    hr.height = 22;
+
+    var ex = ws.addRow(COLS_PREZZI.reduce(function(a,c){ a[c.key]=c.esempio; return a; }, {}));
+    ex.eachCell(function(cell){
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEAF2FB'}};
+      cell.font = {italic:true, color:{argb:'FF555555'}};
+    });
+    ws.views = [{state:'frozen', ySplit:1}];
+
+    downloadBuffer(await wb.xlsx.writeBuffer(), 'Listino_Vendite_Tracciato.xlsx');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-file-arrow-down me-1"></i>Scarica Modello Tracciato';
+  });
+
+  var parsedRows = [];
+
+  document.getElementById('inputFilePrezziSales')?.addEventListener('change', async function(){
+    var file = this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = async function(e){
+      var wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(e.target.result);
+      var ws = wb.worksheets[0];
+      if (!ws) { alert('File non valido.'); return; }
+
+      var headers = [];
+      ws.getRow(1).eachCell({includeEmpty:false}, function(cell){
+        headers.push(String(cell.value !== null && cell.value !== undefined ? cell.value : '').trim());
+      });
+
+      parsedRows = [];
+      ws.eachRow(function(row, rn){
+        if (rn === 1) return;
+        var obj = {};
+        headers.forEach(function(h,i){
+          var v = row.getCell(i+1).value;
+          obj[h] = (v !== null && v !== undefined) ? String(v).trim() : '';
+        });
+        if (Object.values(obj).some(function(v){ return v !== ''; })) parsedRows.push(obj);
+      });
+      renderPreview(headers, parsedRows);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  document.getElementById('btnClearFilePrezziSales')?.addEventListener('click', function(){
+    document.getElementById('inputFilePrezziSales').value = '';
+    document.getElementById('importPreviewWrapPrezziSales').style.display = 'none';
+    document.getElementById('btnImportaPrezziSales').disabled = true;
+    document.getElementById('importResultPrezziSales').style.display = 'none';
+    parsedRows = [];
+  });
+
+  function renderPreview(headers, rows) {
+    var head = document.getElementById('importPreviewHeadPrezziSales');
+    var body = document.getElementById('importPreviewBodyPrezziSales');
+    head.innerHTML = ''; body.innerHTML = '';
+
+    var trH = document.createElement('tr');
+    headers.forEach(function(h){
+      var th = document.createElement('th'); th.textContent = h; trH.appendChild(th);
+    });
+    head.appendChild(trH);
+
+    var preview = rows.slice(0, 10);
+    preview.forEach(function(r){
+      var tr = document.createElement('tr');
+      headers.forEach(function(h){
+        var td = document.createElement('td'); td.textContent = r[h] || ''; tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+
+    document.getElementById('importPreviewCountPrezziSales').textContent = rows.length;
+    document.getElementById('importPreviewWrapPrezziSales').style.display = 'block';
+    document.getElementById('btnImportaPrezziSales').disabled = rows.length === 0;
+  }
+
+  document.getElementById('btnImportaPrezziSales')?.addEventListener('click', async function(){
+    if (parsedRows.length === 0) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Importazione in corso...';
+
+    var fd = new FormData();
+    fd.append('_token', CSRF_TOKEN);
+    fd.append('listino_id', LISTINO_ID);
+    fd.append('rows', JSON.stringify(parsedRows));
+
+    try {
+      var res = await fetch(IMPORT_URL, { method:'POST', body:fd });
+      var d = await res.json();
+      var resWrap = document.getElementById('importResultPrezziSales');
+      resWrap.className = d.ok ? 'qk-alert qk-alert-success mt-3' : 'qk-alert qk-alert-danger mt-3';
+
+      var html = '<strong>' + (d.ok ? 'Importazione completata con successo!' : 'Errore nell\'importazione.') + '</strong><br>';
+      if (d.ok) {
+        html += 'Caricate/Aggiornate ' + d.inserted + ' righe. ';
+        if (d.skipped > 0) html += 'Saltate ' + d.skipped + ' righe con errori.<br>';
+      } else {
+        html += d.error || '';
+      }
+
+      if (d.errors && d.errors.length > 0) {
+        html += '<ul class="mb-0 mt-2 text-start small" style="max-height:150px; overflow-y:auto">';
+        d.errors.forEach(function(err){ html += '<li>' + err + '</li>'; });
+        html += '</ul>';
+      }
+
+      resWrap.innerHTML = html;
+      resWrap.style.display = 'block';
+
+      if (d.ok) {
+        setTimeout(function(){ window.location.reload(); }, 1500);
+      }
+    } catch(err) {
+      alert('Errore di connessione.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-upload me-1"></i>Avvia Importazione';
+    }
+  });
+
+})();
 </script>
 
 <!-- CSS per feedback "salvato" -->
@@ -588,3 +1158,4 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   .pl-riga-saved > td { animation: pl-saved-flash .8s ease-out forwards; }
 </style>
+
