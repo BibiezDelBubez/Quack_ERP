@@ -75,7 +75,6 @@ return [
     '/products'                    => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'index',            'auth' => true],
     '/products/create'             => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'create',           'auth' => true],
     '/products/edit'               => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'edit',             'auth' => true],
-    '/products/edit-test'          => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'editTest',         'auth' => true],
     '/products/api/crea-categoria' => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'crearCategoria',   'auth' => true],
     '/products/fornitori/save'     => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'saveForn',         'auth' => true],
     '/products/fornitori/delete'   => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteForn',       'auth' => true],

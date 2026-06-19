@@ -587,7 +587,7 @@ $kit_componenti = $kit_componenti ?? [];
               padding-left: 4px;
               user-select: none;
             }
-            .matrix-input-price {
+             .matrix-input-price {
               border: none;
               background: transparent;
               padding: 4px 6px;
@@ -597,6 +597,11 @@ $kit_componenti = $kit_componenti ?? [];
               width: 100%;
               text-align: right;
               color: #1e293b;
+            }
+            .matrix-input-price::placeholder {
+              color: #a0aec0;
+              opacity: 0.8;
+              font-weight: 400;
             }
             .matrix-input-price:focus {
               outline: none;
@@ -720,7 +725,34 @@ $kit_componenti = $kit_componenti ?? [];
               </div>
             </div>
             
-            <div class="qk-card-body p-0">
+            <div class="qk-card-body p-3">
+              <!-- Banner RRP multi-fornitore collassabile -->
+              <div class="rrp-banner" id="test-rrp-banner">
+                <div>
+                  <span class="rrp-banner-title"><i class="fa-solid fa-circle-info text-info me-1"></i>Vincoli RRP (Fornitore Preferito):</span>
+                  <span id="rrp-banner-content">Caricamento vincoli...</span>
+                </div>
+                <button type="button" class="btn btn-xs btn-outline-secondary" id="btn-toggle-all-rrp" style="font-size:0.72rem; padding: 2px 6px;">
+                  Mostra tutti i fornitori
+                </button>
+              </div>
+              <div id="all-rrp-details" class="collapse mb-3 p-3 border rounded bg-white" style="font-size: 0.8rem;">
+                <!-- Tabella comparativa compilata via JS -->
+                <table class="table table-sm table-bordered align-middle mb-0">
+                  <thead>
+                    <tr class="table-light">
+                      <th>Fornitore</th>
+                      <th>Min RRP</th>
+                      <th>Max RRP</th>
+                      <th>Pref.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="all-rrp-tbody">
+                    <!-- Popolato da JS -->
+                  </tbody>
+                </table>
+              </div>
+
               <div class="pricing-matrix-container">
                 <table class="pricing-matrix-table" id="pricing-matrix-table">
                   <thead>
@@ -1181,7 +1213,7 @@ $kit_componenti = $kit_componenti ?? [];
           <div class="qk-table-toolbar qk-card mb-3"
                style="border-radius:var(--qk-radius);border:1px solid var(--qk-card-border)">
             <div class="qk-table-toolbar-left">
-              <span class="qk-text-muted small">Fornitori associati e scaglioni di prezzo</span>
+              <span class="qk-text-muted small">Fornitori associati (Master List)</span>
             </div>
             <div class="qk-table-toolbar-right">
               <button type="button"
@@ -1195,28 +1227,119 @@ $kit_componenti = $kit_componenti ?? [];
             </div>
           </div>
 
-          <!-- ── Stato vuoto (JS lo mostra/nasconde dinamicamente) ────────── -->
-          <div class="qk-empty d-none" id="fornitori-empty">
-            <i class="fa-regular fa-handshake"></i>
-            <p>Nessun fornitore associato.<br>
-               Clicca "Aggiungi fornitore" per iniziare.</p>
+          <!-- ── Master Table ────────────────────────────────────────────── -->
+          <div class="qk-card" style="overflow-x:auto;">
+            <table class="qks-master-table" id="master-fornitori-table">
+              <thead>
+                <tr>
+                  <th style="width:60px; text-align:center;">Pref.</th>
+                  <th>Fornitore</th>
+                  <th>SKU Fornitore</th>
+                  <th>Tariffa Base [0+]</th>
+                  <th>Lead Time</th>
+                  <th style="width:180px; text-align:right;">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="master-fornitori-tbody">
+                <!-- Popolato dinamicamente da JS -->
+              </tbody>
+            </table>
           </div>
 
-          <!-- ── Stack di card fornitore ─────────────────────────────────────
-               Ogni fornitore è un .qks-supplier-block autonomo con:
-               - header (nome, SKU, stato, azioni)
-               - mini-tabella prezzi propria (con thead visibile solo se ci sono prezzi)
-               Gestito interamente da assets/js/products-suppliers.js.
-               Non più una singola <table> piatta con righe miste.
-          ─────────────────────────────────────────────────────────────────── -->
-          <div id="fornitori-container">
-            <!-- Popolato dinamicamente da products-suppliers.js -->
+          <!-- ── Drawer Laterale per Dettagli Fornitore ── -->
+          <div class="qk-drawer-overlay" id="test-drawer-overlay"></div>
+          <div class="qk-drawer" id="test-fornitore-drawer">
+            <div class="qk-drawer-header">
+              <h5 id="drawer-title">Dettagli Fornitore</h5>
+              <button type="button" class="btn-close" id="btn-close-drawer" aria-label="Chiudi"></button>
+            </div>
+            <div class="qk-drawer-body">
+              <div id="drawer-alert" class="qk-alert qk-alert-danger d-none mb-3"></div>
+              
+              <!-- Form Drawer per salvare metadati fornitore e RRP -->
+              <form id="drawer-fornitore-form" onsubmit="event.preventDefault();">
+                <input type="hidden" id="dw-id" value="">
+                <input type="hidden" id="dw-fornitore-id" value="">
+                
+                <div class="mb-3">
+                  <label class="qk-form-label">Fornitore</label>
+                  <input type="text" id="dw-fornitore-label" class="qk-form-control" readonly>
+                </div>
+                
+                <div class="mb-3">
+                  <label class="qk-form-label">SKU Fornitore</label>
+                  <input type="text" id="dw-sku" class="qk-form-control font-monospace" placeholder="Codice fornitore">
+                </div>
+
+                <div class="mb-3">
+                  <label class="qk-form-label">Nome prodotto presso il fornitore</label>
+                  <input type="text" id="dw-nome-prod-forn" class="qk-form-control" placeholder="Come lo chiama il fornitore" maxlength="150">
+                </div>
+
+                <div class="row g-2 mb-3">
+                  <div class="col-6">
+                    <label class="qk-form-label">Quantità minima ordine (MOQ)</label>
+                    <input type="number" id="dw-qta-min" class="qk-form-control" placeholder="0,00" min="0" step="0.001">
+                  </div>
+                  <div class="col-6">
+                    <label class="qk-form-label">Lead Time (Giorni)</label>
+                    <input type="number" id="dw-lead-time" class="qk-form-control" min="0" value="7">
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="dw-attivo" value="1" checked>
+                    <label class="form-check-label" for="dw-attivo">Attivo</label>
+                  </div>
+                </div>
+
+                <div class="row g-2 mb-3">
+                  <div class="col-6">
+                    <label class="qk-form-label">Min RRP</label>
+                    <input type="number" id="dw-rrp-min" class="qk-form-control" step="0.0001" min="0" placeholder="0.00">
+                  </div>
+                  <div class="col-6">
+                    <label class="qk-form-label">Max RRP</label>
+                    <input type="number" id="dw-rrp-max" class="qk-form-control" step="0.0001" min="0" placeholder="0.00">
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="qk-form-label">Note</label>
+                  <textarea id="dw-note" class="qk-form-control" rows="2" placeholder="Note specifiche per questo fornitore…"></textarea>
+                </div>
+
+                <h6 class="border-bottom pb-2 mt-4"><i class="fa-solid fa-tags me-1"></i>Scaglioni di Acquisto</h6>
+                <div style="max-height: 250px; overflow-y:auto; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;" class="mb-2">
+                  <table class="table table-sm align-middle" id="drawer-scaglioni-table" style="font-size: 0.85rem; margin-bottom:0;">
+                    <thead>
+                      <tr>
+                        <th>Qtà Min.</th>
+                        <th>Prezzo d'Acquisto</th>
+                        <th style="width:40px;"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="drawer-scaglioni-tbody">
+                      <!-- Righe prezzi popolate dinamicamente -->
+                    </tbody>
+                  </table>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="dw-btn-add-scaglione">
+                  <i class="fa-solid fa-plus"></i> Aggiungi Scaglione
+                </button>
+              </form>
+            </div>
+            <div class="qk-drawer-footer">
+              <button type="button" class="btn-qk btn-qk-secondary" id="btn-cancel-drawer">Annulla</button>
+              <button type="button" class="btn-qk btn-qk-primary" id="btn-save-drawer">Salva Modifiche</button>
+            </div>
           </div>
 
           <!-- ── Come viene scelto il prezzo (collassabile) ─────────────────
                Spiegazione del motore prezzi per utenti non esperti.
                Usa la classe .qks-help-toggle da products-suppliers.css.
-          ─────────────────────────────────────────────────────────────────── -->
+           ─────────────────────────────────────────────────────────────────── -->
           <div class="mt-3">
             <button class="qks-help-toggle"
                     type="button"

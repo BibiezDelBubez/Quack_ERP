@@ -1,845 +1,606 @@
 /**
  * products-suppliers.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Gestione inline dei fornitori e degli scaglioni di prezzo nel tab "Fornitori"
- * della scheda prodotto (/products/edit?id=X).
- *
- * Architettura (v2 — card per fornitore)
- * ──────────────────────────────────────
- * Invece di un'unica <table> con righe miste (fornitore + prezzi),
- * ogni fornitore è una card autonoma (.qks-supplier-block):
- *
- *   ┌─ [★] Astra Meccanica  SKU: AM-001  ● Attivo   [✎ Modifica][+Prezzo][🗑]
- *   │  ┌─────────────┬──────────┬─────────┬────────┬──────┬──────┬──────┬─┐
- *   │  │ LISTINO     │ Q.TÀ MIN.│ PREZZO  │ SC. %  │ DAL  │  AL  │ NOTE │ │
- *   │  ├─────────────┼──────────┼─────────┼────────┼──────┼──────┼──────┼─┤
- *   │  │ Base        │    —     │  19,00  │   —    │  —   │  —   │      │✎🗑│
- *   │  └─────────────┴──────────┴─────────┴────────┴──────┴──────┴──────┴─┘
- *   └─ [★] Faber  ● Attivo   [✎ Modifica][+Prezzo][🗑]
- *      Nessun prezzo — usa +Prezzo per aggiungere uno scaglione.
- *
- * Vantaggi rispetto alla tabella piatta:
- * • Nessuna perdita di contesto durante lo scroll (header sempre visibile)
- * • Semantica corretta: ogni tabella descrive solo i propri dati
- * • Aggiunta/modifica prezzi avviene in un contesto visivamente delimitato
- * • Temi CSS supportati tramite variabili CSS (products-suppliers.css)
- *
- * Dipendenze
- * ──────────
- *   window.QkPF  — iniettato da products/_form.php
- *   products-suppliers.css — incluso da ProductsController via $extra_css
- *
- * Campi usati da window.QkPF:
- *   prodottoId        (int)     — id prodotto corrente
- *   fornitori         (array)   — record da qk_load_prodotto_fornitori
- *   tuttePrezzi       (array)   — record da qk_load_prodotto_tutti_prezzi
- *   apiPrezzoSave     (string)  — URL POST save prezzo
- *   apiPrezzoDelete   (string)  — URL POST delete prezzo
- *   apiFornListini    (string)  — URL GET listini per fornitore_id
- *   apiFornDelete     (string)  — URL POST elimina fornitore
+ * DEFINITIVE STATE-OF-THE-ART SUPPLIER & PRICING MANAGEMENT
+ * Master List + Lateral Drawer for purchases and advanced RRP integration on sales matrix.
  */
-
-/* global QkPF */
 
 (function () {
   'use strict';
 
   document.addEventListener('DOMContentLoaded', function () {
+    const cfg = window.QkPF;
+    if (!cfg) return;
 
-    /* ──────────────────────────────────────────────────────────────────────
-       COSTANTI E RIFERIMENTI DOM
-    ────────────────────────────────────────────────────────────────────── */
-
-    const cfg       = window.QkPF;
-    const prodId    = cfg.prodottoId;
-
-    /* Token CSRF — letto dal campo hidden nel form principale, mai da globale */
+    const prodId = cfg.prodottoId;
     const CSRF = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
-    const container = document.getElementById('fornitori-container');
-    const emptyEl   = document.getElementById('fornitori-empty');
+    // Riferimenti DOM
+    const masterTbody  = document.getElementById('master-fornitori-tbody');
+    const drawer       = document.getElementById('test-fornitore-drawer');
+    const overlay      = document.getElementById('test-drawer-overlay');
+    const closeBtn     = document.getElementById('btn-close-drawer');
+    const cancelBtn    = document.getElementById('btn-cancel-drawer');
+    const saveBtn      = document.getElementById('btn-save-drawer');
+    const alertBox     = document.getElementById('drawer-alert');
 
-    /* Se il contenitore non è nel DOM (prodotto non salvato), esci */
-    if (!container) return;
+    // Elementi Form Drawer
+    const dwId          = document.getElementById('dw-id');
+    const dwFornId      = document.getElementById('dw-fornitore-id');
+    const dwFornLabel   = document.getElementById('dw-fornitore-label');
+    const dwSku         = document.getElementById('dw-sku');
+    const dwNomeProd    = document.getElementById('dw-nome-prod-forn');
+    const dwQtaMin      = document.getElementById('dw-qta-min');
+    const dwLeadTime    = document.getElementById('dw-lead-time');
+    const dwAttivo      = document.getElementById('dw-attivo');
+    const dwRrpMin      = document.getElementById('dw-rrp-min');
+    const dwRrpMax      = document.getElementById('dw-rrp-max');
+    const dwNote        = document.getElementById('dw-note');
+    const scaglioniTbody = document.getElementById('drawer-scaglioni-tbody');
+    const addScaglioneBtn = document.getElementById('dw-btn-add-scaglione');
 
+    // Riferimenti DOM per Vendite (RRP Banner)
+    const rrpBannerContent = document.getElementById('rrp-banner-content');
+    const btnToggleAllRrp   = document.getElementById('btn-toggle-all-rrp');
+    const allRrpDetails     = document.getElementById('all-rrp-details');
+    const allRrpTbody       = document.getElementById('all-rrp-tbody');
 
-    /* ──────────────────────────────────────────────────────────────────────
-       STATO LOCALE
-       I dati PHP vengono clonati per mutarli localmente senza ricaricare.
-       I prezzi sono indicizzati per prodotto_fornitore_id.
-    ────────────────────────────────────────────────────────────────────── */
+    // Matrice Vendite
+    const matrixTable = document.getElementById('pricing-matrix-table');
 
-    /** @type {Array<Object>} — array di record fornitore */
+    /* ── Stato locale ── */
     let fornitori = [...(cfg.fornitori || [])];
+    let prezziList = [...(cfg.tuttePrezzi || [])]; // tutti gli scaglioni d'acquisto dei fornitori
+    let listiniAcquisto = [];
 
-    /**
-     * Map: prodotto_fornitore_id → Array<prezzoRow>
-     * @type {Map<number, Array<Object>>}
-     */
-    const prezziMap = buildPrezziMap(cfg.tuttePrezzi || []);
-
-    /**
-     * Cache listini per fornitore_id: Map<number, Array<{id, nome_listino}>>
-     * Evita richieste AJAX duplicate per lo stesso fornitore.
-     * @type {Map<number, Array<Object>>}
-     */
-    const listiniCache = new Map();
-
-
-    /* ──────────────────────────────────────────────────────────────────────
-       UTILITIES
-    ────────────────────────────────────────────────────────────────────── */
-
-    /**
-     * Costruisce Map prodotto_fornitore_id → prezzi dall'array flat.
-     * @param {Array<Object>} rows
-     * @returns {Map<number, Array<Object>>}
-     */
-    function buildPrezziMap(rows) {
-      const m = new Map();
-      rows.forEach(r => {
-        const pfId = Number(r.prodotto_fornitore_id);
-        if (!m.has(pfId)) m.set(pfId, []);
-        m.get(pfId).push({ ...r });
-      });
-      return m;
-    }
-
-    /** Escape per contenuto HTML (anti-XSS). */
-    function esc(s) {
-      return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    }
-
-    /** Escape per attributi HTML. */
-    function escA(s) {
-      return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;');
-    }
-
-    /**
-     * Formatta un numero con N decimali in stile italiano.
-     * @param {*} n
-     * @param {number} [dec=2]
-     */
-    function fmtNum(n, dec = 2) {
-      const v = parseFloat(n);
-      if (isNaN(v)) return '—';
-      return v.toLocaleString('it-IT', {
-        minimumFractionDigits: dec,
-        maximumFractionDigits: dec,
-      });
-    }
-
-    /**
-     * Formatta un prezzo con decimali smart: min 2, max 4, no trailing zeros.
-     * Esempi: 19 → "19,00" | 12.3456 → "12,3456" | 0.0025 → "0,0025"
-     * @param {*} n
-     */
-    function fmtPrezzo(n) {
-      const v = parseFloat(n);
-      if (isNaN(v)) return '—';
-      return v.toLocaleString('it-IT', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 4,
-      });
-    }
-
-    /**
-     * Carica i listini di un fornitore via AJAX (con cache).
-     * @param {number} fornitoreId
-     * @returns {Promise<Array<{id:number, nome_listino:string}>>}
-     */
-    async function fetchListini(fornitoreId) {
-      if (listiniCache.has(fornitoreId)) return listiniCache.get(fornitoreId);
+    // Carica l'elenco dei listini di acquisto per il dropdown
+    async function loadListiniAcquisto(fornitoreId) {
+      if (!fornitoreId) return [];
       try {
-        const res  = await fetch(`${cfg.apiFornListini}?fornitore_id=${encodeURIComponent(fornitoreId)}`);
+        const res = await fetch(`${cfg.apiFornListini}?fornitore_id=${encodeURIComponent(fornitoreId)}`);
         const data = await res.json();
-        const list = data.ok ? (data.listini || []) : [];
-        listiniCache.set(fornitoreId, list);
-        return list;
-      } catch {
+        return data.ok ? (data.listini || []) : [];
+      } catch (e) {
+        console.error(e);
         return [];
       }
     }
 
-    /**
-     * Invia un POST AJAX con FormData + CSRF.
-     * @param {string} url
-     * @param {Object} fields
-     * @returns {Promise<Object>}
-     */
-    async function postAjax(url, fields) {
+    /* ── Inizializzazione ── */
+    if (masterTbody) {
+      renderMasterTable();
+      updateRrpBanner();
+      validateMatrixPrices();
+    }
+
+    // Eventi Drawer
+    closeBtn?.addEventListener('click', closeDrawer);
+    cancelBtn?.addEventListener('click', closeDrawer);
+    overlay?.addEventListener('click', closeDrawer);
+
+    // Salva Drawer
+    saveBtn?.addEventListener('click', async () => {
+      if (!alertBox) return;
+      alertBox.classList.add('d-none');
+      
+      const id = parseInt(dwId.value) || 0;
+      const fornitoreId = parseInt(dwFornId.value);
+      const sku = dwSku.value.trim();
+      const nomeProd = dwNomeProd.value.trim();
+      const qtaMin = parseFloat(dwQtaMin.value) || 0;
+      const leadTime = parseInt(dwLeadTime.value) || 0;
+      const attivo = dwAttivo.checked;
+      const rrpMin = dwRrpMin.value ? parseFloat(dwRrpMin.value) : null;
+      const rrpMax = dwRrpMax.value ? parseFloat(dwRrpMax.value) : null;
+      const note = dwNote.value.trim();
+
+      // Leggi scaglioni dal drawer
+      const scaglioni = [];
+      const rows = scaglioniTbody.querySelectorAll('tr.sc-row');
+      for (const row of rows) {
+        const listinoSelect = row.querySelector('.sc-listino');
+        const qtaInput = row.querySelector('.sc-qta');
+        const prezzoInput = row.querySelector('.sc-prezzo');
+        const scontoInput = row.querySelector('.sc-sconto');
+        const extraRow = row.nextElementSibling;
+        const dalInput = extraRow?.querySelector('.sc-dal');
+        const alInput = extraRow?.querySelector('.sc-al');
+        const noteInput = extraRow?.querySelector('.sc-note');
+
+        const lid = listinoSelect?.value || null;
+        const qta = parseFloat(qtaInput?.value);
+        const prezzo = parseFloat(prezzoInput?.value);
+        const sconto = parseFloat(scontoInput?.value) || 0;
+        const dal = dalInput?.value || '';
+        const al = alInput?.value || '';
+        const snote = noteInput?.value || '';
+
+        if (isNaN(qta) || isNaN(prezzo)) {
+          alertBox.textContent = "Quantità e Prezzo d'acquisto devono essere numeri validi.";
+          alertBox.classList.remove('d-none');
+          return;
+        }
+        scaglioni.push({
+          id: parseInt(row.dataset.rowId) || 0,
+          listino_acquisto_id: lid,
+          quantita_minima: qta,
+          prezzo: prezzo,
+          sconto_perc: sconto,
+          valido_dal: dal,
+          valido_al: al,
+          note: snote
+        });
+      }
+
+      // 1. Salva metadati fornitore via AJAX
       const fd = new FormData();
+      fd.append('id', id ? String(id) : '');
+      fd.append('prodotto_id', String(prodId));
+      fd.append('fornitore_id', String(fornitoreId));
+      fd.append('sku_fornitore', sku);
+      fd.append('nome_prodotto_fornitore', nomeProd);
+      fd.append('quantita_minima', String(qtaMin));
+      fd.append('lead_time_giorni', String(leadTime));
+      fd.append('rrp_min', rrpMin !== null ? String(rrpMin) : '');
+      fd.append('rrp_max', rrpMax !== null ? String(rrpMax) : '');
+      fd.append('ordine_preferenza_fornitore', id ? String(fornitori.find(f => f.id === id).ordine_preferenza_fornitore) : String(fornitori.length + 1));
+      fd.append('attivo', attivo ? '1' : '0');
+      fd.append('note', note);
+      fd.append('no_prezzi', '1');
       fd.append('csrf_token', CSRF);
-      Object.entries(fields).forEach(([k, v]) => fd.append(k, v ?? ''));
-      const res = await fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' });
-      return res.json();
-    }
 
+      try {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio...';
 
-    /* ──────────────────────────────────────────────────────────────────────
-       RENDERING — lista completa
-    ────────────────────────────────────────────────────────────────────── */
+        const res = await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
+        const resData = await res.json();
+        if (!resData.ok) {
+          alertBox.textContent = resData.error || "Errore nel salvataggio del fornitore.";
+          alertBox.classList.remove('d-none');
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = 'Salva Modifiche';
+          return;
+        }
 
-    /**
-     * Ri-renderizza tutto il contenitore dai dati locali.
-     * Chiamata all'init e dopo operazioni che cambiano il numero di fornitori.
-     */
-    function renderAll() {
-      container.innerHTML = '';
+        const savedFornId = resData.row.id;
 
-      const sorted = [...fornitori].sort(
-        (a, b) => (Number(a.ordine_preferenza_fornitore) || 99)
-                - (Number(b.ordine_preferenza_fornitore) || 99)
-      );
+        // 2. Salva o rimuovi gli scaglioni di prezzo via AJAX
+        const currentDbPrezzi = prezziList.filter(p => p.prodotto_fornitore_id === savedFornId);
+        
+        // Trova quelli da eliminare (esistenti in DB ma non nel form)
+        const toDelete = currentDbPrezzi.filter(dp => !scaglioni.some(s => s.id === dp.id));
+        for (const dp of toDelete) {
+          const df = new FormData();
+          df.append('id', String(dp.id));
+          df.append('prodotto_id', String(prodId));
+          df.append('csrf_token', CSRF);
+          await fetch(cfg.apiPrezzoDelete, { method: 'POST', body: df });
+        }
 
-      if (sorted.length === 0) {
-        if (emptyEl)   emptyEl.classList.remove('d-none');
-        container.classList.add('d-none');
-        return;
-      }
+        // Pulisci locale prezziList per questo fornitore
+        prezziList = prezziList.filter(p => p.prodotto_fornitore_id !== savedFornId);
 
-      if (emptyEl)   emptyEl.classList.add('d-none');
-      container.classList.remove('d-none');
+        // Salva/Inserisci gli scaglioni
+        for (const sc of scaglioni) {
+          const sf = new FormData();
+          sf.append('id', String(sc.id));
+          sf.append('prodotto_fornitore_id', String(savedFornId));
+          sf.append('prodotto_id', String(prodId));
+          sf.append('listino_acquisto_id', sc.listino_acquisto_id || '');
+          sf.append('quantita_minima', String(sc.quantita_minima));
+          sf.append('prezzo', String(sc.prezzo));
+          sf.append('sconto_perc', String(sc.sconto_perc));
+          sf.append('valido_dal', sc.valido_dal);
+          sf.append('valido_al', sc.valido_al);
+          sf.append('note', sc.note);
+          sf.append('csrf_token', CSRF);
 
-      sorted.forEach(forn => container.appendChild(buildSupplierBlock(forn)));
-    }
+          const pres = await fetch(cfg.apiPrezzoSave, { method: 'POST', body: sf });
+          const pdata = await pres.json();
+          if (pdata.ok && pdata.row) {
+            prezziList.push(pdata.row);
+          }
+        }
 
-    /**
-     * Costruisce il DOM di una card fornitore completa.
-     * Ritorna un HTMLElement (non lo appende direttamente — permette
-     * l'inserimento ordinato in rerenderFornitoreGroup).
-     *
-     * Struttura:
-     *   div.qks-supplier-block
-     *     div.qks-supplier-hd          ← nome, SKU, lead time, stato, azioni
-     *     div.qks-price-empty          ← se nessun prezzo (no tabella)
-     *     div.qks-price-wrap           ← wrapper overflow per responsivo
-     *       table.qks-price-table
-     *         thead                    ← colonne (solo se ci sono prezzi)
-     *         tbody#qks-ptbody-{pfId}
-     *
-     * @param {Object} forn — record da qk_load_prodotto_fornitori
-     * @returns {HTMLElement}
-     */
-    function buildSupplierBlock(forn) {
-      const pfId     = Number(forn.id);
-      const prezzi   = prezziMap.get(pfId) || [];
-      const isActive = forn.attivo == 1;
-      const isPref   = Number(forn.ordine_preferenza_fornitore) === 1;
-
-      const block         = document.createElement('div');
-      block.id            = `qks-block-${pfId}`;
-      block.className     = `qks-supplier-block${isActive ? '' : ' is-inactive'}`;
-      block.dataset.pfId  = pfId;
-
-      /* ── Header fornitore ─────────────────────────────────────────── */
-      const hd = document.createElement('div');
-      hd.className = 'qks-supplier-hd';
-
-      /* Icona preferenza */
-      const prefIcon = isPref
-        ? `<i class="fa-solid fa-star" style="color:#f59e0b;font-size:.85rem" title="Fornitore preferenziale"></i>`
-        : `<span style="width:1rem;display:inline-flex;align-items:center;justify-content:center;
-                        font-size:.7rem;font-weight:700;color:var(--qk-text-muted)"
-               title="Ordine preferenza ${esc(forn.ordine_preferenza_fornitore)}">${esc(forn.ordine_preferenza_fornitore)}</span>`;
-
-      /* Badge SKU */
-      const skuHtml = forn.sku_fornitore
-        ? `<span class="qks-sku-badge">
-             <span class="qks-sku-label">SKU</span>
-             ${esc(forn.sku_fornitore)}
-           </span>`
-        : '';
-
-      /* Nome commerciale del prodotto presso il fornitore */
-      const nomeCommHtml = forn.nome_prodotto_fornitore
-        ? `<span style="font-size:.8rem;color:var(--qk-text-muted)">${esc(forn.nome_prodotto_fornitore)}</span>`
-        : '';
-
-      /* Lead time */
-      const leadHtml = forn.lead_time_giorni
-        ? `<span class="qks-lead-time">
-             <i class="fa-regular fa-clock me-1"></i>${esc(forn.lead_time_giorni)}&thinsp;gg
-           </span>`
-        : '';
-
-      /* Badge stato attivo/non attivo */
-      const statusHtml = isActive
-        ? `<span class="qks-status-badge is-active">
-             <span class="qks-dot"></span>Attivo
-           </span>`
-        : `<span class="qks-status-badge is-inactive">
-             <span class="qks-dot"></span>Non attivo
-           </span>`;
-
-      /* Pulsanti azioni */
-      const actionsHtml = `
-        <div class="qks-supplier-actions">
-          <button type="button"
-                  class="btn-qk btn-qk-secondary btn-qk-xs qks-btn-edit-forn"
-                  data-bs-toggle="modal"
-                  data-bs-target="#modal-fornitore"
-                  data-mode="edit"
-                  data-id="${pfId}"
-                  data-fornitore-id="${escA(forn.fornitore_id)}"
-                  data-fornitore-label="${escA(forn.nome_fornitore_rs)}"
-                  data-sku-fornitore="${escA(forn.sku_fornitore ?? '')}"
-                  data-nome-prodotto-fornitore="${escA(forn.nome_prodotto_fornitore ?? '')}"
-                  data-qta-min="${escA(forn.quantita_minima ?? '')}"
-                  data-ordine-pref="${esc(forn.ordine_preferenza_fornitore)}"
-                  data-attivo="${isActive ? '1' : '0'}"
-                  data-rrp-min="${escA(forn.rrp_min ?? '')}"
-                  data-rrp-max="${escA(forn.rrp_max ?? '')}"
-                  data-lead-time="${escA(forn.lead_time_giorni ?? '')}"
-                  data-note="${escA(forn.note ?? '')}"
-                  title="Modifica metadati fornitore">
-            <i class="fa-solid fa-pen me-1"></i>Modifica
-          </button>
-          <button type="button"
-                  class="btn-qk btn-qk-primary btn-qk-xs qks-btn-add-prezzo"
-                  data-pf-id="${pfId}"
-                  data-fornitore-id="${esc(forn.fornitore_id)}"
-                  title="Aggiungi scaglione di prezzo">
-            <i class="fa-solid fa-plus me-1"></i>Prezzo
-          </button>
-          <button type="button"
-                  class="btn-qk btn-qk-danger btn-qk-xs qks-btn-delete-forn"
-                  data-id="${pfId}"
-                  data-nome="${escA(forn.nome_fornitore_rs)}"
-                  title="Rimuovi fornitore dal prodotto">
-            <i class="fa-solid fa-trash"></i>
-          </button>
-        </div>
-      `;
-
-      hd.innerHTML = `
-        ${prefIcon}
-        <div class="qks-supplier-meta">
-          <span class="qks-supplier-name">${esc(forn.nome_fornitore_rs)}</span>
-          ${nomeCommHtml}
-          ${skuHtml}
-          ${leadHtml}
-        </div>
-        ${statusHtml}
-        ${actionsHtml}
-      `;
-      block.appendChild(hd);
-
-      /* ── Corpo prezzi ─────────────────────────────────────────────── */
-      if (prezzi.length === 0) {
-        /* Stato vuoto inline — nessuna tabella da mostrare */
-        const empty = document.createElement('div');
-        empty.className       = 'qks-price-empty';
-        empty.dataset.pfId    = pfId;
-        empty.dataset.type    = 'empty';
-        empty.innerHTML =
-          `<i class="fa-regular fa-circle-dot me-1 opacity-40"></i>` +
-          `Nessun prezzo — usa il pulsante <strong>+ Prezzo</strong> per aggiungere uno scaglione.`;
-        block.appendChild(empty);
-      } else {
-        /* Mini-tabella prezzi con thead autonomo */
-        const wrap = document.createElement('div');
-        wrap.className = 'qks-price-wrap';
-
-        const table   = document.createElement('table');
-        table.className = 'qks-price-table';
-
-        table.innerHTML = `
-          <thead>
-            <tr>
-              <th>Listino</th>
-              <th class="text-end qks-col-qtamin" style="width:90px">Q.tà min.</th>
-              <th class="text-end" style="width:105px">Prezzo</th>
-              <th class="text-end" style="width:80px">Sconto %</th>
-              <th class="qks-col-dal" style="width:105px">Valido dal</th>
-              <th class="qks-col-al"  style="width:105px">Valido al</th>
-              <th class="qks-col-note">Note</th>
-              <th class="col-actions"></th>
-            </tr>
-          </thead>
-        `;
-
-        const tbody       = document.createElement('tbody');
-        tbody.id          = `qks-ptbody-${pfId}`;
-        tbody.dataset.pfId = pfId;
-
-        prezzi.forEach(p => tbody.appendChild(buildPrezzoReadRow(pfId, p)));
-
-        table.appendChild(tbody);
-        wrap.appendChild(table);
-        block.appendChild(wrap);
-      }
-
-      return block;
-    }
-
-    /**
-     * Costruisce una singola riga prezzo in modalità lettura.
-     * Restituisce un <tr> da appendere al tbody della mini-tabella.
-     *
-     * @param {number} pfId
-     * @param {Object} p — record prezzo
-     * @returns {HTMLTableRowElement}
-     */
-    function buildPrezzoReadRow(pfId, p) {
-      const tr            = document.createElement('tr');
-      tr.id               = `qks-prow-${p.id}`;
-      tr.className        = 'qks-price-row';
-      tr.dataset.pfId     = pfId;
-      tr.dataset.prezzoId = p.id;
-
-      /* Listino label */
-      const listinoLabel = p.nome_listino
-        ? `<span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 fw-normal">
-             ${esc(p.nome_listino)}
-           </span>`
-        : `<em style="color:var(--qk-text-muted);font-size:.85em">Base</em>`;
-
-      /* Q.tà minima: mostra "—" per 0 (riga Base non ha senso con "0,000") */
-      const qtaLabel = parseFloat(p.quantita_minima || 0) > 0
-        ? `<span class="font-monospace">${fmtNum(p.quantita_minima, 3)}</span>`
-        : `<span style="color:var(--qk-text-muted)">—</span>`;
-
-      /* Sconto */
-      const scontoLabel = parseFloat(p.sconto_perc || 0) > 0
-        ? `${fmtNum(p.sconto_perc, 2)} %`
-        : `<span style="color:var(--qk-text-muted)">—</span>`;
-
-      tr.innerHTML = `
-        <td>${listinoLabel}</td>
-        <td class="text-end qks-col-qtamin">${qtaLabel}</td>
-        <td class="text-end font-monospace fw-semibold">${fmtPrezzo(p.prezzo)}</td>
-        <td class="text-end">${scontoLabel}</td>
-        <td class="qks-col-dal" style="color:var(--qk-text-muted)">${p.valido_dal ? esc(p.valido_dal) : '—'}</td>
-        <td class="qks-col-al"  style="color:var(--qk-text-muted)">${p.valido_al  ? esc(p.valido_al)  : '—'}</td>
-        <td class="qks-col-note" style="color:var(--qk-text-muted)">${p.note ? esc(p.note) : ''}</td>
-        <td class="col-actions">
-          <div class="d-flex gap-1 justify-content-end">
-            <button type="button"
-                    class="btn-qk btn-qk-secondary btn-qk-xs qks-btn-edit-prezzo"
-                    data-prezzo-id="${p.id}"
-                    data-pf-id="${pfId}"
-                    title="Modifica">
-              <i class="fa-solid fa-pen"></i>
-            </button>
-            <button type="button"
-                    class="btn-qk btn-qk-danger btn-qk-xs qks-btn-delete-prezzo"
-                    data-prezzo-id="${p.id}"
-                    data-pf-id="${pfId}"
-                    title="Elimina">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          </div>
-        </td>
-      `;
-      return tr;
-    }
-
-    /**
-     * Inserisce (o sostituisce) una riga prezzo con un form di modifica inline.
-     * Se la tabella prezzi non esiste ancora per il fornitore (stato vuoto),
-     * la crea prima di inserire il form.
-     *
-     * @param {number}  pfId         — prodotto_fornitore_id
-     * @param {number}  fornitoreId
-     * @param {Object}  [p={}]       — prezzo da pre-compilare (vuoto = insert)
-     * @param {HTMLElement} [refTr]  — riga dopo cui inserire (null = in fondo)
-     */
-    async function insertEditRow(pfId, fornitoreId, p = {}, refTr = null) {
-      const listini = await fetchListini(fornitoreId);
-
-      const isNew  = !p.id;
-      const rowId  = isNew ? `qks-pnew-${pfId}` : `qks-pedit-${p.id}`;
-
-      /* Rimuove un eventuale form già aperto per questa stessa riga */
-      document.getElementById(rowId)?.remove();
-
-      /* Se non esiste ancora la tabella nel blocco (stato vuoto → primo prezzo),
-         crea il wrapper + table + thead + tbody e rimuove il messaggio vuoto */
-      let tbody = document.getElementById(`qks-ptbody-${pfId}`);
-      if (!tbody) {
-        const block = document.getElementById(`qks-block-${pfId}`);
-        if (!block) return;
-
-        /* Rimuove il messaggio "nessun prezzo" */
-        block.querySelector('[data-type="empty"]')?.remove();
-
-        /* Crea la struttura tabella */
-        const wrap  = document.createElement('div');
-        wrap.className = 'qks-price-wrap';
-
-        const table = document.createElement('table');
-        table.className = 'qks-price-table';
-        table.innerHTML = `
-          <thead>
-            <tr>
-              <th>Listino</th>
-              <th class="text-end qks-col-qtamin" style="width:90px">Q.tà min.</th>
-              <th class="text-end" style="width:105px">Prezzo</th>
-              <th class="text-end" style="width:80px">Sconto %</th>
-              <th class="qks-col-dal" style="width:105px">Valido dal</th>
-              <th class="qks-col-al"  style="width:105px">Valido al</th>
-              <th class="qks-col-note">Note</th>
-              <th class="col-actions"></th>
-            </tr>
-          </thead>
-        `;
-
-        tbody = document.createElement('tbody');
-        tbody.id           = `qks-ptbody-${pfId}`;
-        tbody.dataset.pfId = pfId;
-
-        table.appendChild(tbody);
-        wrap.appendChild(table);
-        block.appendChild(wrap);
-      }
-
-      /* Costruisce le opzioni del <select> listino */
-      const optsHtml = `
-        <option value="">Base (nessun listino)</option>
-        ${listini.map(l =>
-          `<option value="${l.id}" ${String(p.listino_acquisto_id) === String(l.id) ? 'selected' : ''}>${esc(l.nome_listino)}</option>`
-        ).join('')}
-      `;
-
-      const tr          = document.createElement('tr');
-      tr.id             = rowId;
-      tr.className      = 'qks-price-edit-row';
-      tr.dataset.pfId   = pfId;
-      if (!isNew) tr.dataset.prezzoId = p.id;
-
-      tr.innerHTML = `
-        <!-- Listino -->
-        <td>
-          <select class="qk-form-control qk-form-control-sm" id="${rowId}-listino">
-            ${optsHtml}
-          </select>
-        </td>
-        <!-- Q.tà minima -->
-        <td class="qks-col-qtamin">
-          <input type="number" class="qk-form-control qk-form-control-sm text-end"
-                 id="${rowId}-qta" value="${escA(p.quantita_minima ?? 0)}"
-                 min="0" step="0.001" placeholder="0">
-        </td>
-        <!-- Prezzo -->
-        <td>
-          <input type="number" class="qk-form-control qk-form-control-sm text-end"
-                 id="${rowId}-prezzo" value="${escA(p.prezzo ?? '')}"
-                 min="0" step="0.0001" placeholder="0,00" required>
-        </td>
-        <!-- Sconto % -->
-        <td>
-          <input type="number" class="qk-form-control qk-form-control-sm text-end"
-                 id="${rowId}-sconto" value="${escA(p.sconto_perc ?? 0)}"
-                 min="0" max="100" step="0.01" placeholder="0">
-        </td>
-        <!-- Valido dal -->
-        <td class="qks-col-dal">
-          <input type="date" class="qk-form-control qk-form-control-sm"
-                 id="${rowId}-dal" value="${escA(p.valido_dal ?? '')}">
-        </td>
-        <!-- Valido al -->
-        <td class="qks-col-al">
-          <input type="date" class="qk-form-control qk-form-control-sm"
-                 id="${rowId}-al" value="${escA(p.valido_al ?? '')}">
-        </td>
-        <!-- Note -->
-        <td class="qks-col-note">
-          <input type="text" class="qk-form-control qk-form-control-sm"
-                 id="${rowId}-note" value="${escA(p.note ?? '')}" placeholder="…" maxlength="255">
-        </td>
-        <!-- Azioni inline -->
-        <td class="col-actions">
-          <div class="d-flex gap-1 justify-content-end">
-            <button type="button"
-                    class="btn-qk btn-qk-primary btn-qk-xs qks-btn-save-prezzo-inline"
-                    data-row-id="${rowId}"
-                    data-pf-id="${pfId}"
-                    data-prezzo-id="${p.id ?? 0}"
-                    title="Salva">
-              <i class="fa-solid fa-check"></i>
-            </button>
-            <button type="button"
-                    class="btn-qk btn-qk-secondary btn-qk-xs qks-btn-cancel-prezzo"
-                    data-row-id="${rowId}"
-                    data-prezzo-id="${p.id ?? 0}"
-                    data-pf-id="${pfId}"
-                    title="Annulla">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
-        </td>
-      `;
-
-      /* Inserisce la riga nel tbody della mini-tabella del fornitore */
-      if (refTr && refTr.nextSibling) {
-        tbody.insertBefore(tr, refTr.nextSibling);
-      } else {
-        tbody.appendChild(tr);
-      }
-
-      /* Focus + scroll */
-      document.getElementById(`${rowId}-prezzo`)?.focus();
-      tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-
-    /* ──────────────────────────────────────────────────────────────────────
-       INIZIALIZZAZIONE
-    ────────────────────────────────────────────────────────────────────── */
-
-    renderAll();
-
-
-    /* ──────────────────────────────────────────────────────────────────────
-       GESTIONE EVENTI — delegazione su #fornitori-container
-       (sostituisce la delegazione su tbody della vecchia tabella piatta)
-    ────────────────────────────────────────────────────────────────────── */
-
-    container.addEventListener('click', async function (e) {
-      const btn = e.target.closest('button[class]');
-      if (!btn) return;
-
-      /* ── + Prezzo ─────────────────────────────────────────────────── */
-      if (btn.classList.contains('qks-btn-add-prezzo')) {
-        e.preventDefault();
-        const pfId        = Number(btn.dataset.pfId);
-        const fornitoreId = Number(btn.dataset.fornitoreId);
-
-        /* Trova l'ultima riga prezzo del tbody di questo fornitore */
-        const tbody  = document.getElementById(`qks-ptbody-${pfId}`);
-        const lastTr = tbody ? tbody.lastElementChild : null;
-        await insertEditRow(pfId, fornitoreId, {}, lastTr);
-        return;
-      }
-
-      /* ── Modifica prezzo ──────────────────────────────────────────── */
-      if (btn.classList.contains('qks-btn-edit-prezzo')) {
-        e.preventDefault();
-        const prezzoId = Number(btn.dataset.prezzoId);
-        const pfId     = Number(btn.dataset.pfId);
-
-        const p    = (prezziMap.get(pfId) || []).find(x => Number(x.id) === prezzoId);
-        const forn = fornitori.find(f => Number(f.id) === pfId);
-        if (!p || !forn) return;
-
-        const readRow = document.getElementById(`qks-prow-${prezzoId}`);
-        await insertEditRow(pfId, Number(forn.fornitore_id), p, readRow);
-        if (readRow) readRow.classList.add('d-none');
-        return;
-      }
-
-      /* ── Salva prezzo inline ──────────────────────────────────────── */
-      if (btn.classList.contains('qks-btn-save-prezzo-inline')) {
-        e.preventDefault();
-        await handleSavePrezzo(btn);
-        return;
-      }
-
-      /* ── Annulla modifica prezzo ──────────────────────────────────── */
-      if (btn.classList.contains('qks-btn-cancel-prezzo')) {
-        e.preventDefault();
-        const rowId    = btn.dataset.rowId;
-        const prezzoId = Number(btn.dataset.prezzoId);
-        const pfId     = Number(btn.dataset.pfId);
-
-        document.getElementById(rowId)?.remove();
-
-        /* Se era un edit (prezzoId > 0), ripristina la riga read-only.
-           Se era un insert nuovo e non ci sono altri prezzi, mostra stato vuoto. */
-        if (prezzoId > 0) {
-          document.getElementById(`qks-prow-${prezzoId}`)?.classList.remove('d-none');
+        // Rinfresca stato locale del fornitore
+        const checkFornIdx = fornitori.findIndex(f => f.id === id);
+        if (checkFornIdx > -1) {
+          fornitori[checkFornIdx] = resData.row;
         } else {
-          /* Controlla se la tabella è rimasta vuota */
-          const tbody = document.getElementById(`qks-ptbody-${pfId}`);
-          if (tbody && tbody.querySelectorAll('tr:not(.d-none)').length === 0) {
-            rerenderFornitoreGroup(pfId);
-          }
+          fornitori.push(resData.row);
         }
-        return;
-      }
 
-      /* ── Elimina prezzo ───────────────────────────────────────────── */
-      if (btn.classList.contains('qks-btn-delete-prezzo')) {
-        e.preventDefault();
-        const prezzoId = Number(btn.dataset.prezzoId);
-        const pfId     = Number(btn.dataset.pfId);
-        await handleDeletePrezzo(prezzoId, pfId);
-        return;
-      }
+        closeDrawer();
+        renderMasterTable();
+        updateRrpBanner();
+        validateMatrixPrices();
 
-      /* ── Elimina fornitore ────────────────────────────────────────── */
-      if (btn.classList.contains('qks-btn-delete-forn')) {
-        e.preventDefault();
-        const id   = Number(btn.dataset.id);
-        const nome = btn.dataset.nome;
-        if (!confirm(`Rimuovere il fornitore "${nome}" da questo prodotto?`)) return;
-
-        try {
-          const data = await postAjax(cfg.apiFornDelete, {
-            id:          id,
-            prodotto_id: prodId,
-          });
-          if (data.ok) {
-            fornitori = fornitori.filter(f => Number(f.id) !== id);
-            prezziMap.delete(id);
-            renderAll();
-          } else {
-            alert('Errore durante la rimozione: ' + (data.error || 'Errore sconosciuto'));
-          }
-        } catch (err) {
-          alert('Errore di rete: ' + err.message);
-        }
-        return;
+      } catch (e) {
+        alertBox.textContent = e.message || "Errore di rete.";
+        alertBox.classList.remove('d-none');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Salva Modifiche';
       }
     });
 
+    addScaglioneBtn?.addEventListener('click', () => {
+      addScaglioneRow(null);
+    });
 
-    /* ──────────────────────────────────────────────────────────────────────
-       SALVATAGGIO PREZZO (inline)
-    ────────────────────────────────────────────────────────────────────── */
-
-    /**
-     * Legge il form inline, invia via AJAX, aggiorna stato locale,
-     * ri-renderizza solo il gruppo interessato.
-     * @param {HTMLButtonElement} btn — il pulsante "Salva" ✓
-     */
-    async function handleSavePrezzo(btn) {
-      const rowId = btn.dataset.rowId;
-      const pfId  = Number(btn.dataset.pfId);
-      const id    = Number(btn.dataset.prezzoId); // 0 = insert
-
-      const get = suffix => document.getElementById(`${rowId}-${suffix}`);
-
-      const fields = {
-        id:                    id || 0,
-        prodotto_fornitore_id: pfId,
-        prodotto_id:           prodId,
-        listino_acquisto_id:   get('listino')?.value  || '',
-        quantita_minima:       get('qta')?.value      || 0,
-        prezzo:                get('prezzo')?.value   || 0,
-        sconto_perc:           get('sconto')?.value   || 0,
-        valido_dal:            get('dal')?.value      || '',
-        valido_al:             get('al')?.value       || '',
-        note:                  get('note')?.value     || '',
-      };
-
-      const prezzo = parseFloat(fields.prezzo);
-      if (isNaN(prezzo) || prezzo < 0) {
-        alert('Inserisci un prezzo valido (≥ 0).');
-        get('prezzo')?.focus();
-        return;
-      }
-
-      btn.disabled  = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
-      try {
-        const data = await postAjax(cfg.apiPrezzoSave, fields);
-
-        if (!data.ok) {
-          alert('Errore nel salvataggio: ' + (data.error || 'Errore sconosciuto'));
-          return;
-        }
-
-        /* Aggiorna la mappa locale */
-        const savedRow = data.row;
-        const pArr = prezziMap.get(pfId) || [];
-        if (id > 0) {
-          const idx = pArr.findIndex(x => Number(x.id) === id);
-          if (idx >= 0) pArr[idx] = savedRow; else pArr.push(savedRow);
-        } else {
-          pArr.push(savedRow);
-        }
-        prezziMap.set(pfId, pArr);
-
-        /* Re-render solo il blocco di questo fornitore */
-        rerenderFornitoreGroup(pfId);
-
-      } catch (err) {
-        alert('Errore di rete: ' + err.message);
-      } finally {
-        btn.disabled  = false;
-        btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-      }
-    }
-
-
-    /* ──────────────────────────────────────────────────────────────────────
-       ELIMINAZIONE PREZZO
-    ────────────────────────────────────────────────────────────────────── */
-
-    /**
-     * Elimina un prezzo via AJAX, aggiorna stato e DOM.
-     */
-    async function handleDeletePrezzo(prezzoId, pfId) {
-      if (!confirm('Eliminare questo scaglione di prezzo?')) return;
-
-      try {
-        const data = await postAjax(cfg.apiPrezzoDelete, {
-          id:          prezzoId,
-          prodotto_id: prodId,
+    btnToggleAllRrp?.addEventListener('click', () => {
+      const isCollapsed = !allRrpDetails.classList.contains('show');
+      if (isCollapsed) {
+        allRrpTbody.innerHTML = '';
+        fornitori.forEach(f => {
+          const tr = document.createElement('tr');
+          const isPref = (Number(f.ordine_preferenza_fornitore) === 1);
+          tr.innerHTML = `
+            <td><strong>${esc(f.nome_fornitore_rs)}</strong></td>
+            <td>${f.rrp_min !== null ? parseFloat(f.rrp_min).toFixed(4) + ' €' : '—'}</td>
+            <td>${f.rrp_max !== null ? parseFloat(f.rrp_max).toFixed(4) + ' €' : '—'}</td>
+            <td>${isPref ? '<i class="fa-solid fa-star text-warning"></i>' : '—'}</td>
+          `;
+          allRrpTbody.appendChild(tr);
         });
-
-        if (!data.ok) {
-          alert('Errore durante l\'eliminazione: ' + (data.error || 'Errore sconosciuto'));
-          return;
-        }
-
-        const pArr = prezziMap.get(pfId) || [];
-        prezziMap.set(pfId, pArr.filter(x => Number(x.id) !== prezzoId));
-        rerenderFornitoreGroup(pfId);
-
-      } catch (err) {
-        alert('Errore di rete: ' + err.message);
+        allRrpDetails.classList.add('show');
+        btnToggleAllRrp.textContent = "Nascondi tutti i fornitori";
+      } else {
+        allRrpDetails.classList.remove('show');
+        btnToggleAllRrp.textContent = "Mostra tutti i fornitori";
       }
-    }
+    });
 
+    /* ── Funzioni rendering ed interazioni ── */
 
-    /* ──────────────────────────────────────────────────────────────────────
-       HELPERS DOM
-    ────────────────────────────────────────────────────────────────────── */
-
-    /**
-     * Rimuove e ri-renderizza solo il blocco del fornitore pfId,
-     * preservando l'ordine relativo agli altri blocchi.
-     * @param {number} pfId
-     */
-    function rerenderFornitoreGroup(pfId) {
-      const oldBlock = document.getElementById(`qks-block-${pfId}`);
-      const forn     = fornitori.find(f => Number(f.id) === pfId);
-
-      if (!forn) {
-        /* Il fornitore non esiste più: rimuovi il blocco */
-        oldBlock?.remove();
+    function renderMasterTable() {
+      if (!masterTbody) return;
+      masterTbody.innerHTML = '';
+      if (fornitori.length === 0) {
+        masterTbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Nessun fornitore associato.</td></tr>`;
         return;
       }
 
-      const newBlock = buildSupplierBlock(forn);
+      // Ordina per ordine_preferenza_fornitore ASC
+      fornitori.sort((a,b) => (Number(a.ordine_preferenza_fornitore) || 99) - (Number(b.ordine_preferenza_fornitore) || 99));
 
-      if (oldBlock) {
-        /* Sostituisce in-place mantenendo la posizione */
-        container.replaceChild(newBlock, oldBlock);
-      } else {
-        /* Non trovato (caso raro): appende in fondo e riordina */
-        container.appendChild(newBlock);
+      fornitori.forEach(f => {
+        const tr = document.createElement('tr');
+        const isPref = (Number(f.ordine_preferenza_fornitore) === 1);
+        
+        // Trova il prezzo base (quantita_minima = 0)
+        const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === f.id);
+        const basePrezzoRow = prezziForn.find(p => parseFloat(p.quantita_minima) === 0);
+        const baseCosto = basePrezzoRow ? parseFloat(basePrezzoRow.prezzo).toFixed(4) + ' €' : '—';
+
+        tr.innerHTML = `
+          <td style="text-align:center;">
+            <i class="pref-star fa-star ${isPref ? 'fa-solid active' : 'fa-regular'}" data-id="${f.id}" style="cursor:pointer;"></i>
+          </td>
+          <td>
+            <div class="d-flex flex-column">
+              <strong>${esc(f.nome_fornitore_rs)}</strong>
+              ${f.nome_prodotto_fornitore ? `<span class="text-muted small">${esc(f.nome_prodotto_fornitore)}</span>` : ''}
+            </div>
+          </td>
+          <td class="font-monospace">${esc(f.sku_fornitore || '—')}</td>
+          <td>${baseCosto}</td>
+          <td>${f.lead_time_giorni ? f.lead_time_giorni + ' gg' : '—'}</td>
+          <td class="text-end">
+            <button type="button" class="btn-qk btn-qk-secondary btn-qk-xs btn-edit-forn" data-id="${f.id}">
+              <i class="fa-solid fa-pen-to-square"></i> Dettagli & Prezzi
+            </button>
+            <button type="button" class="btn-qk btn-qk-danger btn-qk-xs btn-delete-forn" data-id="${f.id}">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </td>
+        `;
+
+        tr.querySelector('.pref-star').addEventListener('click', () => setPreferito(f.id));
+        tr.querySelector('.btn-edit-forn').addEventListener('click', () => openDrawer(f));
+        tr.querySelector('.btn-delete-forn').addEventListener('click', () => deleteFornitore(f.id));
+
+        masterTbody.appendChild(tr);
+      });
+    }
+
+    async function setPreferito(fornId) {
+      // Imposta localmente la stella
+      fornitori.forEach(f => {
+        f.ordine_preferenza_fornitore = (f.id === fornId) ? 1 : 2;
+      });
+
+      // Salva l'ordine di preferenza nel DB per tutti i fornitori associati
+      for (const f of fornitori) {
+        const fd = new FormData();
+        fd.append('id', String(f.id));
+        fd.append('prodotto_id', String(prodId));
+        fd.append('fornitore_id', String(f.fornitore_id));
+        fd.append('ordine_preferenza_fornitore', String(f.ordine_preferenza_fornitore));
+        fd.append('attivo', String(f.attivo));
+        fd.append('no_prezzi', '1');
+        fd.append('csrf_token', CSRF);
+        await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
+      }
+
+      renderMasterTable();
+      updateRrpBanner();
+      validateMatrixPrices();
+    }
+
+    async function deleteFornitore(fornId) {
+      if (!confirm("Sei sicuro di voler rimuovere l'associazione con questo fornitore e cancellare tutti i suoi scaglioni prezzo?")) return;
+
+      const fd = new FormData();
+      fd.append('id', String(fornId));
+      fd.append('prodotto_id', String(prodId));
+      fd.append('csrf_token', CSRF);
+
+      try {
+        const res = await fetch(cfg.apiFornDelete, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) {
+          fornitori = fornitori.filter(f => f.id !== fornId);
+          prezziList = prezziList.filter(p => p.prodotto_fornitore_id !== fornId);
+          renderMasterTable();
+          updateRrpBanner();
+          validateMatrixPrices();
+        } else {
+          alert("Errore nell'eliminazione: " + (data.error || "sconosciuto"));
+        }
+      } catch (e) {
+        alert("Errore di rete.");
       }
     }
 
+    async function openDrawer(f) {
+      if (!alertBox) return;
+      alertBox.classList.add('d-none');
+      dwId.value = f.id;
+      dwFornId.value = f.fornitore_id;
+      dwFornLabel.value = f.nome_fornitore_rs;
+      dwSku.value = f.sku_fornitore || '';
+      dwNomeProd.value = f.nome_prodotto_fornitore || '';
+      dwQtaMin.value = f.quantita_minima || '';
+      dwLeadTime.value = f.lead_time_giorni || '';
+      dwAttivo.checked = String(f.attivo) === '1';
+      dwRrpMin.value = f.rrp_min !== null ? f.rrp_min : '';
+      dwRrpMax.value = f.rrp_max !== null ? f.rrp_max : '';
+      dwNote.value = f.note || '';
 
-    /* ──────────────────────────────────────────────────────────────────────
-       EVENTI CUSTOM — da products-form.js (salva / elimina fornitore)
-    ────────────────────────────────────────────────────────────────────── */
+      // Carica i listini del fornitore
+      listiniAcquisto = await loadListiniAcquisto(f.fornitore_id);
 
-    /**
-     * Ascolta qk:forn-saved: aggiunge o aggiorna il fornitore.
-     * Il detail.row è il record restituito da saveForn().
-     */
+      // Popola scaglioni
+      scaglioniTbody.innerHTML = '';
+      const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === f.id);
+      
+      // Assicura che ci sia almeno lo scaglione 0
+      if (prezziForn.length === 0 || !prezziForn.find(p => parseFloat(p.quantita_minima) === 0)) {
+        addScaglioneRow({ id: 0, quantita_minima: 0, prezzo: 0, sconto_perc: 0 });
+      }
+
+      prezziForn.sort((a,b) => parseFloat(a.quantita_minima) - parseFloat(b.quantita_minima));
+      prezziForn.forEach(p => {
+        addScaglioneRow(p);
+      });
+
+      drawer?.classList.add('open');
+      overlay?.classList.add('open');
+    }
+
+    function closeDrawer() {
+      drawer?.classList.remove('open');
+      overlay?.classList.remove('open');
+    }
+
+    function addScaglioneRow(p = null) {
+      const tr = document.createElement('tr');
+      tr.className = 'sc-row';
+      const isBase = p && parseFloat(p.quantita_minima) === 0;
+      
+      const rowId = p ? p.id : 0;
+      tr.dataset.rowId = rowId;
+
+      const qta = p ? p.quantita_minima : 0;
+      const prezzo = p ? p.prezzo : 0;
+      const sconto = p ? p.sconto_perc : 0;
+      const listinoId = p ? p.listino_acquisto_id : '';
+      const dal = p ? p.valido_dal : '';
+      const al = p ? p.valido_al : '';
+      const note = p ? p.note : '';
+
+      // Opzioni del select listini
+      let optsHtml = '<option value="">Base (nessun listino)</option>';
+      listiniAcquisto.forEach(l => {
+        optsHtml += `<option value="${l.id}" ${String(l.id) === String(listinoId) ? 'selected' : ''}>${esc(l.nome_listino)}</option>`;
+      });
+
+      tr.innerHTML = `
+        <td>
+          <select class="form-select form-select-sm sc-listino" style="font-size:0.75rem;">
+            ${optsHtml}
+          </select>
+        </td>
+        <td>
+          <input type="number" class="form-control form-control-sm sc-qta font-monospace" 
+                 value="${qta}" min="0" step="0.001" ${isBase ? 'readonly' : ''} style="width:75px; font-size:0.75rem;">
+        </td>
+        <td>
+          <input type="number" class="form-control form-control-sm sc-prezzo font-monospace" 
+                 value="${prezzo}" min="0" step="0.0001" style="width:90px; font-size:0.75rem;">
+        </td>
+        <td>
+          <input type="number" class="form-control form-control-sm sc-sconto font-monospace" 
+                 value="${sconto}" min="0" max="100" step="0.01" style="width:65px; font-size:0.75rem;" placeholder="0">
+        </td>
+        <td style="text-align:right; white-space:nowrap;">
+          <button type="button" class="btn btn-xs btn-outline-secondary btn-toggle-extra" style="padding:1px 5px; font-size:0.7rem;"><i class="fa-solid fa-ellipsis"></i></button>
+          ${isBase ? '' : '<button type="button" class="btn btn-xs btn-link text-danger btn-del-scaglione" style="padding:1px 3px;"><i class="fa-solid fa-trash"></i></button>'}
+        </td>
+      `;
+
+      // Riga extra collassata per date e note
+      const extraTr = document.createElement('tr');
+      extraTr.className = 'sc-extra-row d-none';
+      extraTr.innerHTML = `
+        <td colspan="5" class="bg-light p-2" style="border-top:none;">
+          <div class="row g-2">
+            <div class="col-4">
+              <label class="small text-muted mb-0" style="font-size:0.65rem;">Valido dal</label>
+              <input type="date" class="form-control form-control-sm sc-dal" value="${esc(dal)}" style="font-size:0.7rem; padding: 2px 4px;">
+            </div>
+            <div class="col-4">
+              <label class="small text-muted mb-0" style="font-size:0.65rem;">Valido al</label>
+              <input type="date" class="form-control form-control-sm sc-al" value="${esc(al)}" style="font-size:0.7rem; padding: 2px 4px;">
+            </div>
+            <div class="col-4">
+              <label class="small text-muted mb-0" style="font-size:0.65rem;">Note</label>
+              <input type="text" class="form-control form-control-sm sc-note" value="${esc(note)}" placeholder="Note..." style="font-size:0.7rem; padding: 2px 4px;">
+            </div>
+          </div>
+        </td>
+      `;
+
+      tr.querySelector('.btn-toggle-extra').addEventListener('click', () => {
+        extraTr.classList.toggle('d-none');
+      });
+
+      if (!isBase) {
+        tr.querySelector('.btn-del-scaglione').addEventListener('click', () => {
+          tr.remove();
+          extraTr.remove();
+        });
+      }
+
+      scaglioniTbody.appendChild(tr);
+      scaglioniTbody.appendChild(extraTr);
+    }
+
+    function updateRrpBanner() {
+      if (!rrpBannerContent) return;
+
+      const prefForn = fornitori.find(f => Number(f.ordine_preferenza_fornitore) === 1);
+      if (!prefForn) {
+        rrpBannerContent.innerHTML = `<span class="text-danger">Nessun fornitore preferito impostato. Stella [★] richiesta per identificare il costo base.</span>`;
+        return;
+      }
+
+      const minVal = prefForn.rrp_min !== null ? parseFloat(prefForn.rrp_min).toFixed(4) + ' €' : 'Non specificato';
+      const maxVal = prefForn.rrp_max !== null ? parseFloat(prefForn.rrp_max).toFixed(4) + ' €' : 'Non specificato';
+
+      rrpBannerContent.innerHTML = `
+        <strong>${esc(prefForn.nome_fornitore_rs)}</strong> ➔ 
+        Min RRP: <span class="badge bg-light text-dark border font-monospace">${minVal}</span> | 
+        Max RRP: <span class="badge bg-light text-dark border font-monospace">${maxVal}</span>
+      `;
+    }
+
+    function validateMatrixPrices() {
+      if (!matrixTable) return;
+      const cells = matrixTable.querySelectorAll('.matrix-cell-wrapper');
+      cells.forEach(cell => {
+        validateSingleCell(cell);
+      });
+    }
+
+    function validateSingleCell(cell) {
+      const input = cell.querySelector('.cell-price-input');
+      if (!input) return;
+
+      // Reset classi
+      cell.classList.remove('warning', 'error-cost');
+      cell.querySelectorAll('.test-warning-tooltip').forEach(el => el.remove());
+
+      const val = parseFloat(input.value);
+      if (isNaN(val)) return;
+
+      const prefForn = fornitori.find(f => Number(f.ordine_preferenza_fornitore) === 1);
+      
+      // Costo preferito di acquisto a Qty 0+
+      let costoPreferito = 0;
+      if (prefForn) {
+        const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === prefForn.id);
+        const basePrezzoRow = prezziForn.find(p => parseFloat(p.quantita_minima) === 0);
+        if (basePrezzoRow) {
+          costoPreferito = parseFloat(basePrezzoRow.prezzo);
+        }
+      }
+
+      // 1. Controllo Sotto Costo (Errore Matematico) - su fornitore preferenziale
+      if (val <= costoPreferito) {
+        cell.classList.add('error-cost');
+        addTooltip(cell, `Sotto costo! Costo acquisto preferito: ${costoPreferito.toFixed(4)} €`, 'error-cost-tooltip');
+        return;
+      }
+
+      // Ottieni tutti i vincoli RRP di tutti i fornitori per la Trasparenza Contestuale
+      const rrpConstraints = fornitori.map(f => ({
+        nome: f.nome_fornitore_rs,
+        min: f.rrp_min !== null ? parseFloat(f.rrp_min) : null,
+        max: f.rrp_max !== null ? parseFloat(f.rrp_max) : null
+      })).filter(c => c.min !== null || c.max !== null);
+
+      // 2. Controllo RRP (Soft Warnings) - contro TUTTI i fornitori
+      for (const c of rrpConstraints) {
+        if (c.min !== null && val < c.min) {
+          cell.classList.add('warning');
+          addTooltip(cell, `Sotto il Min RRP consigliato da ${c.nome} (${c.min.toFixed(4)} €)`, 'test-warning-tooltip');
+          break; // Mostra il primo warning che capita
+        }
+        if (c.max !== null && val > c.max) {
+          cell.classList.add('warning');
+          addTooltip(cell, `Sopra il Max RRP consigliato da ${c.nome} (${c.max.toFixed(4)} €)`, 'test-warning-tooltip');
+          break;
+        }
+      }
+    }
+
+    if (matrixTable) {
+      matrixTable.addEventListener('input', (e) => {
+        const input = e.target.closest('.cell-price-input');
+        if (input) {
+          validateSingleCell(input.closest('.matrix-cell-wrapper'));
+        }
+      });
+      matrixTable.addEventListener('change', (e) => {
+        const input = e.target.closest('.cell-price-input');
+        if (input) {
+          validateSingleCell(input.closest('.matrix-cell-wrapper'));
+        }
+      });
+    }
+
+    function addTooltip(cell, text, className) {
+      const tooltip = document.createElement('div');
+      tooltip.className = `test-warning-tooltip ${className}`;
+      tooltip.style.position = 'absolute';
+      tooltip.style.bottom = '100%';
+      tooltip.style.left = '50%';
+      tooltip.style.transform = 'translateX(-50%)';
+      tooltip.style.background = className === 'error-cost-tooltip' ? '#ef4444' : '#f97316';
+      tooltip.style.color = '#fff';
+      tooltip.style.fontSize = '0.7rem';
+      tooltip.style.padding = '2px 6px';
+      tooltip.style.borderRadius = '4px';
+      tooltip.style.whiteSpace = 'nowrap';
+      tooltip.style.zIndex = '10';
+      tooltip.style.marginBottom = '4px';
+      tooltip.style.pointerEvents = 'none';
+      tooltip.textContent = text;
+      cell.appendChild(tooltip);
+    }
+
+    function esc(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Ascolta il custom event qk:forn-saved (generato dal modale autocomplete)
     document.addEventListener('qk:forn-saved', function (e) {
       const row = e.detail?.row;
       if (!row) return;
@@ -849,26 +610,28 @@
 
       if (idx >= 0) {
         fornitori[idx] = row;
-        rerenderFornitoreGroup(pfId);
       } else {
         fornitori.push(row);
-        prezziMap.set(pfId, []);
-        /* Aggiunge il nuovo blocco in fondo, poi riordina tutto */
-        renderAll();
       }
+      
+      renderMasterTable();
+      updateRrpBanner();
+      validateMatrixPrices();
+
+      // Apri immediatamente il Drawer per configurare prezzi/RRP
+      openDrawer(row);
     });
 
-    /**
-     * Ascolta qk:forn-deleted: rimuove il fornitore.
-     */
+    // Ascolta variazioni sul prezzo di acquisto/preferred per aggiornare la validazione matrice
     document.addEventListener('qk:forn-deleted', function (e) {
       const id = Number(e.detail?.id);
       if (!id) return;
       fornitori = fornitori.filter(f => Number(f.id) !== id);
-      prezziMap.delete(id);
-      renderAll();
+      prezziList = prezziList.filter(p => p.prodotto_fornitore_id !== id);
+      renderMasterTable();
+      updateRrpBanner();
+      validateMatrixPrices();
     });
 
-  }); // fine DOMContentLoaded
-
-})(); // fine IIFE
+  });
+})();
