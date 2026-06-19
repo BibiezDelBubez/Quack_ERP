@@ -989,6 +989,7 @@ function qk_insert_contatto_fornitore(PDO $pdo, int $parent_id, array $v): int
         qk_null_if_empty($v['ruolo']     ?? ''),
     ]);
 
+
     return (int) $pdo->lastInsertId();
 }
 
@@ -1036,6 +1037,121 @@ function qk_delete_contatto_fornitore(PDO $pdo, int $id, int $parent_id): void
 
     if ($stmt->rowCount() === 0) {
         throw new \RuntimeException('Contatto non trovato o non appartiene a questo fornitore.');
+    }
+}
+
+/**
+ * Ritorna la lista dei contatti collegati a un cliente.
+ *
+ * @return list<array{id:int, nome:string, cognome:string, email:string,
+ *                    telefono:string, cellulare:string, ruolo:string}>
+ */
+function qk_list_contatti_cliente(PDO $pdo, int $parent_id): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT id, nome, cognome, email, telefono, cellulare, note AS ruolo
+           FROM clienti_fornitori
+          WHERE parent_id = ? AND tipo IN ('cliente', 'entrambi')
+          ORDER BY cognome COLLATE NOCASE, nome COLLATE NOCASE"
+    );
+    $stmt->execute([$parent_id]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    return array_map(static function (array $r): array {
+        return [
+            'id'        => (int) $r['id'],
+            'nome'      => (string) ($r['nome']      ?? ''),
+            'cognome'   => (string) ($r['cognome']   ?? ''),
+            'email'     => (string) ($r['email']     ?? ''),
+            'telefono'  => (string) ($r['telefono']  ?? ''),
+            'cellulare' => (string) ($r['cellulare'] ?? ''),
+            'ruolo'     => (string) ($r['ruolo']     ?? ''),
+        ];
+    }, $rows);
+}
+
+/**
+ * Crea un nuovo contatto collegato a un cliente.
+ *
+ * @return int l'id del nuovo record
+ */
+function qk_insert_contatto_cliente(PDO $pdo, int $parent_id, array $v): int
+{
+    // Verifica che il parent esista ed è un cliente
+    $check = $pdo->prepare(
+        "SELECT id FROM clienti_fornitori WHERE id = ? AND tipo IN ('cliente','entrambi') LIMIT 1"
+    );
+    $check->execute([$parent_id]);
+    if (!$check->fetchColumn()) {
+        throw new \RuntimeException('Cliente non trovato.');
+    }
+
+    $codice = qk_next_codice($pdo, 'CONT');
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO clienti_fornitori
+            (parent_id, codice, tipo, tipo_soggetto, nome, cognome, email, telefono, cellulare, note, attivo, updated_at)
+         VALUES
+            (?, ?, 'cliente', 'privato', ?, ?, ?, ?, ?, ?, 1, datetime('now'))"
+    );
+    $stmt->execute([
+        $parent_id,
+        $codice,
+        qk_null_if_empty($v['nome']      ?? ''),
+        qk_null_if_empty($v['cognome']   ?? ''),
+        qk_null_if_empty($v['email']     ?? ''),
+        qk_null_if_empty($v['telefono']  ?? ''),
+        qk_null_if_empty($v['cellulare'] ?? ''),
+        qk_null_if_empty($v['ruolo']     ?? ''),
+    ]);
+
+    return (int) $pdo->lastInsertId();
+}
+
+/**
+ * Aggiorna un contatto esistente, verificando che appartenga al cliente corretto.
+ */
+function qk_update_contatto_cliente(PDO $pdo, int $id, int $parent_id, array $v): void
+{
+    $stmt = $pdo->prepare(
+        "UPDATE clienti_fornitori
+            SET nome      = ?,
+                cognome   = ?,
+                email     = ?,
+                telefono  = ?,
+                cellulare = ?,
+                note      = ?,
+                updated_at = datetime('now')
+          WHERE id = ? AND parent_id = ?"
+    );
+    $stmt->execute([
+        qk_null_if_empty($v['nome']      ?? ''),
+        qk_null_if_empty($v['cognome']   ?? ''),
+        qk_null_if_empty($v['email']     ?? ''),
+        qk_null_if_empty($v['telefono']  ?? ''),
+        qk_null_if_empty($v['cellulare'] ?? ''),
+        qk_null_if_empty($v['ruolo']     ?? ''),
+        $id,
+        $parent_id,
+    ]);
+
+    if ($stmt->rowCount() === 0) {
+        throw new \RuntimeException('Contatto non trovato o non appartiene a questo cliente.');
+    }
+}
+
+/**
+ * Elimina un contatto, verificando che appartenga al cliente corretto.
+ */
+function qk_delete_contatto_cliente(PDO $pdo, int $id, int $parent_id): void
+{
+    $stmt = $pdo->prepare(
+        'DELETE FROM clienti_fornitori WHERE id = ? AND parent_id = ?'
+    );
+    $stmt->execute([$id, $parent_id]);
+
+    if ($stmt->rowCount() === 0) {
+        throw new \RuntimeException('Contatto non trovato o non appartiene a questo cliente.');
     }
 }
 

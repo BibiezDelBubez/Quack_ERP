@@ -3,12 +3,15 @@
  * customers/_form.php
  * Variabili attese: $mode ('create'|'edit'), $entity_id (?int),
  *   $values (array), $errors (array), $record_meta (?array),
- *   $indirizzi_preload (array, solo in edit)
+ *   $indirizzi_preload (array, solo in edit),
+ *   $contatti_preload (array, solo in edit)
  */
 $isEdit = $mode === 'edit';
 $v = $values;
 $indirizzi_preload = $indirizzi_preload ?? [];
+$contatti_preload = $contatti_preload ?? [];
 $nIndirizzi = count($indirizzi_preload);
+$nContatti = count($contatti_preload);
 ?>
 <?php if (!empty($errors['_global'])): ?>
 <div class="qk-alert qk-alert-danger" data-auto-dismiss="6000">
@@ -39,6 +42,15 @@ $nIndirizzi = count($indirizzi_preload);
           <i class="fa-solid fa-map-location-dot fa-fw me-1"></i>Sedi e indirizzi
           <span class="badge bg-secondary ms-1 <?= ($isEdit && $nIndirizzi > 0) ? '' : 'd-none' ?>"
                 id="badge-indirizzi"><?= $nIndirizzi ?></span>
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="ctab-btn-contatti"
+                data-bs-toggle="tab" data-bs-target="#ctab-contatti"
+                type="button" role="tab" aria-selected="false">
+          <i class="fa-solid fa-address-book fa-fw me-1"></i>Contatti
+          <span class="badge bg-secondary ms-1 <?= ($isEdit && $nContatti > 0) ? '' : 'd-none' ?>"
+                id="badge-contatti"><?= $nContatti ?></span>
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -440,25 +452,27 @@ $nIndirizzi = count($indirizzi_preload);
         </script>
       </div><!-- /ctab-listini -->
 
-      <!-- TAB 2: SEDI E INDIRIZZI -->
-      <div class="tab-pane fade" id="ctab-indirizzi" role="tabpanel">
+      </div><!-- /ctab-indirizzi -->
+
+      <!-- TAB: CONTATTI -->
+      <div class="tab-pane fade" id="ctab-contatti" role="tabpanel">
 
         <?php if (!$isEdit): ?>
         <div class="qk-card mt-3">
           <div class="qk-card-body text-center py-4" style="color:var(--qk-text-muted)">
-            <i class="fa-solid fa-map-location-dot fa-2x mb-2 d-block" style="opacity:.3"></i>
-            Salva il cliente per poter aggiungere sedi e indirizzi.
+            <i class="fa-solid fa-address-book fa-2x mb-2 d-block" style="opacity:.3"></i>
+            Salva il cliente per poter aggiungere contatti.
           </div>
         </div>
         <?php else: ?>
         <div class="qk-card mt-3" style="overflow:hidden">
-          <div id="qksa-grid" class="qksa-grid">
-            <!-- Tiles iniettate da customers-addresses.js -->
+          <div id="qksc-grid" class="qksc-grid">
+            <!-- Tiles iniettate da customers-contacts.js -->
           </div>
         </div>
         <?php endif; ?>
 
-      </div><!-- /ctab-indirizzi -->
+      </div><!-- /ctab-contatti -->
 
       <?php if ($isEdit): ?>
       <!-- TAB 3: COMPLIANCE -->
@@ -651,8 +665,73 @@ $nIndirizzi = count($indirizzi_preload);
   </div>
 </div>
 
+<!-- Modal: Aggiungi / Modifica contatto -->
+<div class="modal fade" id="modalContatto" tabindex="-1"
+     aria-labelledby="modalContattoTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalContattoTitle">Contatto</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <div id="modalContattoErr" class="qk-alert qk-alert-danger d-none mb-3" role="alert">
+          <i class="fa-solid fa-circle-xmark"></i>
+          <span></span>
+        </div>
+        <form id="formContatto" novalidate autocomplete="off">
+          <input type="hidden" name="contact_id" value="0">
+          <div class="qk-form-row">
+            <div class="qk-form-group">
+              <label class="qk-form-label">Nome</label>
+              <input type="text" name="nome" class="qk-form-control" placeholder="Mario">
+            </div>
+            <div class="qk-form-group">
+              <label class="qk-form-label">Cognome</label>
+              <input type="text" name="cognome" class="qk-form-control" placeholder="Rossi">
+            </div>
+          </div>
+          <div class="qk-form-group">
+            <label class="qk-form-label">Ruolo / Funzione</label>
+            <input type="text" name="ruolo" class="qk-form-control" placeholder="Es. Responsabile acquisti">
+          </div>
+          <div class="qk-form-group">
+            <label class="qk-form-label">Email</label>
+            <input type="email" name="email" class="qk-form-control" placeholder="mario.rossi@esempio.it">
+          </div>
+          <div class="qk-form-row">
+            <div class="qk-form-group">
+              <label class="qk-form-label">Telefono</label>
+              <input type="tel" name="telefono" class="qk-form-control" placeholder="+39 02 1234567">
+            </div>
+            <div class="qk-form-group mb-0">
+              <label class="qk-form-label">Cellulare</label>
+              <input type="tel" name="cellulare" class="qk-form-control" placeholder="+39 333 1234567">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn-qk btn-qk-primary" id="btnSalvaContatto">
+          <i class="fa-solid fa-floppy-disk"></i> Salva contatto
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Config PHP → JS -->
 <script>
+window.QkCustomer = {
+  customerId: <?= (int) $entity_id ?>,
+  contatti:   <?= json_encode(array_values($contatti_preload), JSON_UNESCAPED_UNICODE) ?>,
+  apiList:    <?= json_encode(url('customers/api/contatti')) ?>,
+  apiSave:    <?= json_encode(url('customers/api/contatti/save')) ?>,
+  apiDelete:  <?= json_encode(url('customers/api/contatti/delete')) ?>,
+  csrfToken:  <?= json_encode(csrf_token()) ?>,
+};
+
 window.QkCustomerAddr = {
   customerId: <?= (int) $entity_id ?>,
   indirizzi:  <?= json_encode(array_values($indirizzi_preload), JSON_UNESCAPED_UNICODE) ?>,
@@ -674,6 +753,7 @@ window.QkCustomerCompliance = {
 </script>
 <script src="<?= url('assets/js/searchable-select.js') ?>"></script>
 <script src="<?= url('assets/js/customers-addresses.js') ?>"></script>
+<script src="<?= url('assets/js/customers-contacts.js') ?>"></script>
 <script src="<?= url('assets/js/customers-compliance.js') ?>"></script>
 
 <?php endif; ?>

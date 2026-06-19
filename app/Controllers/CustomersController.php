@@ -156,7 +156,10 @@ class CustomersController extends BaseController
         // Dati pre-caricati per gli indirizzi (PHP → JS via window.QkCustomerAddr)
         $indirizzi_preload = qk_list_indirizzi_cliente($this->pdo, $entity_id);
 
-        $extra_css = ['customers-addresses.css', 'customers-compliance.css', 'searchable-select.css'];
+        // Dati pre-caricati per i contatti (PHP → JS via window.QkCustomer)
+        $contatti_preload = qk_list_contatti_cliente($this->pdo, $entity_id);
+
+        $extra_css = ['customers-addresses.css', 'customers-compliance.css', 'searchable-select.css', 'suppliers-contacts.css'];
 
         $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -239,6 +242,121 @@ class CustomersController extends BaseController
         }
 
         return $errors;
+    }
+
+    /* ── API: Contatti cliente ────────────────────────────────────────────── */
+
+    /** GET /customers/api/contatti?customer_id=X */
+    public function apiContatti(): void
+    {
+        ob_start();
+        header('Content-Type: application/json');
+        $customer_id = filter_input(INPUT_GET, 'customer_id', FILTER_VALIDATE_INT);
+        if (!$customer_id) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'customer_id mancante']);
+            exit;
+        }
+        $rows = qk_list_contatti_cliente($this->pdo, $customer_id);
+        ob_end_clean();
+        echo json_encode(['ok' => true, 'contatti' => $rows]);
+        exit;
+    }
+
+    /** POST /customers/api/contatti/save */
+    public function apiContattiSave(): void
+    {
+        ob_start();
+        header('Content-Type: application/json');
+
+        if (!csrf_verify()) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'Token CSRF non valido.']);
+            exit;
+        }
+
+        $customer_id = (int) post('customer_id', '0');
+        $contact_id  = (int) post('contact_id', '0'); // 0 = nuovo
+
+        if (!$customer_id) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'customer_id mancante.']);
+            exit;
+        }
+
+        $v = [
+            'nome'      => post('nome', ''),
+            'cognome'   => post('cognome', ''),
+            'email'     => post('email', ''),
+            'telefono'  => post('telefono', ''),
+            'cellulare' => post('cellulare', ''),
+            'ruolo'     => post('ruolo', ''),
+        ];
+
+        if (trim($v['nome']) === '' && trim($v['cognome']) === '') {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'Nome o cognome obbligatorio.']);
+            exit;
+        }
+        if ($v['email'] !== '' && !filter_var($v['email'], FILTER_VALIDATE_EMAIL)) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'Indirizzo email non valido.']);
+            exit;
+        }
+
+        try {
+            if ($contact_id > 0) {
+                qk_update_contatto_cliente($this->pdo, $contact_id, $customer_id, $v);
+                $id = $contact_id;
+            } else {
+                $id = qk_insert_contatto_cliente($this->pdo, $customer_id, $v);
+            }
+
+            // Ricarica dalla DB per restituire i dati definitivi
+            $all   = qk_list_contatti_cliente($this->pdo, $customer_id);
+            $saved = null;
+            foreach ($all as $c) {
+                if ((int) $c['id'] === (int) $id) { $saved = $c; break; }
+            }
+            ob_end_clean();
+            echo json_encode(['ok' => true, 'contact' => $saved]);
+        } catch (Throwable $e) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    /** POST /customers/api/contatti/delete */
+    public function apiContattiDelete(): void
+    {
+        ob_start();
+        header('Content-Type: application/json');
+
+        if (!csrf_verify()) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'Token CSRF non valido.']);
+            exit;
+        }
+
+        $customer_id = (int) post('customer_id', '0');
+        $contact_id  = (int) post('contact_id', '0');
+
+        if (!$customer_id || !$contact_id) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'Parametri mancanti.']);
+            exit;
+        }
+
+        try {
+            qk_delete_contatto_cliente($this->pdo, $contact_id, $customer_id);
+            ob_end_clean();
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
     }
 
     /* ── API: Indirizzi cliente ───────────────────────────────────────────── */

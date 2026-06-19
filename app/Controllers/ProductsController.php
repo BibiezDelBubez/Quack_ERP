@@ -207,6 +207,90 @@ final class ProductsController extends BaseController
         $this->page(APP_ROOT_DIR . '/app/views/products/_form.php', get_defined_vars());
     }
 
+    public function editTest(): void
+    {
+        $mode      = 'edit';
+        $entity_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+
+        if (!$entity_id) {
+            redirect_with('products', 'danger', 'Prodotto non specificato.');
+        }
+
+        $loaded = qk_load_prodotto_form($this->pdo, $entity_id);
+
+        if (!$loaded) {
+            http_response_code(404);
+            require APP_ROOT_DIR . '/404.php';
+            exit;
+        }
+
+        $record_meta = [
+            'created_at' => $loaded['_created_at'] ?? '',
+            'updated_at' => $loaded['_updated_at'] ?? '',
+        ];
+        unset($loaded['_created_at'], $loaded['_updated_at']);
+
+        $values = array_merge($this->defaultValues(), $loaded);
+        $errors = [];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
+            } else {
+                $values = $this->readPostValues($values);
+                $errors = $this->validate($values, $entity_id);
+
+                if (empty($errors)) {
+                    try {
+                        qk_update_prodotto($this->pdo, $entity_id, $values);
+                        if (!empty($_FILES['foto_principale']['name'])) {
+                            qk_salva_immagine_prodotto($this->pdo, $entity_id, $_FILES['foto_principale']);
+                        }
+                        $raw_tags = $_POST['tag_ids'] ?? [];
+                        $tag_ids  = array_map('intval', (array) $raw_tags);
+                        qk_sync_prodotto_tags($this->pdo, $entity_id, $tag_ids);
+
+                        redirect_with('products/edit-test?id=' . $entity_id, 'success', 'Prodotto aggiornato (LAB TEST UX).');
+                    } catch (Throwable $e) {
+                        $errors['_global'] = qk_prodotti_db_message($e);
+                    }
+                }
+            }
+        }
+
+        $immagini              = qk_load_prodotto_immagini($this->pdo, $entity_id);
+        $categorie             = qk_load_categorie($this->pdo);
+        $unita_misura_list     = $this->pdo->query('SELECT id, codice, descrizione FROM unita_misura ORDER BY descrizione')->fetchAll(PDO::FETCH_ASSOC);
+        $adr_sostanze          = qk_load_adr_sostanze($this->pdo);
+        $fornitori_disponibili = qk_load_fornitori_disponibili($this->pdo);
+        $prodotto_fornitori    = qk_load_prodotto_fornitori($this->pdo, $entity_id);
+        $tutti_prezzi          = qk_load_prodotto_tutti_prezzi($this->pdo, $entity_id);
+        $all_tags              = qk_load_all_tags($this->pdo);
+        $prodotto_tag_ids      = qk_load_prodotto_tags($this->pdo, $entity_id);
+        $kit_componenti        = ($values['tipo'] === 'kit') ? qk_load_kit_componenti($this->pdo, $entity_id) : [];
+
+        $listini_prezzi_regole = $this->pdo->prepare('
+            SELECT lp.*, l.nome AS listino_nome, l.valuta
+            FROM listini_prezzi lp
+            JOIN listini l ON l.id = lp.listino_id
+            WHERE lp.prodotto_id = ?
+            ORDER BY l.nome ASC, lp.quantita_minima ASC
+        ');
+        $listini_prezzi_regole->execute([$entity_id]);
+        $prezzi_vendita_regole = $listini_prezzi_regole->fetchAll(PDO::FETCH_ASSOC);
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+        $page_title    = e($values['nome']) ?: 'Modifica prodotto (TEST LAB)';
+        $page_subtitle = 'SKU ' . e($values['sku_interno']) . ' · ID #' . $entity_id . ' (PROVA NUOVA UX DETTAGLIO PREZZI/RRP)';
+        $breadcrumbs   = [
+            ['label' => 'Prodotti', 'url' => url('products')],
+            ['label' => ($values['nome'] ?: 'Modifica') . ' (TEST LAB)'],
+        ];
+        $extra_css = ['products-suppliers.css', 'products-test-ux.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/products/_form_test.php', get_defined_vars());
+    }
+
     /* ── API: crea categoria inline ──────────────────────────────────────── */
 
     public function crearCategoria(): void
