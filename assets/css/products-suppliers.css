@@ -452,3 +452,34 @@
   font-weight: 700;
   color: #0f172a;
 }
+
+/* Stile per input inline nella Master List per evitare spreco di spazio */
+.master-sku-input, .master-lead-time-input {
+  border: 1px solid transparent;
+  background: transparent;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  border-radius: var(--qk-radius-sm, 4px);
+  color: var(--qk-text-primary);
+  transition: all 0.2s ease;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.master-sku-input:hover, .master-lead-time-input:hover {
+  border-color: var(--qk-border, #cbd5e1);
+  background: var(--qk-bg-subtle, rgba(0,0,0,0.02));
+}
+
+.master-sku-input:focus, .master-lead-time-input:focus {
+  border-color: var(--qk-accent, #3b82f6);
+  background: #fff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Assicura che la tendina dell'autocomplete sia visibile sopra il modale */
+.qk-m2o-dropdown {
+  z-index: 2000 !important;
+}

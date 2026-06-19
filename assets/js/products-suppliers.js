@@ -67,10 +67,67 @@
     }
 
     /* ── Inizializzazione ── */
-    if (masterTbody) {
+     if (masterTbody) {
       renderMasterTable();
       updateRrpBanner();
       validateMatrixPrices();
+
+      // Autosave in linea per SKU e Lead Time nella Master List
+      masterTbody.addEventListener('focusout', async (e) => {
+        const input = e.target.closest('.master-sku-input, .master-lead-time-input');
+        if (!input) return;
+
+        const pfId = parseInt(input.dataset.id);
+        const f = fornitori.find(x => x.id === pfId);
+        if (!f) return;
+
+        let skuVal = f.sku_fornitore || '';
+        let leadVal = f.lead_time_giorni || 0;
+
+        if (input.classList.contains('master-sku-input')) {
+          skuVal = input.value.trim();
+        } else if (input.classList.contains('master-lead-time-input')) {
+          leadVal = parseInt(input.value) || 0;
+        }
+
+        if (skuVal === (f.sku_fornitore || '') && leadVal === (f.lead_time_giorni || 0)) {
+          return; // Nessun cambiamento
+        }
+
+        // Indicazione visiva di salvataggio
+        input.style.borderColor = '#ffc107';
+
+        const fd = new FormData();
+        fd.append('id', String(pfId));
+        fd.append('prodotto_id', String(prodId));
+        fd.append('fornitore_id', String(f.fornitore_id));
+        fd.append('sku_fornitore', skuVal);
+        fd.append('nome_prodotto_fornitore', f.nome_prodotto_fornitore || '');
+        fd.append('quantita_minima', String(f.quantita_minima || 0));
+        fd.append('lead_time_giorni', String(leadVal));
+        fd.append('ordine_preferenza_fornitore', String(f.ordine_preferenza_fornitore));
+        fd.append('attivo', String(f.attivo));
+        fd.append('no_prezzi', '1');
+        fd.append('csrf_token', CSRF);
+
+        try {
+          const res = await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
+          const data = await res.json();
+          if (data.ok) {
+            f.sku_fornitore = skuVal;
+            f.lead_time_giorni = leadVal;
+            // Flash di successo verde
+            input.style.borderColor = 'var(--qk-success, #22c55e)';
+            setTimeout(() => {
+              input.style.borderColor = '';
+            }, 1000);
+          } else {
+            input.style.borderColor = 'var(--qk-danger, #ef4444)';
+          }
+        } catch (err) {
+          input.style.borderColor = 'var(--qk-danger, #ef4444)';
+        }
+      });
     }
 
     // Eventi Drawer
@@ -265,9 +322,18 @@
       // Ordina per ordine_preferenza_fornitore ASC
       fornitori.sort((a,b) => (Number(a.ordine_preferenza_fornitore) || 99) - (Number(b.ordine_preferenza_fornitore) || 99));
 
+      let foundPref = false;
       fornitori.forEach(f => {
         const tr = document.createElement('tr');
-        const isPref = (Number(f.ordine_preferenza_fornitore) === 1);
+        let isPref = (Number(f.ordine_preferenza_fornitore) === 1);
+        if (isPref) {
+          if (!foundPref) {
+            foundPref = true;
+          } else {
+            isPref = false;
+            f.ordine_preferenza_fornitore = 2;
+          }
+        }
         
         // Trova il prezzo base (quantita_minima = 0)
         const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === f.id);
@@ -284,9 +350,18 @@
               ${f.nome_prodotto_fornitore ? `<span class="text-muted small">${esc(f.nome_prodotto_fornitore)}</span>` : ''}
             </div>
           </td>
-          <td class="font-monospace">${esc(f.sku_fornitore || '—')}</td>
+           <td>
+            <input type="text" class="font-monospace master-sku-input" 
+                   data-id="${f.id}" value="${esc(f.sku_fornitore || '')}">
+          </td>
           <td>${baseCosto}</td>
-          <td>${f.lead_time_giorni ? f.lead_time_giorni + ' gg' : '—'}</td>
+          <td>
+            <div class="d-flex align-items-center gap-1">
+              <input type="number" class="master-lead-time-input" 
+                     data-id="${f.id}" value="${f.lead_time_giorni || ''}" min="0">
+              <span class="small text-muted">gg</span>
+            </div>
+          </td>
           <td class="text-end">
             <button type="button" class="btn-qk btn-qk-secondary btn-qk-xs btn-edit-forn" data-id="${f.id}">
               <i class="fa-solid fa-pen-to-square"></i> Dettagli & Prezzi
