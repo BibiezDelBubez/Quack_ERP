@@ -453,7 +453,7 @@
     const btnCancelRrp = document.getElementById('btn-cancel-rrp-drawer');
     const rrpDrawer = document.getElementById('rrp-drawer');
     const rrpDrawerOverlay = document.getElementById('rrp-drawer-overlay');
-    const rrpHeaderMsg = document.getElementById('rrp-header-msg');
+    const rrpBannerValue = document.getElementById('rrp-banner-value');
     const rrpDrawerAlert = document.getElementById('rrp-drawer-alert');
 
     function openRrpDrawer() {
@@ -604,14 +604,35 @@
        const uniqueSuppliers = [...new Map(flatRows.filter(f => f.fornitore_id).map(f => [f.fornitore_id, f])).values()];
        
        if (uniqueSuppliers.length === 0) {
-           if (rrpHeaderMsg) rrpHeaderMsg.innerHTML = 'Per scegliere dei prezzi consigliati, prima scrivi gli accordi coi fornitori';
-           if (btnOpenRrp) btnOpenRrp.innerHTML = '<i class="fa-solid fa-plus me-1"></i> Aggiungi Prezzo Consigliato';
+           if (rrpBannerValue) rrpBannerValue.innerHTML = '<span class="text-muted" style="font-size: 0.82rem;">Inserisci prima i fornitori per poter configurare i prezzi consigliati.</span>';
        } else if (rrpRows.length === 0) {
-           if (rrpHeaderMsg) rrpHeaderMsg.innerHTML = 'Nessun prezzo consigliato';
-           if (btnOpenRrp) btnOpenRrp.innerHTML = '<i class="fa-solid fa-plus me-1"></i> Clicca per aggiungere';
+           if (rrpBannerValue) rrpBannerValue.innerHTML = '<span class="text-muted" style="font-size: 0.82rem;">Nessun prezzo consigliato configurato.</span>';
        } else {
-           if (rrpHeaderMsg) rrpHeaderMsg.innerHTML = '';
-           if (btnOpenRrp) btnOpenRrp.innerHTML = '<i class="fa-solid fa-sliders me-1"></i> Prezzi di rivendita consigliati (' + rrpRows.length + ')';
+           const active = rrpRows.filter(r => r.rrp_min || r.rrp_max);
+           if (active.length === 0) {
+               if (rrpBannerValue) rrpBannerValue.innerHTML = '<span class="text-muted" style="font-size: 0.82rem;">Nessun valore consigliato impostato.</span>';
+           } else {
+               let mins = active.map(r => parseFloat(r.rrp_min)).filter(n => !isNaN(n) && n > 0);
+               let maxs = active.map(r => parseFloat(r.rrp_max)).filter(n => !isNaN(n) && n > 0);
+               
+               const hasMin = mins.length > 0;
+               const hasMax = maxs.length > 0;
+               
+               let interMin = hasMin ? Math.max(...mins) : null;
+               let interMax = hasMax ? Math.min(...maxs) : null;
+               
+               const currency = active[0]?.valuta || 'EUR';
+               
+               if (hasMin && hasMax && interMin > interMax) {
+                   if (rrpBannerValue) rrpBannerValue.innerHTML = `<span class="badge bg-danger text-white me-1">Conflitto Prezzi</span> <span class="fw-bold text-danger">${Math.min(...mins).toFixed(2)} - ${Math.max(...maxs).toFixed(2)} ${currency}</span>`;
+               } else if (hasMin && hasMax) {
+                   if (rrpBannerValue) rrpBannerValue.innerHTML = `Safe Zone: <span class="fw-bold text-success">${interMin.toFixed(2)} - ${interMax.toFixed(2)} ${currency}</span>`;
+               } else if (hasMin) {
+                   if (rrpBannerValue) rrpBannerValue.innerHTML = `Safe Zone: <span class="fw-bold text-success">&gt;= ${interMin.toFixed(2)} ${currency}</span>`;
+               } else if (hasMax) {
+                   if (rrpBannerValue) rrpBannerValue.innerHTML = `Safe Zone: <span class="fw-bold text-success">&lt;= ${interMax.toFixed(2)} ${currency}</span>`;
+               }
+           }
        }
 
        if (!rrpDrawerAlert) return;

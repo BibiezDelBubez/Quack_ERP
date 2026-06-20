@@ -857,6 +857,18 @@ window.QkPF = {
           $listini_da_mostrare = $listini;
           ?>
 
+          <!-- Banner Prezzi Consigliati -->
+          <div id="rrp-banner-container" class="qk-alert qk-alert-info mt-3 d-flex align-items-center justify-content-between" style="padding: 0.5rem 1rem; border-radius: var(--qk-radius); font-size: 0.85rem; min-height: 40px; margin-bottom: 0;">
+            <div class="d-flex align-items-center gap-2" style="flex-wrap: wrap;">
+              <i class="fa-solid fa-circle-info fa-fw text-info" style="font-size: 1.1rem; margin-top: 0;"></i>
+              <strong class="text-dark">Prezzi consigliati dal fornitore:</strong>
+              <span id="rrp-banner-value" style="color: var(--qk-text-primary);">Nessun prezzo consigliato</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-open-rrp-drawer" style="padding: 2px 10px; font-size: 0.8rem; height: auto;">
+              <i class="fa-solid fa-sliders me-1"></i> Gestisci prezzi consigliati
+            </button>
+          </div>
+
           <div class="qk-card mt-3">
             <div class="qk-card-header qk-flex-row qk-justify-between qk-align-center" style="border-bottom:1px solid var(--qk-border); padding:.6rem 1.25rem;">
               <div>
@@ -872,12 +884,6 @@ window.QkPF = {
                     <option value="commercial">Unità commerciale</option>
                     <option value="stock" selected>Unità di stock</option>
                   </select>
-                </div>
-                <div>
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-open-rrp-drawer">
-                     Prezzi di rivendita consigliati
-                  </button>
-                  <div id="rrp-header-msg" class="text-muted small mt-1"></div>
                 </div>
               </div>
             </div>
