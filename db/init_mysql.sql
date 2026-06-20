@@ -491,7 +491,7 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori (
     fornitore_id            INTEGER       NOT NULL REFERENCES clienti_fornitori(id),
     sku_fornitore           VARCHAR(50),                -- codice articolo usato dal fornitore; appare sui documenti inviati al fornitore
     nome_prodotto_fornitore VARCHAR(150),               -- nome del prodotto secondo il fornitore
-    unita_misura_acquisto_id INTEGER      REFERENCES unita_misura(id),  -- UoM in cui il fornitore quota il prezzo; può differire dalla UoM di stock
+    unita_misura_acquisto_id INTEGER      NOT NULL REFERENCES unita_misura(id),  -- UoM in cui il fornitore quota il prezzo; può differire dalla UoM di stock
     quantita_minima         DECIMAL(10,3),              -- MOQ in unita_misura_acquisto_id
     iva_acquisto_default   DECIMAL(5,2), -- iva che viene suggerita di base per le richieste preventivo. è OVERRIDE di quella in tabella prodotti
     ordine_preferenza_fornitore INTEGER   NOT NULL DEFAULT 1,  -- 1 = fornitore preferito per questo prodotto

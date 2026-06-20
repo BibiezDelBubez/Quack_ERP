@@ -246,9 +246,9 @@ function qk_load_prodotto_fornitori(PDO $pdo, int $prodotto_id): array
     $stmt = $pdo->prepare(
         "SELECT pf.id, pf.fornitore_id, cf.ragione_sociale AS nome_fornitore_rs,
                 pf.sku_fornitore, pf.nome_prodotto_fornitore,
-                um.codice AS unita_misura_codice,
+                um.codice AS unita_misura_codice, pf.unita_misura_acquisto_id,
                 pf.quantita_minima, pf.ordine_preferenza_fornitore, pf.attivo,
-                pf.rrp_min, pf.rrp_max, pf.lead_time_giorni, pf.note,
+                pf.lead_time_giorni, pf.note,
                 (pf.ordine_preferenza_fornitore = 1) AS preferenziale,
                 (SELECT pfp.prezzo
                    FROM prodotti_fornitori_prezzi pfp
@@ -260,6 +260,19 @@ function qk_load_prodotto_fornitori(PDO $pdo, int $prodotto_id): array
       LEFT JOIN unita_misura um ON um.id = pf.unita_misura_acquisto_id
           WHERE pf.prodotto_id = :id
           ORDER BY pf.ordine_preferenza_fornitore, cf.ragione_sociale"
+    );
+    $stmt->execute([':id' => $prodotto_id]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function qk_load_prodotto_rrp(PDO $pdo, int $prodotto_id): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT r.*, cf.ragione_sociale AS nome_fornitore_rs
+           FROM prodotti_rrp r
+      LEFT JOIN clienti_fornitori cf ON cf.id = r.fornitore_id
+          WHERE r.prodotto_id = :id
+          ORDER BY r.created_at ASC"
     );
     $stmt->execute([':id' => $prodotto_id]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);

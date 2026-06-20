@@ -84,8 +84,8 @@ if (!empty($aziende_topbar)) {
   <!-- FontAwesome Pro -->
   <link rel="stylesheet" href="<?= asset('fontawesome/css/all.min.css') ?>">
   <!-- Quack: tema e layout -->
-  <link rel="stylesheet" href="<?= asset('css/theme.css') ?>">
-  <link rel="stylesheet" href="<?= asset('css/app.css') ?>">
+    <link rel="stylesheet" href="<?= asset('css/theme.css') ?>?v=<?= time() ?>">
+    <link rel="stylesheet" href="<?= asset('css/app.css') ?>">
 
   <?php
   /**

@@ -78,6 +78,8 @@ return [
     '/products/api/crea-categoria' => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'crearCategoria',   'auth' => true],
     '/products/fornitori/save'     => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'saveForn',         'auth' => true],
     '/products/fornitori/delete'   => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteForn',       'auth' => true],
+    '/products/rrp/save'           => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'saveRrp',          'auth' => true],
+    '/products/rrp/delete'         => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'deleteRrp',        'auth' => true],
     '/products/api/fornitori'      => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'searchFornitori',  'auth' => true],
     '/products/api/fornitore-dettagli' => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'apiFornitoreDettagli', 'auth' => true],
     '/products/api/fornitore-listini'  => ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'apiFornitoreListini',  'auth' => true],

@@ -2,7 +2,7 @@
  * products-suppliers.js
  * ─────────────────────────────────────────────────────────────────────────────
  * DEFINITIVE STATE-OF-THE-ART SUPPLIER & PRICING MANAGEMENT
- * Master List + Lateral Drawer for purchases and advanced RRP integration on sales matrix.
+ * Flat Grid Implementation (Excel-like) for Purchase Prices.
  */
 
 (function () {
@@ -15,698 +15,674 @@
     const prodId = cfg.prodottoId;
     const CSRF = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
-    // Riferimenti DOM
-    const masterTbody  = document.getElementById('master-fornitori-tbody');
-    const drawer       = document.getElementById('test-fornitore-drawer');
-    const overlay      = document.getElementById('test-drawer-overlay');
-    const closeBtn     = document.getElementById('btn-close-drawer');
-    const cancelBtn    = document.getElementById('btn-cancel-drawer');
-    const saveBtn      = document.getElementById('btn-save-drawer');
-    const alertBox     = document.getElementById('drawer-alert');
+    const masterTbody = document.getElementById('master-fornitori-tbody');
+    const btnAddFlat = document.getElementById('btn-add-fornitore-flat');
 
-    // Elementi Form Drawer
-    const dwId          = document.getElementById('dw-id');
-    const dwFornId      = document.getElementById('dw-fornitore-id');
-    const dwFornLabel   = document.getElementById('dw-fornitore-label');
-    const dwSku         = document.getElementById('dw-sku');
-    const dwNomeProd    = document.getElementById('dw-nome-prod-forn');
-    const dwQtaMin      = document.getElementById('dw-qta-min');
-    const dwLeadTime    = document.getElementById('dw-lead-time');
-    const dwAttivo      = document.getElementById('dw-attivo');
-    const dwRrpMin      = document.getElementById('dw-rrp-min');
-    const dwRrpMax      = document.getElementById('dw-rrp-max');
-    const dwNote        = document.getElementById('dw-note');
-    const scaglioniTbody = document.getElementById('drawer-scaglioni-tbody');
-    const addScaglioneBtn = document.getElementById('dw-btn-add-scaglione');
-
-    // Riferimenti DOM per Vendite (RRP Banner)
-    const rrpBannerContent = document.getElementById('rrp-banner-content');
-    const btnToggleAllRrp   = document.getElementById('btn-toggle-all-rrp');
-    const allRrpDetails     = document.getElementById('all-rrp-details');
-    const allRrpTbody       = document.getElementById('all-rrp-tbody');
-
-    // Matrice Vendite
-    const matrixTable = document.getElementById('pricing-matrix-table');
+    if (!masterTbody) return;
 
     /* ── Stato locale ── */
+    // Costruiamo una griglia piatta dai dati gerarchici
     let fornitori = [...(cfg.fornitori || [])];
-    let prezziList = [...(cfg.tuttePrezzi || [])]; // tutti gli scaglioni d'acquisto dei fornitori
-    let listiniAcquisto = [];
+    let prezziList = [...(cfg.tuttePrezzi || [])];
+    let flatRows = [];
+    let currentUomMode = 'stock';
 
-    // Carica l'elenco dei listini di acquisto per il dropdown
-    async function loadListiniAcquisto(fornitoreId) {
-      if (!fornitoreId) return [];
-      try {
-        const res = await fetch(`${cfg.apiFornListini}?fornitore_id=${encodeURIComponent(fornitoreId)}`);
-        const data = await res.json();
-        return data.ok ? (data.listini || []) : [];
-      } catch (e) {
-        console.error(e);
-        return [];
-      }
-    }
-
-    /* ── Inizializzazione ── */
-     if (masterTbody) {
-      renderMasterTable();
-      updateRrpBanner();
-      validateMatrixPrices();
-
-      // Autosave in linea per SKU e Lead Time nella Master List
-      masterTbody.addEventListener('focusout', async (e) => {
-        const input = e.target.closest('.master-sku-input, .master-lead-time-input');
-        if (!input) return;
-
-        const pfId = parseInt(input.dataset.id);
-        const f = fornitori.find(x => x.id === pfId);
-        if (!f) return;
-
-        let skuVal = f.sku_fornitore || '';
-        let leadVal = f.lead_time_giorni || 0;
-
-        if (input.classList.contains('master-sku-input')) {
-          skuVal = input.value.trim();
-        } else if (input.classList.contains('master-lead-time-input')) {
-          leadVal = parseInt(input.value) || 0;
+    function buildFlatRows() {
+      flatRows = [];
+      fornitori.forEach(f => {
+        const prezzi = prezziList.filter(p => p.prodotto_fornitore_id === f.id);
+        if (prezzi.length === 0) {
+          // Riga fornitore senza prezzi
+          flatRows.push(createFlatRowObj(f, null));
+        } else {
+          // Una riga per ogni scaglione
+          prezzi.forEach(p => {
+            flatRows.push(createFlatRowObj(f, p));
+          });
         }
-
-        if (skuVal === (f.sku_fornitore || '') && leadVal === (f.lead_time_giorni || 0)) {
-          return; // Nessun cambiamento
+      });
+      // Sort by Fornitore Name, then Qta Min
+      flatRows.sort((a, b) => {
+        if (a.nome_fornitore_rs !== b.nome_fornitore_rs) {
+          return (a.nome_fornitore_rs || '').localeCompare(b.nome_fornitore_rs || '');
         }
-
-        // Indicazione visiva di salvataggio
-        input.style.borderColor = '#ffc107';
-
-        const fd = new FormData();
-        fd.append('id', String(pfId));
-        fd.append('prodotto_id', String(prodId));
-        fd.append('fornitore_id', String(f.fornitore_id));
-        fd.append('sku_fornitore', skuVal);
-        fd.append('nome_prodotto_fornitore', f.nome_prodotto_fornitore || '');
-        fd.append('quantita_minima', String(f.quantita_minima || 0));
-        fd.append('lead_time_giorni', String(leadVal));
-        fd.append('ordine_preferenza_fornitore', String(f.ordine_preferenza_fornitore));
-        fd.append('attivo', String(f.attivo));
-        fd.append('no_prezzi', '1');
-        fd.append('csrf_token', CSRF);
-
-        try {
-          const res = await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
-          const data = await res.json();
-          if (data.ok) {
-            f.sku_fornitore = skuVal;
-            f.lead_time_giorni = leadVal;
-            // Flash di successo verde
-            input.style.borderColor = 'var(--qk-success, #22c55e)';
-            setTimeout(() => {
-              input.style.borderColor = '';
-            }, 1000);
-          } else {
-            input.style.borderColor = 'var(--qk-danger, #ef4444)';
-          }
-        } catch (err) {
-          input.style.borderColor = 'var(--qk-danger, #ef4444)';
-        }
+        return (a.quantita_minima || 0) - (b.quantita_minima || 0);
       });
     }
 
-    // Eventi Drawer
-    closeBtn?.addEventListener('click', closeDrawer);
-    cancelBtn?.addEventListener('click', closeDrawer);
-    overlay?.addEventListener('click', closeDrawer);
+    function createFlatRowObj(f, p) {
+      return {
+        // ID virtuale per tracking UI
+        _uid: Math.random().toString(36).substr(2, 9),
+        // Dati Fornitore (Padre)
+        prodotto_fornitore_id: f.id || null,
+        fornitore_id: f.fornitore_id || null,
+        nome_fornitore_rs: f.nome_fornitore_rs || '',
+        sku_fornitore: f.sku_fornitore || '',
+        nome_prodotto_fornitore: f.nome_prodotto_fornitore || '',
+        lead_time_giorni: f.lead_time_giorni || 0,
+        ordine_preferenza_fornitore: f.ordine_preferenza_fornitore || 2,
+        unita_misura_acquisto_id: f.unita_misura_acquisto_id || cfg.uomStockId || null,
+        // Dati Prezzo (Figlio)
+        prezzo_id: p ? p.id : null,
+        quantita_minima: p ? parseFloat(p.quantita_minima) : 0,
+        prezzo: p ? parseFloat(p.prezzo) : null,
+        sconto_perc: p ? parseFloat(p.sconto_perc) : 0,
+        
+        isDirty: false,
+        isSaving: false
+      };
+    }
 
-    // Salva Drawer
-    saveBtn?.addEventListener('click', async () => {
-      if (!alertBox) return;
-      alertBox.classList.add('d-none');
-      
-      const id = parseInt(dwId.value) || 0;
-      const fornitoreId = parseInt(dwFornId.value);
-      const sku = dwSku.value.trim();
-      const nomeProd = dwNomeProd.value.trim();
-      const qtaMin = parseFloat(dwQtaMin.value) || 0;
-      const leadTime = parseInt(dwLeadTime.value) || 0;
-      const attivo = dwAttivo.checked;
-      const rrpMin = dwRrpMin.value ? parseFloat(dwRrpMin.value) : null;
-      const rrpMax = dwRrpMax.value ? parseFloat(dwRrpMax.value) : null;
-      const note = dwNote.value.trim();
+    buildFlatRows();
+    renderMasterTable();
 
-      // Leggi scaglioni dal drawer
-      const scaglioni = [];
-      const rows = scaglioniTbody.querySelectorAll('tr.sc-row');
-      for (const row of rows) {
-        const listinoSelect = row.querySelector('.sc-listino');
-        const qtaInput = row.querySelector('.sc-qta');
-        const prezzoInput = row.querySelector('.sc-prezzo');
-        const scontoInput = row.querySelector('.sc-sconto');
-        const extraRow = row.nextElementSibling;
-        const dalInput = extraRow?.querySelector('.sc-dal');
-        const alInput = extraRow?.querySelector('.sc-al');
-        const noteInput = extraRow?.querySelector('.sc-note');
+    btnAddFlat?.addEventListener('click', (e) => {
+      e.preventDefault();
+      flatRows.push({
+        _uid: Math.random().toString(36).substr(2, 9),
+        prodotto_fornitore_id: null,
+        fornitore_id: null,
+        nome_fornitore_rs: '',
+        sku_fornitore: '',
+        nome_prodotto_fornitore: '',
+        lead_time_giorni: 0,
+        ordine_preferenza_fornitore: 2,
+        unita_misura_acquisto_id: cfg.uomStockId || null,
+        prezzo_id: null,
+        quantita_minima: 0,
+        prezzo: null,
+        sconto_perc: 0,
+        valido_dal: '',
+        valido_al: '',
+        isDirty: true,
+        isNew: true
+      });
+      renderMasterTable();
+    });
 
-        const lid = listinoSelect?.value || null;
-        const qta = parseFloat(qtaInput?.value);
-        const prezzo = parseFloat(prezzoInput?.value);
-        const sconto = parseFloat(scontoInput?.value) || 0;
-        const dal = dalInput?.value || '';
-        const al = alInput?.value || '';
-        const snote = noteInput?.value || '';
-
-        if (isNaN(qta) || isNaN(prezzo)) {
-          alertBox.textContent = "Quantità e Prezzo d'acquisto devono essere numeri validi.";
-          alertBox.classList.remove('d-none');
-          return;
-        }
-        scaglioni.push({
-          id: parseInt(row.dataset.rowId) || 0,
-          listino_acquisto_id: lid,
-          quantita_minima: qta,
-          prezzo: prezzo,
-          sconto_perc: sconto,
-          valido_dal: dal,
-          valido_al: al,
-          note: snote
-        });
+    function renderMasterTable() {
+      masterTbody.innerHTML = '';
+      if (flatRows.length === 0) {
+        masterTbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-muted">Nessun prezzo di acquisto impostato.</td></tr>`;
+        return;
       }
 
-      // 1. Salva metadati fornitore via AJAX
+      flatRows.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        tr.dataset.uid = row._uid;
+        
+        const isPref = Number(row.ordine_preferenza_fornitore) === 1;
+
+        // Perform display conversion if necessary
+        let displayQta = row.quantita_minima;
+        let displayPrezzo = row.prezzo;
+        const qFactor = parseFloat(cfg.quantitaContenuto) || 1;
+        const rowUomId = row.unita_misura_acquisto_id || cfg.uomStockId;
+        
+        if (currentUomMode === 'stock') {
+          // If the row is commercial, convert Commercial -> Stock
+          if (rowUomId == cfg.uomCommercialId && qFactor > 1) {
+            const conv = window.qkConvertUom({ value: row.quantita_minima, price: row.prezzo, qFactor, targetMode: 'stock' });
+            displayQta = conv.value;
+            displayPrezzo = conv.price;
+          }
+        } else {
+          // If the row is stock, convert Stock -> Commercial
+          if (rowUomId == cfg.uomStockId && qFactor > 1) {
+            const conv = window.qkConvertUom({ value: row.quantita_minima, price: row.prezzo, qFactor, targetMode: 'commercial' });
+            displayQta = conv.value;
+            displayPrezzo = conv.price;
+          }
+        }
+
+        tr.innerHTML = `
+          <td class="text-center flat-grid-td" data-col="pref">
+            <i class="pref-star fa-star ${isPref ? 'fa-solid active text-warning' : 'fa-regular'}" style="cursor:pointer; padding: 8px;"></i>
+          </td>
+          <td class="flat-grid-td" data-col="fornitore">
+            <div class="qk-m2o-wrap m2o-flat-${row._uid}" style="height: 100%;">
+              <div class="qk-m2o-input-row" style="height: 100%;">
+                <input type="text" class="qk-m2o-input flat-grid-input m2o-input-${row._uid}" placeholder="Cerca fornitore..." value="${esc(row.nome_fornitore_rs)}" style="padding-left: 8px;">
+                <input type="hidden" class="m2o-hidden-${row._uid}" value="${row.fornitore_id || ''}">
+              </div>
+              <div class="qk-m2o-dropdown m2o-dd-${row._uid}"></div>
+            </div>
+          </td>
+          <td class="flat-grid-td" data-col="nome_prod">
+            <input type="text" class="flat-grid-input inp-nome-prod" value="${esc(row.nome_prodotto_fornitore || '')}" placeholder="Nome Prod. Forn.">
+          </td>
+          <td class="flat-grid-td" data-col="sku">
+            <input type="text" class="flat-grid-input inp-sku font-monospace" value="${esc(row.sku_fornitore)}" placeholder="SKU">
+          </td>
+          <td class="flat-grid-td" data-col="qta_min">
+            <input type="number" class="flat-grid-input text-end inp-qta font-monospace" value="${displayQta}" min="0" step="0.001">
+          </td>
+          <td class="flat-grid-td" data-col="uom">
+             <select class="flat-grid-input inp-uom" style="appearance: auto;">
+                ${(cfg.unitaMisuraList || []).map(u => 
+                  `<option value="${u.id}" ${rowUomId == u.id ? 'selected' : ''}>${esc(u.codice)}</option>`
+                ).join('')}
+             </select>
+          </td>
+          <td class="flat-grid-td" data-col="prezzo">
+             <input type="number" class="flat-grid-input text-end inp-prezzo fw-bold" value="${displayPrezzo !== null ? displayPrezzo : ''}" step="0.0001" min="0" placeholder="0.0000">
+          </td>
+          <td class="flat-grid-td" data-col="sconto">
+             <input type="number" class="flat-grid-input text-end inp-sconto" value="${row.sconto_perc || 0}" step="0.01" min="0">
+          </td>
+          <td class="flat-grid-td" data-col="lead_time">
+            <input type="number" class="flat-grid-input text-center inp-lead" value="${row.lead_time_giorni}" min="0">
+          </td>
+          <td class="flat-grid-td" data-col="valido_dal">
+            <input type="date" class="flat-grid-input inp-vdal" value="${esc(row.valido_dal || '')}">
+          </td>
+          <td class="flat-grid-td" data-col="valido_al">
+            <input type="date" class="flat-grid-input inp-val" value="${esc(row.valido_al || '')}">
+          </td>
+          <td class="text-center flat-grid-td" data-col="azioni" style="padding: 8px !important;">
+            <button type="button" class="btn-qk btn-qk-danger btn-qk-xs btn-delete-row" title="Elimina scaglione">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+            <i class="fa-solid fa-spinner fa-spin d-none icon-saving ms-1 text-primary"></i>
+            <i class="fa-solid fa-check d-none icon-saved ms-1 text-success"></i>
+          </td>
+        `;
+
+        masterTbody.appendChild(tr);
+
+        // Initialize M2O always so it's editable
+        if (typeof QkM2O !== 'undefined') {
+          setTimeout(() => {
+            new QkM2O({
+              inputEl: tr.querySelector(`.m2o-input-${row._uid}`),
+              hiddenEl: tr.querySelector(`.m2o-hidden-${row._uid}`),
+              dropdownEl: tr.querySelector(`.m2o-dd-${row._uid}`),
+              apiUrl: cfg.apiSearchForn,
+              labelKey: 'ragione_sociale',
+              columns: [{ key: 'ragione_sociale', label: 'Ragione sociale' }],
+              onSelect: (id, data) => {
+                row.fornitore_id = id;
+                row.nome_fornitore_rs = data.ragione_sociale;
+                
+                // AUTOFILL LOGIC
+                const existing = flatRows.find(r => r.fornitore_id == id && r._uid !== row._uid && !r.isNew);
+                if (existing) {
+                   row.sku_fornitore = existing.sku_fornitore;
+                   row.nome_prodotto_fornitore = existing.nome_prodotto_fornitore;
+                   row.lead_time_giorni = existing.lead_time_giorni;
+                   tr.querySelector('.inp-sku').value = row.sku_fornitore;
+                   tr.querySelector('.inp-nome-prod').value = row.nome_prodotto_fornitore;
+                   tr.querySelector('.inp-lead').value = row.lead_time_giorni;
+                }
+                
+                triggerSave(row, tr);
+              }
+            });
+          }, 0);
+        }
+
+        // Attach events
+        tr.querySelector('.pref-star').addEventListener('click', () => setPreferito(row));
+        tr.querySelector('.btn-delete-row').addEventListener('click', () => deleteRow(row));
+
+        ['inp-sku', 'inp-nome-prod', 'inp-qta', 'inp-uom', 'inp-prezzo', 'inp-sconto', 'inp-lead', 'inp-vdal', 'inp-val'].forEach(cls => {
+          const inp = tr.querySelector('.' + cls);
+          if (inp) {
+            inp.addEventListener('change', (e) => {
+              row.sku_fornitore = tr.querySelector('.inp-sku').value;
+              row.nome_prodotto_fornitore = tr.querySelector('.inp-nome-prod').value;
+              row.sconto_perc = parseFloat(tr.querySelector('.inp-sconto').value) || 0;
+              row.lead_time_giorni = parseInt(tr.querySelector('.inp-lead').value) || 0;
+              row.valido_dal = tr.querySelector('.inp-vdal').value;
+              row.valido_al = tr.querySelector('.inp-val').value;
+
+              // Read inputs which are in visual mode
+              let inputQta = parseFloat(tr.querySelector('.inp-qta').value) || 0;
+              let inputPrezzo = parseFloat(tr.querySelector('.inp-prezzo').value);
+              const targetUomId = parseInt(tr.querySelector('.inp-uom').value) || cfg.uomStockId;
+
+              // Convert from visual mode to the row's native UoM
+              if (currentUomMode === 'stock') {
+                if (targetUomId == cfg.uomCommercialId && qFactor > 1) {
+                  const conv = window.qkConvertUom({ value: inputQta, price: inputPrezzo, qFactor, targetMode: 'commercial' });
+                  inputQta = conv.value;
+                  inputPrezzo = conv.price;
+                }
+              } else {
+                if (targetUomId == cfg.uomStockId && qFactor > 1) {
+                  const conv = window.qkConvertUom({ value: inputQta, price: inputPrezzo, qFactor, targetMode: 'stock' });
+                  inputQta = conv.value;
+                  inputPrezzo = conv.price;
+                }
+              }
+
+              row.quantita_minima = inputQta;
+              row.prezzo = inputPrezzo;
+              row.unita_misura_acquisto_id = targetUomId;
+
+              triggerSave(row, tr);
+            });
+          }
+        });
+      });
+      
+      applyColumnVisibility();
+      window.qkMakeColumnsResizable(document.getElementById('master-fornitori-table'));
+    }
+
+    async function triggerSave(row, trElement) {
+      if (!row.fornitore_id || isNaN(row.prezzo) || row.prezzo === null) return; // Dati minimi
+      
+      const iconSaving = trElement.querySelector('.icon-saving');
+      const iconSaved = trElement.querySelector('.icon-saved');
+      
+      iconSaving.classList.remove('d-none');
+      iconSaved.classList.add('d-none');
+
+      // Salviamo prima i metadati del fornitore
       const fd = new FormData();
-      fd.append('id', id ? String(id) : '');
+      fd.append('id', row.prodotto_fornitore_id ? String(row.prodotto_fornitore_id) : '');
       fd.append('prodotto_id', String(prodId));
-      fd.append('fornitore_id', String(fornitoreId));
-      fd.append('sku_fornitore', sku);
-      fd.append('nome_prodotto_fornitore', nomeProd);
-      fd.append('quantita_minima', String(qtaMin));
-      fd.append('lead_time_giorni', String(leadTime));
-      fd.append('rrp_min', rrpMin !== null ? String(rrpMin) : '');
-      fd.append('rrp_max', rrpMax !== null ? String(rrpMax) : '');
-      fd.append('ordine_preferenza_fornitore', id ? String(fornitori.find(f => f.id === id).ordine_preferenza_fornitore) : String(fornitori.length + 1));
-      fd.append('attivo', attivo ? '1' : '0');
-      fd.append('note', note);
+      fd.append('fornitore_id', String(row.fornitore_id));
+      fd.append('sku_fornitore', row.sku_fornitore || '');
+      fd.append('nome_prodotto_fornitore', row.nome_prodotto_fornitore || '');
+      fd.append('lead_time_giorni', String(row.lead_time_giorni || 0));
+      fd.append('ordine_preferenza_fornitore', String(row.ordine_preferenza_fornitore));
+      fd.append('unita_misura_acquisto_id', String(row.unita_misura_acquisto_id || cfg.uomStockId));
+      fd.append('attivo', '1');
       fd.append('no_prezzi', '1');
       fd.append('csrf_token', CSRF);
 
       try {
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio...';
-
         const res = await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
-        const resData = await res.json();
-        if (!resData.ok) {
-          alertBox.textContent = resData.error || "Errore nel salvataggio del fornitore.";
-          alertBox.classList.remove('d-none');
-          saveBtn.disabled = false;
-          saveBtn.innerHTML = 'Salva Modifiche';
-          return;
-        }
-
-        const savedFornId = resData.row.id;
-
-        // 2. Salva o rimuovi gli scaglioni di prezzo via AJAX
-        const currentDbPrezzi = prezziList.filter(p => p.prodotto_fornitore_id === savedFornId);
+        const data = await res.json();
         
-        // Trova quelli da eliminare (esistenti in DB ma non nel form)
-        const toDelete = currentDbPrezzi.filter(dp => !scaglioni.some(s => s.id === dp.id));
-        for (const dp of toDelete) {
-          const df = new FormData();
-          df.append('id', String(dp.id));
-          df.append('prodotto_id', String(prodId));
-          df.append('csrf_token', CSRF);
-          await fetch(cfg.apiPrezzoDelete, { method: 'POST', body: df });
-        }
-
-        // Pulisci locale prezziList per questo fornitore
-        prezziList = prezziList.filter(p => p.prodotto_fornitore_id !== savedFornId);
-
-        // Salva/Inserisci gli scaglioni
-        for (const sc of scaglioni) {
+        if (data.ok) {
+          row.prodotto_fornitore_id = data.row.id;
+          row.isNew = false;
+          
+          // Ora salviamo il prezzo
           const sf = new FormData();
-          sf.append('id', String(sc.id));
-          sf.append('prodotto_fornitore_id', String(savedFornId));
+          sf.append('id', row.prezzo_id ? String(row.prezzo_id) : '');
+          sf.append('prodotto_fornitore_id', String(row.prodotto_fornitore_id));
           sf.append('prodotto_id', String(prodId));
-          sf.append('listino_acquisto_id', sc.listino_acquisto_id || '');
-          sf.append('quantita_minima', String(sc.quantita_minima));
-          sf.append('prezzo', String(sc.prezzo));
-          sf.append('sconto_perc', String(sc.sconto_perc));
-          sf.append('valido_dal', sc.valido_dal);
-          sf.append('valido_al', sc.valido_al);
-          sf.append('note', sc.note);
+          sf.append('quantita_minima', String(row.quantita_minima));
+          sf.append('prezzo', String(row.prezzo));
+          sf.append('sconto_perc', String(row.sconto_perc));
           sf.append('csrf_token', CSRF);
 
           const pres = await fetch(cfg.apiPrezzoSave, { method: 'POST', body: sf });
           const pdata = await pres.json();
-          if (pdata.ok && pdata.row) {
-            prezziList.push(pdata.row);
-          }
-        }
-
-        // Rinfresca stato locale del fornitore
-        const checkFornIdx = fornitori.findIndex(f => f.id === id);
-        if (checkFornIdx > -1) {
-          fornitori[checkFornIdx] = resData.row;
-        } else {
-          fornitori.push(resData.row);
-        }
-
-        closeDrawer();
-        renderMasterTable();
-        updateRrpBanner();
-        validateMatrixPrices();
-
-      } catch (e) {
-        alertBox.textContent = e.message || "Errore di rete.";
-        alertBox.classList.remove('d-none');
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = 'Salva Modifiche';
-      }
-    });
-
-    addScaglioneBtn?.addEventListener('click', () => {
-      addScaglioneRow(null);
-    });
-
-    btnToggleAllRrp?.addEventListener('click', () => {
-      const isCollapsed = !allRrpDetails.classList.contains('show');
-      if (isCollapsed) {
-        allRrpTbody.innerHTML = '';
-        fornitori.forEach(f => {
-          const tr = document.createElement('tr');
-          const isPref = (Number(f.ordine_preferenza_fornitore) === 1);
-          tr.innerHTML = `
-            <td><strong>${esc(f.nome_fornitore_rs)}</strong></td>
-            <td>${f.rrp_min !== null ? parseFloat(f.rrp_min).toFixed(4) + ' €' : '—'}</td>
-            <td>${f.rrp_max !== null ? parseFloat(f.rrp_max).toFixed(4) + ' €' : '—'}</td>
-            <td>${isPref ? '<i class="fa-solid fa-star text-warning"></i>' : '—'}</td>
-          `;
-          allRrpTbody.appendChild(tr);
-        });
-        allRrpDetails.classList.add('show');
-        btnToggleAllRrp.textContent = "Nascondi tutti i fornitori";
-      } else {
-        allRrpDetails.classList.remove('show');
-        btnToggleAllRrp.textContent = "Mostra tutti i fornitori";
-      }
-    });
-
-    /* ── Funzioni rendering ed interazioni ── */
-
-    function renderMasterTable() {
-      if (!masterTbody) return;
-      masterTbody.innerHTML = '';
-      if (fornitori.length === 0) {
-        masterTbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Nessun fornitore associato.</td></tr>`;
-        return;
-      }
-
-      // Ordina per ordine_preferenza_fornitore ASC
-      fornitori.sort((a,b) => (Number(a.ordine_preferenza_fornitore) || 99) - (Number(b.ordine_preferenza_fornitore) || 99));
-
-      let foundPref = false;
-      fornitori.forEach(f => {
-        const tr = document.createElement('tr');
-        let isPref = (Number(f.ordine_preferenza_fornitore) === 1);
-        if (isPref) {
-          if (!foundPref) {
-            foundPref = true;
-          } else {
-            isPref = false;
-            f.ordine_preferenza_fornitore = 2;
+          if (pdata.ok) {
+             row.prezzo_id = pdata.row.id;
           }
         }
         
-        // Trova il prezzo base (quantita_minima = 0)
-        const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === f.id);
-        const basePrezzoRow = prezziForn.find(p => parseFloat(p.quantita_minima) === 0);
-        const baseCosto = basePrezzoRow ? parseFloat(basePrezzoRow.prezzo).toFixed(4) + ' €' : '—';
-
-        tr.innerHTML = `
-          <td style="text-align:center;">
-            <i class="pref-star fa-star ${isPref ? 'fa-solid active' : 'fa-regular'}" data-id="${f.id}" style="cursor:pointer;"></i>
-          </td>
-          <td>
-            <div class="d-flex flex-column">
-              <strong>${esc(f.nome_fornitore_rs)}</strong>
-              ${f.nome_prodotto_fornitore ? `<span class="text-muted small">${esc(f.nome_prodotto_fornitore)}</span>` : ''}
-            </div>
-          </td>
-           <td>
-            <input type="text" class="font-monospace master-sku-input" 
-                   data-id="${f.id}" value="${esc(f.sku_fornitore || '')}">
-          </td>
-          <td>${baseCosto}</td>
-          <td>
-            <div class="d-flex align-items-center gap-1">
-              <input type="number" class="master-lead-time-input" 
-                     data-id="${f.id}" value="${f.lead_time_giorni || ''}" min="0">
-              <span class="small text-muted">gg</span>
-            </div>
-          </td>
-          <td class="text-end">
-            <button type="button" class="btn-qk btn-qk-secondary btn-qk-xs btn-edit-forn" data-id="${f.id}">
-              <i class="fa-solid fa-pen-to-square"></i> Dettagli & Prezzi
-            </button>
-            <button type="button" class="btn-qk btn-qk-danger btn-qk-xs btn-delete-forn" data-id="${f.id}">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          </td>
-        `;
-
-        tr.querySelector('.pref-star').addEventListener('click', () => setPreferito(f.id));
-        tr.querySelector('.btn-edit-forn').addEventListener('click', () => openDrawer(f));
-        tr.querySelector('.btn-delete-forn').addEventListener('click', () => deleteFornitore(f.id));
-
-        masterTbody.appendChild(tr);
-      });
+        iconSaving.classList.add('d-none');
+        iconSaved.classList.remove('d-none');
+        setTimeout(() => iconSaved.classList.add('d-none'), 2000);
+        
+        // Convert input to static text if it was new
+        if (trElement.querySelector('.qk-m2o-wrap')) {
+           renderMasterTable(); // Re-render to show plain text instead of picker
+        }
+      } catch(e) {
+        iconSaving.classList.add('d-none');
+        console.error(e);
+      }
     }
 
-    async function setPreferito(fornId) {
-      // Imposta localmente la stella
-      fornitori.forEach(f => {
-        f.ordine_preferenza_fornitore = (f.id === fornId) ? 1 : 2;
-      });
-
-      // Salva l'ordine di preferenza nel DB per tutti i fornitori associati
-      for (const f of fornitori) {
-        const fd = new FormData();
-        fd.append('id', String(f.id));
-        fd.append('prodotto_id', String(prodId));
-        fd.append('fornitore_id', String(f.fornitore_id));
-        fd.append('ordine_preferenza_fornitore', String(f.ordine_preferenza_fornitore));
-        fd.append('attivo', String(f.attivo));
-        fd.append('no_prezzi', '1');
-        fd.append('csrf_token', CSRF);
-        await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
+    async function deleteRow(row) {
+      if (!confirm("Eliminare questo scaglione?")) return;
+      
+      if (row.prezzo_id) {
+         const df = new FormData();
+         df.append('id', String(row.prezzo_id));
+         df.append('prodotto_id', String(prodId));
+         df.append('csrf_token', CSRF);
+         await fetch(cfg.apiPrezzoDelete, { method: 'POST', body: df });
       }
-
+      
+      flatRows = flatRows.filter(r => r._uid !== row._uid);
       renderMasterTable();
-      updateRrpBanner();
-      validateMatrixPrices();
     }
 
-    async function deleteFornitore(fornId) {
-      if (!confirm("Sei sicuro di voler rimuovere l'associazione con questo fornitore e cancellare tutti i suoi scaglioni prezzo?")) return;
-
-      const fd = new FormData();
-      fd.append('id', String(fornId));
-      fd.append('prodotto_id', String(prodId));
-      fd.append('csrf_token', CSRF);
-
-      try {
-        const res = await fetch(cfg.apiFornDelete, { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.ok) {
-          fornitori = fornitori.filter(f => f.id !== fornId);
-          prezziList = prezziList.filter(p => p.prodotto_fornitore_id !== fornId);
-          renderMasterTable();
-          updateRrpBanner();
-          validateMatrixPrices();
-        } else {
-          alert("Errore nell'eliminazione: " + (data.error || "sconosciuto"));
-        }
-      } catch (e) {
-        alert("Errore di rete.");
-      }
-    }
-
-    async function openDrawer(f) {
-      if (!alertBox) return;
-      alertBox.classList.add('d-none');
-      dwId.value = f.id;
-      dwFornId.value = f.fornitore_id;
-      dwFornLabel.value = f.nome_fornitore_rs;
-      dwSku.value = f.sku_fornitore || '';
-      dwNomeProd.value = f.nome_prodotto_fornitore || '';
-      dwQtaMin.value = f.quantita_minima || '';
-      dwLeadTime.value = f.lead_time_giorni || '';
-      dwAttivo.checked = String(f.attivo) === '1';
-      dwRrpMin.value = f.rrp_min !== null ? f.rrp_min : '';
-      dwRrpMax.value = f.rrp_max !== null ? f.rrp_max : '';
-      dwNote.value = f.note || '';
-
-      // Carica i listini del fornitore
-      listiniAcquisto = await loadListiniAcquisto(f.fornitore_id);
-
-      // Popola scaglioni
-      scaglioniTbody.innerHTML = '';
-      const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === f.id);
+    async function setPreferito(row) {
+      flatRows.forEach(r => r.ordine_preferenza_fornitore = 2);
+      row.ordine_preferenza_fornitore = 1;
+      // Imposta tutti gli scaglioni dello stesso fornitore a 1
+      flatRows.filter(r => r.fornitore_id === row.fornitore_id).forEach(r => r.ordine_preferenza_fornitore = 1);
       
-      // Assicura che ci sia almeno lo scaglione 0
-      if (prezziForn.length === 0 || !prezziForn.find(p => parseFloat(p.quantita_minima) === 0)) {
-        addScaglioneRow({ id: 0, quantita_minima: 0, prezzo: 0, sconto_perc: 0 });
+      if (row.prodotto_fornitore_id) {
+          const fd = new FormData();
+          fd.append('id', String(row.prodotto_fornitore_id));
+          fd.append('ordine_preferenza_fornitore', '1');
+          fd.append('csrf_token', CSRF);
+          await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
       }
-
-      prezziForn.sort((a,b) => parseFloat(a.quantita_minima) - parseFloat(b.quantita_minima));
-      prezziForn.forEach(p => {
-        addScaglioneRow(p);
-      });
-
-      drawer?.classList.add('open');
-      overlay?.classList.add('open');
+      renderMasterTable();
     }
 
-    function closeDrawer() {
-      drawer?.classList.remove('open');
-      overlay?.classList.remove('open');
-    }
-
-    function addScaglioneRow(p = null) {
-      const tr = document.createElement('tr');
-      tr.className = 'sc-row';
-      const isBase = p && parseFloat(p.quantita_minima) === 0;
+    // Col toggle logic
+    function applyColumnVisibility() {
+      const tableEl = document.getElementById('master-fornitori-table');
+      if (!tableEl) return;
+      const togglerInputs = document.querySelectorAll('#col-settings-dropdown .col-toggle');
+      if (!togglerInputs || togglerInputs.length === 0) return;
       
-      const rowId = p ? p.id : 0;
-      tr.dataset.rowId = rowId;
-
-      const qta = p ? p.quantita_minima : 0;
-      const prezzo = p ? p.prezzo : 0;
-      const sconto = p ? p.sconto_perc : 0;
-      const listinoId = p ? p.listino_acquisto_id : '';
-      const dal = p ? p.valido_dal : '';
-      const al = p ? p.valido_al : '';
-      const note = p ? p.note : '';
-
-      // Opzioni del select listini
-      let optsHtml = '<option value="">Base (nessun listino)</option>';
-      listiniAcquisto.forEach(l => {
-        optsHtml += `<option value="${l.id}" ${String(l.id) === String(listinoId) ? 'selected' : ''}>${esc(l.nome_listino)}</option>`;
-      });
-
-      tr.innerHTML = `
-        <td>
-          <select class="form-select form-select-sm sc-listino" style="font-size:0.75rem;">
-            ${optsHtml}
-          </select>
-        </td>
-        <td>
-          <input type="number" class="form-control form-control-sm sc-qta font-monospace" 
-                 value="${qta}" min="0" step="0.001" ${isBase ? 'readonly' : ''} style="width:75px; font-size:0.75rem;">
-        </td>
-        <td>
-          <input type="number" class="form-control form-control-sm sc-prezzo font-monospace" 
-                 value="${prezzo}" min="0" step="0.0001" style="width:90px; font-size:0.75rem;">
-        </td>
-        <td>
-          <input type="number" class="form-control form-control-sm sc-sconto font-monospace" 
-                 value="${sconto}" min="0" max="100" step="0.01" style="width:65px; font-size:0.75rem;" placeholder="0">
-        </td>
-        <td style="text-align:right; white-space:nowrap;">
-          <button type="button" class="btn btn-xs btn-outline-secondary btn-toggle-extra" style="padding:1px 5px; font-size:0.7rem;"><i class="fa-solid fa-ellipsis"></i></button>
-          ${isBase ? '' : '<button type="button" class="btn btn-xs btn-link text-danger btn-del-scaglione" style="padding:1px 3px;"><i class="fa-solid fa-trash"></i></button>'}
-        </td>
-      `;
-
-      // Riga extra collassata per date e note
-      const extraTr = document.createElement('tr');
-      extraTr.className = 'sc-extra-row d-none';
-      extraTr.innerHTML = `
-        <td colspan="5" class="bg-light p-2" style="border-top:none;">
-          <div class="row g-2">
-            <div class="col-4">
-              <label class="small text-muted mb-0" style="font-size:0.65rem;">Valido dal</label>
-              <input type="date" class="form-control form-control-sm sc-dal" value="${esc(dal)}" style="font-size:0.7rem; padding: 2px 4px;">
-            </div>
-            <div class="col-4">
-              <label class="small text-muted mb-0" style="font-size:0.65rem;">Valido al</label>
-              <input type="date" class="form-control form-control-sm sc-al" value="${esc(al)}" style="font-size:0.7rem; padding: 2px 4px;">
-            </div>
-            <div class="col-4">
-              <label class="small text-muted mb-0" style="font-size:0.65rem;">Note</label>
-              <input type="text" class="form-control form-control-sm sc-note" value="${esc(note)}" placeholder="Note..." style="font-size:0.7rem; padding: 2px 4px;">
-            </div>
-          </div>
-        </td>
-      `;
-
-      tr.querySelector('.btn-toggle-extra').addEventListener('click', () => {
-        extraTr.classList.toggle('d-none');
-      });
-
-      if (!isBase) {
-        tr.querySelector('.btn-del-scaglione').addEventListener('click', () => {
-          tr.remove();
-          extraTr.remove();
+      togglerInputs.forEach(inp => {
+        const colId = inp.value;
+        const show = inp.checked;
+        const cells = tableEl.querySelectorAll(`[data-col="${colId}"]`);
+        cells.forEach(c => {
+          c.style.display = show ? '' : 'none';
         });
-      }
-
-      scaglioniTbody.appendChild(tr);
-      scaglioniTbody.appendChild(extraTr);
-    }
-
-    function updateRrpBanner() {
-      if (!rrpBannerContent) return;
-
-      const prefForn = fornitori.find(f => Number(f.ordine_preferenza_fornitore) === 1);
-      if (!prefForn) {
-        rrpBannerContent.innerHTML = `<span class="text-danger">Nessun fornitore preferito impostato. Stella [★] richiesta per identificare il costo base.</span>`;
-        return;
-      }
-
-      const minVal = prefForn.rrp_min !== null ? parseFloat(prefForn.rrp_min).toFixed(4) + ' €' : 'Non specificato';
-      const maxVal = prefForn.rrp_max !== null ? parseFloat(prefForn.rrp_max).toFixed(4) + ' €' : 'Non specificato';
-
-      rrpBannerContent.innerHTML = `
-        <strong>${esc(prefForn.nome_fornitore_rs)}</strong> ➔ 
-        Min RRP: <span class="badge bg-light text-dark border font-monospace">${minVal}</span> | 
-        Max RRP: <span class="badge bg-light text-dark border font-monospace">${maxVal}</span>
-      `;
-    }
-
-    function validateMatrixPrices() {
-      if (!matrixTable) return;
-      const cells = matrixTable.querySelectorAll('.matrix-cell-wrapper');
-      cells.forEach(cell => {
-        validateSingleCell(cell);
       });
     }
 
-    function validateSingleCell(cell) {
-      const input = cell.querySelector('.cell-price-input');
-      if (!input) return;
-
-      // Reset classi
-      cell.classList.remove('warning', 'error-cost');
-      cell.querySelectorAll('.test-warning-tooltip').forEach(el => el.remove());
-
-      const val = parseFloat(input.value);
-      if (isNaN(val)) return;
-
-      const prefForn = fornitori.find(f => Number(f.ordine_preferenza_fornitore) === 1);
-      
-      // Costo preferito di acquisto a Qty 0+
-      let costoPreferito = 0;
-      if (prefForn) {
-        const prezziForn = prezziList.filter(p => p.prodotto_fornitore_id === prefForn.id);
-        const basePrezzoRow = prezziForn.find(p => parseFloat(p.quantita_minima) === 0);
-        if (basePrezzoRow) {
-          costoPreferito = parseFloat(basePrezzoRow.prezzo);
-        }
-      }
-
-      // 1. Controllo Sotto Costo (Errore Matematico) - su fornitore preferenziale
-      if (val <= costoPreferito) {
-        cell.classList.add('error-cost');
-        addTooltip(cell, `Sotto costo! Costo acquisto preferito: ${costoPreferito.toFixed(4)} €`, 'error-cost-tooltip');
-        return;
-      }
-
-      // Ottieni tutti i vincoli RRP di tutti i fornitori per la Trasparenza Contestuale
-      const rrpConstraints = fornitori.map(f => ({
-        nome: f.nome_fornitore_rs,
-        min: f.rrp_min !== null ? parseFloat(f.rrp_min) : null,
-        max: f.rrp_max !== null ? parseFloat(f.rrp_max) : null
-      })).filter(c => c.min !== null || c.max !== null);
-
-      // 2. Controllo RRP (Soft Warnings) - contro TUTTI i fornitori
-      for (const c of rrpConstraints) {
-        if (c.min !== null && val < c.min) {
-          cell.classList.add('warning');
-          addTooltip(cell, `Sotto il Min RRP consigliato da ${c.nome} (${c.min.toFixed(4)} €)`, 'test-warning-tooltip');
-          break; // Mostra il primo warning che capita
-        }
-        if (c.max !== null && val > c.max) {
-          cell.classList.add('warning');
-          addTooltip(cell, `Sopra il Max RRP consigliato da ${c.nome} (${c.max.toFixed(4)} €)`, 'test-warning-tooltip');
-          break;
-        }
-      }
-    }
-
-    if (matrixTable) {
-      matrixTable.addEventListener('input', (e) => {
-        const input = e.target.closest('.cell-price-input');
-        if (input) {
-          validateSingleCell(input.closest('.matrix-cell-wrapper'));
-        }
-      });
-      matrixTable.addEventListener('change', (e) => {
-        const input = e.target.closest('.cell-price-input');
-        if (input) {
-          validateSingleCell(input.closest('.matrix-cell-wrapper'));
-        }
+    const togglers = document.querySelectorAll('#col-settings-dropdown .col-toggle');
+    if (togglers) {
+      togglers.forEach(inp => {
+        inp.addEventListener('change', applyColumnVisibility);
       });
     }
 
-    function addTooltip(cell, text, className) {
-      const tooltip = document.createElement('div');
-      tooltip.className = `test-warning-tooltip ${className}`;
-      tooltip.style.position = 'absolute';
-      tooltip.style.bottom = '100%';
-      tooltip.style.left = '50%';
-      tooltip.style.transform = 'translateX(-50%)';
-      tooltip.style.background = className === 'error-cost-tooltip' ? '#ef4444' : '#f97316';
-      tooltip.style.color = '#fff';
-      tooltip.style.fontSize = '0.7rem';
-      tooltip.style.padding = '2px 6px';
-      tooltip.style.borderRadius = '4px';
-      tooltip.style.whiteSpace = 'nowrap';
-      tooltip.style.zIndex = '10';
-      tooltip.style.marginBottom = '4px';
-      tooltip.style.pointerEvents = 'none';
-      tooltip.textContent = text;
-      cell.appendChild(tooltip);
+    const btnColSettings = document.getElementById('btn-col-settings');
+    const colSettingsDropdown = document.getElementById('col-settings-dropdown');
+    if (btnColSettings && colSettingsDropdown) {
+      btnColSettings.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const display = colSettingsDropdown.style.display;
+        colSettingsDropdown.style.display = (display === 'none' || !display) ? 'block' : 'none';
+      });
+      document.addEventListener('click', (e) => {
+        if (!colSettingsDropdown.contains(e.target) && e.target !== btnColSettings) {
+          colSettingsDropdown.style.display = 'none';
+        }
+      });
     }
 
     function esc(s) {
-      return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+      if (!s) return '';
+      return s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
-    // Ascolta il custom event qk:forn-saved (generato dal modale autocomplete)
-    document.addEventListener('qk:forn-saved', function (e) {
-      const row = e.detail?.row;
-      if (!row) return;
+    /* ── RRP Logic (Sales Tab) ── */
+    let rrpRows = [];
 
-      const pfId = Number(row.id);
-      const idx  = fornitori.findIndex(f => Number(f.id) === pfId);
+    // Caricamento RRP
+    async function loadRrp() {
+       try {
+           const res = await fetch(`${cfg.apiFornSave.replace('fornitori/save', 'rrp/load')}?id=${cfg.prodottoId}`);
+           if (res.ok) {
+               const data = await res.json();
+               if (data.ok) {
+                   rrpRows = data.data || [];
+                   renderRrpTable();
+               }
+           }
+       } catch (e) {
+           console.error("Errore RRP", e);
+       }
+    }
 
-      if (idx >= 0) {
-        fornitori[idx] = row;
-      } else {
-        fornitori.push(row);
-      }
-      
-      renderMasterTable();
-      updateRrpBanner();
-      validateMatrixPrices();
+    const btnAddRrp = document.getElementById('btn-add-rrp');
+    const rrpTbody = document.getElementById('rrp-tbody');
+    const rrpBadge = document.getElementById('rrp-badge-content');
 
-      // Apri immediatamente il Drawer per configurare prezzi/RRP
-      openDrawer(row);
+    let currentDrawerUomMode = 'stock';
+
+    btnAddRrp?.addEventListener('click', () => {
+       rrpRows.push({
+           id: null,
+           fornitore_id: null,
+           rrp_min: '',
+           rrp_max: '',
+           valido_dal: '',
+           valido_al: '',
+           valuta: 'EUR',
+           isNew: true,
+           _uid: Math.random().toString(36).substr(2, 9)
+       });
+       renderRrpTable();
+     });
+
+    const btnOpenRrp = document.getElementById('btn-open-rrp-drawer');
+    const btnCloseRrp = document.getElementById('btn-close-rrp-drawer');
+    const btnCancelRrp = document.getElementById('btn-cancel-rrp-drawer');
+    const rrpDrawer = document.getElementById('rrp-drawer');
+    const rrpDrawerOverlay = document.getElementById('rrp-drawer-overlay');
+    const rrpHeaderMsg = document.getElementById('rrp-header-msg');
+    const rrpDrawerAlert = document.getElementById('rrp-drawer-alert');
+
+    function openRrpDrawer() {
+        if(rrpDrawer) rrpDrawer.classList.add('open');
+        if(rrpDrawerOverlay) rrpDrawerOverlay.classList.add('open');
+    }
+    function closeRrpDrawer() {
+        if(rrpDrawer) rrpDrawer.classList.remove('open');
+        if(rrpDrawerOverlay) rrpDrawerOverlay.classList.remove('open');
+    }
+    
+    btnOpenRrp?.addEventListener('click', openRrpDrawer);
+    btnCloseRrp?.addEventListener('click', closeRrpDrawer);
+    btnCancelRrp?.addEventListener('click', closeRrpDrawer);
+    rrpDrawerOverlay?.addEventListener('click', closeRrpDrawer);
+
+    function renderRrpTable() {
+       if (!rrpTbody) return;
+       rrpTbody.innerHTML = '';
+       
+       const drawerUomModeSelect = document.getElementById('drawer-uom-mode');
+       if (drawerUomModeSelect && !drawerUomModeSelect.dataset.hasListener) {
+           drawerUomModeSelect.dataset.hasListener = '1';
+           drawerUomModeSelect.addEventListener('change', function() {
+               currentDrawerUomMode = this.value;
+               renderRrpTable();
+           });
+       }
+
+       if (rrpRows.length === 0) {
+           rrpTbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Nessun prezzo consigliato impostato.</td></tr>`;
+           updateRrpBadge();
+           return;
+       }
+
+       const uniqueSuppliers = [...new Map(flatRows.filter(f => f.fornitore_id).map(f => [f.fornitore_id, f])).values()];
+       const qFactor = parseFloat(cfg.quantitaContenuto) || 1;
+       const hasComm = !!cfg.uomCommercialId && qFactor > 1;
+
+       rrpRows.forEach((row, i) => {
+           let displayMin = row.rrp_min;
+           let displayMax = row.rrp_max;
+           if (currentDrawerUomMode === 'commercial' && hasComm) {
+               if (row.rrp_min) displayMin = (parseFloat(row.rrp_min) / qFactor).toFixed(2);
+               if (row.rrp_max) displayMax = (parseFloat(row.rrp_max) / qFactor).toFixed(2);
+           }
+
+           const tr = document.createElement('tr');
+           tr.dataset.uid = row._uid || row.id;
+           tr.innerHTML = `
+              <td class="p-1">
+                 <select class="form-select form-select-sm inp-fonte border-0 shadow-none">
+                    <option value="">-- Mercato / Fonte Interna --</option>
+                    ${uniqueSuppliers.map(f => `<option value="${f.fornitore_id}" ${row.fornitore_id == f.fornitore_id ? 'selected' : ''}>${esc(f.nome_fornitore_rs)}</option>`).join('')}
+                 </select>
+              </td>
+              <td class="p-1" data-col="rrp-min"><input type="number" step="0.01" class="form-control form-control-sm text-end inp-rmin border-0 shadow-none fw-bold text-success" value="${displayMin || ''}" placeholder="Min"></td>
+              <td class="p-1" data-col="rrp-max"><input type="number" step="0.01" class="form-control form-control-sm text-end inp-rmax border-0 shadow-none fw-bold text-danger" value="${displayMax || ''}" placeholder="Max"></td>
+              <td class="p-1">
+                 <select class="form-select form-select-sm inp-valuta border-0 shadow-none text-center">
+                    <option value="EUR" ${row.valuta === 'EUR' ? 'selected' : ''}>EUR</option>
+                    <option value="USD" ${row.valuta === 'USD' ? 'selected' : ''}>USD</option>
+                 </select>
+              </td>
+              <td class="p-1 rrp-date-col" data-col="rrp-date"><input type="date" class="form-control form-control-sm inp-vdal border-0 shadow-none" value="${esc(row.valido_dal || '')}"></td>
+              <td class="p-1 rrp-date-col" data-col="rrp-date"><input type="date" class="form-control form-control-sm inp-val border-0 shadow-none" value="${esc(row.valido_al || '')}"></td>
+              <td class="p-1 text-center">
+                 <button type="button" class="btn btn-sm btn-outline-danger border-0 btn-del-rrp"><i class="fa-solid fa-trash"></i></button>
+              </td>
+           `;
+           rrpTbody.appendChild(tr);
+
+           tr.querySelector('.btn-del-rrp').addEventListener('click', () => {
+               rrpRows.splice(i, 1);
+               saveRrpRows();
+           });
+
+           ['inp-fonte','inp-rmin','inp-rmax','inp-valuta','inp-vdal','inp-val'].forEach(c => {
+               tr.querySelector('.'+c).addEventListener('change', () => {
+                  row.fornitore_id = tr.querySelector('.inp-fonte').value || null;
+                  
+                  let valMin = tr.querySelector('.inp-rmin').value;
+                  let valMax = tr.querySelector('.inp-rmax').value;
+                  
+                  if (currentDrawerUomMode === 'commercial' && hasComm) {
+                      if (valMin) valMin = (parseFloat(valMin) * qFactor).toFixed(4);
+                      if (valMax) valMax = (parseFloat(valMax) * qFactor).toFixed(4);
+                  }
+                  
+                  row.rrp_min = valMin;
+                  row.rrp_max = valMax;
+                  row.valuta = tr.querySelector('.inp-valuta').value;
+                  row.valido_dal = tr.querySelector('.inp-vdal').value;
+                  row.valido_al = tr.querySelector('.inp-val').value;
+                  saveRrpRows();
+               });
+           });
+       });
+       updateRrpBadge();
+       applyRrpColumnVisibility();
+    }
+
+    async function saveRrpRows() {
+       try {
+           const fd = new FormData();
+           fd.append('csrf_token', window.CSRF || '');
+           fd.append('prodotto_id', cfg.prodottoId);
+           fd.append('rrp_data', JSON.stringify(rrpRows));
+           
+           await fetch(cfg.apiFornSave.replace('fornitori/save', 'rrp/save'), { method: 'POST', body: fd });
+           renderRrpTable();
+       } catch (e) { console.error(e); }
+    }
+
+    function applyRrpColumnVisibility() {
+       const drawer = document.getElementById('rrp-drawer');
+       if (!drawer) return;
+       const togglers = document.querySelectorAll('#rrp-col-settings-dropdown .col-toggle');
+       togglers.forEach(inp => {
+           const colId = inp.value;
+           const show = inp.checked;
+           const cells = drawer.querySelectorAll(`[data-col="rrp-${colId}"]`);
+           cells.forEach(c => {
+               c.style.display = show ? '' : 'none';
+           });
+       });
+    }
+
+    const btnRrpColSettings = document.getElementById('btn-rrp-col-settings');
+    const rrpColSettingsDropdown = document.getElementById('rrp-col-settings-dropdown');
+    if (btnRrpColSettings && rrpColSettingsDropdown) {
+       btnRrpColSettings.addEventListener('click', (e) => {
+           e.stopPropagation();
+           const display = rrpColSettingsDropdown.style.display;
+           rrpColSettingsDropdown.style.display = (display === 'none' || !display) ? 'block' : 'none';
+       });
+       document.addEventListener('click', (e) => {
+           if (!rrpColSettingsDropdown.contains(e.target) && e.target !== btnRrpColSettings) {
+               rrpColSettingsDropdown.style.display = 'none';
+           }
+       });
+       document.querySelectorAll('#rrp-col-settings-dropdown .col-toggle').forEach(inp => {
+           inp.addEventListener('change', applyRrpColumnVisibility);
+       });
+    }
+
+    function updateRrpBadge() {
+       const uniqueSuppliers = [...new Map(flatRows.filter(f => f.fornitore_id).map(f => [f.fornitore_id, f])).values()];
+       
+       if (uniqueSuppliers.length === 0) {
+           if (rrpHeaderMsg) rrpHeaderMsg.innerHTML = 'Per scegliere dei prezzi consigliati, prima scrivi gli accordi coi fornitori';
+           if (btnOpenRrp) btnOpenRrp.innerHTML = '<i class="fa-solid fa-plus me-1"></i> Aggiungi Prezzo Consigliato';
+       } else if (rrpRows.length === 0) {
+           if (rrpHeaderMsg) rrpHeaderMsg.innerHTML = 'Nessun prezzo consigliato';
+           if (btnOpenRrp) btnOpenRrp.innerHTML = '<i class="fa-solid fa-plus me-1"></i> Clicca per aggiungere';
+       } else {
+           if (rrpHeaderMsg) rrpHeaderMsg.innerHTML = '';
+           if (btnOpenRrp) btnOpenRrp.innerHTML = '<i class="fa-solid fa-sliders me-1"></i> Prezzi di rivendita consigliati (' + rrpRows.length + ')';
+       }
+
+       if (!rrpDrawerAlert) return;
+       const active = rrpRows.filter(r => r.rrp_min || r.rrp_max);
+       if (active.length === 0) {
+           rrpDrawerAlert.classList.add('d-none');
+           return;
+       }
+       
+       let mins = active.map(r => parseFloat(r.rrp_min)).filter(n => !isNaN(n) && n > 0);
+       let maxs = active.map(r => parseFloat(r.rrp_max)).filter(n => !isNaN(n) && n > 0);
+       
+       const hasMin = mins.length > 0;
+       const hasMax = maxs.length > 0;
+
+       let unioneMin = hasMin ? Math.min(...mins) : null;
+       let unioneMax = hasMax ? Math.max(...maxs) : null;
+       let interMin = hasMin ? Math.max(...mins) : null;
+       let interMax = hasMax ? Math.min(...maxs) : null;
+
+       const qFactor = parseFloat(cfg.quantitaContenuto) || 1;
+       const hasComm = !!cfg.uomCommercialId && qFactor > 1;
+       if (currentDrawerUomMode === 'commercial' && hasComm) {
+           if (hasMin) {
+               unioneMin = unioneMin / qFactor;
+               interMin = interMin / qFactor;
+           }
+           if (hasMax) {
+               unioneMax = unioneMax / qFactor;
+               interMax = interMax / qFactor;
+           }
+       }
+       
+       const unitSymbol = (currentDrawerUomMode === 'commercial' && hasComm) ? cfg.uomCommercial : cfg.uomStock;
+
+       rrpDrawerAlert.classList.remove('d-none');
+       
+       if (hasMin && hasMax && interMin > interMax) {
+           rrpDrawerAlert.className = 'qk-alert qk-alert-danger mb-3';
+           rrpDrawerAlert.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Conflitto Prezzi (Range Totale: ${unioneMin.toFixed(2)} - ${unioneMax.toFixed(2)} / ${unitSymbol})`;
+       } else if (!hasMin && !hasMax) {
+           rrpDrawerAlert.classList.add('d-none');
+       } else {
+           rrpDrawerAlert.className = 'qk-alert qk-alert-success mb-3';
+           if (hasMin && hasMax) {
+               rrpDrawerAlert.innerHTML = `<i class="fa-solid fa-check-circle"></i> Safe Zone: ${interMin.toFixed(2)} - ${interMax.toFixed(2)} / ${unitSymbol} <span class="ms-2 fw-normal" style="font-size: 0.75rem;">(Unione: ${unioneMin.toFixed(2)} - ${unioneMax.toFixed(2)})</span>`;
+           } else if (hasMin) {
+               rrpDrawerAlert.innerHTML = `<i class="fa-solid fa-check-circle"></i> Safe Zone: &gt;= ${interMin.toFixed(2)} / ${unitSymbol} <span class="ms-2 fw-normal" style="font-size: 0.75rem;">(Unione: &gt;= ${unioneMin.toFixed(2)})</span>`;
+           } else {
+               rrpDrawerAlert.innerHTML = `<i class="fa-solid fa-check-circle"></i> Safe Zone: &lt;= ${interMax.toFixed(2)} / ${unitSymbol} <span class="ms-2 fw-normal" style="font-size: 0.75rem;">(Unione: &lt;= ${unioneMax.toFixed(2)})</span>`;
+           }
+       }
+    }
+
+    // Initialize RRP se si clicca sul tab Listini
+    document.getElementById('ptab-btn-listini')?.addEventListener('shown.bs.tab', () => {
+        if (!rrpTbody?.dataset.loaded) {
+            loadRrp();
+            if(rrpTbody) rrpTbody.dataset.loaded = '1';
+        }
     });
 
-    // Ascolta variazioni sul prezzo di acquisto/preferred per aggiornare la validazione matrice
-    document.addEventListener('qk:forn-deleted', function (e) {
-      const id = Number(e.detail?.id);
-      if (!id) return;
-      fornitori = fornitori.filter(f => Number(f.id) !== id);
-      prezziList = prezziList.filter(p => p.prodotto_fornitore_id !== id);
-      renderMasterTable();
-      updateRrpBanner();
-      validateMatrixPrices();
-    });
+    // UoM selector listener for Purchase grid
+    const purchaseUomModeSelect = document.getElementById('purchase-uom-mode');
+    if (purchaseUomModeSelect) {
+      purchaseUomModeSelect.value = currentUomMode;
+      purchaseUomModeSelect.addEventListener('change', function() {
+        currentUomMode = this.value;
+        renderMasterTable();
+      });
+    }
 
   });
 })();

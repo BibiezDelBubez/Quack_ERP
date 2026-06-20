@@ -396,6 +396,56 @@
     };
   };
 
+  window.qkMakeColumnsResizable = function (table) {
+    if (!table) return;
+    const cols = table.querySelectorAll('thead th');
+    cols.forEach(col => {
+      const colKey = col.dataset.col;
+      if (colKey === 'pref' || colKey === 'azioni' || col.classList.contains('no-resize')) return;
+      if (col.querySelector('.qk-resize-handle')) return;
+      col.style.position = 'relative';
+
+      const handle = document.createElement('div');
+      handle.classList.add('qk-resize-handle');
+      handle.style.position = 'absolute';
+      handle.style.top = '0';
+      handle.style.right = '0';
+      handle.style.width = '6px';
+      handle.style.height = '100%';
+      handle.style.cursor = 'col-resize';
+      handle.style.userSelect = 'none';
+      handle.style.zIndex = '10';
+
+      handle.addEventListener('mouseenter', () => { handle.style.backgroundColor = 'rgba(59, 130, 246, 0.4)'; });
+      handle.addEventListener('mouseleave', () => { handle.style.backgroundColor = ''; });
+
+      col.appendChild(handle);
+
+      let startX, startWidth;
+
+      handle.addEventListener('mousedown', function (e) {
+        startX = e.clientX;
+        startWidth = col.offsetWidth;
+        
+        document.addEventListener('mousemove', doDrag);
+        document.addEventListener('mouseup', stopDrag);
+        e.preventDefault();
+      });
+
+      function doDrag(e) {
+        const newWidth = startWidth + (e.clientX - startX);
+        if (newWidth > 70) {
+          col.style.width = newWidth + 'px';
+        }
+      }
+
+      function stopDrag() {
+        document.removeEventListener('mousemove', doDrag);
+        document.removeEventListener('mouseup', stopDrag);
+      }
+    });
+  };
+
   window.qkDebounce = function (fn, ms) {
     let t;
     return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };

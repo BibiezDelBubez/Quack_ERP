@@ -303,6 +303,12 @@ final class ProductsController extends BaseController
         $rrpMin        = $n('rrp_min') !== null ? (float) $n('rrp_min') : null;
         $rrpMax        = $n('rrp_max') !== null ? (float) $n('rrp_max') : null;
         $leadTime      = $n('lead_time_giorni') !== null ? (int) $n('lead_time_giorni') : null;
+        $unitaMisura   = $n('unita_misura_acquisto_id') !== null ? (int) $n('unita_misura_acquisto_id') : null;
+        if ($unitaMisura === null) {
+            $stmtUm = $this->pdo->prepare('SELECT unita_misura_stock_id FROM prodotti WHERE id = :pid');
+            $stmtUm->execute([':pid' => $prodotto_id]);
+            $unitaMisura = (int)$stmtUm->fetchColumn();
+        }
         $note          = $n('note');
 
         try {
@@ -319,6 +325,7 @@ final class ProductsController extends BaseController
                        rrp_min                       = :rrp_min,
                        rrp_max                       = :rrp_max,
                        lead_time_giorni              = :lead_time,
+                       unita_misura_acquisto_id      = :uom_id,
                        note                          = :note,
                        updated_at                    = CURRENT_TIMESTAMP
                      WHERE id = :id AND prodotto_id = :pid'
@@ -331,6 +338,7 @@ final class ProductsController extends BaseController
                     ':rrp_min'  => $rrpMin,
                     ':rrp_max'  => $rrpMax,
                     ':lead_time'=> $leadTime,
+                    ':uom_id'   => $unitaMisura,
                     ':note'     => $note,
                     ':id'       => $id,
                     ':pid'      => $prodotto_id,
@@ -341,11 +349,11 @@ final class ProductsController extends BaseController
                     'INSERT INTO prodotti_fornitori
                        (prodotto_id, fornitore_id, sku_fornitore, nome_prodotto_fornitore,
                         quantita_minima, ordine_preferenza_fornitore, attivo,
-                        rrp_min, rrp_max, lead_time_giorni, note, created_at)
+                        rrp_min, rrp_max, lead_time_giorni, unita_misura_acquisto_id, note, created_at)
                      VALUES
                        (:pid, :fid, :sku, :nome,
                         :qta, :ord_pref, :attivo,
-                        :rrp_min, :rrp_max, :lead_time, :note, CURRENT_TIMESTAMP)'
+                        :rrp_min, :rrp_max, :lead_time, :uom_id, :note, CURRENT_TIMESTAMP)'
                 )->execute([
                     ':pid'      => $prodotto_id,
                     ':fid'      => $fornitore_id,
@@ -357,6 +365,7 @@ final class ProductsController extends BaseController
                     ':rrp_min'  => $rrpMin,
                     ':rrp_max'  => $rrpMax,
                     ':lead_time'=> $leadTime,
+                    ':uom_id'   => $unitaMisura,
                     ':note'     => $note,
                 ]);
                 $pfId = (int) $this->pdo->lastInsertId();
@@ -445,6 +454,63 @@ final class ProductsController extends BaseController
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
             echo json_encode(['ok' => false, 'error' => 'Errore durante la rimozione.']);
+        }
+        exit;
+    }
+
+    public function saveRrp(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $prodotto_id  = (int) post('prodotto_id');
+        $rrp_data     = post('rrp_data'); // JSON string
+
+        if ($prodotto_id <= 0 || !$rrp_data) {
+            echo json_encode(['ok' => false, 'error' => 'Dati mancanti.']); exit;
+        }
+
+        $rrps = json_decode($rrp_data, true);
+        if (!is_array($rrps)) {
+            $rrps = [];
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+            
+            // Eliminiamo tutti gli rrp esistenti per questo prodotto
+            $this->pdo->prepare('DELETE FROM prodotti_rrp WHERE prodotto_id = :pid')
+                      ->execute([':pid' => $prodotto_id]);
+
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO prodotti_rrp (id, prodotto_id, fornitore_id, rrp_min, rrp_max, valuta, valido_dal, valido_al, note) 
+                 VALUES (:id, :pid, :fid, :rmin, :rmax, :valuta, :vdal, :val, :note)'
+            );
+
+            foreach ($rrps as $r) {
+                $forn_id = !empty($r['fornitore_id']) ? (int)$r['fornitore_id'] : null;
+                $stmt->execute([
+                    ':id'     => sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x', mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000, mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)),
+                    ':pid'    => $prodotto_id,
+                    ':fid'    => $forn_id,
+                    ':rmin'   => isset($r['rrp_min']) ? (float)$r['rrp_min'] : 0,
+                    ':rmax'   => isset($r['rrp_max']) ? (float)$r['rrp_max'] : 0,
+                    ':valuta' => !empty($r['valuta']) ? $r['valuta'] : 'EUR',
+                    ':vdal'   => !empty($r['valido_dal']) ? $r['valido_dal'] : null,
+                    ':val'    => !empty($r['valido_al']) ? $r['valido_al'] : null,
+                    ':note'   => !empty($r['note']) ? $r['note'] : null
+                ]);
+            }
+            
+            $this->pdo->commit();
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
         exit;
     }

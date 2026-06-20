@@ -46,7 +46,64 @@ foreach ($categorie as $cat) {
 /* Tipo prodotto corrente */
 $isKit = ($v['tipo'] ?? 'semplice') === 'kit';
 $kit_componenti = $kit_componenti ?? [];
+
+$um_base_id = null;
+foreach ($unita_misura_list as $umRow) {
+    if ($umRow['codice'] === $um) {
+        $um_base_id = $umRow['id'];
+        break;
+    }
+}
+$um_comm_codice = '';
+if (!empty($v['unita_contenuto_id'])) {
+    foreach ($unita_misura_list as $umRow) {
+        if ((string)$umRow['id'] === (string)$v['unita_contenuto_id']) {
+            $um_comm_codice = $umRow['codice'];
+            break;
+        }
+    }
+}
 ?>
+<script>
+/* Config: PHP → JS, letta da products-form.js e products-suppliers.js */
+window.QkPF = {
+  /* ── Generali ─────────────────────────────────────────────────────── */
+  isEdit:               <?= $isEdit ? 'true' : 'false' ?>,
+  prodottoId:           <?= (int)$entity_id ?>,
+
+  /* ── API URL ──────────────────────────────────────────────────────── */
+  apiTag:               <?= json_encode($apiTagCreate) ?>,
+  apiCat:               <?= json_encode($apiCatUrl) ?>,
+  apiSearchCat:         <?= json_encode($apiSearchCat) ?>,
+  apiSearchForn:        <?= json_encode($apiSearchForn) ?>,
+  apiSearchProd:        <?= json_encode($apiSearchProd) ?>,
+  apiSearchProdExclude: <?= json_encode($apiSearchProd . '?exclude=' . (int)$entity_id) ?>,
+  apiFornSave:          <?= json_encode($apiFornSave) ?>,
+  apiFornDelete:        <?= json_encode($apiFornDelete) ?>,
+  unitaMisuraList:      <?= json_encode($unita_misura_list ?? []) ?>,
+  /* Prezzi fornitore — gestiti da products-suppliers.js */
+  apiPrezzoSave:        <?= json_encode($apiPrezzoSave) ?>,
+  apiPrezzoDelete:      <?= json_encode($apiPrezzoDelete) ?>,
+  apiFornListini:       <?= json_encode($apiFornListini) ?>,
+  /* Kit */
+  apiKitSave:           <?= json_encode($apiKitSave) ?>,
+  apiKitDelete:         <?= json_encode($apiKitDelete) ?>,
+  suppliersCreateUrl:   <?= json_encode(url('suppliers/create')) ?>,
+
+  /* ── Dati pre-caricati (PHP → JS) ────────────────────────────────── */
+  /** Array di fornitori del prodotto (da qk_load_prodotto_fornitori). */
+  fornitori:            <?= json_encode(array_values($prodotto_fornitori)) ?>,
+  /** Tutti gli scaglioni di prezzo di tutti i fornitori (da qk_load_prodotto_tutti_prezzi). */
+  tuttePrezzi:          <?= json_encode(array_values($tutti_prezzi)) ?>,
+
+  /* ── UoM settings ── */
+  uomStock:             <?= json_encode($um) ?>,
+  uomStockId:           <?= json_encode($um_base_id) ?>,
+  uomCommercialId:      <?= json_encode($v['unita_contenuto_id'] ?? null) ?>,
+  uomCommercial:        <?= json_encode($um_comm_codice) ?>,
+  quantitaContenuto:    <?= json_encode($v['quantita_contenuto'] ?? null) ?>,
+};
+</script>
 <?php if (!empty($errors['_global'])): ?>
 <div class="qk-alert qk-alert-danger" data-auto-dismiss="6000">
   <i class="fa-solid fa-circle-xmark"></i>
@@ -523,7 +580,16 @@ $kit_componenti = $kit_componenti ?? [];
           </div>
           <?php else: ?>
 
+
           <style>
+            #rrp-drawer {
+              width: 750px !important;
+              right: -800px;
+              transition: right 0.3s ease-in-out;
+            }
+            #rrp-drawer.open {
+              right: 0;
+            }
             .pricing-matrix-container {
               overflow-x: auto;
               margin-top: 1rem;
@@ -541,7 +607,7 @@ $kit_componenti = $kit_componenti ?? [];
             }
             .pricing-matrix-table th, .pricing-matrix-table td {
               border: 1px solid #cbd5e1;
-              padding: 0.6rem 0.8rem;
+              padding: 0;
               vertical-align: middle;
               overflow: visible; /* Per consentire la visualizzazione dei popover */
             }
@@ -551,28 +617,33 @@ $kit_componenti = $kit_componenti ?? [];
               color: var(--qk-text-primary);
               text-align: left;
               border-bottom: 2px solid #cbd5e1;
+              padding: 0.6rem 0.8rem;
             }
             .pricing-matrix-table td.listino-info-cell {
               background: #f8fafc;
               font-weight: 600;
               color: var(--qk-text-primary);
+              padding: 0.6rem 0.8rem;
             }
             .matrix-cell-wrapper {
               position: relative;
               background: #f8fafc;
-              border: 1px solid #cbd5e1;
-              border-radius: 6px;
-              padding: 4px;
+              border: none;
+              border-radius: 0;
+              padding: 0.6rem 0.8rem;
               transition: all 0.2s ease;
+              width: 100%;
+              height: 100%;
+              display: flex;
+              align-items: center;
             }
             .matrix-cell-wrapper:hover {
-              border-color: #94a3b8;
-              box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+              background: #e2e8f0;
             }
             .matrix-cell-wrapper:focus-within {
-              border-color: var(--qk-primary);
               background: #fff;
-              box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+              outline: 2px solid var(--qk-primary);
+              outline-offset: -2px;
             }
             .matrix-price-input-group {
               display: flex;
@@ -689,6 +760,77 @@ $kit_componenti = $kit_componenti ?? [];
             .btn-delete-qty-column:hover {
               background: rgba(220, 53, 69, 0.1);
             }
+
+            /* Flat Grid (Excel-like) CSS styled like Odoo */
+            .qks-master-table {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+              font-family: inherit;
+            }
+            .qks-master-table th, .qks-master-table td {
+              border-bottom: 1px solid #e2e8f0;
+              padding: 0 !important;
+              vertical-align: middle;
+            }
+            .qks-master-table th {
+              padding: 8px 10px !important;
+              background-color: #f8fafc;
+              font-weight: 700;
+              font-size: 0.78rem;
+              text-transform: uppercase;
+              letter-spacing: 0.03em;
+              color: #475569;
+              border-bottom: 2px solid #cbd5e1;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .qks-master-table tbody tr:hover {
+              background-color: rgba(241, 245, 249, 0.6);
+            }
+            .flat-grid-td {
+              position: relative;
+              height: 40px;
+              overflow: hidden;
+            }
+            .flat-grid-input {
+              display: block !important;
+              box-sizing: border-box !important;
+              width: 100%;
+              min-width: 0 !important;
+              height: 100%;
+              border: none !important;
+              background: transparent !important;
+              padding: 0 10px;
+              outline: none !important;
+              box-shadow: none !important;
+              border-radius: 0;
+              font-size: 0.85rem;
+              color: #1e293b;
+              transition: background-color 0.15s;
+            }
+            .flat-grid-input:focus {
+              background-color: #fff !important;
+              outline: 2px solid var(--qk-primary) !important;
+              outline-offset: -2px;
+              z-index: 2;
+              position: relative;
+            }
+            select.flat-grid-input {
+              appearance: auto;
+              cursor: pointer;
+            }
+            #fornitori-col-toggler {
+              text-transform: none !important;
+              letter-spacing: normal !important;
+              font-weight: 400 !important;
+            }
+            #rrp-tbody input, #rrp-tbody select {
+              padding-left: 6px !important;
+              padding-right: 6px !important;
+              font-size: 0.82rem !important;
+            }
           </style>
 
           <?php
@@ -723,36 +865,24 @@ $kit_componenti = $kit_componenti ?? [];
                   Griglia dei prezzi per scaglione. I valori si salvano in automatico all'uscita dal campo (blur) o premendo Invio. Clicca sull'icona ingranaggio per sconti e note.
                 </span>
               </div>
+              <div class="text-end d-flex align-items-center gap-3">
+                <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .5rem;">
+                  <label class="qk-form-label mb-0 text-nowrap" style="font-size:.85rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
+                  <select id="sales-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
+                    <option value="commercial">Unità commerciale</option>
+                    <option value="stock" selected>Unità di stock</option>
+                  </select>
+                </div>
+                <div>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-open-rrp-drawer">
+                     Prezzi di rivendita consigliati
+                  </button>
+                  <div id="rrp-header-msg" class="text-muted small mt-1"></div>
+                </div>
+              </div>
             </div>
             
             <div class="qk-card-body p-3">
-              <!-- Banner RRP multi-fornitore collassabile -->
-              <div class="rrp-banner" id="test-rrp-banner">
-                <div>
-                  <span class="rrp-banner-title"><i class="fa-solid fa-circle-info text-info me-1"></i>Vincoli RRP (Fornitore Preferito):</span>
-                  <span id="rrp-banner-content">Caricamento vincoli...</span>
-                </div>
-                <button type="button" class="btn btn-xs btn-outline-secondary" id="btn-toggle-all-rrp" style="font-size:0.72rem; padding: 2px 6px;">
-                  Mostra tutti i fornitori
-                </button>
-              </div>
-              <div id="all-rrp-details" class="collapse mb-3 p-3 border rounded bg-white" style="font-size: 0.8rem;">
-                <!-- Tabella comparativa compilata via JS -->
-                <table class="table table-sm table-bordered align-middle mb-0">
-                  <thead>
-                    <tr class="table-light">
-                      <th>Fornitore</th>
-                      <th>Min RRP</th>
-                      <th>Max RRP</th>
-                      <th>Pref.</th>
-                    </tr>
-                  </thead>
-                  <tbody id="all-rrp-tbody">
-                    <!-- Popolato da JS -->
-                  </tbody>
-                </table>
-              </div>
-
               <div class="pricing-matrix-container">
                 <table class="pricing-matrix-table" id="pricing-matrix-table">
                   <thead>
@@ -854,8 +984,14 @@ $kit_componenti = $kit_componenti ?? [];
             // Riferimento all'input del Prezzo Base sul Tab 1
             const tab1BaseInput = document.querySelector('input[name="prezzo_vendita_base"]');
 
+            let currentSalesUomMode = 'stock';
+            const salesUomModeSelect = document.getElementById('sales-uom-mode');
+
             // Aggiorna dinamicamente i placeholder grigi per l'ereditarietà dei prezzi
             function updatePlaceholders() {
+              const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+              const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+
               // Prendi il prezzo base corrente dal Tab 1 o dal Listino 1 Qty 0
               let standardBaseVal = 0;
               if (tab1BaseInput) {
@@ -863,8 +999,8 @@ $kit_componenti = $kit_componenti ?? [];
               } else {
                 const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
                 if (standardRow) {
-                  const standardBaseInput = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"] .cell-price-input');
-                  standardBaseVal = parseFloat(standardBaseInput.value) || 0;
+                  const standardBaseCell = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+                  standardBaseVal = parseFloat(standardBaseCell.dataset.stockPrice) || 0;
                 }
               }
 
@@ -875,12 +1011,17 @@ $kit_componenti = $kit_componenti ?? [];
                 
                 const baseCell = row.querySelector('.matrix-cell-wrapper[data-qty="0"]');
                 if (!baseCell) return;
-                const baseInput = baseCell.querySelector('.cell-price-input');
-                const listinoBaseVal = baseInput.value !== '' ? parseFloat(baseInput.value) : (isStandard ? standardBaseVal : null);
+                const baseValStr = baseCell.dataset.stockPrice || '';
+                const listinoBaseVal = baseValStr !== '' ? parseFloat(baseValStr) : (isStandard ? standardBaseVal : null);
 
                 if (!isStandard) {
-                  if (baseInput.value === '') {
-                    baseInput.placeholder = standardBaseVal.toFixed(4) + ' (Base)';
+                  const baseInput = baseCell.querySelector('.cell-price-input');
+                  if (baseValStr === '') {
+                    let dispVal = standardBaseVal;
+                    if (currentSalesUomMode === 'commercial' && hasComm) {
+                      dispVal = standardBaseVal / qFactor;
+                    }
+                    baseInput.placeholder = dispVal.toFixed(4) + ' (Base)';
                   } else {
                     baseInput.placeholder = "—";
                   }
@@ -891,26 +1032,74 @@ $kit_componenti = $kit_componenti ?? [];
                 cells.forEach(cell => {
                   const qty = cell.dataset.qty;
                   const priceInput = cell.querySelector('.cell-price-input');
+                  const cellValStr = cell.dataset.stockPrice || '';
 
                   let fallbackVal = listinoBaseVal !== null ? listinoBaseVal : standardBaseVal;
                   
                   // Se il Listino 1 (Standard) ha uno specifico prezzo inserito per questo scaglione, prendilo come ereditarietà
                   const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
                   if (standardRow) {
-                    const standardTierInput = standardRow.querySelector(`.matrix-cell-wrapper[data-qty="${qty}"] .cell-price-input`);
-                    if (standardTierInput && standardTierInput.value !== '') {
-                      fallbackVal = parseFloat(standardTierInput.value);
+                    const standardTierCell = standardRow.querySelector(`.matrix-cell-wrapper[data-qty="${qty}"]`);
+                    const standardTierValStr = standardTierCell ? (standardTierCell.dataset.stockPrice || '') : '';
+                    if (standardTierValStr !== '') {
+                      fallbackVal = parseFloat(standardTierValStr);
                     }
                   }
 
-                  priceInput.placeholder = fallbackVal.toFixed(4) + ' (Ered.)';
+                  let dispVal = fallbackVal;
+                  if (currentSalesUomMode === 'commercial' && hasComm) {
+                    dispVal = fallbackVal / qFactor;
+                  }
+                  priceInput.placeholder = dispVal.toFixed(4) + ' (Ered.)';
                 });
               });
             }
 
+            // Aggiorna la visualizzazione della matrice in base alla UoM selezionata
+            function updateSalesMatrixUom() {
+              const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+              const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+              
+              // 1. Update headers
+              table.querySelectorAll('.qty-column-header').forEach(th => {
+                const baseQty = parseFloat(th.dataset.qty);
+                const span = th.querySelector('span');
+                if (!span) return;
+                
+                if (currentSalesUomMode === 'commercial' && hasComm) {
+                  const commQty = baseQty * qFactor;
+                  span.textContent = `Qtà ${commQty.toLocaleString('it-IT')} ${window.QkPF.uomCommercial}+`;
+                } else {
+                  span.textContent = `Qtà ${baseQty.toLocaleString('it-IT')} ${window.QkPF.uomStock}+`;
+                }
+              });
+
+              // 2. Update values in inputs
+              table.querySelectorAll('.matrix-cell-wrapper').forEach(cell => {
+                const priceInput = cell.querySelector('.cell-price-input');
+                if (!priceInput) return;
+
+                const rawValStr = cell.dataset.stockPrice || '';
+                if (rawValStr !== '') {
+                  const rawVal = parseFloat(rawValStr);
+                  if (currentSalesUomMode === 'commercial' && hasComm) {
+                    priceInput.value = (rawVal / qFactor).toFixed(4);
+                  } else {
+                    priceInput.value = rawVal.toFixed(4);
+                  }
+                } else {
+                  priceInput.value = '';
+                }
+              });
+
+              updatePlaceholders();
+            }
+
             // Inizializza i valori correnti come "last" per evitare salvataggi duplicati al primo focusout
             function cacheCellValues(cell) {
-              const price = cell.querySelector('.cell-price-input').value.trim();
+              const priceInput = cell.querySelector('.cell-price-input');
+              const price = priceInput ? priceInput.value.trim() : '';
+              cell.dataset.stockPrice = price; // store raw stock price
               cell.dataset.lastPrice = price;
             }
 
@@ -923,8 +1112,21 @@ $kit_componenti = $kit_componenti ?? [];
               tab1BaseInput.addEventListener('input', function() {
                 const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
                 if (standardRow) {
-                  const standardBaseInput = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"] .cell-price-input');
-                  standardBaseInput.value = tab1BaseInput.value;
+                  const standardBaseCell = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+                  const standardBaseInput = standardBaseCell.querySelector('.cell-price-input');
+                  
+                  const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+                  const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+
+                  let val = parseFloat(tab1BaseInput.value) || 0;
+                  standardBaseCell.dataset.stockPrice = val.toFixed(4);
+                  
+                  if (currentSalesUomMode === 'commercial' && hasComm) {
+                    standardBaseInput.value = (val / qFactor).toFixed(4);
+                  } else {
+                    standardBaseInput.value = val.toFixed(4);
+                  }
+                  
                   updatePlaceholders();
                 }
               });
@@ -946,7 +1148,14 @@ $kit_componenti = $kit_componenti ?? [];
                 // Se modifico il listino base, allineo il Tab 1
                 const row = cell.closest('.listino-row');
                 if (row.dataset.listinoId === "1" && cell.dataset.qty === "0" && tab1BaseInput) {
-                  tab1BaseInput.value = input.value;
+                  const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+                  const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+                  let displayVal = parseFloat(input.value) || 0;
+                  if (currentSalesUomMode === 'commercial' && hasComm) {
+                    tab1BaseInput.value = (displayVal * qFactor).toFixed(4);
+                  } else {
+                    tab1BaseInput.value = displayVal.toFixed(4);
+                  }
                 }
                 handleCellAutosave(cell);
               }
@@ -970,9 +1179,25 @@ $kit_componenti = $kit_componenti ?? [];
               const rigaId = cell.dataset.rigaId;
 
               const priceInput = cell.querySelector('.cell-price-input');
-              const priceVal = priceInput.value.trim();
-              const prevPrice = cell.dataset.lastPrice || '';
+              const displayVal = priceInput.value.trim();
+              
+              const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+              const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
 
+              // Convert target input to stock price
+              let priceVal = displayVal;
+              if (displayVal !== '') {
+                const parsed = parseFloat(displayVal);
+                if (currentSalesUomMode === 'commercial' && hasComm) {
+                  priceVal = (parsed * qFactor).toFixed(4);
+                } else {
+                  priceVal = parsed.toFixed(4);
+                }
+              }
+              
+              cell.dataset.stockPrice = priceVal;
+
+              const prevPrice = cell.dataset.lastPrice || '';
               if (priceVal === prevPrice) {
                 return; // Nessun cambiamento
               }
@@ -1061,12 +1286,21 @@ $kit_componenti = $kit_componenti ?? [];
 
             // Gestore Aggiunta Colonna Scaglione
             document.getElementById('btn-add-qty-column').addEventListener('click', function() {
-              const qtyStr = prompt("Inserisci la quantità minima per il nuovo scaglione (es. 10, 50, 100):");
+              const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+              const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+              const unitText = (currentSalesUomMode === 'commercial' && hasComm) ? window.QkPF.uomCommercial : window.QkPF.uomStock;
+              
+              const qtyStr = prompt(`Inserisci la quantità minima per il nuovo scaglione (in ${unitText}):`);
               if (qtyStr === null) return;
-              const qty = parseFloat(qtyStr.replace(',', '.'));
+              let qty = parseFloat(qtyStr.replace(',', '.'));
               if (isNaN(qty) || qty <= 0) {
                 alert("Quantità non valida. Inserire un numero maggiore di 0.");
                 return;
+              }
+
+              // Convert to stock unit if we are in commercial view
+              if (currentSalesUomMode === 'commercial' && hasComm) {
+                qty = qty / qFactor;
               }
 
               if (table.querySelector(`thead th[data-qty="${qty}"]`)) {
@@ -1090,6 +1324,13 @@ $kit_componenti = $kit_componenti ?? [];
                 }
               }
 
+              const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+              const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+              let headerText = `Qtà ${qty.toLocaleString('it-IT')} ${window.QkPF.uomStock}+`;
+              if (currentSalesUomMode === 'commercial' && hasComm) {
+                headerText = `Qtà ${(qty * qFactor).toLocaleString('it-IT')} ${window.QkPF.uomCommercial}+`;
+              }
+
               // Crea l'header cell
               const th = document.createElement('th');
               th.classList.add('qty-column-header');
@@ -1097,7 +1338,7 @@ $kit_componenti = $kit_componenti ?? [];
               th.style.width = "200px";
               th.innerHTML = `
                 <div class="d-flex align-items-center justify-content-between">
-                  <span>Qtà ${qty.toLocaleString('it-IT')}+</span>
+                  <span>${headerText}</span>
                   <button type="button" class="btn-delete-qty-column" data-qty="${qty}" title="Elimina questo scaglione per tutti i listini">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
@@ -1130,6 +1371,7 @@ $kit_componenti = $kit_componenti ?? [];
               });
 
               updatePlaceholders();
+              window.qkMakeColumnsResizable(table);
             }
 
             // Gestore eliminazione colonna scaglione
@@ -1184,27 +1426,100 @@ $kit_componenti = $kit_componenti ?? [];
 
             // Esegui il calcolo dei placeholder iniziali
             updatePlaceholders();
+            window.qkMakeColumnsResizable(table);
+
+            salesUomModeSelect?.addEventListener('change', function() {
+              currentSalesUomMode = this.value;
+              updateSalesMatrixUom();
+            });
+
           })();
           </script>
           <?php endif; ?>
+
+          <!-- ── Drawer RRP (Prezzi Consigliati) ── -->
+          <div class="qk-drawer-overlay" id="rrp-drawer-overlay"></div>
+          <div class="qk-drawer" id="rrp-drawer">
+            <div class="qk-drawer-header">
+              <h5>Prezzi di Rivendita Consigliati</h5>
+              <button type="button" class="btn-close" id="btn-close-rrp-drawer" aria-label="Chiudi"></button>
+            </div>
+             <div class="qk-drawer-body">
+               <div class="d-flex justify-content-between align-items-center mb-3">
+                 <p class="text-muted small mb-0">Imposta i prezzi di rivendita consigliati (Minimo e Massimo) forniti dai produttori/fornitori per questo prodotto.</p>
+                 <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .75rem;">
+                   
+                   <div class="qk-dropdown-container" style="position:relative; display:inline-block; line-height:1;">
+                     <button type="button" class="btn-qk btn-qk-secondary btn-qk-xs" id="btn-rrp-col-settings" title="Mostra/Nascondi colonne" style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.78rem;">
+                       <i class="fa-solid fa-sliders"></i> Colonne
+                     </button>
+                     <div class="qk-dropdown-menu shadow-sm" id="rrp-col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.5rem .7rem; min-width:160px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                       <div class="qk-flex-col qk-gap-sm d-flex flex-column" style="gap: .4rem;">
+                         <label class="qk-flex-row qk-gap-sm" style="font-size:.78rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.4rem; display:flex; align-items:center;">
+                           <input type="checkbox" class="col-toggle form-check-input" value="min" checked>
+                           <span>Prezzo Minimo</span>
+                         </label>
+                         <label class="qk-flex-row qk-gap-sm" style="font-size:.78rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.4rem; display:flex; align-items:center;">
+                           <input type="checkbox" class="col-toggle form-check-input" value="max" checked>
+                           <span>Prezzo Massimo</span>
+                         </label>
+                         <label class="qk-flex-row qk-gap-sm" style="font-size:.78rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.4rem; display:flex; align-items:center;">
+                           <input type="checkbox" class="col-toggle form-check-input" value="date">
+                           <span>Date Validità</span>
+                         </label>
+                       </div>
+                     </div>
+                   </div>
+
+                   <div class="d-flex align-items-center gap-1">
+                     <label class="qk-form-label mb-0 text-nowrap" style="font-size:.78rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
+                     <select id="drawer-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.78rem; height:auto;">
+                       <option value="commercial">Unità commerciale</option>
+                       <option value="stock" selected>Unità di stock</option>
+                     </select>
+                   </div>
+                 </div>
+               </div>
+               <div id="rrp-drawer-alert" class="qk-alert qk-alert-danger d-none mb-3"></div>
+               <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem; table-layout: fixed;">
+                    <thead style="background: #f8fafc;">
+                        <tr>
+                            <th>Fonte (Fornitore)</th>
+                            <th data-col="rrp-min" style="width: 90px; text-align: right;">Prezzo Min</th>
+                            <th data-col="rrp-max" style="width: 90px; text-align: right;">Prezzo Max</th>
+                            <th style="width: 60px; text-align: center;">Valuta</th>
+                            <th data-col="rrp-date" style="width: 130px;">Valido dal</th>
+                            <th data-col="rrp-date" style="width: 130px;">Valido al</th>
+                            <th style="width: 45px; text-align: center;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="rrp-tbody">
+                        <!-- JS will populate this -->
+                    </tbody>
+               </table>
+               <div class="mt-3">
+                   <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-add-rrp">
+                       <i class="fa-solid fa-plus"></i> Aggiungi Prezzo Consigliato
+                   </button>
+               </div>
+            </div>
+            <div class="qk-drawer-footer">
+              <button type="button" class="btn-qk btn-qk-secondary" id="btn-cancel-rrp-drawer">Chiudi</button>
+            </div>
+          </div>
+
         </div>
 
-
-
         <!-- ──────────────────────────────────────────────────────────────
-             TAB 2: FORNITORI
-             Il tab mostra una tabella raggruppata fornitore → prezzi.
-             Il rendering è completamente JS (products-suppliers.js),
-             che legge i dati da window.QkPF.fornitori e .tuttePrezzi.
+             TAB 2: PREZZI D'ACQUISTO E FORNITORI (FLAT GRID)
         ─────────────────────────────────────────────────────────────────── -->
         <div class="tab-pane fade" id="ptab-fornitori" role="tabpanel">
 
           <?php if (!$isEdit): ?>
-          <!-- Prodotto non ancora salvato: non si possono associare fornitori -->
           <div class="qk-card mb-3">
             <div class="qk-card-body text-center py-5">
               <i class="fa-solid fa-floppy-disk fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
-              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter associare i fornitori.</p>
+              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter gestire i prezzi di acquisto.</p>
             </div>
           </div>
           <?php else: ?>
@@ -1213,133 +1528,89 @@ $kit_componenti = $kit_componenti ?? [];
           <div class="qk-table-toolbar qk-card mb-3"
                style="border-radius:var(--qk-radius);border:1px solid var(--qk-card-border)">
             <div class="qk-table-toolbar-left">
-              <span class="qk-text-muted small">Fornitori associati (Master List)</span>
+              <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .5rem; padding-left: .5rem;">
+                <label class="qk-form-label mb-0 text-nowrap" style="font-size:.85rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
+                <select id="purchase-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
+                  <option value="commercial">Unità commerciale</option>
+                  <option value="stock" selected>Unità di stock</option>
+                </select>
+              </div>
             </div>
-            <div class="qk-table-toolbar-right">
+            <div class="qk-table-toolbar-right d-flex gap-2 align-items-center">
+              <div class="qk-dropdown-container" style="position:relative; display:inline-block; line-height:1;">
+                <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-col-settings" title="Mostra/Nascondi colonne" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                  <i class="fa-solid fa-sliders"></i> Colonne
+                </button>
+                <div class="qk-dropdown-menu shadow-sm" id="col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.6rem .8rem; min-width:180px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                  <div class="qk-flex-col qk-gap-sm d-flex flex-column" style="gap: .5rem;">
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="pref" checked>
+                      <span>Preferito</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="nome_prod">
+                      <span>Nome Prodotto Fornitore</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="sku" checked>
+                      <span>SKU Fornitore</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="qta_min" checked>
+                      <span>Quantità Minima</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="sconto" checked>
+                      <span>Sconto %</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="lead_time" checked>
+                      <span>Consegna (gg)</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="valido_dal">
+                      <span>Valido Dal</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="valido_al">
+                      <span>Valido Al</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
               <button type="button"
                       class="btn-qk btn-qk-primary btn-qk-sm"
-                      data-bs-toggle="modal"
-                      data-bs-target="#modal-fornitore"
-                      data-mode="create"
-                      id="btn-add-fornitore">
-                <i class="fa-solid fa-plus"></i> Aggiungi fornitore
+                      id="btn-add-fornitore-flat">
+                <i class="fa-solid fa-plus"></i> Aggiungi riga
               </button>
             </div>
           </div>
 
-          <!-- ── Master Table ────────────────────────────────────────────── -->
+          <!-- ── Master Table Flat ────────────────────────────────────────────── -->
           <div class="qk-card" style="overflow-x:auto;">
             <table class="qks-master-table" id="master-fornitori-table">
               <thead>
                 <tr>
-                  <th style="width:60px; text-align:center;">Pref.</th>
-                  <th>Fornitore</th>
-                  <th>SKU Fornitore</th>
-                  <th>Tariffa Base [0+]</th>
-                  <th>Lead Time</th>
-                  <th style="width:180px; text-align:right;">Azioni</th>
+                  <th style="width:40px; text-align:center;" data-col="pref">Prf</th>
+                  <th data-col="fornitore" style="min-width: 200px;">Fornitore</th>
+                  <th data-col="nome_prod" style="min-width: 180px; display: none;">Nome Prod. Forn.</th>
+                  <th data-col="sku" style="min-width: 120px;">SKU Fornitore</th>
+                  <th data-col="qta_min" style="width:90px; text-align:right;">Qtà Min.</th>
+                  <th data-col="uom" style="width:90px; text-align:center;">UoM</th>
+                  <th data-col="prezzo" style="width:110px; text-align:right;">Prezzo Acq.</th>
+                  <th data-col="sconto" style="width:80px; text-align:right;">Sc. %</th>
+                  <th data-col="lead_time" style="width:90px; text-align:center;">Cons. (gg)</th>
+                  <th data-col="valido_dal" style="width:130px; text-align:center;">Valido Dal</th>
+                  <th data-col="valido_al" style="width:130px; text-align:center;">Valido Al</th>
+                  <th data-col="azioni" style="width:80px; text-align:center;"></th>
                 </tr>
               </thead>
               <tbody id="master-fornitori-tbody">
-                <!-- Popolato dinamicamente da JS -->
+                <!-- Popolato dinamicamente da JS flat -->
               </tbody>
             </table>
           </div>
 
-          <!-- ── Drawer Laterale per Dettagli Fornitore ── -->
-          <div class="qk-drawer-overlay" id="test-drawer-overlay"></div>
-          <div class="qk-drawer" id="test-fornitore-drawer">
-            <div class="qk-drawer-header">
-              <h5 id="drawer-title">Dettagli Fornitore</h5>
-              <button type="button" class="btn-close" id="btn-close-drawer" aria-label="Chiudi"></button>
-            </div>
-            <div class="qk-drawer-body">
-              <div id="drawer-alert" class="qk-alert qk-alert-danger d-none mb-3"></div>
-              
-              <!-- Form Drawer per salvare metadati fornitore e RRP -->
-              <form id="drawer-fornitore-form" onsubmit="event.preventDefault();">
-                <input type="hidden" id="dw-id" value="">
-                <input type="hidden" id="dw-fornitore-id" value="">
-                
-                <div class="mb-3">
-                  <label class="qk-form-label">Fornitore</label>
-                  <input type="text" id="dw-fornitore-label" class="qk-form-control" readonly>
-                </div>
-                
-                <div class="mb-3">
-                  <label class="qk-form-label">SKU Fornitore</label>
-                  <input type="text" id="dw-sku" class="qk-form-control font-monospace" placeholder="Codice fornitore">
-                </div>
-
-                <div class="mb-3">
-                  <label class="qk-form-label">Nome prodotto presso il fornitore</label>
-                  <input type="text" id="dw-nome-prod-forn" class="qk-form-control" placeholder="Come lo chiama il fornitore" maxlength="150">
-                </div>
-
-                <div class="row g-2 mb-3">
-                  <div class="col-6">
-                    <label class="qk-form-label">Quantità minima ordine (MOQ)</label>
-                    <input type="number" id="dw-qta-min" class="qk-form-control" placeholder="0,00" min="0" step="0.001">
-                  </div>
-                  <div class="col-6">
-                    <label class="qk-form-label">Lead Time (Giorni)</label>
-                    <input type="number" id="dw-lead-time" class="qk-form-control" min="0" value="7">
-                  </div>
-                </div>
-
-                <div class="mb-3">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="dw-attivo" value="1" checked>
-                    <label class="form-check-label" for="dw-attivo">Attivo</label>
-                  </div>
-                </div>
-
-                <div class="row g-2 mb-3">
-                  <div class="col-6">
-                    <label class="qk-form-label">Min RRP</label>
-                    <input type="number" id="dw-rrp-min" class="qk-form-control" step="0.0001" min="0" placeholder="0.00">
-                  </div>
-                  <div class="col-6">
-                    <label class="qk-form-label">Max RRP</label>
-                    <input type="number" id="dw-rrp-max" class="qk-form-control" step="0.0001" min="0" placeholder="0.00">
-                  </div>
-                </div>
-
-                <div class="mb-3">
-                  <label class="qk-form-label">Note</label>
-                  <textarea id="dw-note" class="qk-form-control" rows="2" placeholder="Note specifiche per questo fornitore…"></textarea>
-                </div>
-
-                <h6 class="border-bottom pb-2 mt-4"><i class="fa-solid fa-tags me-1"></i>Scaglioni di Acquisto</h6>
-                <div style="max-height: 250px; overflow-y:auto; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;" class="mb-2">
-                  <table class="table table-sm align-middle" id="drawer-scaglioni-table" style="font-size: 0.85rem; margin-bottom:0;">
-                    <thead>
-                      <tr>
-                        <th>Qtà Min.</th>
-                        <th>Prezzo d'Acquisto</th>
-                        <th style="width:40px;"></th>
-                      </tr>
-                    </thead>
-                    <tbody id="drawer-scaglioni-tbody">
-                      <!-- Righe prezzi popolate dinamicamente -->
-                    </tbody>
-                  </table>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-primary" id="dw-btn-add-scaglione">
-                  <i class="fa-solid fa-plus"></i> Aggiungi Scaglione
-                </button>
-              </form>
-            </div>
-            <div class="qk-drawer-footer">
-              <button type="button" class="btn-qk btn-qk-secondary" id="btn-cancel-drawer">Annulla</button>
-              <button type="button" class="btn-qk btn-qk-primary" id="btn-save-drawer">Salva Modifiche</button>
-            </div>
-          </div>
-
-          <!-- ── Come viene scelto il prezzo (collassabile) ─────────────────
-               Spiegazione del motore prezzi per utenti non esperti.
-               Usa la classe .qks-help-toggle da products-suppliers.css.
-           ─────────────────────────────────────────────────────────────────── -->
           <div class="mt-3">
             <button class="qks-help-toggle"
                     type="button"
@@ -1355,11 +1626,6 @@ $kit_componenti = $kit_componenti ?? [];
               <div class="qk-alert qk-alert-info mt-1" style="font-size:.84rem">
                 <i class="fa-solid fa-circle-info fa-fw"></i>
                 <div>
-                  Quando si crea un ordine di acquisto, l'ERP cerca il prezzo
-                  nel seguente ordine:
-                  <ol class="mb-1 mt-1" style="padding-left:1.2em">
-                    <li>Il <strong>listino attivo</strong> abbinato al fornitore
-                        (se esiste e ha una riga valida per la quantità ordinata).</li>
                     <li>Lo <strong>scaglione Base</strong> (senza listino) con la
                         quantità minima più alta ≤ quella ordinata.</li>
                     <li>Nessun prezzo trovato — l'utente dovrà inserirlo manualmente.</li>
@@ -1635,22 +1901,23 @@ $kit_componenti = $kit_componenti ?? [];
 
           <script>
           (function () {
-            const PRODOTTO_ID  = <?= (int)$entity_id ?>;
-            const CSRF         = <?= json_encode(csrf_token()) ?>;
-            const BASE         = <?= json_encode(url()) ?>;
-            const API_LIST     = BASE + '/products/compliance/list';
-            const API_ADD      = BASE + '/products/compliance/add';
-            const API_REMOVE   = BASE + '/products/compliance/remove';
+            document.addEventListener('DOMContentLoaded', () => {
+              const PRODOTTO_ID  = <?= (int)$entity_id ?>;
+              const CSRF         = <?= json_encode(csrf_token()) ?>;
+              const BASE         = <?= json_encode(url()) ?>;
+              const API_LIST     = BASE + '/products/compliance/list';
+              const API_ADD      = BASE + '/products/compliance/add';
+              const API_REMOVE   = BASE + '/products/compliance/remove';
 
-            const tbody        = document.getElementById('compliance-tbody');
-            const emptyEl      = document.getElementById('compliance-empty');
-            const listWrap     = document.getElementById('compliance-list-wrap');
-            const badge        = document.getElementById('badge-compliance');
-            const suggestBanner = document.getElementById('compliance-suggest-banner');
-            const suggestText  = document.getElementById('compliance-suggest-text');
-            const typeSelect   = document.getElementById('compliance-add-type');
-            const modalEl      = document.getElementById('modal-compliance-add');
-            const modal        = new bootstrap.Modal(modalEl);
+              const tbody        = document.getElementById('compliance-tbody');
+              const emptyEl      = document.getElementById('compliance-empty');
+              const listWrap     = document.getElementById('compliance-list-wrap');
+              const badge        = document.getElementById('badge-compliance');
+              const suggestBanner = document.getElementById('compliance-suggest-banner');
+              const suggestText  = document.getElementById('compliance-suggest-text');
+              const typeSelect   = document.getElementById('compliance-add-type');
+              const modalEl      = document.getElementById('modal-compliance-add');
+              const modal        = modalEl ? new bootstrap.Modal(modalEl) : null;
 
             let allTypes       = [];
             let assegnateIds   = new Set();
@@ -1821,7 +2088,7 @@ $kit_componenti = $kit_componenti ?? [];
                 tbody.dataset.loaded = '1';
               }
             });
-
+            });
           })();
           </script>
 
@@ -1917,39 +2184,7 @@ $kit_componenti = $kit_componenti ?? [];
 <?php include __DIR__ . '/_form_modals.php'; ?>
 
 <!-- ═══════════════════════ JS ════════════════════════════════════════ -->
-<script>
-/* Config: PHP → JS, letta da products-form.js e products-suppliers.js */
-window.QkPF = {
-  /* ── Generali ─────────────────────────────────────────────────────── */
-  isEdit:               <?= $isEdit ? 'true' : 'false' ?>,
-  prodottoId:           <?= (int)$entity_id ?>,
-
-  /* ── API URL ──────────────────────────────────────────────────────── */
-  apiTag:               <?= json_encode($apiTagCreate) ?>,
-  apiCat:               <?= json_encode($apiCatUrl) ?>,
-  apiSearchCat:         <?= json_encode($apiSearchCat) ?>,
-  apiSearchForn:        <?= json_encode($apiSearchForn) ?>,
-  apiSearchProd:        <?= json_encode($apiSearchProd) ?>,
-  apiSearchProdExclude: <?= json_encode($apiSearchProd . '?exclude=' . (int)$entity_id) ?>,
-  apiFornSave:          <?= json_encode($apiFornSave) ?>,
-  apiFornDelete:        <?= json_encode($apiFornDelete) ?>,
-  /* Prezzi fornitore — gestiti da products-suppliers.js */
-  apiPrezzoSave:        <?= json_encode($apiPrezzoSave) ?>,
-  apiPrezzoDelete:      <?= json_encode($apiPrezzoDelete) ?>,
-  apiFornListini:       <?= json_encode($apiFornListini) ?>,
-  /* Kit */
-  apiKitSave:           <?= json_encode($apiKitSave) ?>,
-  apiKitDelete:         <?= json_encode($apiKitDelete) ?>,
-  suppliersCreateUrl:   <?= json_encode(url('suppliers/create')) ?>,
-
-  /* ── Dati pre-caricati (PHP → JS) ────────────────────────────────── */
-  /** Array di fornitori del prodotto (da qk_load_prodotto_fornitori). */
-  fornitori:            <?= json_encode(array_values($prodotto_fornitori)) ?>,
-  /** Tutti gli scaglioni di prezzo di tutti i fornitori (da qk_load_prodotto_tutti_prezzi). */
-  tuttePrezzi:          <?= json_encode(array_values($tutti_prezzi)) ?>,
-};
-</script>
-<script src="<?= asset('js/products-form.js') ?>"></script>
+<script src="<?= asset('js/products-form.js') ?>?v=<?= time() ?>"></script>
 <?php if ($isEdit): ?>
-<script src="<?= asset('js/products-suppliers.js') ?>"></script>
+<script src="<?= asset('js/products-suppliers.js') ?>?v=<?= time() ?>"></script>
 <?php endif; ?>
