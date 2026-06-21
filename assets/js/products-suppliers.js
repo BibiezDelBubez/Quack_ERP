@@ -13,7 +13,7 @@
     if (!cfg) return;
 
     const prodId = cfg.prodottoId;
-    const CSRF = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+    const CSRF = cfg.csrfToken || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
     const masterTbody = document.getElementById('master-fornitori-tbody');
     const btnAddFlat = document.getElementById('btn-add-fornitore-flat');
@@ -103,12 +103,14 @@
 
     function renderMasterTable() {
       masterTbody.innerHTML = '';
-      if (flatRows.length === 0) {
+      
+      const activeRows = flatRows.filter(r => !r._isDeletedSoft);
+      if (activeRows.length === 0) {
         masterTbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-muted">Nessun prezzo di acquisto impostato.</td></tr>`;
         return;
       }
 
-      flatRows.forEach((row, index) => {
+      activeRows.forEach((row, index) => {
         const tr = document.createElement('tr');
         tr.dataset.uid = row._uid;
         
@@ -206,14 +208,18 @@
                 row.nome_fornitore_rs = data.ragione_sociale;
                 
                 // AUTOFILL LOGIC
-                const existing = flatRows.find(r => r.fornitore_id == id && r._uid !== row._uid && !r.isNew);
+                const existing = flatRows.find(r => r.fornitore_id == id && r._uid !== row._uid);
                 if (existing) {
+                   row.prodotto_fornitore_id = existing.prodotto_fornitore_id;
                    row.sku_fornitore = existing.sku_fornitore;
                    row.nome_prodotto_fornitore = existing.nome_prodotto_fornitore;
                    row.lead_time_giorni = existing.lead_time_giorni;
-                   tr.querySelector('.inp-sku').value = row.sku_fornitore;
-                   tr.querySelector('.inp-nome-prod').value = row.nome_prodotto_fornitore;
-                   tr.querySelector('.inp-lead').value = row.lead_time_giorni;
+                   row.unita_misura_acquisto_id = existing.unita_misura_acquisto_id;
+                   tr.querySelector('.inp-sku').value = row.sku_fornitore || '';
+                   tr.querySelector('.inp-nome-prod').value = row.nome_prodotto_fornitore || '';
+                   tr.querySelector('.inp-lead').value = row.lead_time_giorni || 0;
+                   const inpUom = tr.querySelector('.inp-uom');
+                   if (inpUom) inpUom.value = row.unita_misura_acquisto_id || cfg.uomStockId;
                 }
                 
                 triggerSave(row, tr);
@@ -230,17 +236,40 @@
           const inp = tr.querySelector('.' + cls);
           if (inp) {
             inp.addEventListener('change', (e) => {
-              row.sku_fornitore = tr.querySelector('.inp-sku').value;
-              row.nome_prodotto_fornitore = tr.querySelector('.inp-nome-prod').value;
+              const sku = tr.querySelector('.inp-sku').value;
+              const nomeProd = tr.querySelector('.inp-nome-prod').value;
+              const leadTime = parseInt(tr.querySelector('.inp-lead').value) || 0;
+              const targetUomId = parseInt(tr.querySelector('.inp-uom').value) || cfg.uomStockId;
+
+              // Sync metadata for all rows of this supplier (state & DOM)
+              flatRows.forEach(r => {
+                 if (row.fornitore_id && r.fornitore_id == row.fornitore_id) {
+                    r.sku_fornitore = sku;
+                    r.nome_prodotto_fornitore = nomeProd;
+                    r.lead_time_giorni = leadTime;
+                    r.unita_misura_acquisto_id = targetUomId;
+                    
+                    const otherTr = masterTbody.querySelector(`[data-uid="${r._uid}"]`);
+                    if (otherTr && otherTr !== tr) {
+                       const inpSku = otherTr.querySelector('.inp-sku');
+                       if (inpSku) inpSku.value = sku;
+                       const inpNome = otherTr.querySelector('.inp-nome-prod');
+                       if (inpNome) inpNome.value = nomeProd;
+                       const inpLead = otherTr.querySelector('.inp-lead');
+                       if (inpLead) inpLead.value = leadTime;
+                       const inpUom = otherTr.querySelector('.inp-uom');
+                       if (inpUom) inpUom.value = targetUomId;
+                    }
+                 }
+              });
+
               row.sconto_perc = parseFloat(tr.querySelector('.inp-sconto').value) || 0;
-              row.lead_time_giorni = parseInt(tr.querySelector('.inp-lead').value) || 0;
               row.valido_dal = tr.querySelector('.inp-vdal').value;
               row.valido_al = tr.querySelector('.inp-val').value;
 
               // Read inputs which are in visual mode
               let inputQta = parseFloat(tr.querySelector('.inp-qta').value) || 0;
               let inputPrezzo = parseFloat(tr.querySelector('.inp-prezzo').value);
-              const targetUomId = parseInt(tr.querySelector('.inp-uom').value) || cfg.uomStockId;
 
               // Convert from visual mode to the row's native UoM
               if (currentUomMode === 'stock') {
@@ -259,26 +288,41 @@
 
               row.quantita_minima = inputQta;
               row.prezzo = inputPrezzo;
-              row.unita_misura_acquisto_id = targetUomId;
 
               triggerSave(row, tr);
             });
           }
         });
       });
+
+      // Prevent default form submission when pressing Enter in any input in this grid
+      masterTbody.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (e.target && typeof e.target.blur === 'function') {
+            e.target.blur();
+          }
+        }
+      });
       
       applyColumnVisibility();
-      window.qkMakeColumnsResizable(document.getElementById('master-fornitori-table'));
+      if (typeof window.qkMakeColumnsResizable === 'function') {
+        window.qkMakeColumnsResizable(document.getElementById('master-fornitori-table'));
+      } else {
+        document.addEventListener('DOMContentLoaded', () => {
+          window.qkMakeColumnsResizable?.(document.getElementById('master-fornitori-table'));
+        });
+      }
     }
 
     async function triggerSave(row, trElement) {
-      if (!row.fornitore_id || isNaN(row.prezzo) || row.prezzo === null) return; // Dati minimi
+      if (!row.fornitore_id) return; // Dati minimi: serve almeno il fornitore
       
-      const iconSaving = trElement.querySelector('.icon-saving');
-      const iconSaved = trElement.querySelector('.icon-saved');
+      const iconSaving = trElement ? trElement.querySelector('.icon-saving') : null;
+      const iconSaved = trElement ? trElement.querySelector('.icon-saved') : null;
       
-      iconSaving.classList.remove('d-none');
-      iconSaved.classList.add('d-none');
+      if (iconSaving) iconSaving.classList.remove('d-none');
+      if (iconSaved) iconSaved.classList.add('d-none');
 
       // Salviamo prima i metadati del fornitore
       const fd = new FormData();
@@ -302,50 +346,125 @@
           row.prodotto_fornitore_id = data.row.id;
           row.isNew = false;
           
-          // Ora salviamo il prezzo
-          const sf = new FormData();
-          sf.append('id', row.prezzo_id ? String(row.prezzo_id) : '');
-          sf.append('prodotto_fornitore_id', String(row.prodotto_fornitore_id));
-          sf.append('prodotto_id', String(prodId));
-          sf.append('quantita_minima', String(row.quantita_minima));
-          sf.append('prezzo', String(row.prezzo));
-          sf.append('sconto_perc', String(row.sconto_perc));
-          sf.append('csrf_token', CSRF);
+          // Ora salviamo il prezzo (solo se specificato ed è valido)
+          if (row.prezzo !== null && !isNaN(row.prezzo)) {
+            const sf = new FormData();
+            sf.append('id', row.prezzo_id ? String(row.prezzo_id) : '');
+            sf.append('prodotto_fornitore_id', String(row.prodotto_fornitore_id));
+            sf.append('prodotto_id', String(prodId));
+            sf.append('quantita_minima', String(row.quantita_minima));
+            sf.append('prezzo', String(row.prezzo));
+            sf.append('sconto_perc', String(row.sconto_perc));
+            sf.append('valido_dal', row.valido_dal || '');
+            sf.append('valido_al', row.valido_al || '');
+            sf.append('note', row.note || '');
+            sf.append('csrf_token', CSRF);
 
-          const pres = await fetch(cfg.apiPrezzoSave, { method: 'POST', body: sf });
-          const pdata = await pres.json();
-          if (pdata.ok) {
-             row.prezzo_id = pdata.row.id;
+            const pres = await fetch(cfg.apiPrezzoSave, { method: 'POST', body: sf });
+            const pdata = await pres.json();
+            if (pdata.ok) {
+               row.prezzo_id = pdata.row.id;
+            }
           }
         }
         
-        iconSaving.classList.add('d-none');
-        iconSaved.classList.remove('d-none');
-        setTimeout(() => iconSaved.classList.add('d-none'), 2000);
+        if (iconSaving) iconSaving.classList.add('d-none');
+        if (iconSaved) iconSaved.classList.remove('d-none');
+        setTimeout(() => {
+          if (iconSaved) iconSaved.classList.add('d-none');
+        }, 2000);
         
         // Convert input to static text if it was new
-        if (trElement.querySelector('.qk-m2o-wrap')) {
+        if (trElement && trElement.querySelector('.qk-m2o-wrap')) {
            renderMasterTable(); // Re-render to show plain text instead of picker
         }
       } catch(e) {
-        iconSaving.classList.add('d-none');
+        if (iconSaving) iconSaving.classList.add('d-none');
         console.error(e);
       }
     }
 
     async function deleteRow(row) {
-      if (!confirm("Eliminare questo scaglione?")) return;
-      
-      if (row.prezzo_id) {
-         const df = new FormData();
-         df.append('id', String(row.prezzo_id));
-         df.append('prodotto_id', String(prodId));
-         df.append('csrf_token', CSRF);
-         await fetch(cfg.apiPrezzoDelete, { method: 'POST', body: df });
+      if (row.isNew) {
+         flatRows = flatRows.filter(r => r._uid !== row._uid);
+         renderMasterTable();
+         return;
       }
-      
-      flatRows = flatRows.filter(r => r._uid !== row._uid);
-      renderMasterTable();
+
+      const tr = masterTbody.querySelector(`[data-uid="${row._uid}"]`);
+      if (!tr) return;
+
+      const isLastForSupplier = flatRows.filter(r => r.fornitore_id === row.fornitore_id).length <= 1;
+
+      if (isLastForSupplier && row.prodotto_fornitore_id) {
+        try {
+           const df = new FormData();
+           df.append('id', String(row.prodotto_fornitore_id));
+           df.append('prodotto_id', String(prodId));
+           df.append('csrf_token', CSRF);
+           const res = await fetch(cfg.apiFornDelete, { method: 'POST', body: df });
+           const data = await res.json();
+           if (!data.ok) {
+              if (typeof window.qkToast === 'function') {
+                 window.qkToast(data.error || "Errore durante l'eliminazione.", "danger");
+              } else {
+                 alert(data.error || "Errore durante l'eliminazione.");
+              }
+              return;
+           }
+        } catch (err) {
+           console.error(err);
+           return;
+        }
+      } else if (row.prezzo_id) {
+        try {
+           const df = new FormData();
+           df.append('id', String(row.prezzo_id));
+           df.append('prodotto_id', String(prodId));
+           df.append('csrf_token', CSRF);
+           const res = await fetch(cfg.apiPrezzoDelete, { method: 'POST', body: df });
+           const data = await res.json();
+           if (!data.ok) {
+              if (typeof window.qkToast === 'function') {
+                 window.qkToast(data.error || "Errore durante l'eliminazione.", "danger");
+              } else {
+                 alert(data.error || "Errore durante l'eliminazione.");
+              }
+              return;
+           }
+        } catch (err) {
+           console.error(err);
+           return;
+        }
+      }
+
+      row._isDeletedSoft = true;
+
+      const originalData = { ...row };
+      const visibleCols = Array.from(document.querySelectorAll('#master-fornitori-table thead th'))
+                               .filter(th => th.style.display !== 'none').length || 12;
+
+      window.qkSoftDeleteRow(tr, {
+        colSpan: visibleCols,
+        messageHtml: `<i class="fa-solid fa-trash-can text-danger me-2"></i>Prezzo di acquisto per <strong>${esc(originalData.nome_fornitore_rs)}</strong> rimosso. <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>`,
+        onUndo: async () => {
+          row._isDeletedSoft = false;
+          row.prezzo_id = null;
+          if (isLastForSupplier) {
+             row.prodotto_fornitore_id = null;
+          }
+          row.isNew = false;
+          await triggerSave(row, tr);
+          renderMasterTable();
+          return false; // return false because triggerSave + renderMasterTable handles re-drawing the whole row/table
+        },
+        onDismiss: () => {
+          flatRows = flatRows.filter(r => r._uid !== originalData._uid);
+          if (flatRows.length === 0) {
+             renderMasterTable();
+          }
+        }
+      });
     }
 
     async function setPreferito(row) {

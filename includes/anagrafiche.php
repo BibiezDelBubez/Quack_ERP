@@ -1751,3 +1751,25 @@ function qk_delete_azienda(PDO $pdo, int $id): void
         throw $e;
     }
 }
+
+/**
+ * Elimina fisicamente un cliente/fornitore se non ci sono vincoli di integrità referenziale,
+ * altrimenti esegue un soft-delete impostando attivo = 0.
+ */
+function qk_delete_soggetto(PDO $pdo, int $id): void
+{
+    // Proviamo la cancellazione fisica abilitando i vincoli di FK
+    $pdo->beginTransaction();
+    try {
+        // Forza vincoli in SQLite per essere sicuri
+        $pdo->exec("PRAGMA foreign_keys = ON;");
+        
+        $stmt = $pdo->prepare("DELETE FROM clienti_fornitori WHERE id = ?");
+        $stmt->execute([$id]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        // Fallback sul soft delete (disattivazione)
+        $pdo->prepare("UPDATE clienti_fornitori SET attivo = 0 WHERE id = ?")->execute([$id]);
+    }
+}

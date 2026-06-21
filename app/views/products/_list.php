@@ -75,7 +75,14 @@
           <td class="text-end"><?php if (!empty($p['prezzo_min'])) { echo e(number_format($p['prezzo_min'], 2, ',', '.')); } else { echo '--'; } ?></td>
           <td><?= !empty($p['is_adr']) ? '<span class="qk-badge warning">ADR</span>' : '<span class="qk-text-muted">--</span>' ?></td>
           <td class="col-actions">
-            <a href="<?= url('products/edit?id=' . $p['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm"><i class="fa-solid fa-pencil"></i></a>
+            <div class="d-flex gap-1 justify-content-end">
+              <a href="<?= url('products/edit?id=' . $p['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Modifica"><i class="fa-solid fa-pencil"></i></a>
+              <form action="<?= url('products/duplicate') ?>" method="post" class="d-inline" onsubmit="return confirm('Duplicare questo prodotto con tutti i suoi listini e fornitori?');">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Duplica"><i class="fa-solid fa-copy"></i></button>
+              </form>
+            </div>
           </td>
         </tr>
       <?php endforeach; ?>

@@ -234,7 +234,10 @@ if (!empty($aziende_topbar)) {
 
   <!-- Flash message da sessione -->
   <?php if ($_flash): ?>
-  <div class="qk-alert qk-alert-<?= e($_flash['type']) ?>" data-auto-dismiss="4500">
+  <?php 
+    $autoDismissAttr = ($_flash['type'] === 'success' || $_flash['type'] === 'info') ? 'data-auto-dismiss="5000"' : ''; 
+  ?>
+  <div class="qk-alert qk-alert-<?= e($_flash['type']) ?>" <?= $autoDismissAttr ?>>
     <?php
       $icon_map = ['success'=>'circle-check','danger'=>'circle-xmark','warning'=>'triangle-exclamation','info'=>'circle-info'];
       $icon = $icon_map[$_flash['type']] ?? 'circle-info';

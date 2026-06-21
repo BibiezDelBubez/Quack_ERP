@@ -452,10 +452,31 @@ class SuppliersController extends BaseController
         if (trim($values['vat']) === '') {
             $errors['vat'] = 'La partita IVA è obbligatoria.';
         }
-        if ($values['email'] !== '' && !filter_var($values['email'], FILTER_VALIDATE_EMAIL)) {
-            $errors['email'] = 'Indirizzo email non valido.';
+        return $errors;
+    }
+
+    /* ── Eliminazione ─────────────────────────────────────────────────────── */
+
+    public function delete(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect('suppliers');
         }
 
-        return $errors;
+        if (!csrf_verify()) {
+            redirect_with('suppliers', 'danger', 'Token CSRF non valido. Ricarica la pagina e riprova.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if ($id) {
+            try {
+                qk_delete_soggetto($this->pdo, $id);
+                redirect_with('suppliers', 'success', 'Fornitore rimosso con successo.');
+            } catch (Throwable $e) {
+                redirect_with('suppliers', 'danger', 'Errore durante l\'eliminazione del fornitore: ' . $e->getMessage());
+            }
+        } else {
+            redirect_with('suppliers', 'danger', 'ID fornitore non valido.');
+        }
     }
 }

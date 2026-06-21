@@ -2119,3 +2119,12 @@ th.qk-sortable a:hover {
   flex-wrap: wrap;
 }
 
+/* ── Standard Soft Delete Row UI ── */
+.qk-row-deleted-soft td {
+  background-color: var(--qk-danger-bg, rgba(239, 68, 68, 0.08)) !important;
+}
+.qk-row-deleted-soft.fade-out td {
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+

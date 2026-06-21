@@ -233,7 +233,27 @@ $nContatti = count($contatti_preload);
 
       </div><!-- /ctab-dati -->
 
-      <!-- TAB 2: LISTINI & VENDITE -->
+      <!-- TAB 2: SEDI E INDIRIZZI -->
+      <div class="tab-pane fade" id="ctab-indirizzi" role="tabpanel">
+
+        <?php if (!$isEdit): ?>
+        <div class="qk-card mt-3">
+          <div class="qk-card-body text-center py-4" style="color:var(--qk-text-muted)">
+            <i class="fa-solid fa-map-location-dot fa-2x mb-2 d-block" style="opacity:.3"></i>
+            Salva il cliente per poter aggiungere sedi e indirizzi.
+          </div>
+        </div>
+        <?php else: ?>
+        <div class="qk-card mt-3" style="overflow:hidden">
+          <div id="qksa-grid" class="qksa-grid">
+            <!-- Tiles iniettate da customers-addresses.js -->
+          </div>
+        </div>
+        <?php endif; ?>
+
+      </div><!-- /ctab-indirizzi -->
+
+      <!-- TAB 3: LISTINI & VENDITE -->
       <div class="tab-pane fade" id="ctab-listini" role="tabpanel">
         
         <div class="qk-card mb-3 mt-3">
@@ -518,6 +538,18 @@ $nContatti = count($contatti_preload);
         <dt>Aggiornato</dt><dd><?= fmt_datetime($record_meta['updated_at']) ?></dd>
         <?php endif; ?>
       </dl>
+      <?php endif; ?>
+
+      <?php if ($isEdit): ?>
+      <div class="mt-3 pt-3 border-top text-center">
+        <form action="<?= url('customers/delete') ?>" method="post" onsubmit="return confirm('Eliminare definitivamente questo cliente? Questa operazione non può essere annullata.');">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= (int)$entity_id ?>">
+          <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm w-100">
+            <i class="fa-solid fa-trash me-1"></i> Elimina cliente
+          </button>
+        </form>
+      </div>
       <?php endif; ?>
     </div>
   </div>

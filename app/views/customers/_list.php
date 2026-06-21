@@ -88,6 +88,13 @@ $hasFilters = $search !== '' || $type !== '';
             <a href="<?= url('customers/edit?id=' . $c['id']) ?>" class="btn-qk btn-qk-secondary btn-qk-sm" title="Modifica">
               <i class="fa-solid fa-pen-to-square"></i>
             </a>
+            <form action="<?= url('customers/delete') ?>" method="post" style="display:inline;" onsubmit="return confirm('Eliminare definitivamente questo cliente? Questa operazione non può essere annullata.');">
+              <?= csrf_field() ?>
+              <input type="hidden" name="id" value="<?= $c['id'] ?>">
+              <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm ms-1" title="Elimina">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </form>
           </td>
         </tr>
         <?php endforeach; ?>

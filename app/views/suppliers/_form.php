@@ -373,6 +373,18 @@ $nIndirizzi = count($indirizzi_preload);
         <?php endif; ?>
       </dl>
       <?php endif; ?>
+
+      <?php if ($isEdit): ?>
+      <div class="mt-3 pt-3 border-top text-center">
+        <form action="<?= url('suppliers/delete') ?>" method="post" onsubmit="return confirm('Eliminare definitivamente questo fornitore? Questa operazione non può essere annullata.');">
+          <?= csrf_field() ?>
+          <input type="hidden" name="id" value="<?= (int)$entity_id ?>">
+          <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm w-100">
+            <i class="fa-solid fa-trash me-1"></i> Elimina fornitore
+          </button>
+        </form>
+      </div>
+      <?php endif; ?>
     </div>
   </div>
 

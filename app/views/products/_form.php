@@ -67,6 +67,7 @@ if (!empty($v['unita_contenuto_id'])) {
 <script>
 /* Config: PHP → JS, letta da products-form.js e products-suppliers.js */
 window.QkPF = {
+  csrfToken:            <?= json_encode(csrf_token()) ?>,
   /* ── Generali ─────────────────────────────────────────────────────── */
   isEdit:               <?= $isEdit ? 'true' : 'false' ?>,
   prodottoId:           <?= (int)$entity_id ?>,
@@ -582,6 +583,13 @@ window.QkPF = {
 
 
           <style>
+            .pl-riga-deleted-soft td {
+              background-color: var(--qk-danger-bg, rgba(239, 68, 68, 0.08)) !important;
+            }
+            .pl-riga-deleted-soft.fade-out td {
+              opacity: 0;
+              transition: opacity 0.4s ease-out;
+            }
             #rrp-drawer {
               width: 750px !important;
               right: -800px;
@@ -1377,7 +1385,13 @@ window.QkPF = {
               });
 
               updatePlaceholders();
-              window.qkMakeColumnsResizable(table);
+              if (typeof window.qkMakeColumnsResizable === 'function') {
+                window.qkMakeColumnsResizable(table);
+              } else {
+                document.addEventListener('DOMContentLoaded', () => {
+                  window.qkMakeColumnsResizable?.(table);
+                });
+              }
             }
 
             // Gestore eliminazione colonna scaglione
@@ -1432,7 +1446,13 @@ window.QkPF = {
 
             // Esegui il calcolo dei placeholder iniziali
             updatePlaceholders();
-            window.qkMakeColumnsResizable(table);
+            if (typeof window.qkMakeColumnsResizable === 'function') {
+              window.qkMakeColumnsResizable(table);
+            } else {
+              document.addEventListener('DOMContentLoaded', () => {
+                window.qkMakeColumnsResizable?.(table);
+              });
+            }
 
             salesUomModeSelect?.addEventListener('change', function() {
               currentSalesUomMode = this.value;
@@ -2180,12 +2200,33 @@ window.QkPF = {
         </dl>
         <?php endif; ?>
 
+        <?php if ($isEdit): ?>
+        <div class="mt-3 pt-3 border-top text-center">
+          <button type="button" id="btn-delete-prodotto" class="btn-qk btn-qk-danger btn-qk-sm w-100">
+            <i class="fa-solid fa-trash me-1"></i> Elimina prodotto
+          </button>
+        </div>
+        <?php endif; ?>
+
       </div>
     </div>
 
   </div><!-- /qk-form-grid -->
 </form>
 
+<?php if ($isEdit): ?>
+<form id="form-delete-prodotto" action="<?= url('products/delete') ?>" method="post" style="display:none;" onsubmit="return confirm('Eliminare definitivamente questo prodotto? Questa operazione non può essere annullata.');">
+  <?= csrf_field() ?>
+  <input type="hidden" name="id" value="<?= (int)$entity_id ?>">
+</form>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('btn-delete-prodotto')?.addEventListener('click', function() {
+    document.getElementById('form-delete-prodotto')?.requestSubmit();
+  });
+});
+</script>
+<?php endif; ?>
 
 <?php include __DIR__ . '/_form_modals.php'; ?>
 

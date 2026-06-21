@@ -705,23 +705,79 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function deleteRow(tr) {
-      if (!confirm('Rimuovere questa tariffa dal listino?')) return;
       try {
+        const rigaId = tr.dataset.rigaId;
+        const originalHtml = tr.innerHTML;
+        const originalData = {
+          prodottoId: tr.dataset.prodottoId,
+          prodottoNome: tr.dataset.prodottoNome,
+          sku: tr.dataset.sku,
+          skuFornitore: tr.dataset.skuFornitore,
+          qmin: tr.dataset.qmin,
+          prezzo: tr.dataset.prezzo,
+          sconto: tr.dataset.sconto,
+          validoDal: tr.dataset.validoDal,
+          validoAl: tr.dataset.validoAl,
+          note: tr.dataset.note
+        };
+
         const res = await fetch(BASE + '/purchases/pricelists/righe/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ csrf_token: CSRF, riga_id: tr.dataset.rigaId })
+          body: new URLSearchParams({ csrf_token: CSRF, riga_id: rigaId })
         });
         const d = await res.json();
-        if (d.ok) {
-          tr.remove();
-          syncEmpty();
-          runBusinessValidations();
-        } else {
-          alert(d.error || 'Errore durante l\'eliminazione.');
+        if (!d.ok) {
+          window.qkToast(d.error || "Errore durante l'eliminazione.", "danger");
+          return;
         }
+
+        window.qkSoftDeleteRow(tr, {
+          colSpan: 9,
+          messageHtml: `<i class="fa-solid fa-trash-can text-danger me-2"></i>Prezzo per <strong>${escapeHtml(originalData.prodottoNome)}</strong> rimosso. <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>`,
+          onUndo: async () => {
+            try {
+              const res = await fetch(BASE + '/purchases/pricelists/righe/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  csrf_token: CSRF,
+                  listino_acquisto_id: LISTINO,
+                  riga_id: '0',
+                  prodotto_id: originalData.prodottoId,
+                  sku_fornitore: originalData.skuFornitore,
+                  quantita_minima: originalData.qmin || '0',
+                  prezzo: originalData.prezzo,
+                  sconto_perc: originalData.sconto || '0',
+                  valido_dal: originalData.validoDal,
+                  valido_al: originalData.validoAl,
+                  note: originalData.note
+                })
+              });
+              const rdata = await res.json();
+              if (rdata.ok) {
+                applyRigaData(tr, rdata.riga);
+                tr.classList.add('pl-riga-saved');
+                setTimeout(() => tr.classList.remove('pl-riga-saved'), 800);
+                syncEmpty();
+                runBusinessValidations();
+                return true;
+              } else {
+                window.qkToast('Impossibile ripristinare: ' + (rdata.error || 'Errore.'), 'danger');
+                return false;
+              }
+            } catch (err) {
+              window.qkToast('Errore durante il ripristino.', 'danger');
+              return false;
+            }
+          },
+          onDismiss: () => {
+            syncEmpty();
+            runBusinessValidations();
+          }
+        });
       } catch (err) {
-        alert('Errore di rete.');
+        window.qkToast('Errore durante la cancellazione.', 'danger');
       }
     }
 

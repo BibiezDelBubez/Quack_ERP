@@ -630,4 +630,92 @@
     initAlertAutoDismiss();
   };
 
+  window.qkSoftDeleteRow = function (tr, options) {
+    const {
+      colSpan,
+      messageHtml,
+      onUndo,
+      onDismiss,
+      durationMs = 8000
+    } = options;
+
+    const originalHtml = tr.innerHTML;
+    const originalClasses = Array.from(tr.classList);
+
+    tr.classList.add('qk-row-deleted-soft');
+    tr.removeAttribute('title');
+    tr.style.outline = '';
+    tr.innerHTML = `
+      <td colspan="${colSpan}" class="align-middle text-start" style="padding: 0.6rem 1.2rem !important; height: 44px; border-left: 3px solid var(--qk-danger, #ef4444);">
+        <div class="d-flex justify-content-between align-items-center">
+          <span>${messageHtml}</span>
+          <button type="button" class="btn-close btn-close-dismiss-soft" aria-label="Chiudi" style="font-size: 0.7rem;"></button>
+        </div>
+      </td>
+    `;
+
+    let dismissTimeout = null;
+
+    function startTimer() {
+      if (dismissTimeout) {
+        clearTimeout(dismissTimeout);
+        dismissTimeout = null;
+      }
+      if (tr.matches(':hover')) {
+        return; // Pause timer if mouse is hovering over the row
+      }
+      dismissTimeout = setTimeout(() => {
+        tr.classList.add('fade-out');
+        setTimeout(() => {
+          tr.remove();
+          if (onDismiss) onDismiss();
+        }, 400);
+      }, durationMs);
+    }
+
+    function stopTimer() {
+      if (dismissTimeout) {
+        clearTimeout(dismissTimeout);
+        dismissTimeout = null;
+      }
+    }
+
+    startTimer();
+
+    const onMouseEnter = () => { stopTimer(); };
+    const onMouseLeave = () => { startTimer(); };
+
+    tr.addEventListener('mouseenter', onMouseEnter);
+    tr.addEventListener('mouseleave', onMouseLeave);
+
+    tr.querySelector('.btn-close-dismiss-soft')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      stopTimer();
+      tr.removeEventListener('mouseenter', onMouseEnter);
+      tr.removeEventListener('mouseleave', onMouseLeave);
+      tr.remove();
+      if (onDismiss) onDismiss();
+    });
+
+    tr.querySelector('.undo-delete-inline')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      stopTimer();
+      tr.removeEventListener('mouseenter', onMouseEnter);
+      tr.removeEventListener('mouseleave', onMouseLeave);
+
+      const restored = await onUndo();
+      if (restored) {
+        tr.innerHTML = originalHtml;
+        tr.className = '';
+        originalClasses.forEach(c => tr.classList.add(c));
+        tr.classList.remove('qk-row-deleted-soft', 'fade-out');
+      } else {
+        tr.remove();
+        if (onDismiss) onDismiss();
+      }
+    });
+  };
+
 })();

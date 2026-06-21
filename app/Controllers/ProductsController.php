@@ -207,6 +207,282 @@ final class ProductsController extends BaseController
         $this->page(APP_ROOT_DIR . '/app/views/products/_form.php', get_defined_vars());
     }
 
+    /* ── Eliminazione prodotto con controllo di integrità ──────────────────── */
+
+    public function delete(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect('products');
+        }
+
+        if (!csrf_verify()) {
+            redirect_with('products', 'danger', 'Token CSRF non valido. Ricarica la pagina e riprova.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            redirect_with('products', 'danger', 'ID prodotto non valido.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            // 1. Cancella configurazioni/anagrafiche associate per superare i vincoli se non usato in transazioni vere
+            $this->pdo->prepare("DELETE FROM giacenze WHERE prodotto_id = ?")->execute([$id]);
+            $this->pdo->prepare("DELETE FROM listini_prezzi WHERE prodotto_id = ?")->execute([$id]);
+            $this->pdo->prepare("DELETE FROM prodotti_tag WHERE prodotto_id = ?")->execute([$id]);
+            $this->pdo->prepare("DELETE FROM prodotti_kit_componenti WHERE kit_id = ?")->execute([$id]);
+            
+            // Cancella i prezzi dei fornitori di questo prodotto
+            $this->pdo->prepare("
+                DELETE FROM prodotti_fornitori_prezzi 
+                WHERE prodotto_fornitore_id IN (SELECT id FROM prodotti_fornitori WHERE prodotto_id = ?)
+            ")->execute([$id]);
+            $this->pdo->prepare("DELETE FROM prodotti_fornitori WHERE prodotto_id = ?")->execute([$id]);
+
+            // Forza vincoli FK in SQLite
+            $this->pdo->exec("PRAGMA foreign_keys = ON;");
+
+            // Proviamo la cancellazione fisica
+            $stmt = $this->pdo->prepare("DELETE FROM prodotti WHERE id = ?");
+            $stmt->execute([$id]);
+            $this->pdo->commit();
+            redirect_with('products', 'success', 'Prodotto eliminato definitivamente.');
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            // Fallback: lo archiviamo (disattiviamo)
+            try {
+                $this->pdo->prepare("UPDATE prodotti SET attivo = 0 WHERE id = ?")->execute([$id]);
+                redirect_with('products', 'warning', 'Impossibile eliminare definitivamente: il prodotto è già collegato a movimenti di magazzino, ordini o preventivi storici. Il record è stato archiviato (disattivato) per preservare l\'integrità dei dati.');
+            } catch (Throwable $ex) {
+                redirect_with('products', 'danger', 'Errore durante l\'archiviazione del prodotto: ' . $ex->getMessage());
+            }
+        }
+    }
+
+    /* ── Duplicazione prodotto con copia relazioni e risoluzione SKU ───────── */
+
+    public function duplicate(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect('products');
+        }
+
+        if (!csrf_verify()) {
+            redirect_with('products', 'danger', 'Token CSRF non valido. Ricarica la pagina e riprova.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            redirect_with('products', 'danger', 'ID prodotto non valido.');
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+
+            // 1. Carica il prodotto originale
+            $stmt = $this->pdo->prepare('SELECT * FROM prodotti WHERE id = ?');
+            $stmt->execute([$id]);
+            $prod = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$prod) {
+                throw new Exception('Prodotto non trovato.');
+            }
+
+            // 2. Genera SKU univoco
+            $originalSku = $prod['sku_interno'] ?? 'PROD';
+            $newSku = $originalSku . '_COPIA';
+            $checkSku = $this->pdo->prepare('SELECT COUNT(*) FROM prodotti WHERE sku_interno = ?');
+            $checkSku->execute([$newSku]);
+            $count = (int)$checkSku->fetchColumn();
+            $suffix = 1;
+            while ($count > 0) {
+                $newSku = $originalSku . '_COPIA_' . $suffix;
+                $checkSku->execute([$newSku]);
+                $count = (int)$checkSku->fetchColumn();
+                $suffix++;
+            }
+
+            // 3. Inserimento nuovo prodotto (EAN e SKU WooCommerce vengono resettati per evitare conflitti)
+            $insertStmt = $this->pdo->prepare('
+                INSERT INTO prodotti (
+                    sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione,
+                    descrizione_completa, tipo, categoria_id, note_interne, attivo,
+                    traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
+                    peso_netto_kg, peso_lordo_kg, ean, scorta_minima, is_adr,
+                    sostanza_chimica_id, created_at
+                ) VALUES (
+                    :sku_interno, NULL, :nome, :descrizione_breve, :descrizione_confezione,
+                    :descrizione_completa, :tipo, :categoria_id, :note_interne, :attivo,
+                    :traccia_lotti, :unita_misura_stock_id, :unita_contenuto_id, :quantita_contenuto,
+                    :peso_netto_kg, :peso_lordo_kg, NULL, :scorta_minima, :is_adr,
+                    :sostanza_chimica_id, CURRENT_TIMESTAMP
+                )
+            ');
+
+            $insertStmt->execute([
+                ':sku_interno' => $newSku,
+                ':nome' => ($prod['nome'] ?? '') . ' - Copia',
+                ':descrizione_breve' => $prod['descrizione_breve'] ?? null,
+                ':descrizione_confezione' => $prod['descrizione_confezione'] ?? null,
+                ':descrizione_completa' => $prod['descrizione_completa'] ?? null,
+                ':tipo' => $prod['tipo'] ?? 'semplice',
+                ':categoria_id' => $prod['categoria_id'] ?? null,
+                ':note_interne' => $prod['note_interne'] ?? null,
+                ':attivo' => $prod['attivo'],
+                ':traccia_lotti' => $prod['traccia_lotti'],
+                ':unita_misura_stock_id' => $prod['unita_misura_stock_id'],
+                ':unita_contenuto_id' => $prod['unita_contenuto_id'] ?? null,
+                ':quantita_contenuto' => $prod['quantita_contenuto'] ?? null,
+                ':peso_netto_kg' => $prod['peso_netto_kg'] ?? null,
+                ':peso_lordo_kg' => $prod['peso_lordo_kg'] ?? null,
+                ':scorta_minima' => $prod['scorta_minima'] ?? 0,
+                ':is_adr' => $prod['is_adr'] ?? 0,
+                ':sostanza_chimica_id' => $prod['sostanza_chimica_id'] ?? null,
+            ]);
+
+            $newProductId = (int) $this->pdo->lastInsertId();
+
+            // 4. Crea riga giacenze per il nuovo prodotto
+            $this->pdo->prepare('
+                INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                VALUES (?, 0, 0, 0, ?, CURRENT_TIMESTAMP)
+            ')->execute([$newProductId, $prod['scorta_minima'] ?? 0]);
+
+            // 5. Copia tag associati
+            $tagsStmt = $this->pdo->prepare('SELECT tag_id FROM prodotti_tag WHERE prodotto_id = ?');
+            $tagsStmt->execute([$id]);
+            $tags = $tagsStmt->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($tags)) {
+                $insTag = $this->pdo->prepare('INSERT INTO prodotti_tag (prodotto_id, tag_id) VALUES (?, ?)');
+                foreach ($tags as $tid) {
+                    $insTag->execute([$newProductId, $tid]);
+                }
+            }
+
+            // 6. Copia fornitori e relativi listini acquisto (prezzi)
+            $fornStmt = $this->pdo->prepare('SELECT * FROM prodotti_fornitori WHERE prodotto_id = ?');
+            $fornStmt->execute([$id]);
+            $fornitoriList = $fornStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($fornitoriList)) {
+                $insForn = $this->pdo->prepare('
+                    INSERT INTO prodotti_fornitori (
+                        prodotto_id, fornitore_id, sku_fornitore, nome_prodotto_fornitore,
+                        unita_misura_acquisto_id, quantita_minima, iva_acquisto_default,
+                        ordine_preferenza_fornitore, lead_time_giorni, attivo, note,
+                        rrp_min, rrp_max, rrp_unita_misura_id, rrp_valido_dal, rrp_valido_al, rrp_valuta, created_at
+                    ) VALUES (
+                        :pid, :fid, :sku, :nome,
+                        :uom_id, :qta, :iva,
+                        :ord, :lead, :attivo, :note,
+                        :rmin, :rmax, :ruom, :rdal, :ral, :rval, CURRENT_TIMESTAMP
+                    )
+                ');
+
+                $insPrezzo = $this->pdo->prepare('
+                    INSERT INTO prodotti_fornitori_prezzi (
+                        prodotto_fornitore_id, quantita_minima, prezzo, unita_misura_id,
+                        sconto_perc, valido_dal, valido_al, note, listino_acquisto_id
+                    ) VALUES (
+                        :pfid, :qta, :prezzo, :uom_id,
+                        :sconto, :vdal, :val, :note, :listino_id
+                    )
+                ');
+
+                foreach ($fornitoriList as $f) {
+                    $insForn->execute([
+                        ':pid' => $newProductId,
+                        ':fid' => $f['fornitore_id'],
+                        ':sku' => $f['sku_fornitore'] ? $f['sku_fornitore'] . '_COPIA' : null,
+                        ':nome' => $f['nome_prodotto_fornitore'],
+                        ':uom_id' => $f['unita_misura_acquisto_id'],
+                        ':qta' => $f['quantita_minima'],
+                        ':iva' => $f['iva_acquisto_default'],
+                        ':ord' => $f['ordine_preferenza_fornitore'],
+                        ':lead' => $f['lead_time_giorni'],
+                        ':attivo' => $f['attivo'],
+                        ':note' => $f['note'],
+                        ':rmin' => $f['rrp_min'],
+                        ':rmax' => $f['rrp_max'],
+                        ':ruom' => $f['rrp_unita_misura_id'],
+                        ':rdal' => $f['rrp_valido_dal'],
+                        ':ral' => $f['rrp_valido_al'],
+                        ':rval' => $f['rrp_valuta'],
+                    ]);
+
+                    $newPfId = (int) $this->pdo->lastInsertId();
+
+                    // Prezzi/scaglioni collegati a questo fornitore
+                    $prezziStmt = $this->pdo->prepare('SELECT * FROM prodotti_fornitori_prezzi WHERE prodotto_fornitore_id = ?');
+                    $prezziStmt->execute([$f['id']]);
+                    $prezzi = $prezziStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    foreach ($prezzi as $p) {
+                        $insPrezzo->execute([
+                            ':pfid' => $newPfId,
+                            ':qta' => $p['quantita_minima'],
+                            ':prezzo' => $p['prezzo'],
+                            ':uom_id' => $p['unita_misura_id'],
+                            ':sconto' => $p['sconto_perc'],
+                            ':vdal' => $p['valido_dal'],
+                            ':val' => $p['valido_al'],
+                            ':note' => $p['note'],
+                            ':listino_id' => $p['listino_acquisto_id'],
+                        ]);
+                    }
+                }
+            }
+
+            // 7. Copia listini prezzi (regole vendita)
+            $listiniStmt = $this->pdo->prepare('SELECT * FROM listini_prezzi WHERE prodotto_id = ?');
+            $listiniStmt->execute([$id]);
+            $listiniRegole = $listiniStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($listiniRegole)) {
+                $insListino = $this->pdo->prepare('
+                    INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_valore, sconto_perc, prezzo_tipo, creato_da, created_at)
+                    VALUES (:lid, :pid, :qmin, :valore, :sconto, :tipo, :user, CURRENT_TIMESTAMP)
+                ');
+                foreach ($listiniRegole as $lr) {
+                    $insListino->execute([
+                        ':lid' => $lr['listino_id'],
+                        ':pid' => $newProductId,
+                        ':qmin' => $lr['quantita_minima'],
+                        ':valore' => $lr['prezzo_valore'],
+                        ':sconto' => $lr['sconto_perc'],
+                        ':tipo' => $lr['prezzo_tipo'],
+                        ':user' => $_SESSION['user_id'] ?? 1,
+                    ]);
+                }
+            }
+
+            // 8. Copia componenti kit (se il prodotto originale è un kit)
+            if (($prod['tipo'] ?? '') === 'kit') {
+                $kitStmt = $this->pdo->prepare('SELECT * FROM prodotti_kit_componenti WHERE kit_id = ?');
+                $kitStmt->execute([$id]);
+                $compList = $kitStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                if (!empty($compList)) {
+                    $insComp = $this->pdo->prepare('
+                        INSERT INTO prodotti_kit_componenti (kit_id, componente_id, quantita, note)
+                        VALUES (?, ?, ?, ?)
+                    ');
+                    foreach ($compList as $c) {
+                        $insComp->execute([$newProductId, $c['componente_id'], $c['quantita'], $c['note']]);
+                    }
+                }
+            }
+
+            $this->pdo->commit();
+            redirect_with('products/edit?id=' . $newProductId, 'success', 'Prodotto duplicato con successo. Stai modificando la copia.');
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            redirect_with('products', 'danger', 'Errore durante la duplicazione del prodotto: ' . $e->getMessage());
+        }
+    }
+
     /* ── API: crea categoria inline ──────────────────────────────────────── */
 
     public function crearCategoria(): void
@@ -314,6 +590,17 @@ final class ProductsController extends BaseController
         try {
             $this->pdo->beginTransaction();
 
+            if ($id <= 0) {
+                $checkStmt = $this->pdo->prepare(
+                    'SELECT id FROM prodotti_fornitori WHERE prodotto_id = :pid AND fornitore_id = :fid LIMIT 1'
+                );
+                $checkStmt->execute([':pid' => $prodotto_id, ':fid' => $fornitore_id]);
+                $existingId = $checkStmt->fetchColumn();
+                if ($existingId) {
+                    $id = (int)$existingId;
+                }
+            }
+
             if ($id > 0) {
                 $this->pdo->prepare(
                     'UPDATE prodotti_fornitori SET
@@ -369,6 +656,12 @@ final class ProductsController extends BaseController
                     ':note'     => $note,
                 ]);
                 $pfId = (int) $this->pdo->lastInsertId();
+            }
+
+            if ($ordPref === 1) {
+                $this->pdo->prepare(
+                    'UPDATE prodotti_fornitori SET ordine_preferenza_fornitore = 2 WHERE prodotto_id = :pid AND id != :id'
+                )->execute([':pid' => $prodotto_id, ':id' => $pfId]);
             }
 
             // Se no_prezzi=1 i prezzi sono gestiti dal tab Fornitori (products-suppliers.js)

@@ -918,5 +918,30 @@ class CustomersController extends BaseController
         }
         exit;
     }
+
+    /* ── Eliminazione ─────────────────────────────────────────────────────── */
+
+    public function delete(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect('customers');
+        }
+
+        if (!csrf_verify()) {
+            redirect_with('customers', 'danger', 'Token CSRF non valido. Ricarica la pagina e riprova.');
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if ($id) {
+            try {
+                qk_delete_soggetto($this->pdo, $id);
+                redirect_with('customers', 'success', 'Cliente rimosso con successo.');
+            } catch (Throwable $e) {
+                redirect_with('customers', 'danger', 'Errore durante l\'eliminazione del cliente: ' . $e->getMessage());
+            }
+        } else {
+            redirect_with('customers', 'danger', 'ID cliente non valido.');
+        }
+    }
 }
 

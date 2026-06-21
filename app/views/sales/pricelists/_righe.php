@@ -127,15 +127,6 @@
 .pl-btn-confirm.is-saving i { display: none; }
 @keyframes pl-spin { to { transform: rotate(360deg); } }
 
-/* ── Soft delete state inline ── */
-.pl-riga-deleted-soft td {
-  background-color: var(--qk-danger-bg, rgba(239, 68, 68, 0.08)) !important;
-}
-.pl-riga-deleted-soft.fade-out td {
-  opacity: 0;
-  transition: opacity 0.4s ease-out;
-}
-
 /* ── Empty state ── */
 #pl-empty {
   display: flex;
@@ -691,116 +682,42 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
 
-      // Applica la classe e trasforma la riga in un placeholder "Soft Delete"
-      tr.classList.add('pl-riga-deleted-soft');
-      tr.title = '';
-      tr.removeAttribute('title');
-      tr.style.outline = '';
-      tr.innerHTML = `
-        <td colspan="7" class="align-middle text-start" style="padding: 0.6rem 1.2rem !important; height: 44px; border-left: 3px solid var(--qk-danger, #ef4444);">
-          <div class="d-flex justify-content-between align-items-center">
-            <span>
-              <i class="fa-solid fa-trash-can text-danger me-2"></i>
-              Prezzo per <strong>${esc(originalData.prodottoNome)}</strong> rimosso.
-              <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>
-            </span>
-            <button type="button" class="btn-close btn-close-dismiss-soft" aria-label="Chiudi" style="font-size: 0.7rem;"></button>
-          </div>
-        </td>
-      `;
+      window.qkSoftDeleteRow(tr, {
+        colSpan: 7,
+        messageHtml: `<i class="fa-solid fa-trash-can text-danger me-2"></i>Prezzo per <strong>${esc(originalData.prodottoNome)}</strong> rimosso. <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>`,
+        onUndo: async () => {
+          try {
+            const res = await apiPost('/sales/pricelists/righe/save', {
+              listino_id:       LISTINO,
+              riga_id:          0, // Nuova riga
+              prodotto_id:      originalData.prodottoId,
+              prezzo_unitario:  originalData.prezzo,
+              quantita_minima:  originalData.qmin || '0',
+              sconto_perc:      originalData.sconto || '0',
+              unita_misura_id:  originalData.unitaMisuraId || null,
+              note:             originalData.note || '',
+            });
 
-      // Gestione del timeout di sparizione (8 secondi con hover pause)
-      let dismissTimeout = null;
-      
-      function startTimer() {
-        dismissTimeout = setTimeout(() => {
-          tr.classList.add('fade-out');
-          setTimeout(() => {
-            tr.remove();
-            syncEmpty();
-            runBusinessValidations();
-          }, 400);
-        }, 8000);
-        tr.dataset.dismissTimeoutId = dismissTimeout;
-      }
-
-      function stopTimer() {
-        if (dismissTimeout) {
-          clearTimeout(dismissTimeout);
-          dismissTimeout = null;
-        }
-      }
-
-      // Se il mouse è già sopra la riga, non far partire il timer (pausa iniziale)
-      if (tr.matches(':hover')) {
-        console.log("Mouse is already hovering the deleted row; timer initialized in paused state.");
-      } else {
-        startTimer();
-      }
-
-      // Mouse hover events to pause/resume the countdown
-      tr.addEventListener('mouseenter', () => {
-        if (tr.classList.contains('pl-riga-deleted-soft')) {
-          stopTimer();
-        }
-      });
-      tr.addEventListener('mouseleave', () => {
-        if (tr.classList.contains('pl-riga-deleted-soft')) {
-          startTimer();
-        }
-      });
-
-      // Evento Annulla
-      tr.querySelector('.undo-delete-inline').addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        stopTimer();
-
-        try {
-          // Ricrea la riga salvandola nuovamente nel DB
-          const res = await apiPost('/sales/pricelists/righe/save', {
-            listino_id:       LISTINO,
-            riga_id:          0, // Nuova riga
-            prodotto_id:      originalData.prodottoId,
-            prezzo_unitario:  originalData.prezzo,
-            quantita_minima:  originalData.qmin || '0',
-            sconto_perc:      originalData.sconto || '0',
-            unita_misura_id:  originalData.unitaMisuraId || null,
-            note:             originalData.note || '',
-          });
-
-          if (res.ok) {
-            // Ripristina l'HTML e le classi originali
-            tr.innerHTML = originalHtml;
-            tr.classList.remove('pl-riga-deleted-soft', 'fade-out', 'is-editing');
-            
-            // Applica i nuovi dati generati
-            applyRigaData(tr, res.riga);
-            
-            // Aggiungi flash visivo
-            tr.classList.add('pl-riga-saved');
-            setTimeout(() => tr.classList.remove('pl-riga-saved'), 800);
-
-            syncEmpty();
-            runBusinessValidations();
-          } else {
-            window.qkToast('Impossibile ripristinare: ' + (res.error ?? 'Errore.'), 'danger');
-            tr.remove();
+            if (res.ok) {
+              applyRigaData(tr, res.riga);
+              tr.classList.add('pl-riga-saved');
+              setTimeout(() => tr.classList.remove('pl-riga-saved'), 800);
+              syncEmpty();
+              runBusinessValidations();
+              return true;
+            } else {
+              window.qkToast('Impossibile ripristinare: ' + (res.error ?? 'Errore.'), 'danger');
+              return false;
+            }
+          } catch (err) {
+            window.qkToast('Errore durante il ripristino.', 'danger');
+            return false;
           }
-        } catch (err) {
-          window.qkToast('Errore durante il ripristino.', 'danger');
-          tr.remove();
+        },
+        onDismiss: () => {
+          syncEmpty();
+          runBusinessValidations();
         }
-      });
-
-      // Evento Chiudi immediato (X)
-      tr.querySelector('.btn-close-dismiss-soft').addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        stopTimer();
-        tr.remove();
-        syncEmpty();
-        runBusinessValidations();
       });
 
     } catch (err) {
