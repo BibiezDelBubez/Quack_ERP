@@ -198,7 +198,7 @@ function qk_search_fornitori(PDO $pdo, string $q = '', int $limit = 50): array
                 AND attivo = 1
                 AND parent_id IS NULL
                 AND id NOT IN (SELECT soggetto_id FROM aziende_interne)
-                AND (ragione_sociale LIKE :q OR nome LIKE :q OR cognome LIKE :q OR email LIKE :q OR piva LIKE :q)
+                AND (ragione_sociale LIKE :q OR nome LIKE :q OR cognome LIKE :q OR email LIKE :q OR partita_iva LIKE :q)
               ORDER BY ragione_sociale
               LIMIT :lim"
         );
@@ -394,25 +394,25 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
     $stCount->execute($params);
     $total = (int) $stCount->fetchColumn();
 
-    // Unified query with joins to fetch minimum price across all suppliers (or filtered)
+    // Unified query with joins to fetch main sales price (listino 1, qty 0)
     $sqlRows = "SELECT p.id, p.sku_interno, p.nome, p.tipo, um.codice AS unita_misura,
                 p.attivo, c.nome AS categoria,
                 g.quantita_disponibile,
                 COALESCE(p.is_adr, 0) AS is_adr,
-                MIN(pp.prezzo) AS prezzo_min
+                lp.prezzo_unitario AS prezzo_vendita
          FROM prodotti p
          LEFT JOIN categorie_prodotto c ON c.id = p.categoria_id
          LEFT JOIN giacenze g ON g.prodotto_id = p.id
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
          LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.attivo = 1
-         LEFT JOIN prodotti_fornitori_prezzi pp ON pp.prodotto_fornitore_id = pf.id
+         LEFT JOIN listini_prezzi lp ON lp.prodotto_id = p.id AND lp.listino_id = 1 AND lp.quantita_minima = 0
          $cond
          GROUP BY p.id
          ORDER BY " . match($sort) {
              'sku'       => 'p.sku_interno COLLATE NOCASE',
              'categoria' => 'c.nome COLLATE NOCASE',
              'giacenza'  => 'g.quantita_disponibile',
-             'prezzo'    => 'prezzo_min',
+             'prezzo'    => 'prezzo_vendita',
              'tipo'      => 'p.tipo',
              default     => 'p.nome COLLATE NOCASE',
          } . " " . ($dir === 'desc' ? 'DESC' : 'ASC') . "

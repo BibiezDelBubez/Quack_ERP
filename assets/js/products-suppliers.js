@@ -106,7 +106,7 @@
       
       const activeRows = flatRows.filter(r => !r._isDeletedSoft);
       if (activeRows.length === 0) {
-        masterTbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-muted">Nessun prezzo di acquisto impostato.</td></tr>`;
+        masterTbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-muted">Nessun costo di acquisto impostato.</td></tr>`;
         return;
       }
 
@@ -157,15 +157,15 @@
           <td class="flat-grid-td" data-col="sku">
             <input type="text" class="flat-grid-input inp-sku font-monospace" value="${esc(row.sku_fornitore)}" placeholder="SKU">
           </td>
+          <td class="flat-grid-td" data-col="prezzo">
+             <input type="number" class="flat-grid-input text-end inp-prezzo fw-bold" value="${displayPrezzo !== null ? displayPrezzo : ''}" step="0.0001" min="0" placeholder="0.0000">
+          </td>
           <td class="flat-grid-td" data-col="qta_min">
             <input type="number" class="flat-grid-input text-end inp-qta font-monospace" value="${displayQta}" min="0" step="0.001">
           </td>
           <td class="flat-grid-td text-center" data-col="uom" style="line-height: 40px; font-size: 0.85rem; color: var(--qk-text-primary);">
              <span>${currentUomMode === 'stock' ? esc(cfg.uomStock) : esc(cfg.uomCommercial || cfg.uomStock)}</span>
              <input type="hidden" class="inp-uom" value="${rowUomId}">
-          </td>
-          <td class="flat-grid-td" data-col="prezzo">
-             <input type="number" class="flat-grid-input text-end inp-prezzo fw-bold" value="${displayPrezzo !== null ? displayPrezzo : ''}" step="0.0001" min="0" placeholder="0.0000">
           </td>
           <td class="flat-grid-td" data-col="sconto">
              <input type="number" class="flat-grid-input text-end inp-sconto" value="${row.sconto_perc || 0}" step="0.01" min="0">
@@ -443,7 +443,7 @@
 
       window.qkSoftDeleteRow(tr, {
         colSpan: visibleCols,
-        messageHtml: `<i class="fa-solid fa-trash-can text-danger me-2"></i>Prezzo di acquisto per <strong>${esc(originalData.nome_fornitore_rs)}</strong> rimosso. <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>`,
+        messageHtml: `<i class="fa-solid fa-trash-can text-danger me-2"></i>Costo di acquisto per <strong>${esc(originalData.nome_fornitore_rs)}</strong> rimosso. <a href="#" class="undo-delete-inline ms-3 fw-bold text-decoration-underline text-primary">Annulla</a>`,
         onUndo: async () => {
           row._isDeletedSoft = false;
           row.prezzo_id = null;

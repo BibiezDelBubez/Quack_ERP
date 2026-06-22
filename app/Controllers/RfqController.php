@@ -910,6 +910,8 @@ class RfqController extends BaseController
                     partita_iva
                FROM clienti_fornitori
               WHERE (tipo = 'fornitore' OR tipo = 'entrambi')
+                AND parent_id IS NULL
+                AND id NOT IN (SELECT soggetto_id FROM aziende_interne)
                 AND attivo = 1
                 AND (ragione_sociale LIKE ? OR nome LIKE ? OR codice LIKE ?)
               ORDER BY ragione_sociale, nome LIMIT 30"

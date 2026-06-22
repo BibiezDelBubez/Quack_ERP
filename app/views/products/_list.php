@@ -56,7 +56,7 @@
         <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'nome', $sort, $dir)) ?>">Nome prodotto<?= qk_sort_icon('nome', $sort, $dir) ?></a></th>
         <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'categoria', $sort, $dir)) ?>">Categoria<?= qk_sort_icon('categoria', $sort, $dir) ?></a></th>
         <th class="qk-sortable text-center"><a href="<?= e(qk_sort_url($base, 'giacenza', $sort, $dir)) ?>">Giacenza<?= qk_sort_icon('giacenza', $sort, $dir) ?></a></th>
-        <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'prezzo', $sort, $dir)) ?>">Prezzo<?= qk_sort_icon('prezzo', $sort, $dir) ?></a></th>
+        <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'prezzo', $sort, $dir)) ?>">Prezzo di vendita<?= qk_sort_icon('prezzo', $sort, $dir) ?></a></th>
         <th>ADR</th>
         <th class="col-actions"></th>
       </tr></thead>
@@ -72,7 +72,7 @@
           </td>
           <td><?php if ($p['categoria']): ?><span class="qk-badge draft"><?= e($p['categoria']) ?></span><?php else: ?><span class="qk-text-muted">--</span><?php endif; ?></td>
           <td class="text-center"><?= $p['quantita_disponibile'] !== null ? (int)$p['quantita_disponibile'] : '<span class="qk-text-muted">--</span>' ?></td>
-          <td class="text-end"><?php if (!empty($p['prezzo_min'])) { echo e(number_format($p['prezzo_min'], 2, ',', '.')); } else { echo '--'; } ?></td>
+          <td class="text-end"><?php if (!empty($p['prezzo_vendita'])) { echo e(number_format($p['prezzo_vendita'], 2, ',', '.')); } else { echo '--'; } ?></td>
           <td><?= !empty($p['is_adr']) ? '<span class="qk-badge warning">ADR</span>' : '<span class="qk-text-muted">--</span>' ?></td>
           <td class="col-actions">
             <div class="d-flex gap-1 justify-content-end">

@@ -136,7 +136,7 @@ window.QkPF = {
           <button class="nav-link" id="ptab-btn-fornitori"
                   data-bs-toggle="tab" data-bs-target="#ptab-fornitori"
                   type="button" role="tab" aria-selected="false">
-            <i class="fa-solid fa-handshake fa-fw me-1"></i>Prezzi d'Acquisto & Fornitori
+            <i class="fa-solid fa-handshake fa-fw me-1"></i>Costi d'Acquisto & Fornitori
             <?php if (!empty($prodotto_fornitori)): ?>
             <span class="badge bg-secondary ms-1" id="badge-fornitori"><?= count($prodotto_fornitori) ?></span>
             <?php else: ?>
@@ -1548,7 +1548,7 @@ window.QkPF = {
         </div>
 
         <!-- ──────────────────────────────────────────────────────────────
-             TAB 2: PREZZI D'ACQUISTO E FORNITORI (FLAT GRID)
+             TAB 2: COSTI D'ACQUISTO E FORNITORI (FLAT GRID)
         ─────────────────────────────────────────────────────────────────── -->
         <div class="tab-pane fade" id="ptab-fornitori" role="tabpanel">
 
@@ -1556,7 +1556,7 @@ window.QkPF = {
           <div class="qk-card mb-3">
             <div class="qk-card-body text-center py-5">
               <i class="fa-solid fa-floppy-disk fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
-              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter gestire i prezzi di acquisto.</p>
+              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter gestire i costi di acquisto.</p>
             </div>
           </div>
           <?php else: ?>
@@ -1628,13 +1628,13 @@ window.QkPF = {
             <table class="qks-master-table" id="master-fornitori-table">
               <thead>
                 <tr>
-                  <th data-col="pref" title="Fornitore Preferenziale: determina quale prezzo d'acquisto viene proposto di default nei calcoli e documenti dell'ERP.">Prf</th>
+                  <th data-col="pref" title="Fornitore Preferenziale: determina quale costo d'acquisto viene proposto di default nei calcoli e documenti dell'ERP.">Prf</th>
                   <th data-col="fornitore" style="min-width: 200px;">Fornitore</th>
                   <th data-col="nome_prod" style="min-width: 180px; display: none;">Nome Prod. Forn.</th>
                   <th data-col="sku" style="min-width: 120px;">SKU Fornitore</th>
+                  <th data-col="prezzo" style="width:110px; text-align:right;">Costo Acq.</th>
                   <th data-col="qta_min" style="width:90px; text-align:right;">Qtà Min.</th>
                   <th data-col="uom" style="width:90px; text-align:center;">UoM</th>
-                  <th data-col="prezzo" style="width:110px; text-align:right;">Prezzo Acq.</th>
                   <th data-col="sconto" style="width:80px; text-align:right;">Sc. %</th>
                   <th data-col="lead_time" style="width:90px; text-align:center;">Cons. (gg)</th>
                   <th data-col="valido_dal" style="width:130px; text-align:center;">Valido Dal</th>

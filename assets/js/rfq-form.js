@@ -84,14 +84,15 @@ document.addEventListener('DOMContentLoaded', function () {
       nome:          p.nome,
       sku_interno:   p.sku_interno,
       sku_fornitore: p.sku_fornitore ?? '',
-      uom_id:        p.unita_misura_id ?? '',
+      uom_id:        p.uom_id ?? '',
       uom:           p.uom ?? '',
       prezzo:        p.prezzo_unitario ?? '',
       iva_perc:      p.iva_perc ?? '22',
       uom_comm:      p.uom_comm || p.uom_comm_prod || p.uom || '—',
-      uom_comm_id:   p.uom_comm_id || p.uom_comm_prod_id || p.unita_misura_id || '',
+      uom_comm_id:   p.uom_comm_id || p.uom_comm_prod_id || p.uom_id || '',
       uom_comm_prod: p.uom_comm_prod ?? '',
       uom_comm_prod_id: p.uom_comm_prod_id ?? '',
+      quantita_contenuto: p.quantita_contenuto ?? '1',
       formato:       p.formato ?? '',
     }));
   }
