@@ -408,8 +408,8 @@ $savedOk = isset($saved) && $saved;
               <table class="qk-table" id="tbl-righe">
                 <thead>
                   <tr>
-                    <th style="width:3%" class="col-drag"></th>
-                    <th style="width:20%">Prodotto</th>
+                    <th style="width:35px" class="col-drag no-resize"></th>
+                    <th>Prodotto</th>
                     <th style="width:10%" class="col-formato">Formato</th>
                     <th style="width:8%">SKU Fornitore</th>
                     <th style="width:10%">Descrizione / Note</th>
@@ -422,7 +422,7 @@ $savedOk = isset($saved) && $saved;
                     <th style="width:10%" class="text-end col-totale">
                       <span>Totale (<span class="currency-symbol">€</span>)</span>
                     </th>
-                    <?php if ($canEdit): ?><th style="width:4%"></th><?php endif; ?>
+                    <?php if ($canEdit): ?><th style="width:35px" class="col-rimuovi no-resize"></th><?php endif; ?>
                   </tr>
                 </thead>
                 <tbody id="righe-body">
@@ -441,7 +441,7 @@ $savedOk = isset($saved) && $saved;
               </table>
             </div>
 
-            <div class="qk-flex-row qk-justify-end p-3 border-top mt-3" style="background: var(--qk-bg-subtle); border-radius: var(--qk-radius);">
+            <div class="qk-flex-row qk-justify-end p-3 border-top mt-3" style="background: transparent;">
               <div style="width: 280px; font-size: 0.95rem; line-height: 1.8;">
                 <div class="qk-flex-row qk-justify-between">
                   <span class="qk-text-muted">Imponibile:</span>
@@ -937,9 +937,9 @@ $savedOk = isset($saved) && $saved;
     <td class="text-end py-3 px-3 col-totale">
       <span class="r-totale-riga fw-semibold" style="font-size:.9rem">0,00</span>
     </td>
-    <td>
+    <td class="col-rimuovi">
       <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost r-rimuovi" title="Rimuovi riga">
-        <i class="fa-solid fa-xmark"></i>
+        <i class="fa-solid fa-trash-can text-danger"></i>
       </button>
     </td>
   </tr>

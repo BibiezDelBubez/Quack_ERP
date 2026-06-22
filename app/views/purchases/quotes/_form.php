@@ -367,9 +367,9 @@ $statoLabel = [
                 <td class="col-note">
                   <input type="text" name="riga_note[]" class="qk-form-control r-note" value="<?= e($r['note'] ?? '') ?>">
                 </td>
-                <td>
+                <td class="col-rimuovi">
                   <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost r-rimuovi" title="Rimuovi riga">
-                    <i class="fa-solid fa-xmark"></i>
+                    <i class="fa-solid fa-trash-can text-danger"></i>
                   </button>
                 </td>
               </tr>

@@ -76,9 +76,9 @@
     <span class="r-totale-riga fw-semibold" style="font-size:.9rem">0,00</span>
   </td>
   <?php if ($canEdit): ?>
-  <td>
+  <td class="col-rimuovi">
     <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost r-rimuovi" title="Rimuovi riga">
-      <i class="fa-solid fa-xmark"></i>
+      <i class="fa-solid fa-trash-can text-danger"></i>
     </button>
   </td>
   <?php endif; ?>

@@ -1254,14 +1254,16 @@ input[type=number] {
 }
 
 .col-drag {
-  width: 3%;
+  width: 35px !important;
+  min-width: 35px !important;
+  max-width: 35px !important;
   text-align: center;
   vertical-align: middle;
   color: var(--qk-text-muted, #a0aec0);
   cursor: grab;
   user-select: none;
-  padding-left: 8px !important;
-  padding-right: 8px !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
 }
 .col-drag:active {
   cursor: grabbing;
@@ -1269,6 +1271,16 @@ input[type=number] {
 .col-drag i {
   font-size: 0.85rem;
 }
+.col-rimuovi {
+  width: 35px !important;
+  min-width: 35px !important;
+  max-width: 35px !important;
+  text-align: center;
+  vertical-align: middle;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+}
+
 
 /* Premium Nav Tabs styling */
 .qk-nav-tabs {

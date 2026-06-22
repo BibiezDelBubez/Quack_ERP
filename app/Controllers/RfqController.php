@@ -1278,11 +1278,10 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
     $selectPrezzo = "NULL AS prezzo_unitario, NULL AS sku_fornitore, NULL AS uom_comm, NULL AS uom_comm_id";
 
     if ($fornitore_id > 0) {
-        $joinPrezzo   = "LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.fornitore_id = $fornitore_id
-                         LEFT JOIN unita_misura um_comm ON um_comm.id = pf.unita_misura_acquisto_id";
+        $joinPrezzo   = "LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.fornitore_id = $fornitore_id";
         $selectPrezzo = "pf.sku_fornitore,
-            um_comm.codice AS uom_comm,
-            pf.unita_misura_acquisto_id AS uom_comm_id,
+            NULL AS uom_comm,
+            NULL AS uom_comm_id,
             (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
               WHERE pfp.prodotto_fornitore_id = pf.id
                 AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario";

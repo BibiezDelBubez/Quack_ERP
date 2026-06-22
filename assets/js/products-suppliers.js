@@ -315,12 +315,13 @@
     async function triggerSave(row, trElement) {
       if (!row.fornitore_id) return; // Dati minimi: serve almeno il fornitore
       
+      const wasNew = !!row.isNew;
       const iconSaving = trElement ? trElement.querySelector('.icon-saving') : null;
       const iconSaved = trElement ? trElement.querySelector('.icon-saved') : null;
       
       if (iconSaving) iconSaving.classList.remove('d-none');
       if (iconSaved) iconSaved.classList.add('d-none');
-
+ 
       // Salviamo prima i metadati del fornitore
       const fd = new FormData();
       fd.append('id', row.prodotto_fornitore_id ? String(row.prodotto_fornitore_id) : '');
@@ -334,7 +335,7 @@
       fd.append('attivo', '1');
       fd.append('no_prezzi', '1');
       fd.append('csrf_token', CSRF);
-
+ 
       try {
         const res = await fetch(cfg.apiFornSave, { method: 'POST', body: fd });
         const data = await res.json();
@@ -356,7 +357,7 @@
             sf.append('valido_al', row.valido_al || '');
             sf.append('note', row.note || '');
             sf.append('csrf_token', CSRF);
-
+ 
             const pres = await fetch(cfg.apiPrezzoSave, { method: 'POST', body: sf });
             const pdata = await pres.json();
             if (pdata.ok) {
@@ -371,9 +372,9 @@
           if (iconSaved) iconSaved.classList.add('d-none');
         }, 2000);
         
-        // Convert input to static text if it was new
-        if (trElement && trElement.querySelector('.qk-m2o-wrap')) {
-           renderMasterTable(); // Re-render to show plain text instead of picker
+        // Re-render only if it was a new row to finalize its layout
+        if (wasNew) {
+           renderMasterTable();
         }
       } catch(e) {
         if (iconSaving) iconSaving.classList.add('d-none');
