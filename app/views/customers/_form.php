@@ -472,8 +472,6 @@ $nContatti = count($contatti_preload);
         </script>
       </div><!-- /ctab-listini -->
 
-      </div><!-- /ctab-indirizzi -->
-
       <!-- TAB: CONTATTI -->
       <div class="tab-pane fade" id="ctab-contatti" role="tabpanel">
 
@@ -576,6 +574,35 @@ $nContatti = count($contatti_preload);
   radios.forEach(function (r) {
     r.addEventListener('change', function () { toggle(r.value); });
   });
+
+  // Gestione visibilità sidebar basata sul tab attivo
+  var grid = document.querySelector('.qk-form-grid');
+  var sidebar = document.querySelector('.qk-status-panel');
+  var tabs = document.querySelectorAll('#customerTabs button[data-bs-toggle="tab"]');
+
+  function updateSidebar(tabId) {
+    if (!grid || !sidebar) return;
+    var hideSidebar = ['ctab-btn-indirizzi', 'ctab-btn-contatti', 'ctab-btn-compliance'].indexOf(tabId) !== -1;
+    if (hideSidebar) {
+      grid.classList.add('no-sidebar');
+      sidebar.style.display = 'none';
+    } else {
+      grid.classList.remove('no-sidebar');
+      sidebar.style.display = '';
+    }
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('shown.bs.tab', function (e) {
+      updateSidebar(e.target.id);
+    });
+  });
+
+  // Esegui all'avvio se c'è un tab attivo pre-selezionato
+  var activeTab = document.querySelector('#customerTabs button.active');
+  if (activeTab) {
+    updateSidebar(activeTab.id);
+  }
 })();
 </script>
 

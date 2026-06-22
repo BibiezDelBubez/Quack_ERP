@@ -673,7 +673,8 @@ window.QkPF = {
               font-family: monospace;
               font-size: 0.88rem;
               font-weight: 600;
-              width: 100%;
+              flex: 1;
+              min-width: 0;
               text-align: right;
               color: #1e293b;
             }
@@ -802,6 +803,16 @@ window.QkPF = {
               height: 40px;
               overflow: hidden;
             }
+            .flat-grid-td[data-col="fornitore"] {
+              overflow: visible !important;
+            }
+            .qks-master-table th[data-col="pref"],
+            .qks-master-table td[data-col="pref"] {
+              width: 45px !important;
+              min-width: 45px !important;
+              max-width: 45px !important;
+              text-align: center !important;
+            }
             .flat-grid-input {
               display: block !important;
               box-sizing: border-box !important;
@@ -889,8 +900,8 @@ window.QkPF = {
                 <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .5rem;">
                   <label class="qk-form-label mb-0 text-nowrap" style="font-size:.85rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
                   <select id="sales-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
-                    <option value="commercial">Unità commerciale</option>
-                    <option value="stock" selected>Unità di stock</option>
+                    <option value="commercial">Unità commerciale (<?= e($um_comm_codice ?: $um) ?>)</option>
+                    <option value="stock" selected>Unità di stock (<?= e($um) ?>)</option>
                   </select>
                 </div>
               </div>
@@ -1500,8 +1511,8 @@ window.QkPF = {
                    <div class="d-flex align-items-center gap-1">
                      <label class="qk-form-label mb-0 text-nowrap" style="font-size:.78rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
                      <select id="drawer-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.78rem; height:auto;">
-                       <option value="commercial">Unità commerciale</option>
-                       <option value="stock" selected>Unità di stock</option>
+                        <option value="commercial">Unità commerciale (<?= e($um_comm_codice ?: $um) ?>)</option>
+                        <option value="stock" selected>Unità di stock (<?= e($um) ?>)</option>
                      </select>
                    </div>
                  </div>
@@ -1557,8 +1568,8 @@ window.QkPF = {
               <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .5rem; padding-left: .5rem;">
                 <label class="qk-form-label mb-0 text-nowrap" style="font-size:.85rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
                 <select id="purchase-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
-                  <option value="commercial">Unità commerciale</option>
-                  <option value="stock" selected>Unità di stock</option>
+                  <option value="commercial">Unità commerciale (<?= e($um_comm_codice ?: $um) ?>)</option>
+                  <option value="stock" selected>Unità di stock (<?= e($um) ?>)</option>
                 </select>
               </div>
             </div>
@@ -1613,11 +1624,11 @@ window.QkPF = {
           </div>
 
           <!-- ── Master Table Flat ────────────────────────────────────────────── -->
-          <div class="qk-card" style="overflow-x:auto;">
+          <div class="qk-card" style="overflow-x:auto; min-height: 250px;">
             <table class="qks-master-table" id="master-fornitori-table">
               <thead>
                 <tr>
-                  <th style="width:40px; text-align:center;" data-col="pref">Prf</th>
+                  <th data-col="pref" title="Fornitore Preferenziale: determina quale prezzo d'acquisto viene proposto di default nei calcoli e documenti dell'ERP.">Prf</th>
                   <th data-col="fornitore" style="min-width: 200px;">Fornitore</th>
                   <th data-col="nome_prod" style="min-width: 180px; display: none;">Nome Prod. Forn.</th>
                   <th data-col="sku" style="min-width: 120px;">SKU Fornitore</th>

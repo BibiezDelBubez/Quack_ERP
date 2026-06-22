@@ -293,6 +293,10 @@
         clearTimeout(this._debounce);
         this._debounce = setTimeout(() => {
           const val = inputEl.value.trim();
+          if (val.length === 1) {
+            this._close();
+            return;
+          }
           this._search(val);
         }, 220);
       });
@@ -314,9 +318,11 @@
 
       document.addEventListener('click', e => {
         const wrap = inputEl.closest('.qk-m2o-wrap');
-        if (wrap && !wrap.contains(e.target)) {
+        const inDropdown = dropdownEl.contains(e.target);
+        const inInput = inputEl.contains(e.target);
+        if (!inInput && !inDropdown && (!wrap || !wrap.contains(e.target))) {
           this._close();
-          if (!this.hiddenEl?.value) inputEl.value = '';
+          if (this.hiddenEl && !this.hiddenEl.value) inputEl.value = '';
         }
       }, true);
 
@@ -414,7 +420,18 @@
       this._open();
     }
 
-    _open()  { this.dropdownEl.classList.add('is-open'); }
+    _open()  {
+      if (this.dropdownEl.parentNode !== document.body) {
+        document.body.appendChild(this.dropdownEl);
+      }
+      const rect = this.inputEl.getBoundingClientRect();
+      this.dropdownEl.style.position = 'absolute';
+      this.dropdownEl.style.top = (rect.bottom + window.scrollY) + 'px';
+      this.dropdownEl.style.left = (rect.left + window.scrollX) + 'px';
+      this.dropdownEl.style.width = rect.width + 'px';
+      this.dropdownEl.style.zIndex = '9999';
+      this.dropdownEl.classList.add('is-open');
+    }
     _close() { this.dropdownEl.classList.remove('is-open'); }
 
     setValue(id, label) {

@@ -120,6 +120,37 @@
               </span>
               <div class="d-flex align-items-center gap-2">
                 <input type="text" id="pl-grid-search-acquisto" class="qk-form-control py-1 px-2" placeholder="Filtra per nome o SKU..." style="font-size: .82rem !important; height: auto !important; min-height: 0 !important; width: 220px; margin: 0;">
+                
+                <div class="qk-dropdown-container" style="position:relative; display:inline-block; line-height:1;">
+                  <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-col-settings" title="Mostra/Nascondi colonne">
+                    <i class="fa-solid fa-sliders"></i> Colonne
+                  </button>
+                  <div class="qk-dropdown-menu shadow-sm" id="col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.6rem .8rem; min-width:180px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                    <div class="qk-flex-col qk-gap-sm">
+                      <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+                        <input type="checkbox" id="chk-show-sku-interno" style="transform:scale(1.15);" checked>
+                        <span>SKU Interno</span>
+                      </label>
+                      <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+                        <input type="checkbox" id="chk-show-sku-fornitore" style="transform:scale(1.15);" checked>
+                        <span>SKU Fornitore</span>
+                      </label>
+                      <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+                        <input type="checkbox" id="chk-show-sconto-perc" style="transform:scale(1.15);" checked>
+                        <span>Sconto %</span>
+                      </label>
+                      <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+                        <input type="checkbox" id="chk-show-validita" style="transform:scale(1.15);">
+                        <span>Validità Riga</span>
+                      </label>
+                      <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+                        <input type="checkbox" id="chk-show-note" style="transform:scale(1.15);" checked>
+                        <span>Note Prezzo</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
                 <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaPrezziAcquisto">
                   <i class="fa-solid fa-file-import me-1"></i>Importa (XLSX)
                 </button>
@@ -184,13 +215,13 @@
                 <thead>
                   <tr>
                     <th>Prodotto</th>
-                    <th style="width:140px">SKU Interno</th>
-                    <th style="width:140px">SKU Fornitore</th>
+                    <th class="col-sku-interno" style="width:140px">SKU Interno</th>
+                    <th class="col-sku-fornitore" style="width:140px">SKU Fornitore</th>
                     <th class="text-end" style="width:110px">Q.tà min</th>
                     <th class="text-end" style="width:140px">Prezzo Unitario</th>
-                    <th class="text-end" style="width:100px">Sconto %</th>
-                    <th style="width:220px">Validità Riga</th>
-                    <th>Note Prezzo</th>
+                    <th class="text-end col-sconto-perc" style="width:100px">Sconto %</th>
+                    <th class="col-validita" style="width:220px">Validità Riga</th>
+                    <th class="col-note-prezzo">Note Prezzo</th>
                     <th style="width:72px"></th>
                   </tr>
                 </thead>
@@ -217,8 +248,8 @@
                           </div>
                         </div>
                       </td>
-                      <td><code><?= e($item['sku_interno']) ?></code></td>
-                      <td>
+                      <td class="col-sku-interno"><code><?= e($item['sku_interno']) ?></code></td>
+                      <td class="col-sku-fornitore">
                         <span class="pl-view text-monospace"><?= e($item['sku_fornitore'] ?? '—') ?></span>
                         <input class="pl-edit qk-form-control py-1 px-2 text-monospace r-sku-forn" type="text" value="<?= e($item['sku_fornitore'] ?? '') ?>">
                       </td>
@@ -230,11 +261,11 @@
                         <span class="pl-view text-monospace fw-bold"><?= number_format((float)$item['prezzo'], 4, ',', '.') ?> €</span>
                         <input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-prezzo" type="number" min="0" step="0.0001" value="<?= (float)$item['prezzo'] ?>">
                       </td>
-                      <td class="text-end">
+                      <td class="text-end col-sconto-perc">
                         <span class="pl-view text-monospace"><?= number_format((float)$item['sconto_perc'], 2, ',', '.') ?> %</span>
                         <input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-sconto" type="number" min="0" max="100" step="0.01" value="<?= (float)$item['sconto_perc'] ?>">
                       </td>
-                      <td>
+                      <td class="col-validita">
                         <div class="pl-view text-monospace small">
                           <?php if (!empty($item['valido_dal']) || !empty($item['valido_al'])): ?>
                             <?= !empty($item['valido_dal']) ? date('d/m/Y', strtotime($item['valido_dal'])) : '...' ?>
@@ -245,11 +276,11 @@
                           <?php endif; ?>
                         </div>
                         <div class="pl-edit d-flex gap-1">
-                          <input class="qk-form-control py-1 px-1 r-valido-dal" type="date" value="<?= e($item['valido_dal'] ?? '') ?>" style="font-size:.75rem">
-                          <input class="qk-form-control py-1 px-1 r-valido-al" type="date" value="<?= e($item['valido_al'] ?? '') ?>" style="font-size:.75rem">
+                          <input class="qk-form-control py-1 px-1 r-valido-dal" type="date" value="<?= e($item['valido_dal'] ?? '') ?>" style="font-size:.75rem; min-width: 0; flex: 1;">
+                          <input class="qk-form-control py-1 px-1 r-valido-al" type="date" value="<?= e($item['valido_al'] ?? '') ?>" style="font-size:.75rem; min-width: 0; flex: 1;">
                         </div>
                       </td>
-                      <td>
+                      <td class="col-note-prezzo">
                         <span class="pl-view qk-text-muted small"><?= e($item['note'] ?? '') ?></span>
                         <input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" value="<?= e($item['note'] ?? '') ?>">
                       </td>
@@ -317,18 +348,18 @@
         </div>
       </div>
     </td>
-    <td><code class="r-sku-label">—</code></td>
-    <td><input class="pl-edit qk-form-control py-1 px-2 text-monospace r-sku-forn" type="text" placeholder="SKU Forn."></td>
+    <td class="col-sku-interno"><code class="r-sku-label">—</code></td>
+    <td class="col-sku-fornitore"><input class="pl-edit qk-form-control py-1 px-2 text-monospace r-sku-forn" type="text" placeholder="SKU Forn."></td>
     <td><input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-qmin" type="number" min="0" step="0.001" value="0"></td>
     <td><input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-prezzo" type="number" min="0" step="0.0001" placeholder="0,0000 €"></td>
-    <td><input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-sconto" type="number" min="0" max="100" step="0.01" value="0"></td>
-    <td>
+    <td class="col-sconto-perc"><input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-sconto" type="number" min="0" max="100" step="0.01" value="0"></td>
+    <td class="col-validita">
       <div class="pl-edit d-flex gap-1">
-        <input class="qk-form-control py-1 px-1 r-valido-dal" type="date" style="font-size:.75rem">
-        <input class="qk-form-control py-1 px-1 r-valido-al" type="date" style="font-size:.75rem">
+        <input class="qk-form-control py-1 px-1 r-valido-dal" type="date" style="font-size:.75rem; min-width: 0; flex: 1;">
+        <input class="qk-form-control py-1 px-1 r-valido-al" type="date" style="font-size:.75rem; min-width: 0; flex: 1;">
       </div>
     </td>
-    <td><input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" placeholder="Note prezzo"></td>
+    <td class="col-note-prezzo"><input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" placeholder="Note prezzo"></td>
     <td>
       <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm px-2 btn-cancel-riga" title="Annulla (Esc)" style="vertical-align: middle;">
         <i class="fa-solid fa-trash-can"></i>
@@ -373,6 +404,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const table = document.getElementById('tbl-prezzi-acquisto');
     const empty = document.getElementById('pl-empty-acquisto');
     const tpl = document.getElementById('pl-tpl-new-acquisto');
+
+    let isInteractingWithDropdown = false;
+    document.addEventListener('mousedown', function (e) {
+      if (e.target.closest('.qk-m2o-dropdown')) {
+        isInteractingWithDropdown = true;
+      }
+    });
+    document.addEventListener('mouseup', function () {
+      isInteractingWithDropdown = false;
+    });
 
     // Run duplicate check on load
     setTimeout(runBusinessValidations, 200);
@@ -431,6 +472,9 @@ document.addEventListener('DOMContentLoaded', function () {
        IMMEDIATE AUTOSAVE ON BLUR (FOCUSOUT FROM ROW)
     ════════════════════════════════════════════════════ */
     tbody.addEventListener('focusout', function (e) {
+      if (isInteractingWithDropdown) {
+        return;
+      }
       const tr = e.target.closest('tr.pl-riga');
       if (!tr) return;
 
@@ -806,8 +850,8 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
           </div>
         </td>
-        <td><code>${escapeHtml(r.sku_interno)}</code></td>
-        <td>
+        <td class="col-sku-interno"><code>${escapeHtml(r.sku_interno)}</code></td>
+        <td class="col-sku-fornitore">
           <span class="pl-view text-monospace">${escapeHtml(r.sku_fornitore || '—')}</span>
           <input class="pl-edit qk-form-control py-1 px-2 text-monospace r-sku-forn" type="text" value="${escapeHtml(r.sku_fornitore || '')}">
         </td>
@@ -819,22 +863,22 @@ document.addEventListener('DOMContentLoaded', function () {
           <span class="pl-view text-monospace fw-bold">${fmt(r.prezzo, 4)} €</span>
           <input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-prezzo" type="number" min="0" step="0.0001" value="${r.prezzo}">
         </td>
-        <td class="text-end">
+        <td class="text-end col-sconto-perc">
           <span class="pl-view text-monospace">${fmt(r.sconto_perc, 2)} %</span>
           <input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-sconto" type="number" min="0" max="100" step="0.01" value="${r.sconto_perc}">
         </td>
-        <td>
+        <td class="col-validita">
           <div class="pl-view text-monospace small">
             ${r.valido_dal || r.valido_al ? 
               (r.valido_dal ? formatDate(r.valido_dal) : '...') + ' &rarr; ' + (r.valido_al ? formatDate(r.valido_al) : '...') : 
               'Sempre valido'}
           </div>
           <div class="pl-edit d-flex gap-1">
-            <input class="qk-form-control py-1 px-1 r-valido-dal" type="date" value="${r.valido_dal || ''}" style="font-size:.75rem">
-            <input class="qk-form-control py-1 px-1 r-valido-al" type="date" value="${r.valido_al || ''}" style="font-size:.75rem">
+            <input class="qk-form-control py-1 px-1 r-valido-dal" type="date" value="${r.valido_dal || ''}" style="font-size:.75rem; min-width: 0; flex: 1;">
+            <input class="qk-form-control py-1 px-1 r-valido-al" type="date" value="${r.valido_al || ''}" style="font-size:.75rem; min-width: 0; flex: 1;">
           </div>
         </td>
-        <td>
+        <td class="col-note-prezzo">
           <span class="pl-view qk-text-muted small">${escapeHtml(r.note || '')}</span>
           <input class="pl-edit qk-form-control py-1 px-2 r-note" type="text" value="${escapeHtml(r.note || '')}">
         </td>
@@ -909,6 +953,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const hasRows = tbody.children.length > 0;
       empty.style.display = hasRows ? 'none' : 'block';
       table.style.display = hasRows ? 'table' : 'none';
+      updateColumnVisibility();
     }
 
     function flashRow(tr, msg) {
@@ -928,6 +973,50 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!str) return '';
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
+
+    /* ── Mostra/Nascondi Colonne ───────────────────────────────────────── */
+    const btnColSettings = document.getElementById('btn-col-settings');
+    const colSettingsDropdown = document.getElementById('col-settings-dropdown');
+    const chkSkuInterno = document.getElementById('chk-show-sku-interno');
+    const chkSkuFornitore = document.getElementById('chk-show-sku-fornitore');
+    const chkSconto = document.getElementById('chk-show-sconto-perc');
+    const chkValidita = document.getElementById('chk-show-validita');
+    const chkNote = document.getElementById('chk-show-note');
+
+    if (btnColSettings && colSettingsDropdown) {
+      btnColSettings.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = colSettingsDropdown.style.display === 'block';
+        colSettingsDropdown.style.display = isVisible ? 'none' : 'block';
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!colSettingsDropdown.contains(e.target) && e.target !== btnColSettings) {
+          colSettingsDropdown.style.display = 'none';
+        }
+      });
+
+      [chkSkuInterno, chkSkuFornitore, chkSconto, chkValidita, chkNote].forEach(chk => {
+        chk?.addEventListener('change', updateColumnVisibility);
+      });
+    }
+
+    function updateColumnVisibility() {
+      const showSkuInterno = chkSkuInterno ? chkSkuInterno.checked : true;
+      const showSkuFornitore = chkSkuFornitore ? chkSkuFornitore.checked : true;
+      const showSconto = chkSconto ? chkSconto.checked : true;
+      const showValidita = chkValidita ? chkValidita.checked : false;
+      const showNote = chkNote ? chkNote.checked : true;
+
+      document.querySelectorAll('.col-sku-interno').forEach(el => el.style.display = showSkuInterno ? '' : 'none');
+      document.querySelectorAll('.col-sku-fornitore').forEach(el => el.style.display = showSkuFornitore ? '' : 'none');
+      document.querySelectorAll('.col-sconto-perc').forEach(el => el.style.display = showSconto ? '' : 'none');
+      document.querySelectorAll('.col-validita').forEach(el => el.style.display = showValidita ? '' : 'none');
+      document.querySelectorAll('.col-note-prezzo').forEach(el => el.style.display = showNote ? '' : 'none');
+    }
+
+    // Applica stato iniziale
+    updateColumnVisibility();
 
     /* ── Filtro di ricerca client-side ── */
     document.getElementById('pl-grid-search-acquisto')?.addEventListener('input', function (e) {

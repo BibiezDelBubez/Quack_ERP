@@ -134,7 +134,8 @@ final class PurchasesController extends BaseController
                             ':valido_al'    => $values['valido_al'],
                             ':note'         => $values['note'],
                         ]);
-                        redirect_with('purchases/pricelists', 'success', 'Listino acquisto salvato correttamente.');
+                        $newId = (int)$this->pdo->lastInsertId();
+                        redirect_with('purchases/pricelists/edit?id=' . $newId, 'success', 'Listino acquisto salvato correttamente.');
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
@@ -227,7 +228,7 @@ final class PurchasesController extends BaseController
                             ':note'         => $values['note'],
                             ':id'           => $id,
                         ]);
-                        redirect_with('purchases/pricelists', 'success', 'Listino acquisto aggiornato correttamente.');
+                        redirect_with('purchases/pricelists/edit?id=' . $id, 'success', 'Listino acquisto aggiornato correttamente.');
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }

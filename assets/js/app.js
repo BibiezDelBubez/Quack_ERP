@@ -476,6 +476,16 @@
     }
 
     function open(results) {
+      if (dropdown.parentNode !== document.body) {
+        document.body.appendChild(dropdown);
+      }
+      const rect = input.getBoundingClientRect();
+      dropdown.style.position = 'absolute';
+      dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+      dropdown.style.left = (rect.left + window.scrollX) + 'px';
+      dropdown.style.width = rect.width + 'px';
+      dropdown.style.zIndex = '9999';
+
       if (!results || results.length === 0) {
         if (onCreate && createLabel) {
           dropdown.innerHTML = `<div class="qk-ac-item qk-ac-create text-primary fw-semibold" style="cursor:pointer; padding:6px 12px; font-size:0.85rem;"><i class="fa-solid fa-plus me-1"></i> ${window.qkEscapeHtml(createLabel)}</div>`;

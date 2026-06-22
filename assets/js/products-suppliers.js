@@ -88,7 +88,7 @@
         nome_prodotto_fornitore: '',
         lead_time_giorni: 0,
         ordine_preferenza_fornitore: 2,
-        unita_misura_acquisto_id: cfg.uomStockId || null,
+        unita_misura_acquisto_id: currentUomMode === 'stock' ? (cfg.uomStockId || null) : (cfg.uomCommercialId || cfg.uomStockId || null),
         prezzo_id: null,
         quantita_minima: 0,
         prezzo: null,
@@ -160,12 +160,9 @@
           <td class="flat-grid-td" data-col="qta_min">
             <input type="number" class="flat-grid-input text-end inp-qta font-monospace" value="${displayQta}" min="0" step="0.001">
           </td>
-          <td class="flat-grid-td" data-col="uom">
-             <select class="flat-grid-input inp-uom" style="appearance: auto;">
-                ${(cfg.unitaMisuraList || []).map(u => 
-                  `<option value="${u.id}" ${rowUomId == u.id ? 'selected' : ''}>${esc(u.codice)}</option>`
-                ).join('')}
-             </select>
+          <td class="flat-grid-td text-center" data-col="uom" style="line-height: 40px; font-size: 0.85rem; color: var(--qk-text-primary);">
+             <span>${currentUomMode === 'stock' ? esc(cfg.uomStock) : esc(cfg.uomCommercial || cfg.uomStock)}</span>
+             <input type="hidden" class="inp-uom" value="${rowUomId}">
           </td>
           <td class="flat-grid-td" data-col="prezzo">
              <input type="number" class="flat-grid-input text-end inp-prezzo fw-bold" value="${displayPrezzo !== null ? displayPrezzo : ''}" step="0.0001" min="0" placeholder="0.0000">

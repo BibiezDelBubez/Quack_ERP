@@ -192,21 +192,24 @@ function qk_search_fornitori(PDO $pdo, string $q = '', int $limit = 50): array
 {
     if ($q !== '') {
         $stmt = $pdo->prepare(
-            "SELECT id, ragione_sociale, email, telefono
+            "SELECT id, COALESCE(NULLIF(ragione_sociale, ''), nome || ' ' || cognome) AS ragione_sociale, email, telefono
                FROM clienti_fornitori
               WHERE tipo IN ('fornitore', 'entrambi')
                 AND attivo = 1
+                AND parent_id IS NULL
                 AND id NOT IN (SELECT soggetto_id FROM aziende_interne)
-                AND (ragione_sociale LIKE :q OR email LIKE :q OR piva LIKE :q)
+                AND (ragione_sociale LIKE :q OR nome LIKE :q OR cognome LIKE :q OR email LIKE :q OR piva LIKE :q)
               ORDER BY ragione_sociale
               LIMIT :lim"
         );
         $stmt->execute([':q' => '%' . $q . '%', ':lim' => $limit]);
     } else {
         $stmt = $pdo->prepare(
-            "SELECT id, ragione_sociale, email, telefono
+            "SELECT id, COALESCE(NULLIF(ragione_sociale, ''), nome || ' ' || cognome) AS ragione_sociale, email, telefono
                FROM clienti_fornitori
-              WHERE tipo IN ('fornitore', 'entrambi') AND attivo = 1
+              WHERE tipo IN ('fornitore', 'entrambi') 
+                AND attivo = 1
+                AND parent_id IS NULL
                 AND id NOT IN (SELECT soggetto_id FROM aziende_interne)
               ORDER BY ragione_sociale
               LIMIT :lim"

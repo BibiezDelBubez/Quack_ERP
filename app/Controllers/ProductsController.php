@@ -230,7 +230,7 @@ final class ProductsController extends BaseController
             $this->pdo->prepare("DELETE FROM giacenze WHERE prodotto_id = ?")->execute([$id]);
             $this->pdo->prepare("DELETE FROM listini_prezzi WHERE prodotto_id = ?")->execute([$id]);
             $this->pdo->prepare("DELETE FROM prodotti_tag WHERE prodotto_id = ?")->execute([$id]);
-            $this->pdo->prepare("DELETE FROM prodotti_kit_componenti WHERE kit_id = ?")->execute([$id]);
+            $this->pdo->prepare("DELETE FROM componenti_kit WHERE kit_id = ?")->execute([$id]);
             
             // Cancella i prezzi dei fornitori di questo prodotto
             $this->pdo->prepare("
@@ -440,31 +440,31 @@ final class ProductsController extends BaseController
 
             if (!empty($listiniRegole)) {
                 $insListino = $this->pdo->prepare('
-                    INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_valore, sconto_perc, prezzo_tipo, creato_da, created_at)
-                    VALUES (:lid, :pid, :qmin, :valore, :sconto, :tipo, :user, CURRENT_TIMESTAMP)
+                    INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, sconto_perc, note, created_at)
+                    VALUES (:lid, :pid, :qmin, :prezzo, :uom_id, :sconto, :note, CURRENT_TIMESTAMP)
                 ');
                 foreach ($listiniRegole as $lr) {
                     $insListino->execute([
                         ':lid' => $lr['listino_id'],
                         ':pid' => $newProductId,
                         ':qmin' => $lr['quantita_minima'],
-                        ':valore' => $lr['prezzo_valore'],
+                        ':prezzo' => $lr['prezzo_unitario'],
+                        ':uom_id' => $lr['unita_misura_id'],
                         ':sconto' => $lr['sconto_perc'],
-                        ':tipo' => $lr['prezzo_tipo'],
-                        ':user' => $_SESSION['user_id'] ?? 1,
+                        ':note' => $lr['note'],
                     ]);
                 }
             }
 
             // 8. Copia componenti kit (se il prodotto originale è un kit)
             if (($prod['tipo'] ?? '') === 'kit') {
-                $kitStmt = $this->pdo->prepare('SELECT * FROM prodotti_kit_componenti WHERE kit_id = ?');
+                $kitStmt = $this->pdo->prepare('SELECT * FROM componenti_kit WHERE kit_id = ?');
                 $kitStmt->execute([$id]);
                 $compList = $kitStmt->fetchAll(PDO::FETCH_ASSOC);
                 
                 if (!empty($compList)) {
                     $insComp = $this->pdo->prepare('
-                        INSERT INTO prodotti_kit_componenti (kit_id, componente_id, quantita, note)
+                        INSERT INTO componenti_kit (kit_id, componente_id, quantita, note)
                         VALUES (?, ?, ?, ?)
                     ');
                     foreach ($compList as $c) {
