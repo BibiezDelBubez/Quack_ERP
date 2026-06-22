@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Converte e allinea le UoM in base al modo corrente
         const mode = document.getElementById('rfq-uom-mode')?.value || 'commercial';
-        setRowUomMode(tr, mode, 'commercial');
+        setRowUomMode(tr, mode, 'stock');
 
         recalcRowTotal(tr);
 

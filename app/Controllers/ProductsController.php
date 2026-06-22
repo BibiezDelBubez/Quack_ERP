@@ -604,6 +604,7 @@ final class ProductsController extends BaseController
             if ($id > 0) {
                 $this->pdo->prepare(
                     'UPDATE prodotti_fornitori SET
+                       fornitore_id                  = :fid,
                        sku_fornitore                 = :sku,
                        nome_prodotto_fornitore       = :nome,
                        quantita_minima               = :qta,
@@ -617,6 +618,7 @@ final class ProductsController extends BaseController
                        updated_at                    = CURRENT_TIMESTAMP
                      WHERE id = :id AND prodotto_id = :pid'
                 )->execute([
+                    ':fid'      => $fornitore_id,
                     ':sku'      => $n('sku_fornitore'),
                     ':nome'     => $n('nome_prodotto_fornitore'),
                     ':qta'      => $n('quantita_minima') !== null ? (float) $n('quantita_minima') : null,
