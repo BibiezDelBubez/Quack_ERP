@@ -375,3 +375,20 @@ Seguendo questo schema architetturale:
 2. **I contratti sono storicamente corretti**: se il solvente chimico Alpha in futuro cambierà confezionamento passando a fusti da 20 kg, l'ordine emesso oggi continuerà a riportare che 100 kg equivalgono a 4 fusti da 25 kg, preservando la contabilità aziendale.
 
 3. **L'inserimento dati è flessibile**: i colleghi commerciali possono negoziare in KG, Litri o Fusti senza che questo alteri i controlli fisici dell'inventario.
+
+---
+
+## 8. Log Decisioni e Specifica Implementativa Quack ERP (Giugno 2026)
+
+Di seguito si riportano le decisioni concordate per l'allineamento del codice sorgente:
+
+### A. Frazione di Conversione (Numeratore / Denominatore) a Database
+*   **Decisione**: Per eliminare le imprecisioni numeriche sui valori periodici senza complicare la UX, l'utente continuerà a inserire un valore decimale semplice a schermo (es. `25` o `0.468`). 
+*   **Logica Backend/Frontend**: Il sistema trasformerà deterministicamente il decimale in frazione di interi moltiplicando per potenze di 10 (es. `0.468` -> `468 / 1000`; `25` -> `1 / 25`). Nessun algoritmo di approssimazione con frazioni continue verrà usato, salvaguardando il determinismo contabile.
+
+### B. Inibizione Cambio UoM Stock Post-Movimentazione
+*   **Decisione**: La modifica della UoM di Stock (`unita_misura_stock_id`) su prodotti che hanno già movimenti registrati in `movimenti_magazzino` viene inibita e bloccata a livello di validazione backend.
+
+### C. Mantenimento UoM Nativa nei Listini di Acquisto
+*   **Decisione**: Aggiungere la colonna `unita_misura_id` alla tabella `prodotti_fornitori_prezzi` per consentire di definire a listino se lo scaglione di prezzo d'acquisto è concordato per l'unità di stock o per quella commerciale.
+

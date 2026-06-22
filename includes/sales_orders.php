@@ -175,12 +175,14 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 ordine_id, prodotto_id, descrizione, quantita_ordinata, unita_misura_id,
                 prezzo_unitario, sconto_perc, iva_perc, costo_unitario,
                 quantita_confezione, quantita_contenuto_snapshot,
+                num_factor_snapshot, den_factor_snapshot,
                 quantita_stock, unita_misura_stock_id,
                 quantita_spedita, note,
                 created_at
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
+                ?, ?,
                 ?, ?,
                 ?, ?,
                 0, ?,
@@ -216,6 +218,29 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
             $factor = (float) ($r['quantita_contenuto'] ?? 1);
             if ($factor <= 0) $factor = 1;
 
+            /*
+             * =========================================================================
+             * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
+             * To prevent precision drift and guarantee contract safety:
+             * 1. Conversion factors between stock UoM and commercial UoM must be stored
+             *    as exact, simplified integer fractions (num_factor / den_factor) in the database.
+             * 2. Every transactional line snapshot (Offers, Sales/Purchase Orders, Receipts)
+             *    must copy these factors at creation time into `num_factor_snapshot` and
+             *    `den_factor_snapshot` to avoid historical data changes when products are edited.
+             * 3. Do NOT use approximate decimal division or float conversion factors directly
+             *    in transactions. Always reference the exact snapshot fraction.
+             * =========================================================================
+             */
+            $num_factor_snapshot = 1;
+            $den_factor_snapshot = 1;
+            if ($prodotto_id) {
+                $prodUm = qk_prodotto_get_uom_info($pdo, $prodotto_id);
+                if ($prodUm) {
+                    $num_factor_snapshot = $prodUm['num_factor'];
+                    $den_factor_snapshot = $prodUm['den_factor'];
+                }
+            }
+
             // Determina se la riga è in UoM commerciale o stock
             $uom_comm = $r['uom_commercial'] ?? '';
             $uom_stock = $r['uom_stock'] ?? '';
@@ -238,6 +263,8 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 $costo,
                 $r['quantita_confezione'] ?: null,
                 $factor,
+                $num_factor_snapshot,
+                $den_factor_snapshot,
                 round($qtaStock, 3),
                 $um_stock_id,
                 $r['note_riga'] ?: null,

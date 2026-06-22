@@ -1575,10 +1575,11 @@ final class ProductsController extends BaseController
 
         // Verifica che prodotto_fornitore_id appartenga davvero al prodotto (sicurezza)
         $stmtOwn = $this->pdo->prepare(
-            'SELECT id FROM prodotti_fornitori WHERE id = :pfid AND prodotto_id = :pid'
+            'SELECT id, unita_misura_acquisto_id FROM prodotti_fornitori WHERE id = :pfid AND prodotto_id = :pid'
         );
         $stmtOwn->execute([':pfid' => $pfId, ':pid' => $prodottoId]);
-        if (!$stmtOwn->fetch()) {
+        $prodForn = $stmtOwn->fetch();
+        if (!$prodForn) {
             echo json_encode(['ok' => false, 'error' => 'Record non trovato o accesso non autorizzato.']); exit;
         }
 
@@ -1591,6 +1592,10 @@ final class ProductsController extends BaseController
         $validoDal = $n('valido_dal');
         $validoAl  = $n('valido_al');
         $note      = $n('note');
+        
+        // Mantenimento della UoM Nativa di negoziazione nei listini di acquisto
+        // Se non specificato esplicitamente, ereditiamo l'unità di acquisto definita sul fornitore
+        $uomId     = $n('unita_misura_id') !== null ? (int)$n('unita_misura_id') : (int)$prodForn['unita_misura_acquisto_id'];
 
         try {
             if ($id > 0) {
@@ -1603,7 +1608,8 @@ final class ProductsController extends BaseController
                             sconto_perc         = :sconto,
                             valido_dal          = :valido_dal,
                             valido_al           = :valido_al,
-                            note                = :note
+                            note                = :note,
+                            unita_misura_id     = :uom_id
                       WHERE id = :id
                         AND prodotto_fornitore_id = :pfid'
                 )->execute([
@@ -1614,6 +1620,7 @@ final class ProductsController extends BaseController
                     ':valido_dal' => $validoDal,
                     ':valido_al'  => $validoAl,
                     ':note'       => $note,
+                    ':uom_id'     => $uomId,
                     ':id'         => $id,
                     ':pfid'       => $pfId,
                 ]);
@@ -1622,9 +1629,9 @@ final class ProductsController extends BaseController
                 $this->pdo->prepare(
                     'INSERT INTO prodotti_fornitori_prezzi
                        (prodotto_fornitore_id, listino_acquisto_id, quantita_minima,
-                        prezzo, sconto_perc, valido_dal, valido_al, note)
+                        prezzo, sconto_perc, valido_dal, valido_al, note, unita_misura_id)
                      VALUES
-                       (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note)'
+                       (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note, :uom_id)'
                 )->execute([
                     ':pfid'       => $pfId,
                     ':listino_id' => $listinoId,
@@ -1634,22 +1641,25 @@ final class ProductsController extends BaseController
                     ':valido_dal' => $validoDal,
                     ':valido_al'  => $validoAl,
                     ':note'       => $note,
+                    ':uom_id'     => $uomId,
                 ]);
                 $id = (int) $this->pdo->lastInsertId();
             }
 
-            // Restituisce la riga salvata (con nome_listino per rendering JS)
+            // Restituisce la riga salvata (con nome_listino e UoM nativa per il rendering e la visualizzazione)
             $stmtRow = $this->pdo->prepare(
                 'SELECT pfp.id, pfp.prodotto_fornitore_id, pfp.listino_acquisto_id,
                         pfp.quantita_minima, pfp.prezzo, pfp.sconto_perc,
-                        pfp.valido_dal, pfp.valido_al, pfp.note,
-                        la.nome_listino
+                        pfp.valido_dal, pfp.valido_al, pfp.note, pfp.unita_misura_id,
+                        la.nome_listino, um.codice AS unita_misura_codice
                    FROM prodotti_fornitori_prezzi pfp
               LEFT JOIN listini_acquisto la ON la.id = pfp.listino_acquisto_id
+              LEFT JOIN unita_misura um ON um.id = pfp.unita_misura_id
                   WHERE pfp.id = :id'
             );
             $stmtRow->execute([':id' => $id]);
             echo json_encode(['ok' => true, 'row' => $stmtRow->fetch(PDO::FETCH_ASSOC)]);
+
 
         } catch (Throwable $e) {
             echo json_encode(['ok' => false, 'error' => qk_prodotti_db_message($e)]);

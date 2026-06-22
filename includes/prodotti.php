@@ -488,6 +488,13 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
 
 /* =============================================================================
    INSERT
+   =============================================================================
+   DIRETTIVE ARCHITETTURALI MULTI-UoM & PREZZI (MANTENERE ASSOLUTAMENTE INTEGRE):
+   1. La Stock UoM (unita_misura_stock_id) definisce l'unità fisica logistica a magazzino.
+   2. Il fattore di conversione commerciale/stock deve essere gestito come numeratore/denominatore 
+      a database (num_factor e den_factor) per evitare discrepanze float con frazioni periodiche (es. 1/3).
+   3. Calcolo frazione: Il decimale inserito a schermo (es. 25 o 0.468) viene convertito in frazione
+      deterministicamente per potenze di 10 (es. 0.468 -> 468/1000) per preservare l'esatto input utente.
 ============================================================================= */
 
 function qk_insert_prodotto(PDO $pdo, array $v): int
@@ -498,16 +505,48 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
         $umStmt->execute([':c' => $v['unita_misura'] ?? 'pz']);
         $um_id = $umStmt->fetchColumn() ?: null;
 
+        // Calcolo numeratore e denominatore deterministici per potenze di 10
+        $rawQty = qk_prodotti_decimal($v['quantita_contenuto']);
+        $numFactor = 1;
+        $denFactor = 1;
+        if ($rawQty !== null && (float)$rawQty > 0.0) {
+            $fVal = (float)$rawQty;
+            if ($fVal >= 1.0) {
+                $numFactor = 1;
+                $denFactor = (int)$fVal;
+            } else {
+                $strVal = (string)$fVal;
+                $decimals = 0;
+                if (strpos($strVal, '.') !== false) {
+                    $decimals = strlen(substr($strVal, strpos($strVal, '.') + 1));
+                }
+                $multiplier = 10 ** $decimals;
+                $numFactor = (int)round($fVal * $multiplier);
+                $denFactor = $multiplier;
+                
+                $gcd = function($a, $b) use (&$gcd) {
+                    return $b ? $gcd($b, $a % $b) : $a;
+                };
+                $g = (int)$gcd($numFactor, $denFactor);
+                if ($g > 0) {
+                    $numFactor = (int)($numFactor / $g);
+                    $denFactor = (int)($denFactor / $g);
+                }
+            }
+        }
+
         $stmt = $pdo->prepare(
             'INSERT INTO prodotti
                (sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione, descrizione_completa,
                 tipo, categoria_id, note_interne,
-                attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto, peso_netto_kg, peso_lordo_kg,
+                attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
+                num_factor, den_factor, peso_netto_kg, peso_lordo_kg,
                 ean, scorta_minima, is_adr, sostanza_chimica_id, created_at)
              VALUES
                (:sku_interno, :sku_ecommerce, :nome, :desc_breve, :desc_confezione, :desc_completa,
                 :tipo, :cat_id, :note_int,
-                :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto, :peso_netto, :peso_lordo,
+                :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto,
+                :num_factor, :den_factor, :peso_netto, :peso_lordo,
                 :ean, :scorta_minima, :is_adr, :sostanza_chimica_id, CURRENT_TIMESTAMP)'
         );
         $stmt->execute([
@@ -524,7 +563,9 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
             ':traccia_lotti'     => $v['traccia_lotti'] === '1' ? 1 : 0,
             ':um_id'             => $um_id,
             ':unita_contenuto_id'=> qk_prodotti_null($v['unita_contenuto_id']) !== null ? (int) $v['unita_contenuto_id'] : null,
-            ':quantita_contenuto'=> qk_prodotti_decimal($v['quantita_contenuto']),
+            ':quantita_contenuto'=> $rawQty,
+            ':num_factor'        => $numFactor,
+            ':den_factor'        => $denFactor,
             ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
@@ -562,6 +603,15 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 
 /* =============================================================================
    UPDATE
+   =============================================================================
+   DIRETTIVE ARCHITETTURALI MULTI-UoM & PREZZI (MANTENERE ASSOLUTAMENTE INTEGRE):
+   1. La Stock UoM (unita_misura_stock_id) definisce l'unità fisica logistica a magazzino.
+   2. SE sono già avvenuti movimenti fisici (presenza in movimenti_magazzino), il cambio della
+      Stock UoM è severamente vietato e bloccato in backend per prevenire corruzione dello storico.
+   3. Il fattore di conversione commerciale/stock deve essere gestito come numeratore/denominatore 
+      a database (num_factor e den_factor) per evitare discrepanze float con frazioni periodiche (es. 1/3).
+   4. Calcolo frazione: Il decimale inserito a schermo (es. 25 o 0.468) viene convertito in frazione
+      deterministicamente per potenze di 10 (es. 0.468 -> 468/1000) per preservare l'esatto input utente.
 ============================================================================= */
 
 function qk_update_prodotto(PDO $pdo, int $id, array $v): void
@@ -588,6 +638,36 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
         }
     }
 
+    // Calcolo numeratore e denominatore deterministici per potenze di 10
+    $rawQty = qk_prodotti_decimal($v['quantita_contenuto']);
+    $numFactor = 1;
+    $denFactor = 1;
+    if ($rawQty !== null && (float)$rawQty > 0.0) {
+        $fVal = (float)$rawQty;
+        if ($fVal >= 1.0) {
+            $numFactor = 1;
+            $denFactor = (int)$fVal;
+        } else {
+            $strVal = (string)$fVal;
+            $decimals = 0;
+            if (strpos($strVal, '.') !== false) {
+                $decimals = strlen(substr($strVal, strpos($strVal, '.') + 1));
+            }
+            $multiplier = 10 ** $decimals;
+            $numFactor = (int)round($fVal * $multiplier);
+            $denFactor = $multiplier;
+            
+            $gcd = function($a, $b) use (&$gcd) {
+                return $b ? $gcd($b, $a % $b) : $a;
+            };
+            $g = (int)$gcd($numFactor, $denFactor);
+            if ($g > 0) {
+                $numFactor = (int)($numFactor / $g);
+                $denFactor = (int)($denFactor / $g);
+            }
+        }
+    }
+
     $pdo->beginTransaction();
     try {
         $pdo->prepare(
@@ -606,6 +686,8 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
                unita_misura_stock_id  = :um_id,
                unita_contenuto_id     = :unita_contenuto_id,
                quantita_contenuto     = :quantita_contenuto,
+               num_factor             = :num_factor,
+               den_factor             = :den_factor,
                peso_netto_kg          = :peso_netto,
                peso_lordo_kg          = :peso_lordo,
                ean                    = :ean,
@@ -628,13 +710,14 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
             ':traccia_lotti'     => $v['traccia_lotti'] === '1' ? 1 : 0,
             ':um_id'             => $um_id,
             ':unita_contenuto_id'=> qk_prodotti_null($v['unita_contenuto_id']) !== null ? (int) $v['unita_contenuto_id'] : null,
-            ':quantita_contenuto'=> qk_prodotti_decimal($v['quantita_contenuto']),
+            ':quantita_contenuto'=> $rawQty,
+            ':num_factor'        => $numFactor,
+            ':den_factor'        => $denFactor,
             ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
             ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
-            ':sostanza_chimica_id'   => qk_prodotti_null($v['sostanza_chimica_id'] ?? '') !== null ? (int) $v['sostanza_chimica_id'] : null,
             ':id'                => $id,
         ]);
 
@@ -750,4 +833,33 @@ function qk_prodotto_get_conversion_factor(PDO $pdo, int $prodotto_id): float
     $stmt->execute([$prodotto_id]);
     $factor = $stmt->fetchColumn();
     return $factor ? (float)$factor : 1.0;
+}
+
+/**
+ * Restituisce le informazioni sulle unità di misura e i fattori di conversione (frazioni incluse) per un prodotto.
+ * Ritorna null se il prodotto non esiste.
+ */
+function qk_prodotto_get_uom_info(PDO $pdo, int $prodotto_id): ?array
+{
+    $stmt = $pdo->prepare('
+        SELECT unita_misura_stock_id, 
+               unita_contenuto_id, 
+               quantita_contenuto, 
+               num_factor, 
+               den_factor 
+          FROM prodotti 
+         WHERE id = ?
+    ');
+    $stmt->execute([$prodotto_id]);
+    $res = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$res) {
+        return null;
+    }
+    return [
+        'unita_misura_stock_id' => (int)$res['unita_misura_stock_id'],
+        'unita_contenuto_id' => $res['unita_contenuto_id'] ? (int)$res['unita_contenuto_id'] : null,
+        'quantita_contenuto' => $res['quantita_contenuto'] !== null ? (float)$res['quantita_contenuto'] : 1.0,
+        'num_factor' => isset($res['num_factor']) ? (int)$res['num_factor'] : 1,
+        'den_factor' => isset($res['den_factor']) ? (int)$res['den_factor'] : 1,
+    ];
 }

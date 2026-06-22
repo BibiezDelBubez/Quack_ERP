@@ -156,7 +156,8 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
         // Pre-compila righe con le rimanenze
         $righe = $pdo->prepare(
             'SELECT id AS ordine_riga_id, prodotto_id,
-                    quantita_ordinata, quantita_ricevuta, tolleranza_esubero_perc, quantita_contenuto_snapshot
+                    quantita_ordinata, quantita_ricevuta, tolleranza_esubero_perc, quantita_contenuto_snapshot,
+                    num_factor_snapshot, den_factor_snapshot
                FROM ordini_righe WHERE ordine_id = ?'
         );
         $righe->execute([$ordine_id]);
@@ -164,14 +165,28 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
         $stRiga = $pdo->prepare(
             'INSERT INTO ricezioni_righe
                 (ricezione_id, ordine_riga_id, prodotto_id,
-                 quantita_ricevuta, quantita_accettata, quantita_rifiutata, quantita_contenuto_snapshot)
-             VALUES (?,?,?,?,?,0,?)'
+                 quantita_ricevuta, quantita_accettata, quantita_rifiutata, quantita_contenuto_snapshot,
+                 num_factor_snapshot, den_factor_snapshot)
+             VALUES (?,?,?,?,?,0,?,?,?)'
         );
         foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $massimo   = (float)$r['quantita_ordinata'] * (1 + (float)$r['tolleranza_esubero_perc'] / 100);
             $rimanente = max(0.0, round($massimo - (float)$r['quantita_ricevuta'], 3));
             if ($rimanente <= 0) continue; // riga già completata
 
+            /*
+             * =========================================================================
+             * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
+             * To prevent precision drift and guarantee contract safety:
+             * 1. Conversion factors between stock UoM and commercial UoM must be stored
+             *    as exact, simplified integer fractions (num_factor / den_factor) in the database.
+             * 2. Every transactional line snapshot (Offers, Sales/Purchase Orders, Receipts)
+             *    must copy these factors at creation time into `num_factor_snapshot` and
+             *    `den_factor_snapshot` to avoid historical data changes when products are edited.
+             * 3. Do NOT use approximate decimal division or float conversion factors directly
+             *    in transactions. Always reference the exact snapshot fraction.
+             * =========================================================================
+             */
             $stRiga->execute([
                 $ricezione_id,
                 $r['ordine_riga_id'],
@@ -179,6 +194,8 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
                 $rimanente,
                 $rimanente,
                 $r['quantita_contenuto_snapshot'] ?? 1.0,
+                $r['num_factor_snapshot'] ?? 1,
+                $r['den_factor_snapshot'] ?? 1,
             ]);
         }
 
@@ -256,17 +273,19 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
             $stProdUm->execute([$prodottoId]);
             $prodUm = $stProdUm->fetch();
             
-            $stOrderUm = $pdo->prepare('SELECT unita_misura_id, quantita_contenuto_snapshot FROM ordini_righe WHERE id = ?');
+            $stOrderUm = $pdo->prepare('SELECT unita_misura_id, quantita_contenuto_snapshot, num_factor_snapshot, den_factor_snapshot FROM ordini_righe WHERE id = ?');
             $stOrderUm->execute([$ordineRigaId]);
             $orderRiga = $stOrderUm->fetch(PDO::FETCH_ASSOC);
-            
+
             $um_id = $orderRiga ? $orderRiga['unita_misura_id'] : null;
             $quantita_contenuto_snapshot = $orderRiga ? (float)$orderRiga['quantita_contenuto_snapshot'] : 1.0;
-            
+            $num_factor_snapshot = $orderRiga ? (int)($orderRiga['num_factor_snapshot'] ?? 1) : 1;
+            $den_factor_snapshot = $orderRiga ? (int)($orderRiga['den_factor_snapshot'] ?? 1) : 1;
+
             if ($prodUm && $um_id) {
                 $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
                 $content_um_id = $prodUm['unita_contenuto_id'] ? (int)$prodUm['unita_contenuto_id'] : null;
-                
+
                 if ((int)$um_id === $unita_misura_stock_id) {
                     $quantita_stock = $qtaAccettata;
                 } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
@@ -281,9 +300,10 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
             $pdo->prepare(
                 'UPDATE ricezioni_righe
                     SET quantita_accettata = ?, quantita_rifiutata = ?, motivo_rifiuto = ?,
-                        quantita_stock = ?, unita_misura_stock_id = ?, quantita_contenuto_snapshot = ?
+                        quantita_stock = ?, unita_misura_stock_id = ?, quantita_contenuto_snapshot = ?,
+                        num_factor_snapshot = ?, den_factor_snapshot = ?
                   WHERE id = ?'
-            )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $quantita_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot, $rigaId]);
+            )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $quantita_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot, $num_factor_snapshot, $den_factor_snapshot, $rigaId]);
 
             if ($qtaAccettata <= 0) continue;
 

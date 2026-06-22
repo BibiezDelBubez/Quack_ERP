@@ -606,7 +606,23 @@ final class SalesOrdersController extends BaseController
 
             foreach ($lines as $line) {
                 $lineId = $line['id']; $prodId = $line['prodotto_id'];
-                $snap   = (float)($line['quantita_contenuto_snapshot'] ?? 1.0);
+                
+                /*
+                 * =========================================================================
+                 * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
+                 * To prevent precision drift and guarantee contract safety:
+                 * 1. Conversion factors between stock UoM and commercial UoM must be stored
+                 *    as exact, simplified integer fractions (num_factor / den_factor) in the database.
+                 * 2. Every transactional line snapshot (Offers, Sales/Purchase Orders, Receipts)
+                 *    must copy these factors at creation time into `num_factor_snapshot` and
+                 *    `den_factor_snapshot` to avoid historical data changes when products are edited.
+                 * 3. Do NOT use approximate decimal division or float conversion factors directly
+                 *    in transactions. Always reference the exact snapshot fraction.
+                 * =========================================================================
+                 */
+                $numSnap = isset($line['num_factor_snapshot']) ? (int)$line['num_factor_snapshot'] : 1;
+                $denSnap = isset($line['den_factor_snapshot']) ? (int)$line['den_factor_snapshot'] : 1;
+                $snap    = $denSnap > 0 ? (float)($numSnap / $denSnap) : 1.0;
 
                 if ((int)$line['traccia_lotti'] === 1) {
                     foreach ($lottiPost[$lineId] ?? [] as $lottoId => $qtaStr) {
