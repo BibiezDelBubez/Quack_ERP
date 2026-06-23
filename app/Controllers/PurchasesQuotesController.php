@@ -66,6 +66,10 @@ class PurchasesQuotesController extends BaseController
                     $values['consegna_referente']      = (string)($detail['rfq']['consegna_referente'] ?? '');
                     $values['consegna_telefono']       = (string)($detail['rfq']['consegna_telefono'] ?? '');
                     $values['consegna_note']           = (string)($detail['rfq']['consegna_note'] ?? '');
+                    $values['contatto_id']             = (string)($detail['rfq']['contatto_master_id'] ?? $detail['rfq']['contatto_id'] ?? '');
+                    $values['contatto_nome']           = (string)($detail['rfq']['contatto_nome'] ?? '');
+                    $values['contatto_telefono']       = (string)($detail['rfq']['contatto_telefono'] ?? '');
+                    $values['contatto_email']          = (string)($detail['rfq']['contatto_email'] ?? '');
                     $righe = array_map(function (array $r) {
                         return [
                             'rfq_riga_id'         => (string)$r['id'],
@@ -310,7 +314,7 @@ class PurchasesQuotesController extends BaseController
             'note_fornitore'        => $off['note_fornitore'] ?? '',
             'note_interne'          => $off['note_interne'] ?? '',
             'allegato_path'         => $off['allegato_path'] ?? '',
-            'contatto_id'           => (string)($off['contatto_id'] ?? ''),
+            'contatto_id'           => (string)($off['contatto_master_id'] ?? $off['contatto_id'] ?? ''),
             'contatto_nome'         => $off['contatto_nome'] ?? '',
             'contatto_telefono'     => $off['contatto_telefono'] ?? '',
             'contatto_email'        => $off['contatto_email'] ?? '',

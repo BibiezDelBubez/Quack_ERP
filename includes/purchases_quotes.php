@@ -84,6 +84,12 @@ function qk_offerta_detail(PDO $pdo, int $id): ?array
 {
     $st = $pdo->prepare(
         'SELECT o.*,
+                snap_addr.indirizzo_master_id AS indirizzo_consegna_master_id,
+                snap_addr.personalizzato AS indirizzo_consegna_personalizzato,
+                snap_addr.hash_originale AS indirizzo_consegna_hash_originale,
+                snap_cont.contatto_master_id AS contatto_master_id,
+                snap_cont.personalizzato AS contatto_personalizzato,
+                snap_cont.hash_originale AS contatto_hash_originale,
                 COALESCE(cf.ragione_sociale, cf.nome || \' \' || COALESCE(cf.cognome,\'\')) AS fornitore_nome,
                 r.numero AS rfq_numero,
                 r.riferimento_rfq_interno AS rfq_riferimento_interno,
@@ -100,6 +106,8 @@ function qk_offerta_detail(PDO $pdo, int $id): ?array
                 mp.descrizione AS metodo_pagamento_descrizione,
                 la.nome_listino AS listino_acquisto_nome
            FROM offerte_testata o
+      LEFT JOIN indirizzi_documenti snap_addr ON snap_addr.id = o.indirizzo_consegna_id
+      LEFT JOIN contatti_documenti snap_cont ON snap_cont.id = o.contatto_id
       LEFT JOIN clienti_fornitori cf ON cf.id = o.fornitore_id
       LEFT JOIN rfq_testata r ON r.id = o.rfq_id
       LEFT JOIN metodi_pagamento mp ON mp.id = o.metodo_pagamento_id
@@ -146,6 +154,50 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
 {
     $pdo->beginTransaction();
     try {
+        // Prepara i payload per gli snapshot del contatto
+        $nomeParts = explode(' ', trim((string)($v['contatto_nome'] ?? '')), 2);
+        $cNome = $nomeParts[0] ?? '';
+        $cCognome = $nomeParts[1] ?? '';
+        $contPayload = [
+            'contatto_master_id'  => $v['contatto_id'] ?? null,
+            'nome'                => $cNome,
+            'cognome'             => $cCognome,
+            'email'               => $v['contatto_email'] ?? null,
+            'telefono'            => $v['contatto_telefono'] ?? null,
+            'cellulare'           => null
+        ];
+
+        $existingRow = null;
+        if ($id > 0) {
+            $stCheck = $pdo->prepare('SELECT stato, indirizzo_consegna_id, contatto_id FROM offerte_testata WHERE id = ?');
+            $stCheck->execute([$id]);
+            $existingRow = $stCheck->fetch(PDO::FETCH_ASSOC);
+            if ($existingRow && $existingRow['stato'] !== 'in_valutazione') {
+                throw new \RuntimeException('Un preventivo già accettato o rifiutato non è modificabile.');
+            }
+        }
+
+        // Se stiamo creando da zero ed è collegata a una RFQ, ereditiamo/cloniamo l'indirizzo della RFQ
+        $snapAddrId = $existingRow ? (int)$existingRow['indirizzo_consegna_id'] : null;
+        if ($id === 0 && !empty($v['rfq_id'])) {
+            $stRfq = $pdo->prepare('SELECT indirizzo_consegna_id FROM rfq_testata WHERE id = ?');
+            $stRfq->execute([(int)$v['rfq_id']]);
+            $rfqSnapAddrId = $stRfq->fetchColumn();
+            if ($rfqSnapAddrId) {
+                // Clona lo snapshot dell'indirizzo RFQ
+                $stAddr = $pdo->prepare('SELECT * FROM indirizzi_documenti WHERE id = ?');
+                $stAddr->execute([(int)$rfqSnapAddrId]);
+                $addrRow = $stAddr->fetch(PDO::FETCH_ASSOC);
+                if ($addrRow) {
+                    unset($addrRow['id']);
+                    $snapAddrId = qk_upsert_document_address($pdo, $addrRow, null);
+                }
+            }
+        }
+
+        // Snapshot per il contatto
+        $snapContId = qk_upsert_document_contact($pdo, $contPayload, $existingRow ? (int)$existingRow['contatto_id'] : null);
+
         if ($id === 0) {
             $numero = qk_next_numero_acquisto($pdo, 'offerta');
             $st = $pdo->prepare(
@@ -154,10 +206,11 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                      data_offerta, data_scadenza_offerta,
                      condizioni_pagamento, valuta, riferimento_fornitore,
                      note_fornitore, note_interne, allegato_path,
+                     indirizzo_consegna_id,
                      contatto_id, contatto_nome, contatto_telefono, contatto_email,
                      fornitore_telefono, fornitore_email, listino_acquisto_id,
                      metodo_pagamento_id, resa_porto, creato_da, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)'
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)'
             );
             $st->execute([
                 $numero,
@@ -172,7 +225,8 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                 $v['note_fornitore'] ?? '',
                 $v['note_interne'] ?? '',
                 $v['allegato_path'] ?? null,
-                ($v['contatto_id'] ?? '') !== '' ? (int)$v['contatto_id'] : null,
+                $snapAddrId,
+                $snapContId,
                 $v['contatto_nome'] ?? null,
                 $v['contatto_telefono'] ?? null,
                 $v['contatto_email'] ?? null,
@@ -191,6 +245,7 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                     data_offerta = ?, data_scadenza_offerta = ?,
                     condizioni_pagamento = ?, valuta = ?, riferimento_fornitore = ?,
                     note_fornitore = ?, note_interne = ?, allegato_path = ?,
+                    indirizzo_consegna_id = ?,
                     contatto_id = ?, contatto_nome = ?, contatto_telefono = ?, contatto_email = ?,
                     fornitore_telefono = ?, fornitore_email = ?, listino_acquisto_id = ?,
                     metodo_pagamento_id = ?, resa_porto = ?
@@ -207,7 +262,8 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                 $v['note_fornitore'] ?? '',
                 $v['note_interne'] ?? '',
                 $v['allegato_path'] ?? null,
-                ($v['contatto_id'] ?? '') !== '' ? (int)$v['contatto_id'] : null,
+                $snapAddrId,
+                $snapContId,
                 $v['contatto_nome'] ?? null,
                 $v['contatto_telefono'] ?? null,
                 $v['contatto_email'] ?? null,

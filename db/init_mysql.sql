@@ -335,6 +335,38 @@ CREATE TABLE IF NOT EXISTS indirizzi (
     attivo BOOLEAN NOT NULL DEFAULT 1
 );
 
+-- Tabella di snapshot per gli indirizzi di consegna associati ai documenti
+CREATE TABLE IF NOT EXISTS indirizzi_documenti (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    indirizzo_master_id INT REFERENCES indirizzi(id) ON DELETE SET NULL,
+    nome_sede VARCHAR(100),
+    presso VARCHAR(100),
+    via VARCHAR(150) NOT NULL,
+    civico VARCHAR(10),
+    cap VARCHAR(10) NOT NULL,
+    citta VARCHAR(100) NOT NULL,
+    provincia CHAR(2),
+    nazione CHAR(2) NOT NULL DEFAULT 'IT',
+    referente_consegna VARCHAR(80),
+    telefono_consegna VARCHAR(20),
+    note_consegna VARCHAR(255),
+    personalizzato BOOLEAN NOT NULL DEFAULT 0,
+    hash_originale VARCHAR(64)
+);
+
+-- Tabella di snapshot per i contatti dei referenti dei fornitori
+CREATE TABLE IF NOT EXISTS contatti_documenti (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    contatto_master_id INT REFERENCES clienti_fornitori(id) ON DELETE SET NULL,
+    nome VARCHAR(80),
+    cognome VARCHAR(80),
+    email VARCHAR(150),
+    telefono VARCHAR(20),
+    cellulare VARCHAR(20),
+    personalizzato BOOLEAN NOT NULL DEFAULT 0,
+    hash_originale VARCHAR(64)
+);
+
 CREATE TABLE IF NOT EXISTS dettagli_clienti (
     id                        INT AUTO_INCREMENT PRIMARY KEY,
     soggetto_id               INTEGER      NOT NULL UNIQUE
@@ -1295,7 +1327,7 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     stato                   TEXT         NOT NULL DEFAULT 'bozza'
                                           CHECK (stato IN ('bozza','inviata','revisionata','chiusa')),
     fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
-    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi(id),    -- ID indirizzo master per eventuale modifica
+    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),    -- ID snapshot indirizzo consegna
     
     -- Termini di resa (Incoterms) - Denormalizzati in stile SAP
     incoterm_codice         CHAR(3)      REFERENCES incoterms(codice), -- Codice Incoterm a 3 lettere (es. EXW)
@@ -1314,7 +1346,7 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     consegna_note           VARCHAR(255),
 
     -- Dati referente (Alla cortese attenzione) e azienda fornitrice denormalizzati
-    contatto_id             INTEGER      REFERENCES clienti_fornitori(id),
+    contatto_id             INTEGER      REFERENCES contatti_documenti(id), -- ID snapshot contatto referente
     contatto_nome           VARCHAR(100),
     contatto_telefono       VARCHAR(20),
     contatto_email          VARCHAR(150),
@@ -1378,9 +1410,10 @@ CREATE TABLE IF NOT EXISTS offerte_testata (
     valutata_il             DATETIME,
     valutata_da             INTEGER      REFERENCES utenti(id),
     creato_da               INTEGER      REFERENCES utenti(id),
+    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id), -- ID snapshot indirizzo consegna
     
     -- Dati referente (Alla cortese attenzione) e azienda fornitrice denormalizzati
-    contatto_id             INTEGER      REFERENCES clienti_fornitori(id),
+    contatto_id             INTEGER      REFERENCES contatti_documenti(id), -- ID snapshot contatto referente
     contatto_nome           VARCHAR(100),
     contatto_telefono       VARCHAR(20),
     contatto_email          VARCHAR(150),
@@ -1422,10 +1455,12 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     rfq_id                  INTEGER      REFERENCES rfq_testata(id),
     fornitore_id            INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
     stato                   TEXT         NOT NULL DEFAULT 'bozza'
-                                          CHECK (stato IN ('bozza','in_approvazione','approvato','inviato','parzialmente_ricevuto','completato','annullato')),
+                                          CHECK (stato IN ('bozza','in_approvazione','approvato','inviato','parzialmente_ricevuto','completato','annullato','superato')),
+    versione                INTEGER      NOT NULL DEFAULT 1,
+    ordine_padre_id         INTEGER      REFERENCES ordini_testata(id) ON DELETE SET NULL,
     data_ordine             DATE         NOT NULL DEFAULT (DATE('now')),
     data_consegna_prevista  DATE,
-    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi(id),
+    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),
     
     -- Termini di resa (Incoterms) - Denormalizzati in stile SAP
     incoterm_codice         CHAR(3)      REFERENCES incoterms(codice), -- Codice Incoterm a 3 lettere (es. EXW)
@@ -1458,7 +1493,7 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     creato_da               INTEGER      REFERENCES utenti(id),
 
     -- Dati referente (Alla cortese attenzione) e azienda fornitrice denormalizzati
-    contatto_id             INTEGER      REFERENCES clienti_fornitori(id),
+    contatto_id             INTEGER      REFERENCES contatti_documenti(id),
     contatto_nome           VARCHAR(100),
     contatto_telefono       VARCHAR(20),
     contatto_email          VARCHAR(150),
@@ -1469,7 +1504,7 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
 
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
+    updated_at              DATETIME     NULL ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS ordini_righe (

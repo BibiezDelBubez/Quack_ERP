@@ -86,12 +86,20 @@ function qk_ordine_detail(PDO $pdo, int $id): ?array
 {
     $st = $pdo->prepare(
         'SELECT ot.*,
+                snap_addr.indirizzo_master_id AS indirizzo_consegna_master_id,
+                snap_addr.personalizzato AS indirizzo_consegna_personalizzato,
+                snap_addr.hash_originale AS indirizzo_consegna_hash_originale,
+                snap_cont.contatto_master_id AS contatto_master_id,
+                snap_cont.personalizzato AS contatto_personalizzato,
+                snap_cont.hash_originale AS contatto_hash_originale,
                 COALESCE(cf.ragione_sociale, cf.nome || \' \' || COALESCE(cf.cognome,\'\')) AS fornitore_nome,
                 off.numero AS offerta_numero,
                 r.numero   AS rfq_numero,
                 mp.descrizione AS metodo_pagamento_descrizione,
                 la.nome_listino AS listino_acquisto_nome
            FROM ordini_testata ot
+      LEFT JOIN indirizzi_documenti snap_addr ON snap_addr.id = ot.indirizzo_consegna_id
+      LEFT JOIN contatti_documenti snap_cont ON snap_cont.id = ot.contatto_id
       LEFT JOIN clienti_fornitori cf  ON cf.id  = ot.fornitore_id
       LEFT JOIN offerte_testata   off ON off.id = ot.offerta_id
       LEFT JOIN rfq_testata       r   ON r.id   = ot.rfq_id
@@ -180,6 +188,52 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             }
         }
 
+        // Clona indirizzo snapshot
+        $snapAddrId = null;
+        $consegna_via = null;
+        $consegna_civico = null;
+        $consegna_cap = null;
+        $consegna_citta = null;
+        $consegna_provincia = null;
+        $consegna_nazione = 'IT';
+        $consegna_presso = null;
+        $consegna_referente = null;
+        $consegna_telefono = null;
+        $consegna_note = null;
+
+        if ($offerta['indirizzo_consegna_id']) {
+            $stAddr = $pdo->prepare('SELECT * FROM indirizzi_documenti WHERE id = ?');
+            $stAddr->execute([(int)$offerta['indirizzo_consegna_id']]);
+            $addr = $stAddr->fetch(PDO::FETCH_ASSOC);
+            if ($addr) {
+                unset($addr['id']);
+                $snapAddrId = qk_upsert_document_address($pdo, $addr, null);
+                
+                $consegna_via = $addr['via'] ?? null;
+                $consegna_civico = $addr['civico'] ?? null;
+                $consegna_cap = $addr['cap'] ?? null;
+                $consegna_citta = $addr['citta'] ?? null;
+                $consegna_provincia = $addr['provincia'] ?? null;
+                $consegna_nazione = $addr['nazione'] ?? 'IT';
+                $consegna_presso = $addr['presso'] ?? null;
+                $consegna_referente = $addr['referente_consegna'] ?? null;
+                $consegna_telefono = $addr['telefono_consegna'] ?? null;
+                $consegna_note = $addr['note_consegna'] ?? null;
+            }
+        }
+
+        // Clona contatto snapshot
+        $snapContId = null;
+        if ($offerta['contatto_id']) {
+            $stCont = $pdo->prepare('SELECT * FROM contatti_documenti WHERE id = ?');
+            $stCont->execute([(int)$offerta['contatto_id']]);
+            $cont = $stCont->fetch(PDO::FETCH_ASSOC);
+            if ($cont) {
+                unset($cont['id']);
+                $snapContId = qk_upsert_document_contact($pdo, $cont, null);
+            }
+        }
+
         $numero = qk_next_numero_acquisto($pdo, 'ordine');
 
         $pdo->prepare(
@@ -189,10 +243,14 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                  note_fornitore, note_interne,
                  imponibile, totale_iva, totale,
                  creato_da, riferimento_rfq_interno, azienda_interna_id,
+                 indirizzo_consegna_id,
+                 consegna_via, consegna_civico, consegna_cap, consegna_citta,
+                 consegna_provincia, consegna_nazione, consegna_presso,
+                 consegna_referente, consegna_telefono, consegna_note,
                  contatto_id, contatto_nome, contatto_telefono, contatto_email,
                  fornitore_telefono, fornitore_email, listino_acquisto_id,
                  metodo_pagamento_id, resa_porto, created_at)
-             VALUES (?,?,?,?,'bozza',DATE('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+             VALUES (?,?,?,?,'bozza',DATE('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
         )->execute([
             $numero,
             $offerta_id,
@@ -208,7 +266,18 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $utente_id,
             $riferimento_rfq_interno,
             $azienda_interna_id,
-            $offerta['contatto_id'],
+            $snapAddrId,
+            $consegna_via,
+            $consegna_civico,
+            $consegna_cap,
+            $consegna_citta,
+            $consegna_provincia,
+            $consegna_nazione,
+            $consegna_presso,
+            $consegna_referente,
+            $consegna_telefono,
+            $consegna_note,
+            $snapContId,
             $offerta['contatto_nome'],
             $offerta['contatto_telefono'],
             $offerta['contatto_email'],
@@ -442,5 +511,169 @@ function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): vo
     );
     foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $st->execute([$r['quantita_stock'] ?? $r['quantita_ordinata'], $r['prodotto_id']]);
+    }
+}
+
+/**
+ * Crea una nuova revisione dell'ordine d'acquisto (Order Amendment).
+ * Clona l'ordine incrementando la colonna versione, clona le righe, duplica gli snapshot degli indirizzi/contatti,
+ * e imposta lo stato dell'ordine precedente a 'superato'.
+ *
+ * @param PDO $pdo Istanza di connessione al database
+ * @param int $ordine_id ID dell'ordine di acquisto da revisionare
+ * @return int ID dell'ordine appena clonato (nuova revisione in bozza)
+ */
+function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
+{
+    $pdo->beginTransaction();
+    try {
+        $ordine = _ordine_carica($pdo, $ordine_id);
+        
+        // Verifica lo stato: solo ordini già inviati/confermati possono subire amendment
+        if ($ordine['stato'] !== 'inviato') {
+            throw new \RuntimeException("È possibile revisionare solo ordini in stato 'inviato'.");
+        }
+
+        // 1. Duplica Snapshot Indirizzo Consegna se presente
+        $nuovoIndirizzoId = null;
+        if (!empty($ordine['indirizzo_consegna_id'])) {
+            $stmt = $pdo->prepare("SELECT * FROM indirizzi_documenti WHERE id = ?");
+            $stmt->execute([$ordine['indirizzo_consegna_id']]);
+            $addr = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($addr) {
+                unset($addr['id']);
+                $columns = implode(', ', array_keys($addr));
+                $placeholders = implode(', ', array_fill(0, count($addr), '?'));
+                $stmtIns = $pdo->prepare("INSERT INTO indirizzi_documenti ($columns) VALUES ($placeholders)");
+                $stmtIns->execute(array_values($addr));
+                $nuovoIndirizzoId = (int)$pdo->lastInsertId();
+            }
+        }
+
+        // 2. Duplica Snapshot Contatto Referente se presente
+        $nuovoContattoId = null;
+        if (!empty($ordine['contatto_id'])) {
+            $stmt = $pdo->prepare("SELECT * FROM contatti_documenti WHERE id = ?");
+            $stmt->execute([$ordine['contatto_id']]);
+            $cont = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($cont) {
+                unset($cont['id']);
+                $columns = implode(', ', array_keys($cont));
+                $placeholders = implode(', ', array_fill(0, count($cont), '?'));
+                $stmtIns = $pdo->prepare("INSERT INTO contatti_documenti ($columns) VALUES ($placeholders)");
+                $stmtIns->execute(array_values($cont));
+                $nuovoContattoId = (int)$pdo->lastInsertId();
+            }
+        }
+
+        // 3. Genera nuovo numero ordine incrementando la versione
+        // Nel sistema Quack gli ordini seguono una logica a codice o semplicemente a numero
+        // Es: ORD/2026/0001 v2
+        $nuovaVersione = (int)($ordine['versione'] ?? 1) + 1;
+        $baseNumero = preg_replace('/ v\d+$/', '', $ordine['numero']);
+        $nuovoNumero = $baseNumero . ' v' . $nuovaVersione;
+
+        // 4. Inserisce la testata del nuovo ordine (in stato 'bozza')
+        $stmtInsOrd = $pdo->prepare('INSERT INTO ordini_testata (
+            numero, offerta_id, rfq_id, fornitore_id, stato, data_ordine, data_consegna_prevista,
+            indirizzo_consegna_id, incoterm_codice, incoterm_luogo, consegna_via, consegna_civico,
+            consegna_cap, consegna_citta, consegna_provincia, consegna_nazione, consegna_presso,
+            consegna_referente, consegna_telefono, consegna_note, condizioni_pagamento, valuta,
+            riferimento_fornitore, altri_riferimenti, note_fornitore, note_interne, imponibile,
+            totale_iva, totale, creato_da, contatto_id, contatto_nome, contatto_telefono,
+            contatto_email, fornitore_telefono, fornitore_email, listino_acquisto_id,
+            metodo_pagamento_id, resa_porto, versione, ordine_padre_id
+        ) VALUES (?, ?, ?, ?, \'bozza\', CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        
+        $stmtInsOrd->execute([
+            $nuovoNumero,
+            $ordine['offerta_id'],
+            $ordine['rfq_id'],
+            $ordine['fornitore_id'],
+            $ordine['data_consegna_prevista'],
+            $nuovoIndirizzoId,
+            $ordine['incoterm_codice'],
+            $ordine['incoterm_luogo'],
+            $ordine['consegna_via'],
+            $ordine['consegna_civico'],
+            $ordine['consegna_cap'],
+            $ordine['consegna_citta'],
+            $ordine['consegna_provincia'],
+            $ordine['consegna_nazione'],
+            $ordine['consegna_presso'],
+            $ordine['consegna_referente'],
+            $ordine['consegna_telefono'],
+            $ordine['consegna_note'],
+            $ordine['condizioni_pagamento'],
+            $ordine['valuta'],
+            $ordine['riferimento_fornitore'],
+            $ordine['altri_riferimenti'],
+            $ordine['note_fornitore'],
+            $ordine['note_interne'],
+            $ordine['imponibile'],
+            $ordine['totale_iva'],
+            $ordine['totale'],
+            $ordine['creato_da'],
+            $nuovoContattoId,
+            $ordine['contatto_nome'],
+            $ordine['contatto_telefono'],
+            $ordine['contatto_email'],
+            $ordine['fornitore_telefono'],
+            $ordine['fornitore_email'],
+            $ordine['listino_acquisto_id'],
+            $ordine['metodo_pagamento_id'],
+            $ordine['resa_porto'],
+            $nuovaVersione,
+            $ordine_id
+        ]);
+        
+        $nuovoOrdineId = (int)$pdo->lastInsertId();
+
+        // 5. Duplica le righe dell'ordine
+        $stmtRighe = $pdo->prepare("SELECT * FROM ordini_righe WHERE ordine_id = ?");
+        $stmtRighe->execute([$ordine_id]);
+        $righe = $stmtRighe->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmtInsRiga = $pdo->prepare('INSERT INTO ordini_righe (
+            ordine_id, prodotto_id, descrizione, quantita_ordinata, quantita_stock,
+            prezzo_unitario, sconto_1, sconto_2, aliquota_iva, imponibile, imposta,
+            totale_riga, note, quantita_ricevuta, quantita_fatturata,
+            quantita_contenuto_snapshot, unita_contenuto_id, peso_netto_snapshot, peso_lordo_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)');
+
+        foreach ($righe as $riga) {
+            $stmtInsRiga->execute([
+                $nuovoOrdineId,
+                $riga['prodotto_id'],
+                $riga['descrizione'],
+                $riga['quantita_ordinata'],
+                $riga['quantita_stock'],
+                $riga['prezzo_unitario'],
+                $riga['sconto_1'],
+                $riga['sconto_2'],
+                $riga['aliquota_iva'],
+                $riga['imponibile'],
+                $riga['imposta'],
+                $riga['totale_riga'],
+                $riga['note'],
+                $riga['quantita_contenuto_snapshot'],
+                $riga['unita_contenuto_id'],
+                $riga['peso_netto_snapshot'],
+                $riga['peso_lordo_snapshot']
+            ]);
+        }
+
+        // 6. Imposta lo stato dell'ordine precedente a 'superato'
+        // Riduciamo la quantita_in_arrivo dell'ordine precedente poiché il nuovo parte da bozza
+        _ordine_aggiorna_in_arrivo($pdo, $ordine_id, '-');
+        
+        $stmtUpdOld = $pdo->prepare("UPDATE ordini_testata SET stato = 'superato' WHERE id = ?");
+        $stmtUpdOld->execute([$ordine_id]);
+
+        $pdo->commit();
+        return $nuovoOrdineId;
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
     }
 }

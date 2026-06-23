@@ -1143,7 +1143,7 @@ class RfqController extends BaseController
     {
         return [
             'fornitore_id'            => (string)($rfq['fornitore_id'] ?? ''),
-            'indirizzo_consegna_id'   => (string)($rfq['indirizzo_consegna_id'] ?? ''),
+            'indirizzo_consegna_id'   => (string)($rfq['indirizzo_consegna_master_id'] ?? $rfq['indirizzo_consegna_id'] ?? ''),
             'stato'                   => $rfq['stato'],
             'data_emissione'          => $rfq['data_emissione'] ?? date('Y-m-d'),
             'data_scadenza'           => $rfq['data_scadenza'] ?? '',
@@ -1155,7 +1155,7 @@ class RfqController extends BaseController
             'azienda_interna_id'      => (string)($rfq['azienda_interna_id'] ?? ''),
             'incoterm_codice'         => $rfq['incoterm_codice'] ?? '',
             'incoterm_luogo'          => $rfq['incoterm_luogo'] ?? '',
-            'contatto_id'             => (string)($rfq['contatto_id'] ?? ''),
+            'contatto_id'             => (string)($rfq['contatto_master_id'] ?? $rfq['contatto_id'] ?? ''),
             'contatto_nome'           => $rfq['contatto_nome'] ?? '',
             'contatto_telefono'       => $rfq['contatto_telefono'] ?? '',
             'contatto_email'          => $rfq['contatto_email'] ?? '',

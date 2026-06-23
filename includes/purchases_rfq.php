@@ -82,10 +82,18 @@ function qk_rfq_detail(PDO $pdo, int $id): ?array
 {
     $stRfq = $pdo->prepare(
         'SELECT r.*,
+                snap_addr.indirizzo_master_id AS indirizzo_consegna_master_id,
+                snap_addr.personalizzato AS indirizzo_consegna_personalizzato,
+                snap_addr.hash_originale AS indirizzo_consegna_hash_originale,
+                snap_cont.contatto_master_id AS contatto_master_id,
+                snap_cont.personalizzato AS contatto_personalizzato,
+                snap_cont.hash_originale AS contatto_hash_originale,
                 COALESCE(cf.ragione_sociale, cf.nome || \' \' || COALESCE(cf.cognome,\'\')) AS fornitore_nome,
                 mp.descrizione AS metodo_pagamento_descrizione,
                 la.nome_listino AS listino_acquisto_nome
            FROM rfq_testata r
+      LEFT JOIN indirizzi_documenti snap_addr ON snap_addr.id = r.indirizzo_consegna_id
+      LEFT JOIN contatti_documenti snap_cont ON snap_cont.id = r.contatto_id
       LEFT JOIN clienti_fornitori cf ON cf.id = r.fornitore_id
       LEFT JOIN metodi_pagamento mp ON mp.id = r.metodo_pagamento_id
       LEFT JOIN listini_acquisto la ON la.id = r.listino_acquisto_id
@@ -172,7 +180,39 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
 {
     $pdo->beginTransaction();
     try {
+        // Prepara i payload per gli snapshot dell'indirizzo e del contatto
+        $addrPayload = [
+            'indirizzo_master_id' => $v['indirizzo_consegna_id'] ?? null,
+            'nome_sede'           => $v['consegna_presso'] ?? null,
+            'presso'              => $v['consegna_presso'] ?? null,
+            'via'                 => $v['consegna_via'] ?? '',
+            'civico'              => $v['consegna_civico'] ?? null,
+            'cap'                 => $v['consegna_cap'] ?? '',
+            'citta'               => $v['consegna_citta'] ?? '',
+            'provincia'           => $v['consegna_provincia'] ?? null,
+            'nazione'             => $v['consegna_nazione'] ?? 'IT',
+            'referente_consegna'  => $v['consegna_referente'] ?? null,
+            'telefono_consegna'   => $v['consegna_telefono'] ?? null,
+            'note_consegna'       => $v['consegna_note'] ?? null
+        ];
+
+        $nomeParts = explode(' ', trim((string)($v['contatto_nome'] ?? '')), 2);
+        $cNome = $nomeParts[0] ?? '';
+        $cCognome = $nomeParts[1] ?? '';
+        $contPayload = [
+            'contatto_master_id'  => $v['contatto_id'] ?? null,
+            'nome'                => $cNome,
+            'cognome'             => $cCognome,
+            'email'               => $v['contatto_email'] ?? null,
+            'telefono'            => $v['contatto_telefono'] ?? null,
+            'cellulare'           => null
+        ];
+
         if ($id === 0) {
+            // Esegue snapshotting iniziale
+            $snapAddrId = qk_upsert_document_address($pdo, $addrPayload, null);
+            $snapContId = qk_upsert_document_contact($pdo, $contPayload, null);
+
             $numero = qk_next_numero_acquisto($pdo, 'rfq');
              $st = $pdo->prepare(
                 'INSERT INTO rfq_testata
@@ -197,7 +237,7 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                 ($v['rfq_padre_id'] ?? '') !== '' ? (int)$v['rfq_padre_id'] : null,
                 $v['stato'] ?? 'bozza',
                 ($v['fornitore_id'] ?? '') !== '' ? (int)$v['fornitore_id'] : null,
-                ($v['indirizzo_consegna_id'] ?? '') !== '' ? (int)$v['indirizzo_consegna_id'] : null,
+                $snapAddrId,
                 $v['data_emissione'] ?? date('Y-m-d'),
                 ($v['data_scadenza'] ?? '') !== '' ? $v['data_scadenza'] : null,
                 $v['condizioni_pagamento'] ?? '',
@@ -220,7 +260,7 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                 $v['consegna_referente'] ?? null,
                 $v['consegna_telefono'] ?? null,
                 $v['consegna_note'] ?? null,
-                ($v['contatto_id'] ?? '') !== '' ? (int)$v['contatto_id'] : null,
+                $snapContId,
                 $v['contatto_nome'] ?? null,
                 $v['contatto_telefono'] ?? null,
                 $v['contatto_email'] ?? null,
@@ -232,12 +272,16 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
             ]);
             $id = (int) $pdo->lastInsertId();
         } else {
-            $stCheck = $pdo->prepare('SELECT stato FROM rfq_testata WHERE id = ?');
+            $stCheck = $pdo->prepare('SELECT stato, indirizzo_consegna_id, contatto_id FROM rfq_testata WHERE id = ?');
             $stCheck->execute([$id]);
             $row = $stCheck->fetch(PDO::FETCH_ASSOC);
             if ($row && $row['stato'] === 'inviata') {
                 throw new \RuntimeException('Una RFQ già inviata non è modificabile. Usa "Crea nuova versione".');
             }
+
+            // Aggiorna gli snapshot esistenti
+            $snapAddrId = qk_upsert_document_address($pdo, $addrPayload, $row ? (int)$row['indirizzo_consegna_id'] : null);
+            $snapContId = qk_upsert_document_contact($pdo, $contPayload, $row ? (int)$row['contatto_id'] : null);
 
             $pdo->prepare(
                 'UPDATE rfq_testata SET
@@ -257,7 +301,7 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
             )->execute([
                 $v['stato'] ?? 'bozza',
                 ($v['fornitore_id'] ?? '') !== '' ? (int)$v['fornitore_id'] : null,
-                ($v['indirizzo_consegna_id'] ?? '') !== '' ? (int)$v['indirizzo_consegna_id'] : null,
+                $snapAddrId,
                 $v['data_emissione'] ?? date('Y-m-d'),
                 ($v['data_scadenza'] ?? '') !== '' ? $v['data_scadenza'] : null,
                 $v['condizioni_pagamento'] ?? '',
@@ -279,7 +323,7 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                 $v['consegna_referente'] ?? null,
                 $v['consegna_telefono'] ?? null,
                 $v['consegna_note'] ?? null,
-                ($v['contatto_id'] ?? '') !== '' ? (int)$v['contatto_id'] : null,
+                $snapContId,
                 $v['contatto_nome'] ?? null,
                 $v['contatto_telefono'] ?? null,
                 $v['contatto_email'] ?? null,
