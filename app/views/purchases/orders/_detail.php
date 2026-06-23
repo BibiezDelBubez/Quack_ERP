@@ -261,90 +261,226 @@ foreach ($ricezioni as $rc) {
     </div>
   </div>
 
-  <!-- Prodotti dell'ordine -->
-  <div class="qk-card mb-4">
-    <div class="qk-card-header">
-      <span class="qk-card-title"><i class="fa-solid fa-list-check me-2"></i> Articoli Ordinati</span>
-    </div>
-    <div class="qk-table-wrap">
-      <table class="qk-table" style="font-size:0.875rem">
-        <thead>
-          <tr>
-            <th>Prodotto</th>
-            <th>Descrizione</th>
-            <th>SKU Fornitore</th>
-            <th class="qk-text-right">Ordinata</th>
-            <th class="qk-text-right">Ricevuta</th>
-            <th class="qk-text-center">U.M.</th>
-            <th class="qk-text-right">Prezzo Unit.</th>
-            <th class="qk-text-center">Sconto</th>
-            <th class="qk-text-center">IVA</th>
-            <th class="qk-text-right">Imponibile</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($righe as $r): ?>
-            <tr>
-              <td>
-                <strong><?= e($r['sku_interno']) ?></strong><br>
-                <span class="text-muted"><?= e($r['prodotto_nome']) ?></span>
-              </td>
-              <td><?= e($r['descrizione'] ?? '') ?></td>
-              <td><?= e($r['sku_fornitore'] ?? '—') ?></td>
-              <td class="qk-text-right" style="font-weight:600"><?= e((float)$r['quantita_ordinata']) ?></td>
-              <td class="qk-text-right text-success" style="font-weight:600"><?= e((float)$r['quantita_ricevuta']) ?></td>
-              <td class="qk-text-center"><span class="qk-badge draft"><?= e($r['uom'] ?? 'N/D') ?></span></td>
-              <td class="qk-text-right">€ <?= number_format((float)$r['prezzo_unitario'], 2, ',', '.') ?></td>
-              <td class="qk-text-center"><?= $r['sconto_perc'] > 0 ? (float)$r['sconto_perc'] . '%' : '—' ?></td>
-              <td class="qk-text-center"><?= (float)$r['iva_perc'] ?>%</td>
-              <td class="qk-text-right" style="font-weight:600">€ <?= number_format((float)$r['imponibile_riga'], 2, ',', '.') ?></td>
-            </tr>
-            <!-- Sezione pianificazione tranche della riga -->
-            <?php if (!empty($r['pianificazione'])): ?>
-              <tr style="background-color:var(--qk-row-alt)">
-                <td colspan="10" style="padding-left: 2rem; border-top:none">
-                  <div class="small">
-                    <strong>Pianificazione consegne (Tranche):</strong>
-                    <div class="qk-flex-row qk-gap-md mt-1">
-                      <?php foreach ($r['pianificazione'] as $p): ?>
-                        <span class="qk-badge <?= $p['stato'] === 'completata' ? 'confirmed' : 'pending' ?>" style="font-size:0.75rem">
-                          Data: <strong><?= e($p['data_consegna_prevista'] ?? 'Non definita') ?></strong> |
-                          Qta: <strong><?= e((float)$p['quantita_pianificata']) ?></strong> |
-                          Ricevuta: <strong><?= e((float)$p['quantita_ricevuta']) ?></strong>
-                          (<?= e($p['stato']) ?>)
-                        </span>
-                      <?php endforeach; ?>
-                    </div>
-                  </div>
-                </td>
+  <!-- Odoo-style Navigation Tabs per Spedizione & Contatti nell'Ordine -->
+  <ul class="nav qk-nav-tabs mb-3" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" id="tab-ordine-articoli-btn" type="button" onclick="switchOrdineTab('articoli')">
+        <i class="fa-solid fa-list-check me-1"></i> Articoli Ordinati
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="tab-ordine-spedizione-contatti-btn" type="button" onclick="switchOrdineTab('spedizione-contatti')">
+        <i class="fa-solid fa-truck-fast me-1"></i> Spedizione & Referente
+      </button>
+    </li>
+  </ul>
+
+  <!-- Contenitore Tab Articoli -->
+  <div class="tab-content">
+    <div class="tab-pane active" id="pane-ordine-articoli">
+      <!-- Prodotti dell'ordine -->
+      <div class="qk-card mb-4">
+        <div class="qk-card-header">
+          <span class="qk-card-title"><i class="fa-solid fa-list-check me-2"></i> Articoli Ordinati</span>
+        </div>
+        <div class="qk-table-wrap">
+          <table class="qk-table" style="font-size:0.875rem">
+            <thead>
+              <tr>
+                <th>Prodotto</th>
+                <th>Descrizione</th>
+                <th>SKU Fornitore</th>
+                <th class="qk-text-right">Ordinata</th>
+                <th class="qk-text-right">Ricevuta</th>
+                <th class="qk-text-center">U.M.</th>
+                <th class="qk-text-right">Prezzo Unit.</th>
+                <th class="qk-text-center">Sconto</th>
+                <th class="qk-text-center">IVA</th>
+                <th class="qk-text-right">Imponibile</th>
               </tr>
-            <?php endif; ?>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              <?php foreach ($righe as $r): ?>
+                <tr>
+                  <td>
+                    <strong><?= e($r['sku_interno']) ?></strong><br>
+                    <span class="text-muted"><?= e($r['prodotto_nome']) ?></span>
+                  </td>
+                  <td><?= e($r['descrizione'] ?? '') ?></td>
+                  <td><?= e($r['sku_fornitore'] ?? '—') ?></td>
+                  <td class="qk-text-right" style="font-weight:600"><?= e((float)$r['quantita_ordinata']) ?></td>
+                  <td class="qk-text-right text-success" style="font-weight:600"><?= e((float)$r['quantita_ricevuta']) ?></td>
+                  <td class="qk-text-center"><span class="qk-badge draft"><?= e($r['uom'] ?? 'N/D') ?></span></td>
+                  <td class="qk-text-right">€ <?= number_format((float)$r['prezzo_unitario'], 2, ',', '.') ?></td>
+                  <td class="qk-text-center"><?= $r['sconto_perc'] > 0 ? (float)$r['sconto_perc'] . '%' : '—' ?></td>
+                  <td class="qk-text-center"><?= (float)$r['iva_perc'] ?>%</td>
+                  <td class="qk-text-right" style="font-weight:600">€ <?= number_format((float)$r['imponibile_riga'], 2, ',', '.') ?></td>
+                </tr>
+                <!-- Sezione pianificazione tranche della riga -->
+                <?php if (!empty($r['pianificazione'])): ?>
+                  <tr style="background-color:var(--qk-row-alt)">
+                    <td colspan="10" style="padding-left: 2rem; border-top:none">
+                      <div class="small">
+                        <strong>Pianificazione consegne (Tranche):</strong>
+                        <div class="qk-flex-row qk-gap-md mt-1">
+                          <?php foreach ($r['pianificazione'] as $p): ?>
+                            <span class="qk-badge <?= $p['stato'] === 'completata' ? 'confirmed' : 'pending' ?>" style="font-size:0.75rem">
+                              Data: <strong><?= e($p['data_consegna_prevista'] ?? 'Non definita') ?></strong> |
+                              Qta: <strong><?= e((float)$p['quantita_pianificata']) ?></strong> |
+                              Ricevuta: <strong><?= e((float)$p['quantita_ricevuta']) ?></strong>
+                              (<?= e($p['stato']) ?>)
+                            </span>
+                          <?php endforeach; ?>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                <?php endif; ?>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Totali -->
+        <div class="qk-flex-row qk-justify-end p-3">
+          <div class="qk-card" style="width:300px; margin:0">
+            <div class="qk-card-body" style="padding: 0.75rem 1rem">
+              <div class="qk-flex-row qk-justify-between mb-2">
+                <span class="text-muted">Imponibile:</span>
+                <span class="fw-semibold">€ <?= number_format((float)$o['imponibile'], 2, ',', '.') ?></span>
+              </div>
+              <div class="qk-flex-row qk-justify-between mb-2">
+                <span class="text-muted">IVA:</span>
+                <span class="fw-semibold">€ <?= number_format((float)$o['totale_iva'], 2, ',', '.') ?></span>
+              </div>
+              <hr class="my-2">
+              <div class="qk-flex-row qk-justify-between">
+                <span class="fw-bold">Totale:</span>
+                <span class="fw-bold h5 mb-0" style="color:var(--qk-accent-text)">€ <?= number_format((float)$o['totale'], 2, ',', '.') ?></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Totali -->
-    <div class="qk-flex-row qk-justify-end p-3">
-      <div class="qk-card" style="width:300px; margin:0">
-        <div class="qk-card-body" style="padding: 0.75rem 1rem">
-          <div class="qk-flex-row qk-justify-between mb-2">
-            <span class="text-muted">Imponibile:</span>
-            <span class="fw-semibold">€ <?= number_format((float)$o['imponibile'], 2, ',', '.') ?></span>
-          </div>
-          <div class="qk-flex-row qk-justify-between mb-2">
-            <span class="text-muted">IVA:</span>
-            <span class="fw-semibold">€ <?= number_format((float)$o['totale_iva'], 2, ',', '.') ?></span>
-          </div>
-          <hr class="my-2">
-          <div class="qk-flex-row qk-justify-between">
-            <span class="fw-bold">Totale:</span>
-            <span class="fw-bold h5 mb-0" style="color:var(--qk-accent-text)">€ <?= number_format((float)$o['totale'], 2, ',', '.') ?></span>
+    <!-- Pane Spedizione & Contatti -->
+    <div class="tab-pane d-none" id="pane-ordine-spedizione-contatti">
+      <div class="qk-card mb-4">
+        <div class="qk-card-body">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+            
+            <!-- Colonna Spedizione -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Destinazione Consegna</h4>
+              <div class="border rounded p-3 mb-3 position-relative" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                <div class="qk-flex-row qk-justify-between mb-3">
+                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                    <i class="fa-solid fa-truck-ramp-box me-1"></i>Indirizzo di Consegna
+                  </h6>
+                  <?php if ($isInviato || $isPartRicevuto || $isCompletato): ?>
+                    <span class="badge bg-danger text-white ms-2"><i class="fa-solid fa-lock me-1"></i> Contratto Confermato (Immodificabile)</span>
+                  <?php elseif ($o['indirizzo_consegna_personalizzato']): ?>
+                    <span class="badge bg-warning text-dark ms-2">Indirizzo Modificato</span>
+                  <?php else: ?>
+                    <span class="badge bg-success text-white ms-2">Anagrafica Allineata</span>
+                  <?php endif; ?>
+                </div>
+
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Presso (c/o)</label>
+                  <input type="text" class="qk-form-control" value="<?= e($o['consegna_presso'] ?? '') ?>" disabled readonly>
+                </div>
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group" style="flex:3">
+                    <label class="qk-form-label">Via/Piazza</label>
+                    <input type="text" class="qk-form-control" value="<?= e($o['consegna_via'] ?? '') ?>" disabled readonly>
+                  </div>
+                  <div class="qk-form-group" style="flex:1">
+                    <label class="qk-form-label">Civico</label>
+                    <input type="text" class="qk-form-control" value="<?= e($o['consegna_civico'] ?? '') ?>" disabled readonly>
+                  </div>
+                </div>
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group" style="flex:2">
+                    <label class="qk-form-label">CAP</label>
+                    <input type="text" class="qk-form-control" value="<?= e($o['consegna_cap'] ?? '') ?>" disabled readonly>
+                  </div>
+                  <div class="qk-form-group" style="flex:4">
+                    <label class="qk-form-label">Città</label>
+                    <input type="text" class="qk-form-control" value="<?= e($o['consegna_citta'] ?? '') ?>" disabled readonly>
+                  </div>
+                </div>
+                <div class="qk-form-row mb-2">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Provincia</label>
+                    <input type="text" class="qk-form-control" value="<?= e($o['consegna_provincia'] ?? '') ?>" disabled readonly>
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Nazione</label>
+                    <input type="text" class="qk-form-control" value="<?= e($o['consegna_nazione'] ?? 'IT') ?>" disabled readonly>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Colonna Referente Fornitore -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente Fornitore</h4>
+              <div class="border rounded p-3 mb-3 position-relative" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                <div class="qk-flex-row qk-justify-between mb-3">
+                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                    <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli referente fornitore
+                  </h6>
+                  <?php if ($isInviato || $isPartRicevuto || $isCompletato): ?>
+                    <span class="badge bg-danger text-white ms-2"><i class="fa-solid fa-lock me-1"></i> Contratto Confermato</span>
+                  <?php elseif ($o['contatto_personalizzato']): ?>
+                    <span class="badge bg-warning text-dark ms-2">Contatto Personalizzato</span>
+                  <?php else: ?>
+                    <span class="badge bg-success text-white ms-2">Anagrafica Allineata</span>
+                  <?php endif; ?>
+                </div>
+
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
+                  <input type="text" class="qk-form-control" value="<?= e($o['contatto_nome'] ?? '') ?>" disabled readonly>
+                </div>
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Telefono di contatto</label>
+                  <input type="text" class="qk-form-control" value="<?= e($o['contatto_telefono'] ?? '') ?>" disabled readonly>
+                </div>
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Email di contatto</label>
+                  <input type="text" class="qk-form-control" value="<?= e($o['contatto_email'] ?? '') ?>" disabled readonly>
+                </div>
+              </div>
+            </div>
+            
           </div>
         </div>
       </div>
     </div>
   </div>
+
+  <script>
+  function switchOrdineTab(tabId) {
+    document.querySelectorAll('.qk-nav-tabs .nav-link').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    const activeBtn = document.getElementById('tab-ordine-' + tabId + '-btn');
+    if (activeBtn) activeBtn.classList.add('active');
+
+    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+      pane.classList.add('d-none');
+      pane.classList.remove('active');
+    });
+    const activePane = document.getElementById('pane-ordine-' + tabId);
+    if (activePane) {
+      activePane.classList.remove('d-none');
+      activePane.classList.add('active');
+    }
+  }
+  </script>
 
   <!-- Note ed allegati -->
   <div class="qk-form-grid mb-4">

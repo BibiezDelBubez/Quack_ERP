@@ -177,9 +177,25 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
             }
         }
 
-        // Se stiamo creando da zero ed è collegata a una RFQ, ereditiamo/cloniamo l'indirizzo della RFQ
+        // Prepara i payload per gli snapshot dell'indirizzo e del contatto
+        $addrPayload = [
+            'indirizzo_master_id' => $v['indirizzo_consegna_master_id'] ?? $v['indirizzo_consegna_id'] ?? null,
+            'nome_sede'           => $v['consegna_presso'] ?? null,
+            'presso'              => $v['consegna_presso'] ?? null,
+            'via'                 => $v['consegna_via'] ?? '',
+            'civico'              => $v['consegna_civico'] ?? null,
+            'cap'                 => $v['consegna_cap'] ?? '',
+            'citta'               => $v['consegna_citta'] ?? '',
+            'provincia'           => $v['consegna_provincia'] ?? null,
+            'nazione'             => $v['consegna_nazione'] ?? 'IT',
+            'referente_consegna'  => $v['consegna_referente'] ?? null,
+            'telefono_consegna'   => $v['consegna_telefono'] ?? null,
+            'note_consegna'       => $v['consegna_note'] ?? null
+        ];
+
+        // Se stiamo creando da zero ed è collegata a una RFQ e non è stato passato un indirizzo modificato ad-hoc
         $snapAddrId = $existingRow ? (int)$existingRow['indirizzo_consegna_id'] : null;
-        if ($id === 0 && !empty($v['rfq_id'])) {
+        if ($id === 0 && empty($v['consegna_via']) && !empty($v['rfq_id'])) {
             $stRfq = $pdo->prepare('SELECT indirizzo_consegna_id FROM rfq_testata WHERE id = ?');
             $stRfq->execute([(int)$v['rfq_id']]);
             $rfqSnapAddrId = $stRfq->fetchColumn();
@@ -193,6 +209,9 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                     $snapAddrId = qk_upsert_document_address($pdo, $addrRow, null);
                 }
             }
+        } else {
+            // Altrimenti eseguiamo l'upsert con il payload corrente
+            $snapAddrId = qk_upsert_document_address($pdo, $addrPayload, $existingRow ? (int)$existingRow['indirizzo_consegna_id'] : null);
         }
 
         // Snapshot per il contatto

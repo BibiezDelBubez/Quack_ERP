@@ -66,7 +66,9 @@ class PurchasesQuotesController extends BaseController
                     $values['consegna_referente']      = (string)($detail['rfq']['consegna_referente'] ?? '');
                     $values['consegna_telefono']       = (string)($detail['rfq']['consegna_telefono'] ?? '');
                     $values['consegna_note']           = (string)($detail['rfq']['consegna_note'] ?? '');
+                    $values['indirizzo_consegna_master_id'] = (string)($detail['rfq']['indirizzo_consegna_master_id'] ?? '');
                     $values['contatto_id']             = (string)($detail['rfq']['contatto_master_id'] ?? $detail['rfq']['contatto_id'] ?? '');
+                    $values['contatto_master_id']      = (string)($detail['rfq']['contatto_master_id'] ?? '');
                     $values['contatto_nome']           = (string)($detail['rfq']['contatto_nome'] ?? '');
                     $values['contatto_telefono']       = (string)($detail['rfq']['contatto_telefono'] ?? '');
                     $values['contatto_email']          = (string)($detail['rfq']['contatto_email'] ?? '');
@@ -153,12 +155,15 @@ class PurchasesQuotesController extends BaseController
             } else {
                 $values = $this->readPostValues();
                 
-                // Enforce read-only lock for contact details if the quote status is not 'in_valutazione'
+                // Enforce read-only lock for contact and address details if the quote status is not 'in_valutazione'
                 $currentStatus = $detail['offerta']['stato'];
                 if ($currentStatus !== 'in_valutazione') {
                     $originalValues = $this->mapDetailToValues($detail['offerta']);
                     foreach (['contatto_id', 'contatto_nome', 'contatto_telefono', 'contatto_email',
-                              'fornitore_telefono', 'fornitore_email'] as $fld) {
+                              'fornitore_telefono', 'fornitore_email',
+                              'indirizzo_consegna_id', 'consegna_presso', 'consegna_via', 'consegna_civico',
+                              'consegna_cap', 'consegna_citta', 'consegna_provincia', 'consegna_nazione',
+                              'consegna_referente', 'consegna_telefono', 'consegna_note'] as $fld) {
                         $values[$fld] = $originalValues[$fld];
                     }
                 }
@@ -323,7 +328,8 @@ class PurchasesQuotesController extends BaseController
             'listino_acquisto_id'   => (string)($off['listino_acquisto_id'] ?? ''),
             'metodo_pagamento_id'   => (string)($off['metodo_pagamento_id'] ?? ''),
             'resa_porto'            => $off['resa_porto'] ?? '',
-            'data_consegna_default' => '',
+            'indirizzo_consegna_id' => (string)($off['indirizzo_consegna_id'] ?? ''),
+            'indirizzo_consegna_master_id' => (string)($off['indirizzo_consegna_master_id'] ?? ''),
             'consegna_via'          => $off['consegna_via'] ?? '',
             'consegna_civico'       => $off['consegna_civico'] ?? '',
             'consegna_cap'          => $off['consegna_cap'] ?? '',
@@ -367,7 +373,17 @@ class PurchasesQuotesController extends BaseController
             'fornitore_email'       => post('fornitore_email', ''),
             'listino_acquisto_id'   => post('listino_acquisto_id', ''),
             'metodo_pagamento_id'   => post('metodo_pagamento_id', ''),
-            'resa_porto'            => post('resa_porto', ''),
+            'indirizzo_consegna_id' => post('indirizzo_consegna_id', ''),
+            'consegna_presso'       => post('consegna_presso', ''),
+            'consegna_via'          => post('consegna_via', ''),
+            'consegna_civico'       => post('consegna_civico', ''),
+            'consegna_cap'          => post('consegna_cap', ''),
+            'consegna_citta'        => post('consegna_citta', ''),
+            'consegna_provincia'    => post('consegna_provincia', ''),
+            'consegna_nazione'      => post('consegna_nazione', 'IT'),
+            'consegna_referente'    => post('consegna_referente', ''),
+            'consegna_telefono'     => post('consegna_telefono', ''),
+            'consegna_note'         => post('consegna_note', ''),
             'data_consegna_default' => post('data_consegna_default', ''),
         ];
     }

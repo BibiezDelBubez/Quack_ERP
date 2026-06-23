@@ -502,63 +502,68 @@ $statoLabel = [
               <?php else: ?>
                 <div class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
                   <div class="qk-flex-row qk-justify-between mb-3">
-                    <h6 class="mb-0 fw-bold" style="font-size: 0.85rem; color: var(--qk-text-muted)">
-                      <i class="fa-solid fa-truck-ramp-box me-1"></i>Dettagli Spedizione (Sola Lettura)
+                    <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                      <i class="fa-solid fa-truck-ramp-box me-1"></i>Dettagli consegna
+                      <span id="addr-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
                     </h6>
+                    <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-addr" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
                   </div>
+
+                  <input type="hidden" name="indirizzo_consegna_id" id="off-indirizzo-consegna-id" value="<?= e($values['indirizzo_consegna_id'] ?? '') ?>">
+                  <input type="hidden" name="indirizzo_consegna_master_id" id="off-indirizzo-consegna-master-id" value="<?= e($values['indirizzo_consegna_master_id'] ?? '') ?>">
 
                   <div class="qk-form-group mb-2">
                     <label class="qk-form-label">Presso (c/o)</label>
-                    <input type="text" class="qk-form-control" value="<?= e($values['consegna_presso'] ?? '') ?>" disabled readonly>
+                    <input type="text" name="consegna_presso" id="off-consegna-presso" class="qk-form-control" value="<?= e($values['consegna_presso'] ?? '') ?>" placeholder="Es. Magazzino logistica, Cantiere B">
                   </div>
 
                   <div class="qk-form-row mb-2">
                     <div class="qk-form-group" style="flex:3">
                       <label class="qk-form-label">Via/Piazza</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_via'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_via" id="off-consegna-via" class="qk-form-control" value="<?= e($values['consegna_via'] ?? '') ?>" required>
                     </div>
                     <div class="qk-form-group" style="flex:1">
                       <label class="qk-form-label">Civico</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_civico'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_civico" id="off-consegna-civico" class="qk-form-control" value="<?= e($values['consegna_civico'] ?? '') ?>">
                     </div>
                   </div>
 
                   <div class="qk-form-row mb-2">
                     <div class="qk-form-group" style="flex:2">
                       <label class="qk-form-label">CAP</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_cap'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_cap" id="off-consegna-cap" class="qk-form-control" value="<?= e($values['consegna_cap'] ?? '') ?>" required>
                     </div>
                     <div class="qk-form-group" style="flex:4">
                       <label class="qk-form-label">Città</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_citta'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_citta" id="off-consegna-citta" class="qk-form-control" value="<?= e($values['consegna_citta'] ?? '') ?>" required>
                     </div>
                   </div>
 
                   <div class="qk-form-row mb-2">
                     <div class="qk-form-group">
                       <label class="qk-form-label">Provincia</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_provincia'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_provincia" id="off-consegna-provincia" class="qk-form-control" value="<?= e($values['consegna_provincia'] ?? '') ?>" maxlength="2">
                     </div>
                     <div class="qk-form-group">
                       <label class="qk-form-label">Nazione</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_nazione'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_nazione" id="off-consegna-nazione" class="qk-form-control" value="<?= e($values['consegna_nazione'] ?? 'IT') ?>" maxlength="2">
                     </div>
                   </div>
 
                   <div class="qk-form-row mb-2">
                     <div class="qk-form-group">
                       <label class="qk-form-label">Referente Consegna</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_referente'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_referente" id="off-consegna-referente" class="qk-form-control" value="<?= e($values['consegna_referente'] ?? '') ?>">
                     </div>
                     <div class="qk-form-group">
                       <label class="qk-form-label">Tel. Consegna</label>
-                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_telefono'] ?? '') ?>" disabled readonly>
+                      <input type="text" name="consegna_telefono" id="off-consegna-telefono" class="qk-form-control" value="<?= e($values['consegna_telefono'] ?? '') ?>">
                     </div>
                   </div>
 
                   <div class="qk-form-group">
                     <label class="qk-form-label">Note Consegna</label>
-                    <input type="text" class="qk-form-control" value="<?= e($values['consegna_note'] ?? '') ?>" disabled readonly>
+                    <input type="text" name="consegna_note" id="off-consegna-note" class="qk-form-control" value="<?= e($values['consegna_note'] ?? '') ?>">
                   </div>
                 </div>
               <?php endif; ?>
@@ -573,6 +578,7 @@ $statoLabel = [
                   <option value="">Seleziona fornitore prima...</option>
                 </select>
                 
+                <input type="hidden" name="contatto_master_id" id="off-contatto-master-id" value="<?= e($values['contatto_master_id'] ?? '') ?>">
                 <input type="hidden" id="off-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
                 <input type="hidden" id="off-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
               </div>
@@ -581,7 +587,7 @@ $statoLabel = [
               <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
                 <div class="qk-flex-row qk-justify-between mb-3">
                   <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
-                    <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
+                    <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli referente fornitore
                     <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
                   </h6>
                   <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
@@ -1244,16 +1250,135 @@ $statoLabel = [
     });
   }
 
+  /* ── Gestione interattiva Indirizzo Consegna ───────────────────────── */
+  const indSelect = document.getElementById('off-indirizzo-consegna-id');
+  let loadedAddress = null; // l'indirizzo master ereditato
+
+  async function loadOriginalAddress() {
+    const masterAddrId = document.getElementById('off-indirizzo-consegna-master-id')?.value;
+    
+    if (!masterAddrId) return;
+
+    try {
+      const res = await fetch(<?= json_encode(url('purchases/rfq/api/azienda-indirizzi')) ?> + '?indirizzo_id=' + masterAddrId);
+      const data = await res.json();
+      if (data.ok && data.indirizzo) {
+        loadedAddress = data.indirizzo;
+        syncAddressUI();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function syncAddressUI() {
+    if (!loadedAddress) return;
+    const inpVia = document.getElementById('off-consegna-via');
+    if (!inpVia) return;
+
+    let hasOverride = false;
+    const checkField = (inputEl, origValue) => {
+      if (!inputEl) return;
+      const cur = inputEl.value.trim();
+      const ref = (origValue ?? '').trim();
+      if (cur !== ref) {
+        inputEl.classList.add('is-overridden');
+        hasOverride = true;
+      } else {
+        inputEl.classList.remove('is-overridden');
+      }
+    };
+
+    checkField(document.getElementById('off-consegna-via'), loadedAddress.via);
+    checkField(document.getElementById('off-consegna-civico'), loadedAddress.civico);
+    checkField(document.getElementById('off-consegna-cap'), loadedAddress.cap);
+    checkField(document.getElementById('off-consegna-citta'), loadedAddress.citta);
+    checkField(document.getElementById('off-consegna-provincia'), loadedAddress.provincia);
+    checkField(document.getElementById('off-consegna-nazione'), loadedAddress.nazione || 'IT');
+    checkField(document.getElementById('off-consegna-presso'), loadedAddress.presso);
+    checkField(document.getElementById('off-consegna-referente'), loadedAddress.referente_consegna);
+    checkField(document.getElementById('off-consegna-telefono'), loadedAddress.telefono_consegna);
+    checkField(document.getElementById('off-consegna-note'), loadedAddress.note_consegna);
+
+    const badge = document.getElementById('addr-state-badge');
+    const resetBtn = document.getElementById('btn-cancel-edit-addr');
+
+    if (hasOverride) {
+      badge.textContent = 'Modificato localmente (override)';
+      badge.className = 'badge bg-warning text-dark ms-2';
+      if (resetBtn) resetBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = '✓ Sincronizzato con anagrafica';
+      badge.className = 'badge bg-success text-white ms-2';
+      if (resetBtn) resetBtn.style.display = 'none';
+    }
+  }
+
+  [
+    'off-consegna-presso', 'off-consegna-via', 'off-consegna-civico', 'off-consegna-cap',
+    'off-consegna-citta', 'off-consegna-provincia', 'off-consegna-nazione',
+    'off-consegna-referente', 'off-consegna-telefono', 'off-consegna-note'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', syncAddressUI);
+  });
+
+  const btnCancelEditAddr = document.getElementById('btn-cancel-edit-addr');
+  if (btnCancelEditAddr) {
+    btnCancelEditAddr.addEventListener('click', () => {
+      if (!loadedAddress) return;
+      
+      const elVia = document.getElementById('off-consegna-via');
+      const elCiv = document.getElementById('off-consegna-civico');
+      const elCap = document.getElementById('off-consegna-cap');
+      const elCit = document.getElementById('off-consegna-citta');
+      const elPrv = document.getElementById('off-consegna-provincia');
+      const elNaz = document.getElementById('off-consegna-nazione');
+      const elPre = document.getElementById('off-consegna-presso');
+      const elRef = document.getElementById('off-consegna-referente');
+      const elTel = document.getElementById('off-consegna-telefono');
+      const elNot = document.getElementById('off-consegna-note');
+
+      if (elVia) elVia.value = loadedAddress.via || '';
+      if (elCiv) elCiv.value = loadedAddress.civico || '';
+      if (elCap) elCap.value = loadedAddress.cap || '';
+      if (elCit) elCit.value = loadedAddress.citta || '';
+      if (elPrv) elPrv.value = loadedAddress.provincia || '';
+      if (elNaz) elNaz.value = loadedAddress.nazione || 'IT';
+      if (elPre) elPre.value = loadedAddress.presso || '';
+      if (elRef) elRef.value = loadedAddress.referente_consegna || '';
+      if (elTel) elTel.value = loadedAddress.telefono_consegna || '';
+      if (elNot) elNot.value = loadedAddress.note_consegna || '';
+
+      syncAddressUI();
+    });
+  }
+
+  loadOriginalAddress();
+
   // Implement Read-only Lock for status not 'in_valutazione'
   const quoteStato = <?= json_encode($values['stato'] ?? 'in_valutazione') ?>;
   if (quoteStato !== 'in_valutazione') {
-    [contSelect, contNomeInput, contTelInput, contEmailInput].forEach(el => {
+    [
+      contSelect, contNomeInput, contTelInput, contEmailInput,
+      document.getElementById('off-consegna-presso'),
+      document.getElementById('off-consegna-via'),
+      document.getElementById('off-consegna-civico'),
+      document.getElementById('off-consegna-cap'),
+      document.getElementById('off-consegna-citta'),
+      document.getElementById('off-consegna-provincia'),
+      document.getElementById('off-consegna-nazione'),
+      document.getElementById('off-consegna-referente'),
+      document.getElementById('off-consegna-telefono'),
+      document.getElementById('off-consegna-note')
+    ].forEach(el => {
       if (el) {
         el.disabled = true;
         el.readOnly = true;
       }
     });
     if (btnCancelEditCont) btnCancelEditCont.style.display = 'none';
+    if (btnCancelEditAddr) btnCancelEditAddr.style.display = 'none';
   }
 
   loadFornitoreDettagli();

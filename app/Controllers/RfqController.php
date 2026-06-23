@@ -1013,9 +1013,23 @@ class RfqController extends BaseController
     {
         ob_start();
         $azienda_id = (int) get_param('azienda_id', '0');
+        $indirizzo_id = (int) get_param('indirizzo_id', '0');
         
         $addresses = [];
-        if ($azienda_id > 0) {
+        if ($indirizzo_id > 0) {
+            $stmtAddr = $this->pdo->prepare(
+                "SELECT id, tipo, nome_sede, predefinito, via, civico, cap, citta, provincia, nazione,
+                        referente_consegna, telefono_consegna, note_consegna, presso
+                   FROM indirizzi
+                  WHERE id = ? AND attivo = 1"
+            );
+            $stmtAddr->execute([$indirizzo_id]);
+            $addr = $stmtAddr->fetch(PDO::FETCH_ASSOC);
+            ob_end_clean();
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => true, 'indirizzo' => $addr ?: null]);
+            exit;
+        } elseif ($azienda_id > 0) {
             $stmt = $this->pdo->prepare("SELECT soggetto_id FROM aziende_interne WHERE id = ?");
             $stmt->execute([$azienda_id]);
             $soggetto_id = (int) $stmt->fetchColumn();

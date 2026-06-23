@@ -555,7 +555,7 @@ $savedOk = isset($saved) && $saved;
                 <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
                   <div class="qk-flex-row qk-justify-between mb-3">
                     <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
-                      <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
+                      <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli referente fornitore
                       <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
                     </h6>
                     <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>

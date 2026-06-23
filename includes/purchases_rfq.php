@@ -429,6 +429,37 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
         $nuovoNumero   = qk_next_numero_acquisto($pdo, 'rfq');
         $nuovaVersione = (int)$rfq['versione'] + 1;
 
+        // Duplica gli snapshot di indirizzo e contatto per isolare la nuova versione
+        $nuovoIndirizzoId = null;
+        if (!empty($rfq['indirizzo_consegna_id'])) {
+            $stAddr = $pdo->prepare('SELECT * FROM indirizzi_documenti WHERE id = ?');
+            $stAddr->execute([$rfq['indirizzo_consegna_id']]);
+            $addrData = $stAddr->fetch(PDO::FETCH_ASSOC);
+            if ($addrData) {
+                unset($addrData['id'], $addrData['created_at']);
+                $fields = array_keys($addrData);
+                $placeholders = array_fill(0, count($fields), '?');
+                $stInsAddr = $pdo->prepare('INSERT INTO indirizzi_documenti (' . implode(',', $fields) . ', created_at) VALUES (' . implode(',', $placeholders) . ', CURRENT_TIMESTAMP)');
+                $stInsAddr->execute(array_values($addrData));
+                $nuovoIndirizzoId = (int)$pdo->lastInsertId();
+            }
+        }
+
+        $nuovoContattoId = null;
+        if (!empty($rfq['contatto_id'])) {
+            $stCont = $pdo->prepare('SELECT * FROM contatti_documenti WHERE id = ?');
+            $stCont->execute([$rfq['contatto_id']]);
+            $contData = $stCont->fetch(PDO::FETCH_ASSOC);
+            if ($contData) {
+                unset($contData['id'], $contData['created_at']);
+                $fields = array_keys($contData);
+                $placeholders = array_fill(0, count($fields), '?');
+                $stInsCont = $pdo->prepare('INSERT INTO contatti_documenti (' . implode(',', $fields) . ', created_at) VALUES (' . implode(',', $placeholders) . ', CURRENT_TIMESTAMP)');
+                $stInsCont->execute(array_values($contData));
+                $nuovoContattoId = (int)$pdo->lastInsertId();
+            }
+        }
+
         $pdo->prepare(
             'INSERT INTO rfq_testata
                 (numero, versione, rfq_padre_id, stato,
@@ -447,7 +478,7 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
         )->execute([
             $nuovoNumero, $nuovaVersione, $id,
             $rfq['fornitore_id'],
-            $rfq['indirizzo_consegna_id'],
+            $nuovoIndirizzoId,
             $rfq['data_scadenza'],
             $rfq['condizioni_pagamento'],
             $rfq['valuta'],
@@ -472,7 +503,7 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
             $rfq['consegna_referente'],
             $rfq['consegna_telefono'],
             $rfq['consegna_note'],
-            $rfq['contatto_id'],
+            $nuovoContattoId,
             $rfq['contatto_nome'],
             $rfq['contatto_telefono'],
             $rfq['contatto_email'],

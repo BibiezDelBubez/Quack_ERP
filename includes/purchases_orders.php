@@ -635,31 +635,36 @@ function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
         $righe = $stmtRighe->fetchAll(PDO::FETCH_ASSOC);
 
         $stmtInsRiga = $pdo->prepare('INSERT INTO ordini_righe (
-            ordine_id, prodotto_id, descrizione, quantita_ordinata, quantita_stock,
-            prezzo_unitario, sconto_1, sconto_2, aliquota_iva, imponibile, imposta,
-            totale_riga, note, quantita_ricevuta, quantita_fatturata,
-            quantita_contenuto_snapshot, unita_contenuto_id, peso_netto_snapshot, peso_lordo_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)');
+            ordine_id, offerta_riga_id, posizione_riga, prodotto_id, descrizione, sku_fornitore,
+            quantita_ordinata, quantita_ricevuta, unita_misura_id,
+            prezzo_unitario, sconto_perc, iva_perc, imponibile_riga, iva_riga,
+            tolleranza_esubero_perc, data_consegna_prevista, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
+            num_factor_snapshot, den_factor_snapshot, note
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
         foreach ($righe as $riga) {
             $stmtInsRiga->execute([
                 $nuovoOrdineId,
+                $riga['offerta_riga_id'],
+                $riga['posizione_riga'],
                 $riga['prodotto_id'],
                 $riga['descrizione'],
+                $riga['sku_fornitore'],
                 $riga['quantita_ordinata'],
-                $riga['quantita_stock'],
+                $riga['unita_misura_id'],
                 $riga['prezzo_unitario'],
-                $riga['sconto_1'],
-                $riga['sconto_2'],
-                $riga['aliquota_iva'],
-                $riga['imponibile'],
-                $riga['imposta'],
-                $riga['totale_riga'],
-                $riga['note'],
+                $riga['sconto_perc'],
+                $riga['iva_perc'],
+                $riga['imponibile_riga'],
+                $riga['iva_riga'],
+                $riga['tolleranza_esubero_perc'],
+                $riga['data_consegna_prevista'],
+                $riga['quantita_stock'],
+                $riga['unita_misura_stock_id'],
                 $riga['quantita_contenuto_snapshot'],
-                $riga['unita_contenuto_id'],
-                $riga['peso_netto_snapshot'],
-                $riga['peso_lordo_snapshot']
+                $riga['num_factor_snapshot'],
+                $riga['den_factor_snapshot'],
+                $riga['note']
             ]);
         }
 
