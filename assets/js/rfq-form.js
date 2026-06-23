@@ -412,6 +412,20 @@ document.addEventListener('DOMContentLoaded', function () {
   // Gestione cambio UoM
   const uomModeSelect = document.getElementById('rfq-uom-mode');
   if (uomModeSelect) {
+    const targetMode = uomModeSelect.value;
+    document.querySelectorAll('tr.rfq-riga').forEach(tr => {
+      const uomIdVal = tr.querySelector('.r-uom-id')?.value;
+      const stockId = tr.dataset.uomStockId;
+      const commId = tr.dataset.uomCommercialId;
+      let rowSavedMode = 'stock';
+      if (uomIdVal && commId && String(uomIdVal) === String(commId) && String(stockId) !== String(commId)) {
+        rowSavedMode = 'commercial';
+      }
+      setRowUomMode(tr, targetMode, rowSavedMode);
+      recalcRowTotal(tr);
+    });
+    currentUomMode = targetMode;
+
     uomModeSelect.addEventListener('change', () => {
       const targetMode = uomModeSelect.value;
       document.querySelectorAll('tr.rfq-riga').forEach(tr => {
@@ -420,8 +434,6 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       currentUomMode = targetMode;
     });
-    // Allinea subito i testi e gli ID delle UoM sul caricamento pagina
-    uomModeSelect.dispatchEvent(new Event('change'));
   }
 
   // Gestione valuta

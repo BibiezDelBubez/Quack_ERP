@@ -1174,6 +1174,7 @@ class RfqController extends BaseController
             'consegna_referente'      => $rfq['consegna_referente'] ?? '',
             'consegna_telefono'       => $rfq['consegna_telefono'] ?? '',
             'consegna_note'           => $rfq['consegna_note'] ?? '',
+            'uom_mode'                => $rfq['uom_mode'] ?? 'commercial',
         ];
     }
 
@@ -1212,6 +1213,7 @@ class RfqController extends BaseController
             'consegna_referente'      => post('consegna_referente', ''),
             'consegna_telefono'       => post('consegna_telefono', ''),
             'consegna_note'           => post('consegna_note', ''),
+            'uom_mode'                => post('uom_mode', 'commercial'),
         ];
     }
 
