@@ -563,7 +563,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function getOriginalAddress() {
     const val = indSelect.value;
     if (!val) {
-      return loadedAddresses[0] || {};
+      return {};
     }
     return loadedAddresses.find(i => String(i.id) === String(val)) || {};
   }
@@ -592,18 +592,31 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!inpVia) return;
 
     const isNewForm = !inpVia.value;
-    if (isNewForm && ind.via && CAN_EDIT) {
+    if (val && isNewForm && ind.via && CAN_EDIT) {
       copyAddressToFields(ind);
     }
 
     let hasOverride = false;
+    let hasAnyValue = false;
+
     const checkField = (inputEl, origValue) => {
       if (!inputEl) return;
       const cur = inputEl.value.trim();
       const ref = (origValue ?? '').trim();
-      if (cur !== ref) {
-        inputEl.classList.add('is-overridden');
-        hasOverride = true;
+      
+      if (cur !== '') {
+        if (inputEl.id !== 'consegna_nazione' || cur !== 'IT') {
+          hasAnyValue = true;
+        }
+      }
+
+      if (val) {
+        if (cur !== ref) {
+          inputEl.classList.add('is-overridden');
+          hasOverride = true;
+        } else {
+          inputEl.classList.remove('is-overridden');
+        }
       } else {
         inputEl.classList.remove('is-overridden');
       }
@@ -622,14 +635,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const badge = document.getElementById('sped-state-badge');
     const resetBtn = document.getElementById('btn-cancel-edit-sped');
-    if (hasOverride) {
-      badge.textContent = 'Modificato localmente (override)';
-      badge.className = 'badge bg-warning text-dark ms-2';
-      if (resetBtn) resetBtn.style.display = 'inline-block';
-    } else {
-      badge.textContent = '✓ Sincronizzato con anagrafica';
-      badge.className = 'badge bg-success text-white ms-2';
+
+    if (!val) {
+      if (hasAnyValue) {
+        badge.textContent = 'Recapito manuale / una tantum';
+        badge.className = 'badge bg-info text-white ms-2';
+      } else {
+        badge.textContent = '';
+        badge.className = 'badge d-none';
+      }
       if (resetBtn) resetBtn.style.display = 'none';
+    } else {
+      if (hasOverride) {
+        badge.textContent = 'Modificato localmente (override)';
+        badge.className = 'badge bg-warning text-dark ms-2';
+        if (resetBtn) resetBtn.style.display = 'inline-block';
+      } else {
+        badge.textContent = '✓ Sincronizzato con anagrafica';
+        badge.className = 'badge bg-success text-white ms-2';
+        if (resetBtn) resetBtn.style.display = 'none';
+      }
     }
   }
 
