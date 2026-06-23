@@ -441,7 +441,7 @@ class RfqController extends BaseController
                     <th style="width:15%">Formato</th>
                     <th style="width:10%; text-align:right;">Q.tà</th>
                     <th style="width:8%; text-align:center;">UdM</th>
-                    <th style="width:11%; text-align:right;">Prezzo indicativo</th>
+                    <th style="width:11%; text-align:right;">Prezzo Unitario</th>
                     <th style="width:11%; text-align:right;">Totale</th>
                 </tr>
             </thead>
@@ -545,7 +545,7 @@ class RfqController extends BaseController
         <table class="cond-table">
             <tr>
                 <td class="lbl">Consegna Richiesta:</td>
-                <td>' . ($rfq['data_consegna_prevista'] ? e(fmt_date($rfq['data_consegna_prevista'])) : 'Non specificata') . '</td>
+                <td>' . (!empty($rfq['data_consegna_prevista']) ? e(fmt_date($rfq['data_consegna_prevista'])) : 'Non specificata') . '</td>
             </tr>
             <tr>
                 <td class="lbl">Luogo di Consegna:</td>
@@ -727,7 +727,7 @@ class RfqController extends BaseController
         $tableGrid->addCell(1600, $thStyle)->addText('Formato', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
         $tableGrid->addCell(1000, $thStyle)->addText('Q.tà', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
         $tableGrid->addCell(600, $thStyle)->addText('UdM', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(1200, $thStyle)->addText('Prezzo indicativo', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
+        $tableGrid->addCell(1200, $thStyle)->addText('Prezzo Unitario', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
         $tableGrid->addCell(1300, $thStyle)->addText('Totale', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
 
         $fill = false;
@@ -823,7 +823,7 @@ class RfqController extends BaseController
         
         $tableCond->addRow();
         $tableCond->addCell(2540)->addText('Consegna Richiesta', $fontBold);
-        $tableCond->addCell(8000)->addText($rfq['data_consegna_prevista'] ? fmt_date($rfq['data_consegna_prevista']) : 'Non specificata', $fontNormal);
+        $tableCond->addCell(8000)->addText(!empty($rfq['data_consegna_prevista']) ? fmt_date($rfq['data_consegna_prevista']) : 'Non specificata', $fontNormal);
 
         $tableCond->addRow();
         $tableCond->addCell(2540)->addText('Luogo di Consegna', $fontBold);

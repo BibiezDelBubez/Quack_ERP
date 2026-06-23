@@ -376,7 +376,7 @@ $savedOk = isset($saved) && $saved;
                       </label>
                       <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                         <input type="checkbox" id="chk-show-prezzo" style="transform:scale(1.15);" checked>
-                        <span>Prezzo indicativo</span>
+                        <span>Prezzo Unitario</span>
                       </label>
                       <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                         <input type="checkbox" id="chk-show-totale" style="transform:scale(1.15);" checked>
@@ -415,7 +415,7 @@ $savedOk = isset($saved) && $saved;
                     <th style="width:10%">Descrizione / Note</th>
                     <th style="width:6%">Qtà <span style="color:var(--qk-danger)">*</span></th>
                     <th style="width:5%">UdM</th>
-                    <th style="width:9%" class="col-prezzo">Prezzo indicativo (<span class="currency-symbol">€</span>)</th>
+                    <th style="width:9%" class="col-prezzo">Prezzo Unitario (<span class="currency-symbol">€</span>)</th>
                     <th style="width:5%">IVA %</th>
                     <th style="width:12%" class="col-data-consegna col-hidden">Arrivo previsto</th>
                     <th style="width:8%" class="col-rifiutato col-hidden text-center">Rifiutato</th>
@@ -464,7 +464,7 @@ $savedOk = isset($saved) && $saved;
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
               <!-- Colonna 1: Spedizione -->
               <div>
-                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Indirizzo di Consegna</h4>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Indirizzo di Consegna (Nostra Sede / Magazzino)</h4>
                 <div class="qk-form-group">
                   <label class="qk-form-label">Seleziona sede di consegna</label>
                   <select name="indirizzo_consegna_id" id="rfq-indirizzo-consegna-id" class="qk-form-control" data-selected-id="<?= e($values['indirizzo_consegna_id'] ?? '') ?>" <?= $disabled ?>>
@@ -540,9 +540,9 @@ $savedOk = isset($saved) && $saved;
 
               <!-- Colonna 2: Referente & Recapiti -->
               <div>
-                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
+                <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente Fornitore (Commerciale)</h4>
                 <div class="qk-form-group">
-                  <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
+                  <label class="qk-form-label">Alla cortese attenzione (Referente Fornitore)</label>
                   <select name="contatto_id" id="rfq-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
                     <option value="">Seleziona fornitore prima...</option>
                   </select>

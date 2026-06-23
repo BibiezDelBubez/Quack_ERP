@@ -51,9 +51,21 @@ class PurchasesQuotesController extends BaseController
                 require_once INCLUDES_DIR . '/purchases_rfq.php';
                 $detail = qk_rfq_detail($this->pdo, $rfq_id);
                 if ($detail) {
-                    $values['rfq_id']       = (string)$rfq_id;
-                    $values['fornitore_id'] = (string)($detail['rfq']['fornitore_id'] ?? '');
-                    $values['fornitore_nome'] = (string)($detail['rfq']['fornitore_name'] ?? $detail['rfq']['fornitore_nome'] ?? '');
+                    $values['rfq_id']                  = (string)$rfq_id;
+                    $values['rfq_numero']              = (string)($detail['rfq']['numero'] ?? '');
+                    $values['rfq_riferimento_interno'] = (string)($detail['rfq']['riferimento_rfq_interno'] ?? '');
+                    $values['fornitore_id']            = (string)($detail['rfq']['fornitore_id'] ?? '');
+                    $values['fornitore_nome']          = (string)($detail['rfq']['fornitore_name'] ?? $detail['rfq']['fornitore_nome'] ?? '');
+                    $values['consegna_via']            = (string)($detail['rfq']['consegna_via'] ?? '');
+                    $values['consegna_civico']         = (string)($detail['rfq']['consegna_civico'] ?? '');
+                    $values['consegna_cap']            = (string)($detail['rfq']['consegna_cap'] ?? '');
+                    $values['consegna_citta']          = (string)($detail['rfq']['consegna_citta'] ?? '');
+                    $values['consegna_provincia']      = (string)($detail['rfq']['consegna_provincia'] ?? '');
+                    $values['consegna_nazione']        = (string)($detail['rfq']['consegna_nazione'] ?? 'IT');
+                    $values['consegna_presso']         = (string)($detail['rfq']['consegna_presso'] ?? '');
+                    $values['consegna_referente']      = (string)($detail['rfq']['consegna_referente'] ?? '');
+                    $values['consegna_telefono']       = (string)($detail['rfq']['consegna_telefono'] ?? '');
+                    $values['consegna_note']           = (string)($detail['rfq']['consegna_note'] ?? '');
                     $righe = array_map(function (array $r) {
                         return [
                             'rfq_riga_id'         => (string)$r['id'],
@@ -245,6 +257,8 @@ class PurchasesQuotesController extends BaseController
     {
         return [
             'rfq_id'                 => '',
+            'rfq_numero'             => '',
+            'rfq_riferimento_interno'=> '',
             'fornitore_id'           => '',
             'fornitore_nome'         => '',
             'stato'                  => 'in_valutazione',
@@ -266,6 +280,16 @@ class PurchasesQuotesController extends BaseController
             'metodo_pagamento_id'     => '',
             'resa_porto'              => '',
             'data_consegna_default'   => '',
+            'consegna_via'            => '',
+            'consegna_civico'         => '',
+            'consegna_cap'            => '',
+            'consegna_citta'          => '',
+            'consegna_provincia'      => '',
+            'consegna_nazione'        => 'IT',
+            'consegna_presso'         => '',
+            'consegna_referente'      => '',
+            'consegna_telefono'       => '',
+            'consegna_note'           => '',
         ];
     }
 
@@ -273,6 +297,8 @@ class PurchasesQuotesController extends BaseController
     {
         return [
             'rfq_id'                => (string)($off['rfq_id'] ?? ''),
+            'rfq_numero'            => (string)($off['rfq_numero'] ?? ''),
+            'rfq_riferimento_interno'=> (string)($off['rfq_riferimento_interno'] ?? ''),
             'fornitore_id'          => (string)($off['fornitore_id'] ?? ''),
             'fornitore_nome'        => $off['fornitore_nome'] ?? '',
             'stato'                 => $off['stato'],
@@ -294,6 +320,16 @@ class PurchasesQuotesController extends BaseController
             'metodo_pagamento_id'   => (string)($off['metodo_pagamento_id'] ?? ''),
             'resa_porto'            => $off['resa_porto'] ?? '',
             'data_consegna_default' => '',
+            'consegna_via'          => $off['consegna_via'] ?? '',
+            'consegna_civico'       => $off['consegna_civico'] ?? '',
+            'consegna_cap'          => $off['consegna_cap'] ?? '',
+            'consegna_citta'        => $off['consegna_citta'] ?? '',
+            'consegna_provincia'    => $off['consegna_provincia'] ?? '',
+            'consegna_nazione'      => $off['consegna_nazione'] ?? 'IT',
+            'consegna_presso'       => $off['consegna_presso'] ?? '',
+            'consegna_referente'    => $off['consegna_referente'] ?? '',
+            'consegna_telefono'     => $off['consegna_telefono'] ?? '',
+            'consegna_note'         => $off['consegna_note'] ?? '',
         ];
     }
 

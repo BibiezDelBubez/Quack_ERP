@@ -86,6 +86,17 @@ function qk_offerta_detail(PDO $pdo, int $id): ?array
         'SELECT o.*,
                 COALESCE(cf.ragione_sociale, cf.nome || \' \' || COALESCE(cf.cognome,\'\')) AS fornitore_nome,
                 r.numero AS rfq_numero,
+                r.riferimento_rfq_interno AS rfq_riferimento_interno,
+                r.consegna_via,
+                r.consegna_civico,
+                r.consegna_cap,
+                r.consegna_citta,
+                r.consegna_provincia,
+                r.consegna_nazione,
+                r.consegna_presso,
+                r.consegna_referente,
+                r.consegna_telefono,
+                r.consegna_note,
                 mp.descrizione AS metodo_pagamento_descrizione,
                 la.nome_listino AS listino_acquisto_nome
            FROM offerte_testata o

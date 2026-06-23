@@ -161,8 +161,8 @@ $statoLabel = [
           <label class="qk-form-label">RFQ Collegata</label>
           <?php if (!empty($values['rfq_id'])): ?>
             <div class="qk-form-control-plaintext">
-              <a href="<?= url('purchases/rfq/edit') . '?id=' . $values['rfq_id'] ?>" class="qk-link-strong">
-                <i class="fa-solid fa-arrow-up-right-from-square"></i> RFQ #<?= e($offerta['rfq_numero'] ?? $values['rfq_id']) ?>
+               <a href="<?= url('purchases/rfq/edit') . '?id=' . $values['rfq_id'] ?>" class="qk-link-strong">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> RFQ #<?= e($values['rfq_numero'] ?: $values['rfq_id']) ?><?= !empty($values['rfq_riferimento_interno']) ? ' — ' . e($values['rfq_riferimento_interno']) : '' ?>
               </a>
             </div>
           <?php else: ?>
@@ -246,7 +246,7 @@ $statoLabel = [
     </li>
     <li class="nav-item">
       <button class="nav-link" id="tab-spedizione-contatti-btn" type="button" onclick="switchOffertaTab('spedizione-contatti')">
-        <i class="fa-solid fa-id-card-clip me-1"></i> Contatti
+        <i class="fa-solid fa-truck-fast me-1"></i> Spedizione & Contatti
       </button>
     </li>
     <li class="nav-item">
@@ -381,7 +381,7 @@ $statoLabel = [
                   
                   <!-- Container per prodotto originale (statico) -->
                   <div class="prod-originale-container" id="prod-originale-<?= $i ?>" style="display: <?= ($r['flag_sostituto'] ?? 0) ? 'none' : 'block' ?>;">
-                    <strong><?= e($r['sku_interno'] ?? '') ?></strong>
+                    <strong><?= e(($r['prodotto_nome'] ?? '') . (!empty($r['sku_interno']) ? ' - ' . $r['sku_interno'] : '')) ?></strong>
                     <?php if (!empty($r['rfq_riga_id']) && isset($r['qta_richiesta_rfq'])): ?>
                       <div class="qk-text-muted mt-1" style="font-size:.78rem; font-weight:normal">
                         Richiesto: <strong><?= e($r['req_sku_interno'] ?? $r['sku_interno'] ?? '') ?></strong> - Qta: <strong><?= e((float)$r['qta_richiesta_rfq']) ?></strong>
@@ -415,7 +415,7 @@ $statoLabel = [
                         <input type="checkbox" name="riga_flag_sostituto_check[]" value="1" class="flag-sostituto-check" <?= ($r['flag_sostituto'] ?? 0) ? 'checked' : '' ?> onchange="toggleSostitutoRow(this, <?= $i ?>)"
                                data-orig-id="<?= e($r['req_prodotto_id'] ?? $r['prodotto_id']) ?>"
                                data-orig-label="<?= e(($r['req_prodotto_nome'] ?? $r['prodotto_nome'] ?? '') . (!empty($r['req_sku_interno'] ?? $r['sku_interno']) ? ' (' . ($r['req_sku_interno'] ?? $r['sku_interno']) . ')' : '')) ?>">
-                        Sostituto offerto dal fornitore
+                         Il Fornitore offre prodotto diverso
                       </label>
                       <input type="hidden" name="riga_flag_sostituto[]" class="flag-sostituto-value" value="<?= ($r['flag_sostituto'] ?? 0) ? '1' : '0' ?>">
                     </div>
@@ -489,49 +489,127 @@ $statoLabel = [
     <div class="tab-pane d-none" id="pane-spedizione-contatti">
       <div class="qk-card mb-4">
         <div class="qk-card-body">
-          <div style="max-width: 600px;">
-            <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente & Recapiti</h4>
-            <div class="qk-form-group">
-              <label class="qk-form-label">Alla cortese attenzione (Referente)</label>
-              <select name="contatto_id" id="off-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
-                <option value="">Seleziona fornitore prima...</option>
-              </select>
-              
-              <input type="hidden" id="off-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
-              <input type="hidden" id="off-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1.5rem;">
+            
+            <!-- Colonna 1: Spedizione (Read-Only da RFQ) -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Destinazione Merce (Dati RFQ di Origine)</h4>
+              <?php if (empty($values['rfq_id'])): ?>
+                <div class="qk-alert qk-alert-info mb-3">
+                  <i class="fa-solid fa-circle-info"></i>
+                  <span>Preventivo spontaneo. Nessun indirizzo di consegna specificato da RFQ.</span>
+                </div>
+              <?php else: ?>
+                <div class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                  <div class="qk-flex-row qk-justify-between mb-3">
+                    <h6 class="mb-0 fw-bold" style="font-size: 0.85rem; color: var(--qk-text-muted)">
+                      <i class="fa-solid fa-truck-ramp-box me-1"></i>Dettagli Spedizione (Sola Lettura)
+                    </h6>
+                  </div>
+
+                  <div class="qk-form-group mb-2">
+                    <label class="qk-form-label">Presso (c/o)</label>
+                    <input type="text" class="qk-form-control" value="<?= e($values['consegna_presso'] ?? '') ?>" disabled readonly>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group" style="flex:3">
+                      <label class="qk-form-label">Via/Piazza</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_via'] ?? '') ?>" disabled readonly>
+                    </div>
+                    <div class="qk-form-group" style="flex:1">
+                      <label class="qk-form-label">Civico</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_civico'] ?? '') ?>" disabled readonly>
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group" style="flex:2">
+                      <label class="qk-form-label">CAP</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_cap'] ?? '') ?>" disabled readonly>
+                    </div>
+                    <div class="qk-form-group" style="flex:4">
+                      <label class="qk-form-label">Città</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_citta'] ?? '') ?>" disabled readonly>
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Provincia</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_provincia'] ?? '') ?>" disabled readonly>
+                    </div>
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Nazione</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_nazione'] ?? '') ?>" disabled readonly>
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row mb-2">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Referente Consegna</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_referente'] ?? '') ?>" disabled readonly>
+                    </div>
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Tel. Consegna</label>
+                      <input type="text" class="qk-form-control" value="<?= e($values['consegna_telefono'] ?? '') ?>" disabled readonly>
+                    </div>
+                  </div>
+
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Note Consegna</label>
+                    <input type="text" class="qk-form-control" value="<?= e($values['consegna_note'] ?? '') ?>" disabled readonly>
+                  </div>
+                </div>
+              <?php endif; ?>
             </div>
 
-            <!-- Dettagli Referente sul Documento -->
-            <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
-              <div class="qk-flex-row qk-justify-between mb-3">
-                <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
-                  <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
-                  <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
-                </h6>
-                <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
-              </div>
-              
-              <div class="qk-form-group mb-2">
-                <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
-                <input type="text" name="contatto_nome" id="off-contatto-nome" class="qk-form-control" value="<?= e($values['contatto_nome'] ?? '') ?>" placeholder="Es. Ing. Mario Rossi">
+            <!-- Colonna 2: Referente Fornitore -->
+            <div>
+              <h4 style="font-size:.9rem; text-transform:uppercase; letter-spacing:.05em; color:var(--qk-text-muted); margin-bottom:1rem; border-bottom:1px solid var(--qk-border); padding-bottom:.5rem;">Referente Fornitore (Commerciale)</h4>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Alla cortese attenzione (Referente Fornitore)</label>
+                <select name="contatto_id" id="off-contatto-id" class="qk-form-control" data-selected-id="<?= e($values['contatto_id'] ?? '') ?>" <?= $disabled ?>>
+                  <option value="">Seleziona fornitore prima...</option>
+                </select>
+                
+                <input type="hidden" id="off-fornitore-telefono" value="<?= e($values['fornitore_telefono'] ?? '') ?>">
+                <input type="hidden" id="off-fornitore-email" value="<?= e($values['fornitore_email'] ?? '') ?>">
               </div>
 
-              <div class="qk-form-group mb-2">
-                <label class="qk-form-label">Telefono di contatto</label>
-                <input type="text" name="contatto_telefono" id="off-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($values['contatto_telefono'] ?? '') ?>">
-              </div>
+              <!-- Dettagli Referente sul Documento -->
+              <div id="cont-fields-box" class="border rounded p-3 mb-3" style="background: var(--qk-bg-subtle); border-color: var(--qk-border) !important;">
+                <div class="qk-flex-row qk-justify-between mb-3">
+                  <h6 class="mb-0 fw-bold" style="font-size: 0.85rem;">
+                    <i class="fa-solid fa-id-card-clip me-1"></i>Dettagli Stampati
+                    <span id="cont-state-badge" style="font-size: 0.72rem; vertical-align: middle;"></span>
+                  </h6>
+                  <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-danger" id="btn-cancel-edit-cont" title="Annulla modifiche / Ripristina valori anagrafica"><i class="fa-solid fa-rotate-left me-1"></i>Ripristina</button>
+                </div>
+                
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Alla c.a. di (Nome Referente)</label>
+                  <input type="text" name="contatto_nome" id="off-contatto-nome" class="qk-form-control" value="<?= e($values['contatto_nome'] ?? '') ?>" placeholder="Es. Ing. Mario Rossi">
+                </div>
 
-              <div class="qk-form-group mb-2">
-                <label class="qk-form-label">Email di contatto</label>
-                <input type="email" name="contatto_email" id="off-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@fornitore.com" value="<?= e($values['contatto_email'] ?? '') ?>">
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Telefono di contatto</label>
+                  <input type="text" name="contatto_telefono" id="off-contatto-telefono" class="qk-form-control" placeholder="Es. +39 02 123456" value="<?= e($values['contatto_telefono'] ?? '') ?>">
+                </div>
+
+                <div class="qk-form-group mb-2">
+                  <label class="qk-form-label">Email di contatto</label>
+                  <input type="email" name="contatto_email" id="off-contatto-email" class="qk-form-control" placeholder="Es. mario.rossi@fornitore.com" value="<?= e($values['contatto_email'] ?? '') ?>">
+                </div>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Listino di Acquisto di riferimento</label>
+                <select name="listino_acquisto_id" id="off-listino-acquisto-id" class="qk-form-control" data-selected-id="<?= e($values['listino_acquisto_id'] ?? '') ?>" <?= $disabled ?>>
+                  <option value="">Nessun listino specifico...</option>
+                </select>
               </div>
             </div>
-            <div class="qk-form-group">
-              <label class="qk-form-label">Listino di Acquisto di riferimento</label>
-              <select name="listino_acquisto_id" id="off-listino-acquisto-id" class="qk-form-control" data-selected-id="<?= e($values['listino_acquisto_id'] ?? '') ?>" <?= $disabled ?>>
-                <option value="">Nessun listino specifico...</option>
-              </select>
-            </div>
+
           </div>
         </div>
       </div>
