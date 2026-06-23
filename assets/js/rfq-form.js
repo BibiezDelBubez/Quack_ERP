@@ -271,8 +271,12 @@ document.addEventListener('DOMContentLoaded', function () {
           if (nextTr && nextTr.classList.contains('rfq-riga')) {
             nextTr.querySelector('.r-prodotto-label')?.focus();
           } else {
-            const newTr = addRiga();
-            newTr.querySelector('.r-prodotto-label')?.focus();
+            const labelVal = tr.querySelector('.r-prodotto-label')?.value || '';
+            const prodId = tr.querySelector('.r-prodotto-id')?.value || '';
+            if (prodId && labelVal.trim() !== '') {
+              const newTr = addRiga();
+              newTr.querySelector('.r-prodotto-label')?.focus();
+            }
           }
         }
       });
@@ -430,6 +434,17 @@ document.addEventListener('DOMContentLoaded', function () {
   const btnAdd = document.getElementById('btn-aggiungi-riga');
   if (btnAdd) {
     btnAdd.addEventListener('click', () => {
+      const rows = Array.from(tbody.querySelectorAll('tr.rfq-riga'));
+      const lastRow = rows[rows.length - 1];
+      if (lastRow) {
+        const labelVal = lastRow.querySelector('.r-prodotto-label')?.value || '';
+        const prodId = lastRow.querySelector('.r-prodotto-id')?.value || '';
+        if (!prodId || labelVal.trim() === '') {
+          // L'ultima riga è già vuota, diamo semplicemente il focus
+          lastRow.querySelector('.r-prodotto-label')?.focus();
+          return;
+        }
+      }
       const tr = addRiga();
       tr.querySelector('.r-prodotto-label')?.focus();
     });

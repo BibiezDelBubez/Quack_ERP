@@ -98,7 +98,7 @@ function qk_rfq_detail(PDO $pdo, int $id): ?array
     $stRighe = $pdo->prepare(
         'SELECT rr.*, p.nome AS prodotto_nome, p.sku_interno, p.descrizione_confezione AS formato, 
                 CASE WHEN r.uom_mode = \'stock\' THEN um_stock.codice
-                     ELSE COALESCE(um.codice, um_comm_pf.codice, um_comm_prod.codice, um_stock.codice)
+                     ELSE COALESCE(um.codice, um_comm_prod.codice, um_stock.codice)
                 END AS uom,
                 um_stock.codice AS uom_stock,
                 COALESCE(um_comm_prod.codice, um_stock.codice) AS uom_commercial,

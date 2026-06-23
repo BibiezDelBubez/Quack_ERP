@@ -179,9 +179,10 @@ function qk_load_adr_sostanze(PDO $pdo): array
 function qk_load_fornitori_disponibili(PDO $pdo): array
 {
     return $pdo->query(
-        "SELECT id, ragione_sociale
+        "SELECT id, COALESCE(NULLIF(ragione_sociale, ''), nome || ' ' || cognome) AS ragione_sociale
            FROM clienti_fornitori
           WHERE tipo IN ('fornitore', 'entrambi') AND attivo = 1
+            AND parent_id IS NULL
             AND id NOT IN (SELECT soggetto_id FROM aziende_interne)
           ORDER BY ragione_sociale"
     )->fetchAll(PDO::FETCH_ASSOC);
@@ -399,7 +400,12 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
                 p.attivo, c.nome AS categoria,
                 g.quantita_disponibile,
                 COALESCE(p.is_adr, 0) AS is_adr,
-                lp.prezzo_unitario AS prezzo_vendita
+                lp.prezzo_unitario AS prezzo_vendita,
+                p.descrizione_confezione,
+                (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                 JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                 WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                 ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1) AS costo_acquisto
          FROM prodotti p
          LEFT JOIN categorie_prodotto c ON c.id = p.categoria_id
          LEFT JOIN giacenze g ON g.prodotto_id = p.id

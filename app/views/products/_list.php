@@ -34,6 +34,23 @@
     </div>
     <div class="qk-table-toolbar-right">
       <small class="qk-text-muted me-3"><?= $total ?> prodotti</small>
+      <div class="qk-dropdown-container me-2" style="position:relative; display:inline-block; line-height:1;">
+        <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" id="btn-col-settings" title="Mostra/Nascondi colonne">
+          <i class="fa-solid fa-sliders"></i> Colonne
+        </button>
+        <div class="qk-dropdown-menu shadow-sm" id="col-settings-dropdown" style="display:none; position:absolute; right:0; top:120%; z-index:1000; background:var(--qk-card-bg); border:1px solid var(--qk-border); border-radius:var(--qk-radius); padding:.6rem .8rem; min-width:200px; text-align:left; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+          <div class="qk-flex-col qk-gap-sm">
+            <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+              <input type="checkbox" id="chk-show-costo" style="transform:scale(1.15);">
+              <span>Costo d'acquisto</span>
+            </label>
+            <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+              <input type="checkbox" id="chk-show-confezione" style="transform:scale(1.15);">
+              <span>Descrizione confezione</span>
+            </label>
+          </div>
+        </div>
+      </div>
       <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaProdotti">
         <i class="fa-solid fa-file-import me-1"></i>Importa
       </button>
@@ -57,6 +74,8 @@
         <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'categoria', $sort, $dir)) ?>">Categoria<?= qk_sort_icon('categoria', $sort, $dir) ?></a></th>
         <th class="qk-sortable text-center"><a href="<?= e(qk_sort_url($base, 'giacenza', $sort, $dir)) ?>">Giacenza<?= qk_sort_icon('giacenza', $sort, $dir) ?></a></th>
         <th class="qk-sortable text-end"><a href="<?= e(qk_sort_url($base, 'prezzo', $sort, $dir)) ?>">Prezzo di vendita<?= qk_sort_icon('prezzo', $sort, $dir) ?></a></th>
+        <th class="col-costo-acquisto text-end" style="display: none;">Costo d'acquisto</th>
+        <th class="col-confezione" style="display: none;">Descrizione confezione</th>
         <th>ADR</th>
         <th class="col-actions"></th>
       </tr></thead>
@@ -73,6 +92,8 @@
           <td><?php if ($p['categoria']): ?><span class="qk-badge draft"><?= e($p['categoria']) ?></span><?php else: ?><span class="qk-text-muted">--</span><?php endif; ?></td>
           <td class="text-center"><?= $p['quantita_disponibile'] !== null ? (int)$p['quantita_disponibile'] : '<span class="qk-text-muted">--</span>' ?></td>
           <td class="text-end"><?php if (!empty($p['prezzo_vendita'])) { echo e(number_format($p['prezzo_vendita'], 2, ',', '.')); } else { echo '--'; } ?></td>
+          <td class="col-costo-acquisto text-end" style="display: none; white-space: nowrap;"><?php if (!empty($p['costo_acquisto'])) { echo e(number_format($p['costo_acquisto'], 2, ',', '.')) . ' €'; } else { echo '--'; } ?></td>
+          <td class="col-confezione" style="display: none;"><?= e($p['descrizione_confezione'] ?? '--') ?></td>
           <td><?= !empty($p['is_adr']) ? '<span class="qk-badge warning">ADR</span>' : '<span class="qk-text-muted">--</span>' ?></td>
           <td class="col-actions">
             <div class="d-flex gap-1 justify-content-end">
@@ -521,6 +542,52 @@ $_qk_import = url('products/import');
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  /* ── Mostra/Nascondi Colonne ───────────────────────────────────────── */
+  var btnColSettings = document.getElementById('btn-col-settings');
+  var colSettingsDropdown = document.getElementById('col-settings-dropdown');
+  var chkCosto = document.getElementById('chk-show-costo');
+  var chkConfezione = document.getElementById('chk-show-confezione');
+
+  if (btnColSettings && colSettingsDropdown) {
+    btnColSettings.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isVisible = colSettingsDropdown.style.display === 'block';
+      colSettingsDropdown.style.display = isVisible ? 'none' : 'block';
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!colSettingsDropdown.contains(e.target) && e.target !== btnColSettings) {
+        colSettingsDropdown.style.display = 'none';
+      }
+    });
+  }
+
+  function updateColumnVisibility() {
+    var showCosto = chkCosto ? chkCosto.checked : false;
+    var showConfezione = chkConfezione ? chkConfezione.checked : false;
+
+    document.querySelectorAll('.col-costo-acquisto').forEach(function (el) {
+      el.style.display = showCosto ? '' : 'none';
+    });
+    document.querySelectorAll('.col-confezione').forEach(function (el) {
+      el.style.display = showConfezione ? '' : 'none';
+    });
+
+    localStorage.setItem('qk_prod_show_costo', showCosto ? '1' : '0');
+    localStorage.setItem('qk_prod_show_confezione', showConfezione ? '1' : '0');
+  }
+
+  if (chkCosto && chkConfezione) {
+    // Hidden by default, unless previously stored as '1'
+    chkCosto.checked = localStorage.getItem('qk_prod_show_costo') === '1';
+    chkConfezione.checked = localStorage.getItem('qk_prod_show_confezione') === '1';
+    updateColumnVisibility();
+
+    [chkCosto, chkConfezione].forEach(function (chk) {
+      chk.addEventListener('change', updateColumnVisibility);
+    });
+  }
+
   var selectAll = document.getElementById('select-all-products');
   var checkboxes = document.querySelectorAll('.product-select-chk');
   var bar = document.getElementById('bulk-actions-bar');
