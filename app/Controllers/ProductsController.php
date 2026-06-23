@@ -810,6 +810,31 @@ final class ProductsController extends BaseController
         exit;
     }
 
+    public function loadRrp(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+        if (!$id) {
+            echo json_encode(['ok' => false, 'error' => 'ID prodotto non valido.']);
+            exit;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare('
+                SELECT * FROM prodotti_rrp 
+                WHERE prodotto_id = ? 
+                ORDER BY created_at ASC
+            ');
+            $stmt->execute([$id]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode(['ok' => true, 'data' => $rows]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
     /* ── Helper privati ───────────────────────────────────────────────────── */
 
     private function defaultValues(): array
