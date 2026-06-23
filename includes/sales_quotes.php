@@ -1023,9 +1023,9 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
 
         // 4. Create ordini_clienti_righe and reserve stock quantities
         $sqlLine = "INSERT INTO ordini_clienti_righe (
-            ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata, quantita_spedita, unita_misura_id, prezzo_unitario, costo_unitario, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot, note
+            ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata, quantita_spedita, unita_misura_id, prezzo_unitario, costo_unitario, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot, num_factor_snapshot, den_factor_snapshot, note
         ) VALUES (
-            :ordine_id, :preventivo_riga_id, :prodotto_id, :descrizione, :quantita_ordinata, 0, :unita_misura_id, :prezzo_unitario, :costo_unitario, :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot, :note
+            :ordine_id, :preventivo_riga_id, :prodotto_id, :descrizione, :quantita_ordinata, 0, :unita_misura_id, :prezzo_unitario, :costo_unitario, :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot, :num_factor_snapshot, :den_factor_snapshot, :note
         )";
         $stLine = $pdo->prepare($sqlLine);
 
@@ -1048,6 +1048,8 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
                 ':quantita_stock'     => $r['quantita_stock'],
                 ':unita_misura_stock_id' => $r['unita_misura_stock_id'] ?: null,
                 ':quantita_contenuto_snapshot' => $r['quantita_contenuto_snapshot'] ?? 1.0,
+                ':num_factor_snapshot' => $r['num_factor_snapshot'] ?? 1,
+                ':den_factor_snapshot' => $r['den_factor_snapshot'] ?? 1,
                 ':note'               => $r['note_riga'] ?? ''
             ]);
 

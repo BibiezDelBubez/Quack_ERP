@@ -210,43 +210,34 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
             $iva = (float) ($r['iva_perc'] ?? 22);
 
             // UoM ID
-            $um_id = !empty($r['uom_stock_id']) ? (int)$r['uom_stock_id']
-                   : (!empty($r['unita_misura']) ? $getUomId($pdo, $r['unita_misura']) : null);
+            $um_codice = $r['unita_misura'] ?? 'pz';
+            $um_id = $getUomId($pdo, $um_codice);
+
+            // Calcola equivalenti in unità stock
+            $qtaStock = $qta;
             $um_stock_id = $um_id;
-
-            // Snapshot factor e quantità stock
-            $factor = (float) ($r['quantita_contenuto'] ?? 1);
-            if ($factor <= 0) $factor = 1;
-
-            /*
-             * =========================================================================
-             * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
-             * To prevent precision drift and guarantee contract safety:
-             * 1. Conversion factors between stock UoM and commercial UoM must be stored
-             *    as exact, simplified integer fractions (num_factor / den_factor) in the database.
-             * 2. Every transactional line snapshot (Offers, Sales/Purchase Orders, Receipts)
-             *    must copy these factors at creation time into `num_factor_snapshot` and
-             *    `den_factor_snapshot` to avoid historical data changes when products are edited.
-             * 3. Do NOT use approximate decimal division or float conversion factors directly
-             *    in transactions. Always reference the exact snapshot fraction.
-             * =========================================================================
-             */
+            $factor = 1.0;
             $num_factor_snapshot = 1;
             $den_factor_snapshot = 1;
-            if ($prodotto_id) {
+
+            if ($prodotto_id && $um_id) {
                 $prodUm = qk_prodotto_get_uom_info($pdo, $prodotto_id);
                 if ($prodUm) {
+                    $um_stock_id = $prodUm['unita_misura_stock_id'];
+                    $content_um_id = $prodUm['unita_contenuto_id'];
+                    $factor = (float) ($prodUm['quantita_contenuto'] ?? 1.0);
+                    if ($factor <= 0) $factor = 1.0;
                     $num_factor_snapshot = $prodUm['num_factor'];
                     $den_factor_snapshot = $prodUm['den_factor'];
+
+                    if ((int)$um_id === $um_stock_id) {
+                        $qtaStock = $qta;
+                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
+                        // Q_stock = Q_comm / F_conv
+                        $qtaStock = (float)bcdiv((string)$qta, (string)$factor, 3);
+                    }
                 }
             }
-
-            // Determina se la riga è in UoM commerciale o stock
-            $uom_comm = $r['uom_commercial'] ?? '';
-            $uom_stock = $r['uom_stock'] ?? '';
-            $qtaStock = ($uom_comm && $uom_comm !== $uom_stock && $factor > 1)
-                ? $qta / $factor
-                : $qta;
 
             // Costo unitario
             $costo = (float) ($r['costo_unitario'] ?? 0);

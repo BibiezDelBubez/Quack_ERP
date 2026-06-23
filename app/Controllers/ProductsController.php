@@ -906,6 +906,25 @@ final class ProductsController extends BaseController
             $umStmt->execute([':c' => $v['unita_misura']]);
             if (!$umStmt->fetchColumn()) {
                 $errors['unita_misura'] = 'Unità di misura non valida.';
+            } elseif ($editId !== null) {
+                // Verifica se la UoM è cambiata e se ci sono movimenti di magazzino
+                $currStmt = $this->pdo->prepare('
+                    SELECT um.codice 
+                    FROM prodotti p
+                    LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+                    WHERE p.id = ?
+                ');
+                $currStmt->execute([$editId]);
+                $currentUomCode = $currStmt->fetchColumn();
+
+                if ($currentUomCode !== $v['unita_misura']) {
+                    $movStmt = $this->pdo->prepare('SELECT COUNT(*) FROM movimenti_magazzino WHERE prodotto_id = ?');
+                    $movStmt->execute([$editId]);
+                    $hasMovements = (int)$movStmt->fetchColumn() > 0;
+                    if ($hasMovements) {
+                        $errors['unita_misura'] = 'Impossibile modificare l\'unità di misura di stock perché il prodotto ha già dei movimenti di magazzino registrati.';
+                    }
+                }
             }
         }
 
