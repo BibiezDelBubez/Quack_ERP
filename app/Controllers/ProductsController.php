@@ -667,50 +667,137 @@ final class ProductsController extends BaseController
             }
 
             // Se no_prezzi=1 i prezzi sono gestiti dal tab Fornitori (products-suppliers.js)
-            // e non devono essere toccati qui — si salva solo il metadata del fornitore.
             if (post('no_prezzi') !== '1') {
-                $this->pdo->prepare(
-                    'DELETE FROM prodotti_fornitori_prezzi WHERE prodotto_fornitore_id = :pfid'
-                )->execute([':pfid' => $pfId]);
+                // INIZIO MODIFICA: Normalizzazione Listini e Storicizzazione (Soft Update)
+                // Invece di fare una DELETE totale (che distrugge lo storico), 
+                // confrontiamo i prezzi inviati dall'utente con quelli attualmente nel DB.
+
+                // 1. Carica i prezzi attuali per questo prodotto_fornitore_id
+                $stmtOldPrezzi = $this->pdo->prepare('SELECT * FROM prodotti_fornitori_prezzi WHERE prodotto_fornitore_id = :pfid AND (valido_al IS NULL OR valido_al >= CURRENT_DATE)');
+                $stmtOldPrezzi->execute([':pfid' => $pfId]);
+                $oldPrezzi = $stmtOldPrezzi->fetchAll(PDO::FETCH_ASSOC);
+
+                // Organizziamo i vecchi prezzi usando come chiave (listino_id, quantita_minima)
+                $oldPrezziMap = [];
+                foreach ($oldPrezzi as $op) {
+                    $l_id = $op['listino_acquisto_id'] ?: '0';
+                    $q_min = (float)$op['quantita_minima'];
+                    $key = $l_id . '_' . $q_min;
+                    $oldPrezziMap[$key] = $op;
+                }
 
                 $prezziJson = post('prezzi');
+                $prezziList = [];
                 if ($prezziJson !== null) {
                     $prezziList = json_decode($prezziJson, true) ?: [];
-                    $stmtInsertPrezzo = $this->pdo->prepare(
-                        'INSERT INTO prodotti_fornitori_prezzi
-                           (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
-                         VALUES
-                           (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note)'
-                    );
-                    foreach ($prezziList as $p) {
-                        $listinoId  = !empty($p['listino_acquisto_id']) ? (int)$p['listino_acquisto_id'] : null;
-                        $qta        = !empty($p['quantita_minima']) ? (float)$p['quantita_minima'] : 0.0;
-                        $prezzo     = (float)$p['prezzo'];
-                        $sconto     = !empty($p['sconto_perc']) ? (float)$p['sconto_perc'] : 0.0;
-                        $validoDal  = !empty($p['valido_dal']) ? $p['valido_dal'] : null;
-                        $validoAl   = !empty($p['valido_al']) ? $p['valido_al'] : null;
-                        $notePrezzo = !empty($p['note']) ? trim($p['note']) : null;
+                } elseif ($prezzoBase !== null) {
+                    // Fallback se viene passato solo il prezzo_acquisto singolo
+                    $prezziList[] = [
+                        'listino_acquisto_id' => null,
+                        'quantita_minima' => 0,
+                        'prezzo' => $prezzoBase,
+                        'sconto_perc' => 0,
+                        'valido_dal' => null,
+                        'valido_al' => null,
+                        'note' => null
+                    ];
+                }
 
+                // Troviamo il listino base per questo fornitore (da creare on-the-fly se serve)
+                // Questo garantisce la normalizzazione: non esisteranno prezzi orfani!
+                $baseListinoId = null;
+
+                $stmtInsertPrezzo = $this->pdo->prepare(
+                    'INSERT INTO prodotti_fornitori_prezzi
+                       (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
+                     VALUES
+                       (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note)'
+                );
+
+                $stmtExpirePrezzo = $this->pdo->prepare(
+                    "UPDATE prodotti_fornitori_prezzi SET valido_al = date('now', '-1 day') WHERE id = :id"
+                );
+
+                $processedKeys = [];
+
+                foreach ($prezziList as $p) {
+                    $listinoId = !empty($p['listino_acquisto_id']) ? (int)$p['listino_acquisto_id'] : null;
+
+                    // NORMALIZZAZIONE: Se non è specificato un listino, usiamo il "Listino Base" del fornitore.
+                    // Se non esiste, lo creiamo in automatico. In questo modo tutti i prezzi finiscono nella vista globale.
+                    if (!$listinoId) {
+                        if (!$baseListinoId) {
+                            // Ricava il nome del fornitore
+                            $stmtFornName = $this->pdo->prepare("SELECT COALESCE(ragione_sociale, TRIM(COALESCE(nome, '') || ' ' || COALESCE(cognome, ''))) FROM clienti_fornitori WHERE id = :fid");
+                            $stmtFornName->execute([':fid' => $fornitore_id]);
+                            $fornName = $stmtFornName->fetchColumn() ?: 'Sconosciuto';
+                            $nomeListinoBase = "Condizioni Base - " . $fornName;
+
+                            // Cerca o crea
+                            $stmtBaseListino = $this->pdo->prepare("SELECT id FROM listini_acquisto WHERE fornitore_id = :fid AND nome_listino = :nome");
+                            $stmtBaseListino->execute([':fid' => $fornitore_id, ':nome' => $nomeListinoBase]);
+                            $baseListinoId = $stmtBaseListino->fetchColumn();
+
+                            if (!$baseListinoId) {
+                                $stmtCreateListino = $this->pdo->prepare("INSERT INTO listini_acquisto (fornitore_id, nome_listino, note) VALUES (:fid, :nome, 'Listino generato automaticamente dal sistema per raccogliere i prezzi base.')");
+                                $stmtCreateListino->execute([':fid' => $fornitore_id, ':nome' => $nomeListinoBase]);
+                                $baseListinoId = (int)$this->pdo->lastInsertId();
+                            }
+                        }
+                        $listinoId = $baseListinoId;
+                    }
+
+                    $qta        = !empty($p['quantita_minima']) ? (float)$p['quantita_minima'] : 0.0;
+                    $prezzo     = (float)$p['prezzo'];
+                    $sconto     = !empty($p['sconto_perc']) ? (float)$p['sconto_perc'] : 0.0;
+                    $validoDal  = !empty($p['valido_dal']) ? $p['valido_dal'] : null;
+                    $validoAl   = !empty($p['valido_al']) ? $p['valido_al'] : null;
+                    $notePrezzo = !empty($p['note']) ? trim($p['note']) : null;
+
+                    $key = ($listinoId ?: '0') . '_' . $qta;
+                    $processedKeys[] = $key;
+
+                    if (isset($oldPrezziMap[$key])) {
+                        $op = $oldPrezziMap[$key];
+                        // Controllo se il prezzo o lo sconto sono cambiati
+                        if ((float)$op['prezzo'] !== $prezzo || (float)$op['sconto_perc'] !== $sconto || $op['note'] !== $notePrezzo) {
+                            // STORICIZZAZIONE: Il prezzo è cambiato. Chiudiamo la validità del vecchio e inseriamo il nuovo
+                            $stmtExpirePrezzo->execute([':id' => $op['id']]);
+                            $stmtInsertPrezzo->execute([
+                                ':pfid'       => $pfId,
+                                ':listino_id' => $listinoId,
+                                ':qta'        => $qta,
+                                ':prezzo'     => $prezzo,
+                                ':sconto'     => $sconto,
+                                ':valido_dal' => $validoDal ?: date('Y-m-d'), // Parte da oggi
+                                ':valido_al'  => $validoAl,
+                                ':note'       => $notePrezzo,
+                            ]);
+                        } else {
+                            // Il prezzo è identico, non facciamo nulla per preservare il valido_dal originale
+                        }
+                    } else {
+                        // Nuovo scaglione / listino non presente prima
                         $stmtInsertPrezzo->execute([
                             ':pfid'       => $pfId,
                             ':listino_id' => $listinoId,
                             ':qta'        => $qta,
                             ':prezzo'     => $prezzo,
                             ':sconto'     => $sconto,
-                            ':valido_dal' => $validoDal,
+                            ':valido_dal' => $validoDal ?: date('Y-m-d'), // Parte da oggi
                             ':valido_al'  => $validoAl,
                             ':note'       => $notePrezzo,
                         ]);
                     }
-                } else {
-                    if ($prezzoBase !== null) {
-                        $this->pdo->prepare(
-                            'INSERT INTO prodotti_fornitori_prezzi
-                               (prodotto_fornitore_id, quantita_minima, prezzo)
-                             VALUES (:pfid, 0, :prezzo)'
-                        )->execute([':pfid' => $pfId, ':prezzo' => $prezzoBase]);
+                }
+
+                // SCADENZA PREZZI RIMOSSI: Per i prezzi che c'erano prima ma non sono stati inviati ora (eliminati dall'utente)
+                foreach ($oldPrezziMap as $key => $op) {
+                    if (!in_array($key, $processedKeys)) {
+                        $stmtExpirePrezzo->execute([':id' => $op['id']]);
                     }
                 }
+                // FINE MODIFICA
             }
 
             $this->pdo->commit();

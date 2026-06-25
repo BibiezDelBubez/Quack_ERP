@@ -14,6 +14,15 @@
 </div>
 <?php unset($_SESSION['flash']); endif; ?>
 
+<!-- Banner Informativo Logica Listini Base -->
+<div class="alert alert-info d-flex align-items-center mb-3" role="alert" style="background-color: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; border-radius: var(--qk-radius); padding: 1rem;">
+  <i class="fa-solid fa-circle-info me-3 fa-lg"></i>
+  <div style="font-size: 0.9rem;">
+    <strong>Listini Generati Automaticamente</strong><br>
+    Potresti notare in questo elenco dei listini chiamati <em>"Condizioni Base"</em>. Questi vengono generati automaticamente dal sistema ogni volta che si inserisce un costo d'acquisto nella scheda di un prodotto senza specificare un contratto formale. Questo meccanismo garantisce che tutti i prezzi negoziati con i fornitori siano sempre raggruppati, rintracciabili e visibili in questa sezione.
+  </div>
+</div>
+
 <!-- ── LISTA PRINCIPALE ── -->
 <div class="qk-card">
   <div class="qk-table-toolbar">
