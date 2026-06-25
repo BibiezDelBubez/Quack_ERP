@@ -211,14 +211,43 @@
                 <p class="small text-muted">Clicca su "Aggiungi prodotto" per definire una tariffa concordata.</p>
               </div>
 
+              <div class="d-flex justify-content-between align-items-center mb-3" <?= empty($items) ? 'style="display:none"' : '' ?>>
+                <div class="qk-m2o-wrap" style="width: 300px;">
+                   <!-- Placeholder for search if needed -->
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <label class="mb-0 fw-semibold qk-text-muted text-nowrap" style="font-size: .85rem;">Visualizza in:</label>
+                  <select id="uom-toggle" class="qk-form-control py-1" style="width: auto; font-size: .85rem;">
+                    <option value="stock" selected>Unità di Stock</option>
+                    <option value="comm">Unità Commerciale</option>
+                  </select>
+                </div>
+              </div>
+
               <table class="qk-table" id="tbl-prezzi-acquisto" <?= empty($items) ? 'style="display:none"' : '' ?>>
                 <thead>
                   <tr>
-                    <th>Prodotto</th>
-                    <th class="col-sku-interno" style="width:140px">SKU Interno</th>
+                    <th>
+                      <a href="?id=<?= $id ?>&sort=nome&dir=<?= ($sort === 'nome' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+                        Prodotto <?= ($sort === 'nome') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+                      </a>
+                    </th>
+                    <th class="col-sku-interno" style="width:140px">
+                      <a href="?id=<?= $id ?>&sort=sku_interno&dir=<?= ($sort === 'sku_interno' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+                        SKU Interno <?= ($sort === 'sku_interno') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+                      </a>
+                    </th>
                     <th class="col-sku-fornitore" style="width:140px">SKU Fornitore</th>
-                    <th class="text-end" style="width:110px">Q.tà min</th>
-                    <th class="text-end" style="width:140px">Prezzo Unitario</th>
+                    <th class="text-end" style="width:110px">
+                      <a href="?id=<?= $id ?>&sort=quantita_minima&dir=<?= ($sort === 'quantita_minima' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+                        Q.tà min <?= ($sort === 'quantita_minima') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+                      </a>
+                    </th>
+                    <th class="text-end" style="width:160px">
+                      <a href="?id=<?= $id ?>&sort=prezzo&dir=<?= ($sort === 'prezzo' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+                        Prezzo Unitario <?= ($sort === 'prezzo') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+                      </a>
+                    </th>
                     <th class="text-end col-sconto-perc" style="width:100px">Sconto %</th>
                     <th class="col-validita" style="width:220px">Validità Riga</th>
                     <th class="col-note-prezzo">Note Prezzo</th>
@@ -226,7 +255,12 @@
                   </tr>
                 </thead>
                 <tbody id="pl-tbody-acquisto">
-                  <?php foreach ($items as $item): ?>
+                  <?php foreach ($items as $item): 
+                    $uomNative = $item['um_native_code'] ?? $item['um_comm_code'] ?? $item['um_stock_code'] ?? 'PZ';
+                    $uomStock  = $item['um_stock_code'] ?? 'PZ';
+                    $uomComm   = $item['um_comm_code'] ?? $uomStock;
+                    $factor    = (float)($item['p_factor'] ?? 1) ?: 1;
+                  ?>
                     <tr class="pl-riga" data-riga-id="<?= (int)$item['id'] ?>"
                          data-prodotto-id="<?= (int)$item['prodotto_id'] ?>"
                          data-prodotto-nome="<?= e($item['prodotto_nome']) ?>"
@@ -237,7 +271,13 @@
                          data-sconto="<?= (float)$item['sconto_perc'] ?>"
                          data-valido-dal="<?= e($item['valido_dal'] ?? '') ?>"
                          data-valido-al="<?= e($item['valido_al'] ?? '') ?>"
-                         data-note="<?= e($item['note'] ?? '') ?>">
+                         data-note="<?= e($item['note'] ?? '') ?>"
+                         data-native-price="<?= (float)$item['prezzo'] ?>"
+                         data-native-qmin="<?= (float)$item['quantita_minima'] ?>"
+                         data-factor="<?= $factor ?>"
+                         data-um-native="<?= e($uomNative) ?>"
+                         data-um-stock="<?= e($uomStock) ?>"
+                         data-um-comm="<?= e($uomComm) ?>">
                       <td>
                         <div class="pl-view">
                           <a href="<?= url('products/edit?id=' . $item['prodotto_id']) ?>" class="fw-semibold qk-text-accent" tabindex="-1">
@@ -254,12 +294,16 @@
                         <input class="pl-edit qk-form-control py-1 px-2 text-monospace r-sku-forn" type="text" value="<?= e($item['sku_fornitore'] ?? '') ?>">
                       </td>
                       <td class="text-end">
-                        <span class="pl-view text-monospace"><?= number_format((float)$item['quantita_minima'], 3, ',', '.') ?></span>
+                        <span class="pl-view text-monospace r-qmin-view"><?= number_format((float)$item['quantita_minima'], 3, ',', '.') ?></span>
                         <input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-qmin" type="number" min="0" step="0.001" value="<?= (float)$item['quantita_minima'] ?>">
                       </td>
-                      <td class="text-end">
-                        <span class="pl-view text-monospace fw-bold"><?= number_format((float)$item['prezzo'], 4, ',', '.') ?> €</span>
-                        <input class="pl-edit qk-form-control py-1 px-2 text-end text-monospace r-prezzo" type="number" min="0" step="0.0001" value="<?= (float)$item['prezzo'] ?>">
+                      <td class="text-end text-nowrap">
+                        <span class="pl-view text-monospace fw-bold r-prezzo-view"><?= number_format((float)$item['prezzo'], 2, ',', '.') ?> €</span>
+                        <span class="pl-view text-muted ms-1 r-uom-view" style="font-size:.75rem;">/ <?= e($uomNative) ?></span>
+                        <div class="pl-edit d-flex align-items-center">
+                          <input class="qk-form-control py-1 px-2 text-end text-monospace r-prezzo" type="number" min="0" step="0.0001" value="<?= (float)$item['prezzo'] ?>">
+                          <span class="ms-1 text-muted r-uom-edit-label" style="font-size:.75rem;">/ <?= e($uomNative) ?></span>
+                        </div>
                       </td>
                       <td class="text-end col-sconto-perc">
                         <span class="pl-view text-monospace"><?= number_format((float)$item['sconto_perc'], 2, ',', '.') ?> %</span>
@@ -294,6 +338,12 @@
                 </tbody>
               </table>
             </div>
+            
+            <?php if (!empty($items) && isset($pages) && $pages > 1): ?>
+              <div class="mt-3">
+                <?= qk_pagination($page, $pages, '?id=' . $id . '&sort=' . $sort . '&dir=' . $dir . '&page=') ?>
+              </div>
+            <?php endif; ?>
           </div>
         </div>
 
@@ -414,6 +464,64 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('mouseup', function () {
       isInteractingWithDropdown = false;
     });
+
+    // UoM Toggle Logic
+    const uomToggle = document.getElementById('uom-toggle');
+    if (uomToggle) {
+      uomToggle.addEventListener('change', function() {
+        const viewMode = this.value; // 'stock' or 'comm'
+        
+        tbody.querySelectorAll('.pl-riga').forEach(tr => {
+          if (tr.classList.contains('is-new')) return; // skip unsaved blank rows
+          
+          const nativePrice = parseFloat(tr.getAttribute('data-native-price')) || 0;
+          const nativeQmin = parseFloat(tr.getAttribute('data-native-qmin')) || 0;
+          const factor = parseFloat(tr.getAttribute('data-factor')) || 1;
+          const nativeUom = tr.getAttribute('data-um-native');
+          const stockUom = tr.getAttribute('data-um-stock');
+          const commUom = tr.getAttribute('data-um-comm');
+
+          let displayPrice = nativePrice;
+          let displayQmin = nativeQmin;
+          let displayUom = nativeUom;
+
+          if (viewMode === 'stock' && nativeUom === commUom && commUom !== stockUom) {
+            displayPrice = nativePrice / factor;
+            displayQmin = nativeQmin * factor;
+            displayUom = stockUom;
+          } else if (viewMode === 'comm' && nativeUom === stockUom && commUom !== stockUom) {
+            displayPrice = nativePrice * factor;
+            displayQmin = nativeQmin / factor;
+            displayUom = commUom;
+          } else if (viewMode === 'stock' && nativeUom !== commUom && nativeUom !== stockUom) {
+            // generic fallback
+            displayUom = stockUom;
+          } else if (viewMode === 'comm' && nativeUom !== commUom && nativeUom !== stockUom) {
+            // generic fallback
+            displayUom = commUom;
+          } else {
+            // matches native
+            if (viewMode === 'stock') displayUom = stockUom;
+            if (viewMode === 'comm') displayUom = commUom;
+          }
+
+          // Update View Mode (text spans)
+          const qminSpan = tr.querySelector('.r-qmin-view');
+          if (qminSpan) qminSpan.textContent = displayQmin.toLocaleString('it-IT', {minimumFractionDigits:3, maximumFractionDigits:3});
+          
+          const prezzoSpan = tr.querySelector('.r-prezzo-view');
+          if (prezzoSpan) prezzoSpan.textContent = displayPrice.toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
+
+          const uomSpan = tr.querySelector('.r-uom-view');
+          if (uomSpan) uomSpan.textContent = '/ ' + displayUom;
+          
+          // Note: When entering "Edit" mode, we typically want them to edit in NATIVE uom to avoid rounding save errors.
+          // The current design keeps the input at native values.
+        });
+      });
+      // trigger initially
+      uomToggle.dispatchEvent(new Event('change'));
+    }
 
     // Run duplicate check on load
     setTimeout(runBusinessValidations, 200);

@@ -19,6 +19,12 @@ $_prezzo = (float)($item['prezzo_unitario']  ?? 0);
 $_sconto = (float)($item['sconto_perc']      ?? 0);
 $_note   = $item['note']            ?? '';
 ?>
+<?php
+                    $uomNative = $item['um_native_code'] ?? $item['uom_commercial_code'] ?? $item['uom_stock_code'] ?? 'PZ';
+                    $uomStock  = $item['uom_stock_code'] ?? 'PZ';
+                    $uomComm   = $item['uom_commercial_code'] ?? $uomStock;
+                    $factor    = (float)($item['p_factor'] ?? 1) ?: 1;
+?>
 <tr class="pl-riga"
     data-riga-id="<?= e($_id) ?>"
     data-prodotto-id="<?= e($_pid) ?>"
@@ -34,7 +40,13 @@ $_note   = $item['note']            ?? '';
     data-prezzo="<?= $_prezzo ?>"
     data-sconto="<?= $_sconto ?>"
     data-note="<?= e($_note) ?>"
-    data-costo="<?= (float)($item['costo'] ?? 0) ?>">
+    data-costo="<?= (float)($item['costo'] ?? 0) ?>"
+    data-native-price="<?= $_prezzo ?>"
+    data-native-qmin="<?= $_qmin ?>"
+    data-factor="<?= $factor ?>"
+    data-um-native="<?= e($uomNative) ?>"
+    data-um-stock="<?= e($uomStock) ?>"
+    data-um-comm="<?= e($uomComm) ?>">
 
   <!-- ── Prodotto ── -->
   <td class="pl-td-product">
@@ -75,7 +87,7 @@ $_note   = $item['note']            ?? '';
 
   <!-- ── UM ── -->
   <td class="pl-td-um">
-    <span class="pl-view pl-um-label"><?= e($_um) ?></span>
+    <span class="pl-view pl-um-label r-um-view"><?= e($_um) ?></span>
     <select class="pl-edit pl-input r-unita-misura-id" style="padding: .2rem .35rem; font-size: .8rem; text-align: left;">
       <option value="<?= e($item['uom_stock_id'] ?? '') ?>" <?= (int)($item['unita_misura_id'] ?? $item['uom_stock_id'] ?? 0) === (int)($item['uom_stock_id'] ?? 0) ? 'selected' : '' ?>>
         <?= e($item['uom_stock_code'] ?? 'pz') ?>
@@ -90,7 +102,7 @@ $_note   = $item['note']            ?? '';
 
   <!-- ── Q.tà minima ── -->
   <td class="pl-td-qmin">
-    <span class="pl-view pl-num"><?= number_format($_qmin, 3, ',', '.') ?></span>
+    <span class="pl-view pl-num r-qmin-view"><?= number_format($_qmin, 3, ',', '.') ?></span>
     <input class="pl-edit pl-input r-qmin" type="number" min="0" step="0.001"
            value="<?= $_qmin ?>">
   </td>
@@ -98,7 +110,7 @@ $_note   = $item['note']            ?? '';
   <!-- ── Prezzo unitario ── -->
   <td class="pl-td-prezzo position-relative">
     <div class="pl-view">
-      <span class="pl-num pl-prezzo-val"><?= number_format($_prezzo, 4, ',', '.') ?></span>
+      <span class="pl-num pl-prezzo-val r-prezzo-view"><?= number_format($_prezzo, 2, ',', '.') ?> €</span>
     </div>
     <div class="pl-edit">
       <input class="pl-input r-prezzo" type="number" min="0" step="0.0001"

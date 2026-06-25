@@ -221,14 +221,39 @@ final class SalesPricelistsController extends BaseController
             }
         }
 
+        $pag = qk_pagination_params(['nome', 'sku_interno', 'quantita_minima', 'prezzo'], 'nome', 'asc');
+        $limit  = $pag['limit'];
+        $offset = $pag['offset'];
+        $page   = $pag['page'];
+        $sort   = $pag['sort'];
+        $dir    = $pag['dir'];
+
+        // Mappatura colonne ordinamento
+        $sortColMap = [
+            'nome'            => 'p.nome',
+            'sku_interno'     => 'p.sku_interno',
+            'quantita_minima' => 'lp.quantita_minima',
+            'prezzo'          => 'lp.prezzo'
+        ];
+        $orderByCol = $sortColMap[$sort] ?? 'p.nome';
+
+        // Count per la paginazione
+        $stmtCount = $this->pdo->prepare("SELECT COUNT(*) FROM listini_prezzi lp WHERE lp.listino_id = :lid");
+        $stmtCount->execute([':lid' => $id]);
+        $total = (int)$stmtCount->fetchColumn();
+        $pages = (int)ceil($total / $limit);
+
         // Righe prodotto (con UoM nativa del prezzo o fallback UoM stock)
         $stmtItems = $this->pdo->prepare(
-            "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, 
-                    COALESCE(um_p.codice, um_stock.codice) AS unita_misura,
-                    p.unita_misura_stock_id AS uom_stock_id,
-                    um_stock.codice AS uom_stock_code,
-                    p.unita_contenuto_id AS uom_commercial_id,
-                    um_comm.codice AS uom_commercial_code,
+            "SELECT lp.*, 
+                    p.nome AS prodotto_nome, p.sku_interno, 
+                    p.unita_misura_stock_id AS p_um_stock_id, 
+                    p.unita_contenuto_id AS p_um_comm_id, 
+                    p.quantita_contenuto AS p_factor,
+                    um_stock.codice AS um_stock_code,
+                    um_comm.codice AS um_comm_code,
+                    um_native.codice AS um_native_code,
+                    COALESCE(um_native.codice, um_stock.codice) AS unita_misura,
                     (SELECT MIN(pfp.prezzo) 
                      FROM prodotti_fornitori_prezzi pfp 
                      JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
@@ -236,12 +261,16 @@ final class SalesPricelistsController extends BaseController
              FROM listini_prezzi lp
              JOIN prodotti p ON p.id = lp.prodotto_id
              LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
-             LEFT JOIN unita_misura um_p ON um_p.id = lp.unita_misura_id
              LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
+             LEFT JOIN unita_misura um_native ON um_native.id = lp.unita_misura_id
              WHERE lp.listino_id = :lid
-             ORDER BY p.nome ASC, lp.quantita_minima ASC"
+             ORDER BY $orderByCol $dir, lp.quantita_minima ASC
+             LIMIT :limit OFFSET :offset"
         );
-        $stmtItems->execute([':lid' => $id]);
+        $stmtItems->bindValue(':lid', $id, PDO::PARAM_INT);
+        $stmtItems->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmtItems->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmtItems->execute();
         $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
         // Clienti che usano questo listino come default
@@ -270,6 +299,12 @@ final class SalesPricelistsController extends BaseController
             'id'                => $id,
             'items'             => $items,
             'clienti_assegnati' => $clienti_assegnati,
+            'pag'               => $pag,
+            'page'              => $page,
+            'pages'             => $pages,
+            'total'             => $total,
+            'sort'              => $sort,
+            'dir'               => $dir,
         ]);
     }
 

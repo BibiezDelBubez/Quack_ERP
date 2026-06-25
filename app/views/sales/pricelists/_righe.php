@@ -144,11 +144,18 @@
 
 <!-- ── Card tabella ── -->
 <div class="qk-card shadow-sm">
-  <div class="qk-card-header d-flex justify-content-between align-items-center">
+  <div class="qk-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <span class="qk-card-title m-0">
       <i class="fa-solid fa-badge-percent me-2" style="color:var(--qk-accent)"></i>Prezzi prodotto
     </span>
     <div class="d-flex align-items-center gap-2">
+      <div class="d-flex align-items-center gap-2 me-2">
+        <label class="mb-0 fw-semibold qk-text-muted text-nowrap" style="font-size: .85rem;">Visualizza in:</label>
+        <select id="uom-toggle" class="qk-form-control py-1" style="width: auto; font-size: .85rem;">
+          <option value="stock" selected>Unità di Stock</option>
+          <option value="comm">Unità Commerciale</option>
+        </select>
+      </div>
       <input type="text" id="pl-grid-search" class="pl-input" placeholder="Filtra per nome o SKU..." style="width: 220px; padding: .25rem .5rem; font-size: .8rem; margin: 0; text-align: left;">
       <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm" data-bs-toggle="modal" data-bs-target="#modalImportaPrezziSales">
         <i class="fa-solid fa-file-import me-1"></i>Importa (XLSX)
@@ -181,10 +188,22 @@
       </colgroup>
       <thead>
         <tr>
-          <th>Prodotto</th>
+          <th>
+            <a href="?id=<?= $id ?>&sort=nome&dir=<?= ($sort === 'nome' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+              Prodotto <?= ($sort === 'nome') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+            </a>
+          </th>
           <th>UM</th>
-          <th class="text-end">Q.tà min</th>
-          <th class="text-end">Prezzo unitario</th>
+          <th class="text-end">
+            <a href="?id=<?= $id ?>&sort=quantita_minima&dir=<?= ($sort === 'quantita_minima' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+              Q.tà min <?= ($sort === 'quantita_minima') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?id=<?= $id ?>&sort=prezzo&dir=<?= ($sort === 'prezzo' && $dir === 'asc') ? 'desc' : 'asc' ?>" class="qk-sort-link text-decoration-none qk-text-dark">
+              Prezzo unitario <?= ($sort === 'prezzo') ? '<i class="fa-solid fa-sort-'.($dir==='asc'?'up':'down').' ms-1"></i>' : '' ?>
+            </a>
+          </th>
           <th class="text-end">Sconto %</th>
           <th>Note</th>
           <th></th>
@@ -197,6 +216,12 @@
       </tbody>
     </table>
   </div>
+  
+  <?php if (!empty($items) && isset($pages) && $pages > 1): ?>
+    <div class="mt-3 mx-3 mb-3">
+      <?= qk_pagination($page, $pages, '?id=' . $id . '&sort=' . $sort . '&dir=' . $dir . '&page=') ?>
+    </div>
+  <?php endif; ?>
 </div>
 
 <!-- ── Template per nuova riga (inizia in edit mode) ── -->
@@ -267,6 +292,61 @@ document.addEventListener('DOMContentLoaded', function () {
   const table   = document.getElementById('tbl-prezzi');
   const empty   = document.getElementById('pl-empty');
   const tpl     = document.getElementById('pl-tpl-new');
+
+  // UoM Toggle Logic
+  const uomToggle = document.getElementById('uom-toggle');
+  if (uomToggle) {
+    uomToggle.addEventListener('change', function() {
+      const viewMode = this.value; // 'stock' or 'comm'
+      
+      tbody.querySelectorAll('.pl-riga').forEach(tr => {
+        if (tr.classList.contains('is-new')) return; // skip unsaved blank rows
+        
+        const nativePrice = parseFloat(tr.getAttribute('data-native-price')) || 0;
+        const nativeQmin = parseFloat(tr.getAttribute('data-native-qmin')) || 0;
+        const factor = parseFloat(tr.getAttribute('data-factor')) || 1;
+        const nativeUom = tr.getAttribute('data-um-native');
+        const stockUom = tr.getAttribute('data-um-stock');
+        const commUom = tr.getAttribute('data-um-comm');
+
+        let displayPrice = nativePrice;
+        let displayQmin = nativeQmin;
+        let displayUom = nativeUom;
+
+        if (viewMode === 'stock' && nativeUom === commUom && commUom !== stockUom) {
+          displayPrice = nativePrice / factor;
+          displayQmin = nativeQmin * factor;
+          displayUom = stockUom;
+        } else if (viewMode === 'comm' && nativeUom === stockUom && commUom !== stockUom) {
+          displayPrice = nativePrice * factor;
+          displayQmin = nativeQmin / factor;
+          displayUom = commUom;
+        } else if (viewMode === 'stock' && nativeUom !== commUom && nativeUom !== stockUom) {
+          // generic fallback
+          displayUom = stockUom;
+        } else if (viewMode === 'comm' && nativeUom !== commUom && nativeUom !== stockUom) {
+          // generic fallback
+          displayUom = commUom;
+        } else {
+          // matches native
+          if (viewMode === 'stock') displayUom = stockUom;
+          if (viewMode === 'comm') displayUom = commUom;
+        }
+
+        // Update View Mode (text spans)
+        const qminSpan = tr.querySelector('.r-qmin-view');
+        if (qminSpan) qminSpan.textContent = displayQmin.toLocaleString('it-IT', {minimumFractionDigits:3, maximumFractionDigits:3});
+        
+        const prezzoSpan = tr.querySelector('.r-prezzo-view');
+        if (prezzoSpan) prezzoSpan.textContent = displayPrice.toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
+
+        const uomSpan = tr.querySelector('.r-um-view');
+        if (uomSpan) uomSpan.textContent = displayUom;
+      });
+    });
+    // trigger initially
+    uomToggle.dispatchEvent(new Event('change'));
+  }
 
   /* ════════════════════════════════════════════════════
      DISMISS ALL SOFT DELETED ROWS
