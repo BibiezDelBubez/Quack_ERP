@@ -1,3 +1,0 @@
-3) preventivi clienti
-errore ${data, prezzo_sorgente} quando inserisco prezzo su preventivo cliente
-
