@@ -19,11 +19,18 @@
     </div>
 
     <div class="qk-card-body">
+      
+      <?php if (!empty($values['is_default'])): ?>
+        <div class="qk-alert qk-alert-info mb-3" style="background-color: #e7f1ff; border: 1px solid #b6d4fe; border-radius: var(--qk-border-radius); padding: 1rem; color: #052c65;">
+          <i class="fa-solid fa-earth-americas me-2"></i> Questo è il <strong>Listino Pubblico Globale</strong> (di default). Si applica automaticamente a tutti i clienti sprovvisti di un listino dedicato.
+        </div>
+      <?php endif; ?>
 
       <div class="qk-form-group">
         <label class="qk-form-label">Nome listino <span class="required">*</span></label>
         <input type="text" name="nome"
                class="qk-form-control <?= isset($errors['nome']) ? 'is-invalid' : '' ?>"
+               <?= !empty($values['is_default']) ? 'readonly style="background-color: var(--qk-bg-main);"' : '' ?>
                placeholder="Es. Listino Pubblico 2026, Clienti Premium"
                value="<?= e($values['nome']) ?>">
         <?php if (isset($errors['nome'])): ?>

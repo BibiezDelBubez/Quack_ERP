@@ -70,11 +70,26 @@ function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all', st
     $sql = 'SELECT
                 p.id, p.sku_interno, p.nome, p.traccia_lotti,
                 u.codice AS uom,
-                COALESCE(g.quantita_disponibile, 0)                   AS qta_disponibile,
+                CASE 
+                    WHEN p.tipo = 'kit' THEN (
+                        SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
+                        FROM componenti_kit ck
+                        LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
+                        WHERE ck.kit_id = p.id
+                    )
+                    ELSE COALESCE(g.quantita_disponibile, 0) 
+                END AS qta_disponibile,
                 COALESCE(g.quantita_riservata, 0)                     AS qta_riservata,
                 COALESCE(g.quantita_in_arrivo, 0)                     AS qta_in_arrivo,
-                COALESCE(g.quantita_disponibile, 0)
-                  - COALESCE(g.quantita_riservata, 0)                 AS qta_libera,
+                CASE 
+                    WHEN p.tipo = 'kit' THEN (
+                        SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
+                        FROM componenti_kit ck
+                        LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
+                        WHERE ck.kit_id = p.id
+                    )
+                    ELSE COALESCE(g.quantita_disponibile, 0) 
+                END - COALESCE(g.quantita_riservata, 0)               AS qta_libera,
                 COALESCE(p.scorta_minima, 0)                          AS scorta_minima,
                 g.updated_at AS giacenza_updated_at
             FROM prodotti p
@@ -113,9 +128,17 @@ function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all', st
 function qk_prodotto_stock_info(PDO $pdo, int $prodotto_id): ?array
 {
     $sql = 'SELECT
-                p.id, p.nome, p.sku_interno, p.traccia_lotti,
+                p.id, p.nome, p.sku_interno, p.traccia_lotti, p.tipo,
                 u.codice  AS uom, u.id AS uom_id,
-                COALESCE(g.quantita_disponibile, 0) AS qta_disponibile
+                CASE 
+                    WHEN p.tipo = 'kit' THEN (
+                        SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
+                        FROM componenti_kit ck
+                        LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
+                        WHERE ck.kit_id = p.id
+                    )
+                    ELSE COALESCE(g.quantita_disponibile, 0) 
+                END AS qta_disponibile
             FROM prodotti p
             LEFT JOIN giacenze g ON g.prodotto_id = p.id
             LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
@@ -130,6 +153,7 @@ function qk_prodotto_stock_info(PDO $pdo, int $prodotto_id): ?array
         'id'              => (int)   $row['id'],
         'nome'            => (string)$row['nome'],
         'sku_interno'     => (string)$row['sku_interno'],
+        'tipo'            => (string)$row['tipo'],
         'traccia_lotti'   => (bool)  $row['traccia_lotti'],
         'uom'             => (string)($row['uom'] ?? ''),
         'qta_disponibile' => (float) $row['qta_disponibile'],

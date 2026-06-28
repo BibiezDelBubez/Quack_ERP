@@ -398,20 +398,39 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
     // Unified query with joins to fetch main sales price (listino 1, qty 0)
     $sqlRows = "SELECT p.id, p.sku_interno, p.nome, p.tipo, um.codice AS unita_misura,
                 p.attivo, c.nome AS categoria,
-                g.quantita_disponibile,
+                CASE 
+                    WHEN p.tipo = 'kit' THEN (
+                        SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
+                        FROM componenti_kit ck
+                        LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
+                        WHERE ck.kit_id = p.id
+                    )
+                    ELSE g.quantita_disponibile
+                END AS quantita_disponibile,
                 COALESCE(p.is_adr, 0) AS is_adr,
                 lp.prezzo_unitario AS prezzo_vendita,
                 p.descrizione_confezione,
-                (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                 JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                 WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                 ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1) AS costo_acquisto
+                CASE WHEN p.tipo = 'kit' THEN (
+                    SELECT SUM(ck.quantita * (
+                        SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                        JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                        WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                        ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                    ))
+                    FROM componenti_kit ck
+                    WHERE ck.kit_id = p.id
+                ) ELSE (
+                    SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                    JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                    WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                    ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                ) END AS costo_acquisto
          FROM prodotti p
          LEFT JOIN categorie_prodotto c ON c.id = p.categoria_id
          LEFT JOIN giacenze g ON g.prodotto_id = p.id
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
          LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.attivo = 1
-         LEFT JOIN listini_prezzi lp ON lp.prodotto_id = p.id AND lp.listino_id = 1 AND lp.quantita_minima = 0
+         LEFT JOIN listini_prezzi lp ON lp.prodotto_id = p.id AND lp.listino_id = (SELECT id FROM listini WHERE is_default = 1 LIMIT 1) AND lp.quantita_minima = 0
          $cond
          GROUP BY p.id
          ORDER BY " . match($sort) {
@@ -461,7 +480,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          return null;
      }
 
-     $stmtPrice = $pdo->prepare('SELECT prezzo_unitario FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+     $stmtPrice = $pdo->prepare('SELECT prezzo_unitario FROM listini_prezzi WHERE listino_id = (SELECT id FROM listini WHERE is_default = 1 LIMIT 1) AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
      $stmtPrice->execute([$id]);
      $prezzo_base = $stmtPrice->fetchColumn();
 
@@ -594,7 +613,7 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES (1, ?, 0, ?, ?)')
+            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?)')
                 ->execute([$id, $prezzo_base, $um_id]);
         }
 
@@ -737,14 +756,14 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            $stmtCheckRule = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+            $stmtCheckRule = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = (SELECT id FROM listini WHERE is_default = 1 LIMIT 1) AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
             $stmtCheckRule->execute([$id]);
             $ruleId = $stmtCheckRule->fetchColumn();
             if ($ruleId) {
                 $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ? WHERE id = ?')
                     ->execute([$prezzo_base, $um_id, $ruleId]);
             } else {
-                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES (1, ?, 0, ?, ?)')
+                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?)')
                     ->execute([$id, $prezzo_base, $um_id]);
             }
         }

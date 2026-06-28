@@ -289,7 +289,7 @@ class WarehouseController extends BaseController
                 LEFT JOIN giacenze g ON g.prodotto_id = p.id
                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
                 LEFT JOIN lotti l ON l.prodotto_id = p.id AND (p.traccia_lotti = 1)
-                WHERE p.attivo = 1
+                WHERE p.attivo = 1 AND p.tipo != 'kit'
                 ORDER BY p.nome COLLATE NOCASE, l.codice_lotto_interno ASC
             ";
             $prodotti_inventario = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
@@ -574,7 +574,12 @@ class WarehouseController extends BaseController
                 // Validazione lotti per prodotti tracciati
                 if (empty($errors['prodotto_id'])) {
                     $info = qk_prodotto_stock_info($this->pdo, (int) $values['prodotto_id']);
-                    if ($info && $info['traccia_lotti']) {
+                    
+                    if ($info && ($info['tipo'] ?? '') === 'kit') {
+                        $errors['prodotto_id'] = 'Impossibile movimentare manualmente un Kit. Le giacenze dei Kit sono calcolate automaticamente in base ai loro componenti.';
+                    }
+
+                    if ($info && $info['traccia_lotti'] && empty($errors['prodotto_id'])) {
                         if ($values['tipo_movimento'] === 'carico' && $values['lotto_mode'] === 'nuovo') {
                             // Nuovo lotto: codice interno obbligatorio
                             if (trim($values['nuovo_lotto_codice_interno']) === '') {

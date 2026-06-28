@@ -171,6 +171,7 @@ final class SalesPricelistsController extends BaseController
             'attivo'      => (int)$pricelist['attivo'],
             'valido_dal'  => $pricelist['valido_dal'] ?: '',
             'valido_al'   => $pricelist['valido_al'] ?: '',
+            'is_default'  => (int)($pricelist['is_default'] ?? 0),
         ];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -184,6 +185,7 @@ final class SalesPricelistsController extends BaseController
                     'attivo'      => post('attivo') === '1' ? 1 : 0,
                     'valido_dal'  => post('valido_dal') ?: null,
                     'valido_al'   => post('valido_al') ?: null,
+                    'is_default'  => (int)($pricelist['is_default'] ?? 0),
                 ];
 
                 if (empty($values['nome'])) {
@@ -195,6 +197,9 @@ final class SalesPricelistsController extends BaseController
 
                 if (empty($errors)) {
                     try {
+                        if ((int)($pricelist['is_default'] ?? 0) === 1) {
+                            $values['nome'] = 'Listino Base Pubblico (Globale)';
+                        }
                         $this->pdo->prepare(
                             "UPDATE listini SET
                                 nome        = :nome,
@@ -595,7 +600,7 @@ final class SalesPricelistsController extends BaseController
         }
 
         // Se non abbiamo trovato nulla o non è definito un cliente, controlliamo il listinoId esplicito fornito
-        if ($listinoId > 0 && $listinoId !== 1) {
+        if ($listinoId > 0) {
             $stmtL = $this->pdo->prepare(
                 "SELECT id, nome, valuta FROM listini
                  WHERE id = :id AND attivo = 1
@@ -646,30 +651,30 @@ final class SalesPricelistsController extends BaseController
             }
         }
 
-        // --- LEVEL 2: STANDARD / PUBBLICO (ID 1) ---
-        $fallbackListinoId = 1;
-        if ($listinoId !== $fallbackListinoId) {
-            $stmtL = $this->pdo->prepare(
-                "SELECT id, nome, valuta FROM listini
-                 WHERE id = :id AND attivo = 1
-                   AND (valido_dal IS NULL OR valido_dal <= :data)
-                   AND (valido_al  IS NULL OR valido_al  >= :data)"
-            );
-            $stmtL->execute([':id' => $fallbackListinoId, ':data' => $dataRiferimento]);
-            $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
+        // --- LEVEL 2: STANDARD / PUBBLICO (IS_DEFAULT = 1) ---
+        $stmtL = $this->pdo->prepare(
+            "SELECT id, nome, valuta FROM listini
+             WHERE is_default = 1 AND attivo = 1
+               AND (valido_dal IS NULL OR valido_dal <= :data)
+               AND (valido_al  IS NULL OR valido_al  >= :data)"
+        );
+        $stmtL->execute([':data' => $dataRiferimento]);
+        $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
 
-            if ($listino) {
-                $stmtP = $this->pdo->prepare(
-                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
-                     FROM listini_prezzi
-                     WHERE listino_id = :lid
-                       AND prodotto_id = :pid
-                       AND quantita_minima <= :qty
-                       AND (valido_dal IS NULL OR valido_dal <= :data)
-                       AND (valido_al IS NULL OR valido_al >= :data)
-                     ORDER BY quantita_minima DESC
-                     LIMIT 1"
-                );
+        if ($listino) {
+            $fallbackListinoId = (int)$listino['id'];
+            
+            $stmtP = $this->pdo->prepare(
+                "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
+                 FROM listini_prezzi
+                 WHERE listino_id = :lid
+                   AND prodotto_id = :pid
+                   AND quantita_minima <= :qty
+                   AND (valido_dal IS NULL OR valido_dal <= :data)
+                   AND (valido_al IS NULL OR valido_al >= :data)
+                 ORDER BY quantita_minima DESC
+                 LIMIT 1"
+            );
                 $stmtP->execute([
                     ':lid'  => $fallbackListinoId,
                     ':pid'  => $prodottoId,
@@ -697,16 +702,33 @@ final class SalesPricelistsController extends BaseController
                     ];
                 }
             }
-        }
 
         // --- LEVEL 3: DYNAMIC FALLBACK MARKUP ON COST ---
         $costo_unitario = 0.0;
-        $stCost = $this->pdo->prepare('
-            SELECT MIN(pfp.prezzo) 
-            FROM prodotti_fornitori_prezzi pfp
-            JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
-            WHERE pf.prodotto_id = ? AND pf.attivo = 1
-        ');
+        
+        $stProdType = $this->pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
+        $stProdType->execute([$prodottoId]);
+        $prodTipo = $stProdType->fetchColumn();
+
+        if ($prodTipo === 'kit') {
+            $stCost = $this->pdo->prepare('
+                SELECT SUM(ck.quantita * (
+                    SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                    JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                    WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                    ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                ))
+                FROM componenti_kit ck
+                WHERE ck.kit_id = ?
+            ');
+        } else {
+            $stCost = $this->pdo->prepare('
+                SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                WHERE pf2.prodotto_id = ? AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+            ');
+        }
         $stCost->execute([$prodottoId]);
         $costo_unitario_col = $stCost->fetchColumn();
 
@@ -775,8 +797,8 @@ final class SalesPricelistsController extends BaseController
     public function apiOttieniPrezzo(): void
     {
         header('Content-Type: application/json; charset=utf-8');
-
-        $prodottoId = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
+        try {
+            $prodottoId = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
         $listinoId  = filter_input(INPUT_GET, 'listino_id',  FILTER_VALIDATE_INT);
         $clienteId  = filter_input(INPUT_GET, 'cliente_id',  FILTER_VALIDATE_INT);
         $quantita   = filter_input(INPUT_GET, 'quantita',    FILTER_VALIDATE_FLOAT);
@@ -839,6 +861,9 @@ final class SalesPricelistsController extends BaseController
                 'origine'         => 'manuale',
                 'unita_misura_id' => null,
             ]);
+        }
+        } catch (\Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         }
         exit;
     }

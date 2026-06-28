@@ -390,6 +390,10 @@ $can_edit = ($stato === 'bozza');
                     </label>
                     <?php if ($can_edit): ?>
                     <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
+                      <input type="checkbox" id="chk-show-costo" style="transform:scale(1.15);">
+                      <span>Costo Acquisto</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0">
                       <input type="checkbox" id="chk-show-range" style="transform:scale(1.15);" checked>
                       <span>Range RRP</span>
                     </label>
@@ -424,7 +428,7 @@ $can_edit = ($stato === 'bozza');
                   <th class="col-conf">Confezione <i class="fa-solid fa-circle-info" data-bs-toggle="tooltip" title="Es. secchio 5 kg" style="cursor:help; font-size:0.8rem; opacity:0.8;"></i></th>
                   <th class="col-qta">Qtà <span class="required">*</span></th>
                   <th class="col-um">U.M.</th>
-                  <th class="col-costo">Costo</th>
+                  <th class="col-costo" style="white-space: normal; line-height: 1.1; min-width: 90px; text-align: right;">Costo Acquisto</th>
                   <th class="col-range">Range RRP</th>
                   <th class="col-pu">Prezzo unit.</th>
                   <th class="col-sc">Sc. %</th>

@@ -51,6 +51,15 @@ $_partials = __DIR__ . '/pricelists';
       
       <!-- TAB 2: Clienti Assegnati -->
       <div class="tab-pane fade" id="clients-pane" role="tabpanel" aria-labelledby="clients-tab" tabindex="0">
+        <?php if (!empty($values['is_default'])): ?>
+          <div class="qk-card shadow-sm text-center py-5">
+            <div class="qk-card-body">
+              <i class="fa-solid fa-earth-americas text-muted mb-3" style="font-size: 3rem;"></i>
+              <h5 class="text-secondary">Listino Pubblico Globale</h5>
+              <p class="text-muted mb-0">Questo listino si applica automaticamente a tutti i clienti sprovvisti di listini dedicati o scaglioni specifici.<br>L'assegnazione manuale di singoli clienti non è pertanto possibile né necessaria.</p>
+            </div>
+          </div>
+        <?php else: ?>
         <div class="qk-card shadow-sm">
           <div class="qk-card-header qk-flex-row qk-justify-between">
             <span class="qk-card-title">
@@ -93,6 +102,7 @@ $_partials = __DIR__ . '/pricelists';
             </div>
           </div>
         </div>
+        <?php endif; ?>
       </div>
 
       <!-- TAB 3: Note e Informazioni -->

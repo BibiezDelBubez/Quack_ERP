@@ -309,8 +309,8 @@ window.QkPF = {
                 <!-- Prezzo di vendita base -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">
-                    Prezzo di vendita base (€)
-                    <span class="qk-form-hint">Imposta il prezzo nel listino standard (ID 1)</span>
+                    Prezzo Vendita (Listino Pubblico)
+                    <span class="qk-form-hint">Inserimento rapido (sovrascrive eventuali prezzi nel Listino Globale)</span>
                   </label>
                   <input type="number" name="prezzo_vendita_base"
                          class="qk-form-control"
@@ -417,6 +417,21 @@ window.QkPF = {
                   </div>
                 </div>
               </div>
+              <div class="qk-form-row">
+                <!-- Scorta minima -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">
+                    Scorta minima
+                    <span class="qk-form-hint">Sotto questa soglia l'articolo risulterà sottoscorta</span>
+                  </label>
+                  <input type="number" name="scorta_minima"
+                         class="qk-form-control"
+                         value="<?= e($v['scorta_minima'] ?? '0') ?>"
+                         placeholder="0.000" min="0" step="0.001">
+                </div>
+                <!-- Spazio vuoto per allineamento layout -->
+                <div class="qk-form-group"></div>
+              </div>
             </div>
           </div>
 
@@ -444,6 +459,7 @@ window.QkPF = {
                   <?php endif; ?>
                 </div>
 
+
                 <!-- Descrizione confezione -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">
@@ -454,21 +470,6 @@ window.QkPF = {
                          class="qk-form-control"
                          value="<?= e($v['descrizione_confezione'] ?? '') ?>">
                 </div>
-              </div>
-              <div class="qk-form-row">
-                <!-- Scorta minima -->
-                <div class="qk-form-group">
-                  <label class="qk-form-label">
-                    Scorta minima
-                    <span class="qk-form-hint">Sotto questa soglia l'articolo risulterà sottoscorta</span>
-                  </label>
-                  <input type="number" name="scorta_minima"
-                         class="qk-form-control"
-                         value="<?= e($v['scorta_minima'] ?? '0') ?>"
-                         placeholder="0.000" min="0" step="0.001">
-                </div>
-                <!-- Spazio vuoto per allineamento layout -->
-                <div class="qk-form-group"></div>
               </div>
 
               <div class="qk-form-row">

@@ -300,10 +300,21 @@ function qk_search_prodotti_orders(PDO $pdo, string $q): array
                pf.rrp_min,
                pf.rrp_max,
                pf.fornitore_id AS rrp_fornitore_id,
-               (SELECT MIN(pfp.prezzo)
-                  FROM prodotti_fornitori_prezzi pfp
-                 WHERE pfp.prodotto_fornitore_id = pf.id
-                   AND pfp.quantita_minima = 0) AS costo_base
+               CASE WHEN p.tipo = 'kit' THEN (
+                   SELECT SUM(ck.quantita * (
+                       SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                       JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                       WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                       ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                   ))
+                   FROM componenti_kit ck
+                   WHERE ck.kit_id = p.id
+               ) ELSE (
+                   SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
+                   JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
+                   WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
+                   ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+               ) END AS costo_base
           FROM prodotti p
           LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
           LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id

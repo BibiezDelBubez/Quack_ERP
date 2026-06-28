@@ -543,7 +543,7 @@ final class SalesQuotesController extends BaseController
             ], JSON_UNESCAPED_UNICODE);
         } catch (Throwable $e) {
             http_response_code(500);
-            echo json_encode(['error' => $e->getMessage()]);
+            echo json_encode(['error' => qk_prodotti_db_message($e)]);
         }
         exit;
     }

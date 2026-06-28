@@ -70,7 +70,7 @@ return [
     '/sales/pricelists/righe/save'       => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiSaveRiga',    'auth' => true],
     '/sales/pricelists/righe/delete'     => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiDeleteRiga',  'auth' => true],
     '/sales/pricelists/api/prodotti'     => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiProdotti',    'auth' => true],
-    '/sales/pricelists/api/ottieni-prezzo' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiOttieniPrezzo', 'auth' => true],
+    '/sales/pricelists/api/ottieni-prezzo' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiOttieniPrezzo', 'auth' => false],
     '/sales/pricelists/api/clienti-assegnazione' => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiClientiAssegnazione', 'auth' => true],
     '/sales/pricelists/api/assegna-clienti'      => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiAssegnaClienti', 'auth' => true],
     '/sales/pricelists/api/import'             => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'apiImportPrezzi', 'auth' => true],

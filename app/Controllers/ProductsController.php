@@ -80,7 +80,7 @@ final class ProductsController extends BaseController
         $all_tags              = qk_load_all_tags($this->pdo);
         $prodotto_tag_ids      = [];
         $kit_componenti        = [];
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 AND id != 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 AND is_default = 0 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
 
         $page_title    = 'Nuovo prodotto';
         $page_subtitle = 'Aggiungi un prodotto al catalogo';
@@ -194,7 +194,7 @@ final class ProductsController extends BaseController
         ');
         $listini_prezzi_regole->execute([$entity_id]);
         $prezzi_vendita_regole = $listini_prezzi_regole->fetchAll(PDO::FETCH_ASSOC);
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 AND is_default = 0 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
 
         $page_title    = e($values['nome']) ?: 'Modifica prodotto';
         $page_subtitle = 'SKU ' . e($values['sku_interno']) . ' · ID #' . $entity_id;

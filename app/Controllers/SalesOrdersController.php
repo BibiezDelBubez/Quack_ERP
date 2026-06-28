@@ -554,7 +554,7 @@ final class SalesOrdersController extends BaseController
             if (!$order) throw new \Exception("Ordine non trovato.");
 
             $stLines = $this->pdo->prepare("
-                SELECT r.*, p.traccia_lotti, p.nome AS prodotto_nome, p.sku_interno
+                SELECT r.*, p.traccia_lotti, p.nome AS prodotto_nome, p.sku_interno, p.tipo
                 FROM ordini_clienti_righe r
                 JOIN prodotti p ON p.id = r.prodotto_id
                 WHERE r.ordine_id = ?
@@ -667,9 +667,22 @@ final class SalesOrdersController extends BaseController
                         $qtaStock   = $qta * $snap;
                         $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, null, $qta]);
                         $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], null, null, 0, null, null, null, $pos++]);
-                        $stUpGiac->execute([$qtaStock, $qtaStock, $prodId]);
+                        
+                        if (($line['tipo'] ?? '') === 'kit') {
+                            $kitSt = $this->pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
+                            $kitSt->execute([$prodId]);
+                            $comps = $kitSt->fetchAll(PDO::FETCH_ASSOC);
+                            foreach ($comps as $c) {
+                                $cQta = $c['quantita'] * $qtaStock;
+                                $stUpGiac->execute([$cQta, $cQta, $c['componente_id']]);
+                                $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $cQta, $numDdt, $userId]);
+                            }
+                        } else {
+                            $stUpGiac->execute([$qtaStock, $qtaStock, $prodId]);
+                            $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $qtaStock, $numDdt, $userId]);
+                        }
+                        
                         $stUpOrdRiga->execute([$qta, $lineId]);
-                        $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $qtaStock, $numDdt, $userId]);
                     }
                 }
             }

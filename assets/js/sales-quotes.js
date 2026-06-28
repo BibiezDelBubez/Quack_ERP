@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const chkShowSconto = document.getElementById('chk-show-sconto');
   const chkShowIva = document.getElementById('chk-show-iva');
   const chkShowRange = document.getElementById('chk-show-range');
+  const chkShowCosto = document.getElementById('chk-show-costo');
 
   /* ─────────────────────────────────────────────────────────────────────────
      UTILITÀ & AC FETCH
@@ -1401,9 +1402,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const showSconto = chkShowSconto ? chkShowSconto.checked : false;
     const showIva = chkShowIva ? chkShowIva.checked : false;
     const showRange = chkShowRange ? chkShowRange.checked : true;
+    const showCosto = chkShowCosto ? chkShowCosto.checked : false;
 
     document.querySelectorAll('.col-conf').forEach(el => {
       el.style.display = showConf ? '' : 'none';
+    });
+    document.querySelectorAll('.col-costo').forEach(el => {
+      el.style.display = showCosto ? '' : 'none';
     });
     document.querySelectorAll('.col-sc').forEach(el => {
       el.style.display = showSconto ? '' : 'none';
@@ -1416,7 +1421,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  [chkShowConf, chkShowSconto, chkShowIva, chkShowRange].forEach(chk => {
+  [chkShowConf, chkShowSconto, chkShowIva, chkShowRange, chkShowCosto].forEach(chk => {
     if (chk) {
       chk.addEventListener('change', updateColumnVisibility);
     }
