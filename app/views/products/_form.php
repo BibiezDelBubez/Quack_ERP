@@ -303,7 +303,7 @@ window.QkPF = {
 
           <!-- Prezzo di Vendita -->
           <div class="qk-card mb-3">
-            <div class="qk-card-header"><span class="qk-card-title">Prezzo di Vendita</span></div>
+            <div class="qk-card-header"><span class="qk-card-title"><i class="fa-solid fa-tags me-2" style="color:var(--qk-accent)"></i>Prezzo di Vendita & Ricarichi</span></div>
             <div class="qk-card-body">
               <div class="qk-form-row">
                 <!-- Prezzo di vendita base -->
@@ -317,8 +317,26 @@ window.QkPF = {
                          value="<?= e($v['prezzo_vendita_base'] ?? '') ?>"
                          placeholder="0.00" min="0" step="0.01">
                 </div>
-                <!-- Spazio vuoto per allineamento layout -->
-                <div class="qk-form-group"></div>
+                <!-- Markup di fallback (%) -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">
+                    Markup di Fallback (%)
+                    <span class="ms-1 text-primary"
+                          data-bs-toggle="tooltip" data-bs-placement="top"
+                          title="Ricarico percentuale applicato sul costo minimo del fornitore per determinare il prezzo di vendita se l'articolo non è configurato in alcun listino. Se lasciato vuoto, verrà usato il valore di fallback globale configurato nel sistema."
+                          style="cursor:help">
+                      <i class="fa-solid fa-circle-question" style="color:var(--qk-text-muted);font-size:.9em"></i>
+                    </span>
+                    <span class="qk-form-hint">Sovrascrive il ricarico di fallback generale di sistema</span>
+                  </label>
+                  <div class="input-group">
+                    <input type="number" name="markup_fallback_perc"
+                           class="qk-form-control"
+                           value="<?= e($v['markup_fallback_perc'] ?? '') ?>"
+                           placeholder="Usa default di sistema" min="0" step="0.01">
+                    <span class="input-group-text">%</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

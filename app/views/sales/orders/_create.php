@@ -151,6 +151,16 @@ $v = $values;
               </select>
             </div>
             <div class="qk-form-group">
+              <label class="qk-form-label">Listino di Vendita</label>
+              <select name="listino_id" id="ord-listino-id" class="qk-form-control">
+                <?php foreach ($listini as $lst): ?>
+                  <option value="<?= $lst['id'] ?>" <?= (string)($v['listino_id'] ?? '') === (string)$lst['id'] ? 'selected' : '' ?>>
+                    <?= e($lst['nome']) ?> (<?= e($lst['valuta']) ?>)
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="qk-form-group">
               <label class="qk-form-label">Trasporto (Resa)</label>
               <input type="text" name="trasporto" class="qk-form-control"
                      value="<?= e($v['trasporto'] ?? 'Franco destino') ?>" placeholder="Es. Franco destino">

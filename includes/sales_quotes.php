@@ -305,6 +305,7 @@ function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
 
     // Calcola equivalenti in unità stock
     $quantita_stock = $qta;
+    $system_unit_price_stock = $pu;
     $unita_misura_stock_id = $um_id;
     $quantita_contenuto_snapshot = 1.0;
     $num_factor_snapshot = 1;
@@ -334,9 +335,13 @@ function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
 
             if ((int)$um_id === $unita_misura_stock_id) {
                 $quantita_stock = $qta;
+                $system_unit_price_stock = $pu;
             } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
                 // Q_stock = Q_comm / F_conv
                 $quantita_stock = (float)bcdiv((string)$qta, (string)$quantita_contenuto_snapshot, 3);
+                // Prezzo_stock = Prezzo_comm * (Den / Num)
+                $inverseRate = bcdiv((string)$den_factor_snapshot, (string)$num_factor_snapshot, 9);
+                $system_unit_price_stock = (float)bcmul((string)$pu, (string)$inverseRate, 4);
             }
         }
     }
@@ -385,6 +390,7 @@ function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
         'margine_riga' => $margine_riga,
         'is_adr' => $is_adr,
         'quantita_stock' => $quantita_stock,
+        'system_unit_price_stock' => $system_unit_price_stock,
         'unita_misura_stock_id' => $unita_misura_stock_id,
         'quantita_contenuto_snapshot' => $quantita_contenuto_snapshot,
         'num_factor_snapshot' => $num_factor_snapshot,
@@ -513,12 +519,12 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         $sqlLine = "INSERT INTO preventivi_righe (
             preventivo_id, prodotto_id, descrizione, descrizione_confezione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
-            totale_costo_riga, margine_riga, is_adr, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
+            totale_costo_riga, margine_riga, is_adr, quantita_stock, system_unit_price_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
             num_factor_snapshot, den_factor_snapshot, posizione_riga, note_riga
         ) VALUES (
             :preventivo_id, :prodotto_id, :descrizione, :descrizione_confezione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
-            :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
+            :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :system_unit_price_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
             :num_factor_snapshot, :den_factor_snapshot, :posizione_riga, :note_riga
         )";
         $stmtLine = $pdo->prepare($sqlLine);
@@ -543,6 +549,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
                 ':margine_riga'      => $rl['margine_riga'],
                 ':is_adr'            => $rl['is_adr'],
                 ':quantita_stock'    => $rl['quantita_stock'],
+                ':system_unit_price_stock' => $rl['system_unit_price_stock'],
                 ':unita_misura_stock_id' => $rl['unita_misura_stock_id'],
                 ':quantita_contenuto_snapshot' => $rl['quantita_contenuto_snapshot'],
                 ':num_factor_snapshot' => $rl['num_factor_snapshot'],
@@ -762,12 +769,12 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         $sqlLine = "INSERT INTO preventivi_righe (
             preventivo_id, prodotto_id, descrizione, descrizione_confezione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
-            totale_costo_riga, margine_riga, is_adr, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
+            totale_costo_riga, margine_riga, is_adr, quantita_stock, system_unit_price_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
             num_factor_snapshot, den_factor_snapshot, posizione_riga, note_riga
         ) VALUES (
             :preventivo_id, :prodotto_id, :descrizione, :descrizione_confezione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
-            :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
+            :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :system_unit_price_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
             :num_factor_snapshot, :den_factor_snapshot, :posizione_riga, :note_riga
         )";
 
@@ -791,6 +798,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
                 ':margine_riga'      => $rl['margine_riga'],
                 ':is_adr'            => $rl['is_adr'],
                 ':quantita_stock'    => $rl['quantita_stock'],
+                ':system_unit_price_stock' => $rl['system_unit_price_stock'],
                 ':unita_misura_stock_id' => $rl['unita_misura_stock_id'],
                 ':quantita_contenuto_snapshot' => $rl['quantita_contenuto_snapshot'],
                 ':num_factor_snapshot' => $rl['num_factor_snapshot'],
@@ -1005,15 +1013,16 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
 
         // 3. Create ordini_clienti head
         $sqlHead = "INSERT INTO ordini_clienti (
-            numero_ordine, preventivo_id, cliente_id, indirizzo_spedizione_id, data_ordine, data_consegna_prevista, stato, note, creato_da, created_at, updated_at
+            numero_ordine, preventivo_id, cliente_id, listino_id, indirizzo_spedizione_id, data_ordine, data_consegna_prevista, stato, note, creato_da, created_at, updated_at
         ) VALUES (
-            :numero_ordine, :preventivo_id, :cliente_id, :indirizzo_spedizione_id, CURRENT_DATE, :data_consegna_prevista, 'in_lavorazione', :note, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            :numero_ordine, :preventivo_id, :cliente_id, :listino_id, :indirizzo_spedizione_id, CURRENT_DATE, :data_consegna_prevista, 'in_lavorazione', :note, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )";
         $stHead = $pdo->prepare($sqlHead);
         $stHead->execute([
             ':numero_ordine'           => $numeroOrdine,
             ':preventivo_id'           => $id,
             ':cliente_id'              => $quota['cliente_id'],
+            ':listino_id'              => !empty($quota['listino_id']) ? (int)$quota['listino_id'] : 1,
             ':indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?: null,
             ':data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
             ':note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),

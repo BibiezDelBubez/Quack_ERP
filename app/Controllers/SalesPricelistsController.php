@@ -560,13 +560,16 @@ final class SalesPricelistsController extends BaseController
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
                        AND quantita_minima <= :qty
+                       AND (valido_dal IS NULL OR valido_dal <= :data)
+                       AND (valido_al IS NULL OR valido_al >= :data)
                      ORDER BY quantita_minima DESC
                      LIMIT 1"
                 );
                 $stmtP->execute([
-                    ':lid' => $clientListino['listino_id'],
-                    ':pid' => $prodottoId,
-                    ':qty' => $quantita,
+                    ':lid'  => $clientListino['listino_id'],
+                    ':pid'  => $prodottoId,
+                    ':qty'  => $quantita,
+                    ':data' => $dataRiferimento,
                 ]);
                 $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
@@ -609,13 +612,16 @@ final class SalesPricelistsController extends BaseController
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
                        AND quantita_minima <= :qty
+                       AND (valido_dal IS NULL OR valido_dal <= :data)
+                       AND (valido_al IS NULL OR valido_al >= :data)
                      ORDER BY quantita_minima DESC
                      LIMIT 1"
                 );
                 $stmtP->execute([
-                    ':lid' => $listinoId,
-                    ':pid' => $prodottoId,
-                    ':qty' => $quantita,
+                    ':lid'  => $listinoId,
+                    ':pid'  => $prodottoId,
+                    ':qty'  => $quantita,
+                    ':data' => $dataRiferimento,
                 ]);
                 $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
@@ -659,13 +665,16 @@ final class SalesPricelistsController extends BaseController
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
                        AND quantita_minima <= :qty
+                       AND (valido_dal IS NULL OR valido_dal <= :data)
+                       AND (valido_al IS NULL OR valido_al >= :data)
                      ORDER BY quantita_minima DESC
                      LIMIT 1"
                 );
                 $stmtP->execute([
-                    ':lid' => $fallbackListinoId,
-                    ':pid' => $prodottoId,
-                    ':qty' => $quantita,
+                    ':lid'  => $fallbackListinoId,
+                    ':pid'  => $prodottoId,
+                    ':qty'  => $quantita,
+                    ':data' => $dataRiferimento,
                 ]);
                 $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
@@ -690,7 +699,7 @@ final class SalesPricelistsController extends BaseController
             }
         }
 
-        // --- LEVEL 3: EMERGENZA RICARICO SU COSTO (+20%) ---
+        // --- LEVEL 3: DYNAMIC FALLBACK MARKUP ON COST ---
         $costo_unitario = 0.0;
         $stCost = $this->pdo->prepare('
             SELECT MIN(pfp.prezzo) 
@@ -703,16 +712,48 @@ final class SalesPricelistsController extends BaseController
 
         if ($costo_unitario_col !== false && $costo_unitario_col !== null) {
             $costPrice = (float)$costo_unitario_col;
-            $computedPrice = round($costPrice * 1.20, 2);
+            
+            // Carica l'override del markup del prodotto e la UoM di stock
+            $stProd = $this->pdo->prepare('SELECT markup_fallback_perc, unita_misura_stock_id FROM prodotti WHERE id = ?');
+            $stProd->execute([$prodottoId]);
+            $prodRow = $stProd->fetch(PDO::FETCH_ASSOC);
+            
+            $markup = null;
+            $sorgenteMarkup = '';
+            
+            if ($prodRow) {
+                if ($prodRow['markup_fallback_perc'] !== null && $prodRow['markup_fallback_perc'] !== '') {
+                    $markup = (float)$prodRow['markup_fallback_perc'];
+                    $sorgenteMarkup = "ricarico specifico scheda prodotto (+" . number_format($markup, 2, ',', '.') . "%)";
+                }
+                $umStockId = $prodRow['unita_misura_stock_id'] !== null ? (int)$prodRow['unita_misura_stock_id'] : null;
+            } else {
+                $umStockId = null;
+            }
+            
+            // Se non c'è ricarico specifico, usa il fallback globale di sistema
+            if ($markup === null) {
+                $stGlobal = $this->pdo->query("SELECT valore FROM Impostazioni WHERE chiave = 'markup_fallback_default'");
+                $globalVal = $stGlobal->fetchColumn();
+                if ($globalVal !== false && $globalVal !== null && $globalVal !== '') {
+                    $markup = (float)$globalVal;
+                    $sorgenteMarkup = "ricarico di default di sistema (+" . number_format($markup, 2, ',', '.') . "%)";
+                } else {
+                    $markup = 20.0;
+                    $sorgenteMarkup = "ricarico standard di emergenza (+20,00%)";
+                }
+            }
+            
+            $computedPrice = round($costPrice * (1 + $markup / 100), 2);
             return [
                 'prezzo_unitario' => $computedPrice,
                 'sconto_perc'     => 0.0,
                 'valuta'          => 'EUR',
                 'listino_id'      => 0,
                 'listino_nome'    => 'Ricarico automatico su costo',
-                'prezzo_sorgente' => 'Prezzo calcolato: costo d\'acquisto +20% (listino di vendita non configurato)',
+                'prezzo_sorgente' => "Costo d'acquisto minimo (" . number_format($costPrice, 2, ',', '.') . " €) + " . $sorgenteMarkup,
                 'origine'         => 'costo',
-                'unita_misura_id' => null,
+                'unita_misura_id' => $umStockId,
             ];
         }
 

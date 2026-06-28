@@ -29,6 +29,18 @@
     </div>
   </div>
 
+  <!-- Impostazioni Generali -->
+  <div class="qk-card qk-settings-card">
+    <div class="qk-settings-card-icon"><i class="fa-solid fa-gears"></i></div>
+    <div class="qk-settings-card-body">
+      <h3>Impostazioni Generali</h3>
+      <p>Gestisci i parametri globali del sistema, inclusi i ricarichi e le percentuali di markup di fallback per il motore di determinazione prezzi.</p>
+      <a href="<?= url('settings/generali') ?>" class="btn-qk btn-qk-secondary btn-qk-sm mt-auto align-self-start">
+        Configura generali <i class="fa-solid fa-arrow-right ms-1"></i>
+      </a>
+    </div>
+  </div>
+
   <!-- Aliquote IVA (Placeholder) -->
   <div class="qk-card qk-settings-card qk-settings-card-muted">
     <div class="qk-settings-card-icon"><i class="fa-solid fa-percent"></i></div>

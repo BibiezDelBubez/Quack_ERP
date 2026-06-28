@@ -95,6 +95,12 @@ async function loadClienteDettagli(clienteId) {
     if (elCond && !elCond.value) elCond.value = data.cliente.condizioni_pagamento;
   }
 
+  // Precompila listino di vendita
+  if (data.cliente?.listino_id) {
+    const elListino = document.getElementById('ord-listino-id');
+    if (elListino) elListino.value = data.cliente.listino_id;
+  }
+
   // Popola select indirizzi
   const spedSel = document.getElementById('ord-indirizzo-spedizione-id');
   if (spedSel) {
@@ -388,12 +394,13 @@ function buildRiga(prefill = {}) {
 async function fetchOrdinePrice(tr, item) {
   const clienteId = document.getElementById('ord-cliente-id')?.value;
   if (!clienteId || !item.id) return;
+  const listinoId = document.getElementById('ord-listino-id')?.value || '';
   try {
     const data = await apiFetch('/sales/pricelists/api/ottieni-prezzo', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'csrf_token=' + encodeURIComponent(CSRF) + '&cliente_id=' + clienteId + '&prodotto_id=' + item.id + '&qta=1',
+      body: 'csrf_token=' + encodeURIComponent(CSRF) + '&cliente_id=' + clienteId + '&prodotto_id=' + item.id + '&listino_id=' + listinoId + '&qta=1',
     });
     if (data && data.prezzo !== undefined && data.prezzo !== null) {
       const puInput = tr.querySelector('.ord-inp-pu');

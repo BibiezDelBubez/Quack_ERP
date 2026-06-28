@@ -456,6 +456,7 @@ CREATE TABLE IF NOT EXISTS prodotti (
     peso_lordo_kg        DECIMAL(10,3),
     ean                  VARCHAR(14),                                          -- EAN/barcode della confezione
     traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
+    markup_fallback_perc DECIMAL(5,2)  DEFAULT NULL,                           -- override del markup di fallback per vendite su costo
     note_interne         TEXT,
     attivo               BOOLEAN       NOT NULL DEFAULT 1,
     created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -627,8 +628,11 @@ CREATE TABLE IF NOT EXISTS ordini_acquisto_righe (
     iva_riga               DECIMAL(10,2),                      -- memorizzato per velocità
     data_consegna_prevista DATE,                               -- override per la singola riga; NULL = usa la data dell'ordine
     quantita_stock         DECIMAL(10,3),                      -- quantità in unità stock
-    unita_misura_stock_id  INTEGER       REFERENCES unita_misura(id), -- UoM di stock
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id  BIGINT UNSIGNED, -- UoM di stock
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    num_factor_snapshot    INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
+    den_factor_snapshot    INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
     note                   TEXT
 );
 
@@ -686,8 +690,11 @@ CREATE TABLE IF NOT EXISTS ricevimento_merce_righe (
     lotto_id          INTEGER       REFERENCES lotti(id),                  -- lotto registrato per questa riga; NULL se prodotto non traccia lotti
     quantita_ricevuta DECIMAL(10,3) NOT NULL,                              -- quantità fisicamente ricevuta
     quantita_stock    DECIMAL(10,3),                                  -- quantità in unità stock
-    unita_misura_stock_id INTEGER    REFERENCES unita_misura(id),      -- UoM di stock
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id BIGINT UNSIGNED,      -- UoM di stock
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
+    den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
     note              TEXT
 );
 
@@ -845,8 +852,11 @@ CREATE TABLE IF NOT EXISTS preventivi_righe (
     margine_riga    DECIMAL(10,2),                   -- imponibile_riga − totale_costo_riga
     is_adr          BOOLEAN       NOT NULL DEFAULT 0, -- riga contiene prodotto ADR
     quantita_stock  DECIMAL(10,3),                   -- quantità convertita in unità di stock
-    unita_misura_stock_id INTEGER REFERENCES unita_misura(id), -- UoM di stock del prodotto
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id BIGINT UNSIGNED, -- UoM di stock del prodotto
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
+    den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
     posizione_riga  INTEGER       NOT NULL DEFAULT 0, -- ordine di visualizzazione
     note_riga       TEXT
 );
@@ -863,6 +873,7 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
                                               'in_lavorazione','parzialmente_spedito',
                                               'spedito','completato','annullato')),
     note                    TEXT,
+    listino_id              INTEGER      REFERENCES listini(id), -- listino di vendita applicato
     creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
@@ -880,8 +891,11 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     prezzo_unitario    DECIMAL(10,4),                                  -- prezzo di vendita
     costo_unitario     DECIMAL(10,4),                                  -- costo d'acquisto al momento dell'ordine
     quantita_stock     DECIMAL(10,3),                                  -- quantità in unità stock
-    unita_misura_stock_id INTEGER    REFERENCES unita_misura(id),      -- UoM di stock
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id BIGINT UNSIGNED,      -- UoM di stock
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
+    den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
     note               TEXT
 );
 
@@ -1230,7 +1244,8 @@ INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES
 -- Configurazione Preventivi (Canale vendita 1)
 INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
 ('preventivi_scadenza_giorni', '30'),
-('preventivi_prefisso', 'PREV-');
+('preventivi_prefisso', 'PREV-'),
+('markup_fallback_default', '20.00');
 
 -- Configurazione WooCommerce (Canale vendita 2)
 INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 

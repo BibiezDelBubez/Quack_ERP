@@ -259,6 +259,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <input type="hidden" name="righe[${idx}][uom_commercial_id]" class="inp-uom-commercial-id" value="${esc(tr.dataset.uomCommercialId)}">
         <input type="hidden" name="righe[${idx}][quantita_contenuto]" class="inp-quantita-contenuto" value="${esc(tr.dataset.quantitaContenuto)}">
         <input type="hidden" name="righe[${idx}][sku]" class="inp-sku" value="${esc(prefill.sku || '')}">
+        <input type="hidden" name="righe[${idx}][prezzo_manuale]" class="inp-prezzo-manuale" value="0">
       </td>
       <td class="col-desc">
         <textarea name="righe[${idx}][descrizione]" class="qk-form-control inp-desc"
@@ -283,12 +284,17 @@ document.addEventListener('DOMContentLoaded', function () {
         <span class="riga-range-val">—</span>
       </td>
       <td class="col-pu">
-        <div style="position:relative;width:100%">
-          <input type="number" name="righe[${idx}][prezzo_unitario]" class="qk-form-control text-end inp-pu"
-                 placeholder="0,00" min="0" step="0.0001" value="${prefill.prezzo_unitario || ''}" style="padding-right:20px; width:100%;">
-          <span class="price-origin-badge" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); font-size:0.75rem; cursor:pointer; display:flex; align-items:center;" title="Nessun prezzo configurato">
-            <i class="fa-solid fa-triangle-exclamation" style="color:var(--qk-danger)"></i>
-          </span>
+        <div class="qk-flex-row qk-gap-xs" style="align-items:center;">
+          <div style="position:relative; flex-grow:1;">
+            <input type="number" name="righe[${idx}][prezzo_unitario]" class="qk-form-control text-end inp-pu"
+                   placeholder="0,00" min="0" step="0.0001" value="${prefill.prezzo_unitario || ''}" style="padding-right:24px; width:100%;">
+            <span class="price-origin-badge" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); font-size:0.85rem; cursor:help; display:flex; align-items:center;" title="Nessun prezzo configurato">
+              <i class="fa-solid fa-triangle-exclamation" style="color:var(--qk-danger)"></i>
+            </span>
+          </div>
+          <button type="button" class="btn-qk btn-qk-xs btn-qk-ghost text-muted riga-reset-price" style="display:none;" title="Ripristina prezzo di listino">
+            <i class="fa-solid fa-rotate-left"></i>
+          </button>
         </div>
       </td>
       <td class="col-sc">
@@ -317,10 +323,28 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const puInput = tr.querySelector('.inp-pu');
     const badge = tr.querySelector('.price-origin-badge');
-    if (puInput && badge) {
+    const btnResetPrice = tr.querySelector('.riga-reset-price');
+    const manualFlag = tr.querySelector('.inp-prezzo-manuale');
+    
+    // Bind manual modification feedback and reset click logic
+    if (puInput && badge && btnResetPrice) {
       puInput.addEventListener('input', () => {
-        badge.innerHTML = '<i class="fa-solid fa-pen-to-square" style="color:var(--qk-warning)"></i>';
-        badge.title = 'Modificato manualmente';
+        if (tr.dataset.priceMode !== 'manual') {
+          tr.dataset.priceMode = 'manual';
+          manualFlag.value = '1';
+          badge.innerHTML = '<i class="fa-solid fa-pen-to-square text-warning"></i>';
+          badge.title = 'Prezzo modificato manualmente. Il calcolo automatico è sospeso.';
+          btnResetPrice.style.display = 'inline-block';
+        }
+      });
+      btnResetPrice.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        tr.dataset.priceMode = 'automatic';
+        manualFlag.value = '0';
+        btnResetPrice.style.display = 'none';
+        // Richiama il motore di determinazione prezzi per ripristinare il valore originario
+        fetchQuotePrice(tr);
       });
     }
 
@@ -1259,6 +1283,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const clienteId = document.getElementById('cliente_id')?.value || '';
 
     if (!prodottoId || !qtyInput || !priceInput) return;
+    
+    // Se la riga è in override manuale, non farti sovrascrivere dal backend
+    if (tr.dataset.priceMode === 'manual') return;
 
     const qty = parseFloat(qtyInput.value) || 1.0;
     
@@ -1327,6 +1354,24 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   document.getElementById('quote-listino-id')?.addEventListener('change', () => {
+    // Se non ci sono righe o se siamo al primo caricamento, non facciamo nulla.
+    const righe = document.querySelectorAll('#tbody-righe tr');
+    if (righe.length === 0) return;
+    
+    // Controlliamo se c'è almeno una riga compilata
+    let hasProducts = false;
+    righe.forEach(tr => {
+      if (tr.querySelector('.inp-prodotto-id')?.value) hasProducts = true;
+    });
+
+    if (hasProducts) {
+      openModal('modal-cambio-listino');
+    }
+  });
+
+  // Listener per la conferma del modal
+  document.getElementById('btn-conferma-cambio-listino')?.addEventListener('click', () => {
+    bootstrap.Modal.getInstance(document.getElementById('modal-cambio-listino')).hide();
     refetchAllRowPrices();
   });
 

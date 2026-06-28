@@ -25,9 +25,9 @@ try {
         ->fetchColumn();
 
     if (!$exists) {
-        $sql_file = APP_ROOT_DIR . '/db/init.sql';
+        $sql_file = APP_ROOT_DIR . '/db/init_sqlite.sql';
         if (!is_readable($sql_file)) {
-            die('<b>Errore setup DB:</b> impossibile leggere <code>db/init.sql</code>.');
+            die('<b>Errore setup DB:</b> impossibile leggere <code>db/init_sqlite.sql</code>.');
         }
 
         $raw = file_get_contents($sql_file);
@@ -44,63 +44,78 @@ try {
         $buf        = '';
         $len        = strlen($raw);
         $i          = 0;
+        $in_string  = null;
+        $in_trigger = false;
 
         while ($i < $len) {
             $ch = $raw[$i];
 
             // Commento inline: -- fino a fine riga
-            if (!isset($in_string) && $ch === '-' && isset($raw[$i + 1]) && $raw[$i + 1] === '-') {
-                while ($i < $len && $raw[$i] !== "\n") {
+            if ($in_string === null && $ch === '-' && isset($raw[$i + 1]) && $raw[$i + 1] === '-') {
+                while ($i < $len && $raw[$i] !== "\n" && $raw[$i] !== "\r") {
                     $i++;
                 }
                 continue;
             }
 
-            // Inizio stringa
-            if (!isset($in_string) && ($ch === "'" || $ch === '"')) {
+            // Inizio stringa o delimitatore
+            if ($in_string === null && ($ch === "'" || $ch === '"' || $ch === '`')) {
                 $in_string = $ch;
                 $buf .= $ch;
                 $i++;
                 continue;
             }
 
-            // Fine stringa (con gestione escape '' e "")
-            if (isset($in_string) && $ch === $in_string) {
+            // Fine stringa
+            if ($in_string !== null && $ch === $in_string) {
                 $buf .= $ch;
-                // Controlla se è un escape (apostrofo raddoppiato)
                 if (isset($raw[$i + 1]) && $raw[$i + 1] === $in_string) {
                     $buf .= $raw[$i + 1];
                     $i += 2;
                     continue;
                 }
-                unset($in_string);
+                $in_string = null;
                 $i++;
                 continue;
             }
 
             // Separatore di statement (fuori da stringhe)
-            if (!isset($in_string) && $ch === ';') {
-                $stmt = trim($buf);
-                if ($stmt !== '') {
-                    $statements[] = $stmt;
+            if ($in_string === null) {
+                $trimmed = trim(strtolower($buf));
+                if (substr($trimmed, -5) === 'begin') {
+                    $in_trigger = true;
                 }
-                $buf = '';
-                $i++;
-                continue;
+
+                if ($ch === ';') {
+                    if ($in_trigger) {
+                        if (preg_match('/\bend\s*$/i', $trimmed)) {
+                            $in_trigger = false;
+                        }
+                    }
+
+                    if (!$in_trigger) {
+                        $stmt = trim($buf);
+                        if ($stmt !== '') {
+                            $statements[] = $stmt;
+                        }
+                        $buf = '';
+                        $i++;
+                        continue;
+                    }
+                }
             }
 
             $buf .= $ch;
             $i++;
         }
 
-        // Eventuale residuo senza punto e virgola finale
         $stmt = trim($buf);
         if ($stmt !== '') {
             $statements[] = $stmt;
         }
 
         foreach ($statements as $stmt) {
-            $pdo->exec($stmt . ';');
+            $pdo->exec($stmt);
         }
     }
 

@@ -122,6 +122,7 @@ return [
 
     '/theme/set'        => ['type' => 'controller', 'controller' => 'ThemeController', 'action' => 'set', 'auth' => true],
     '/settings'         => ['type' => 'controller', 'controller' => 'SettingsController', 'action' => 'index', 'auth' => true],
+    '/settings/generali'=> ['type' => 'controller', 'controller' => 'SettingsController', 'action' => 'generali', 'auth' => true],
     '/settings/aziende'        => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'index',  'auth' => true],
     '/settings/aziende/create' => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'create', 'auth' => true],
     '/settings/aziende/edit'   => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'edit',   'auth' => true],

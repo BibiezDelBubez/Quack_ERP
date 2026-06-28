@@ -194,6 +194,11 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
               <input type="text" class="qk-form-control" style="font-size:0.8rem;" value="<?= e($o['cliente_email'] ?: '—') ?>" placeholder="Email" readonly>
             </div>
           </div>
+
+          <div class="qk-form-group mb-2">
+            <label class="qk-form-label">Listino di Vendita Applicato</label>
+            <input type="text" class="qk-form-control" value="<?= e($o['listino_nome'] ?: 'Listino Base') ?>" readonly>
+          </div>
         </div>
 
         <!-- Colonna 2: Indirizzo di Spedizione -->

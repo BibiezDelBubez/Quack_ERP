@@ -219,7 +219,7 @@ $can_edit = ($stato === 'bozza');
             </div>
             
             <div class="qk-form-group" style="flex: 0 0 200px; min-width: 170px;">
-              <label class="qk-form-label">Azienda venditrice</label>
+              <label class="qk-form-label">Vendi come:</label>
               <select name="azienda_interna_id" id="quote-azienda-interna-id" class="qk-form-control" style="font-size: 0.85rem;">
                 <?php foreach ($aziende as $az): ?>
                   <option value="<?= $az['id'] ?>" <?= (string)($v['azienda_interna_id'] ?? '') === (string)$az['id'] ? 'selected' : '' ?>>
@@ -231,26 +231,29 @@ $can_edit = ($stato === 'bozza');
 
             <div class="qk-form-group" style="flex: 0 0 200px; min-width: 170px;">
               <label class="qk-form-label">Listino prezzi</label>
-              <input type="hidden" name="listino_id" id="quote-listino-id" value="<?= e($v['listino_id'] ?? '') ?>">
-              <div class="qk-m2o-wrap" style="position:relative;">
-                <?php
-                $listinoLabel = '';
-                foreach ($listini as $lst) {
-                    if ((string)($v['listino_id'] ?? '') === (string)$lst['id']) {
-                        $listinoLabel = $lst['nome'] . ' (' . $lst['valuta'] . ')';
-                        break;
-                    }
-                }
-                ?>
-                <input type="text"
-                       class="qk-form-control qk-m2o-input"
-                       id="quote-listino-label"
-                       placeholder="Cerca listino…"
-                       value="<?= e($listinoLabel) ?>"
-                       autocomplete="off">
+              <?php if (true): // Sempre autocomplete come richiesto ?>
+                <!-- Autotrasformazione in Autocomplete sempre attiva -->
+                <input type="hidden" name="listino_id" id="quote-listino-id" value="<?= e($v['listino_id'] ?? '') ?>">
+                <div class="qk-m2o-wrap" style="position:relative;">
+                  <?php
+                  $listinoLabel = '';
+                  foreach ($listini as $lst) {
+                      if ((string)($v['listino_id'] ?? '') === (string)$lst['id']) {
+                          $listinoLabel = $lst['nome'] . ' (' . $lst['valuta'] . ')';
+                          break;
+                      }
+                  }
+                  ?>
+                  <input type="text"
+                         class="qk-form-control qk-m2o-input"
+                         id="quote-listino-label"
+                         placeholder="Cerca listino…"
+                         value="<?= e($listinoLabel) ?>"
+                         autocomplete="off">
                 <button type="button" class="qk-m2o-clear <?= empty($v['listino_id']) ? 'd-none' : '' ?>" id="quote-listino-clear">&times;</button>
                 <div class="qk-m2o-dropdown shadow-sm" id="quote-listino-dropdown" style="display:none; position:absolute; z-index:1050; background:var(--qk-card-bg); border:1px solid var(--qk-border); width:100%; max-height:200px; overflow-y:auto;"></div>
               </div>
+              <?php endif; ?>
             </div>
           </div>
           
@@ -827,6 +830,32 @@ $can_edit = ($stato === 'bozza');
     </div>
   </div>
 </div>
+<!-- ══════════════════════ MODALE CAMBIO LISTINO ════════════════════════════ -->
+<div class="modal fade" id="modal-cambio-listino" tabindex="-1" aria-labelledby="mcl-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--qk-card-bg);color:var(--qk-text-primary);border:1px solid var(--qk-border)">
+      <div class="modal-header" style="border-color:var(--qk-border)">
+        <h5 class="modal-title" id="mcl-title"><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>Attenzione: Cambio Listino</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">
+          Hai modificato il listino in testata. Desideri aggiornare i prezzi di <strong>tutte le righe</strong> in base al nuovo listino selezionato?
+        </p>
+        <p class="mt-2 mb-0 text-muted small">
+          (Nota: i prezzi modificati manualmente e congelati dall'operatore non verranno sovrascritti dal ricalcolo).
+        </p>
+      </div>
+      <div class="modal-footer" style="border-color:var(--qk-border)">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn-qk btn-qk-warning" id="btn-conferma-cambio-listino">
+          <i class="fa-solid fa-rotate-left"></i> Ricalcola Prezzi
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 window.QK_QUOTES_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,

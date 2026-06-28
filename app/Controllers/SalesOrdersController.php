@@ -115,6 +115,7 @@ final class SalesOrdersController extends BaseController
               ORDER BY 2"
         );
         $aziende = $stAz ? $stAz->fetchAll(PDO::FETCH_ASSOC) : [];
+        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
 
         $active_tab    = 'orders';
         $page_title    = 'Nuovo Ordine Cliente';
@@ -142,6 +143,7 @@ final class SalesOrdersController extends BaseController
             'condizioni_pagamento'    => '',
             'trasporto'               => 'Franco destino',
             'valuta'                  => 'EUR',
+            'listino_id'              => '1', // default listino standard (id=1)
             'note'                    => '',
             'indirizzo_spedizione_id' => '',
             'consegna_via'            => '',
@@ -177,6 +179,7 @@ final class SalesOrdersController extends BaseController
             'condizioni_pagamento'    => $s('condizioni_pagamento'),
             'trasporto'               => $s('trasporto'),
             'valuta'                  => $s('valuta', 'EUR'),
+            'listino_id'              => $s('listino_id', '1'),
             'note'                    => $s('note'),
             'indirizzo_spedizione_id' => $s('indirizzo_spedizione_id'),
             'consegna_via'            => $s('consegna_via'),
@@ -248,7 +251,12 @@ final class SalesOrdersController extends BaseController
         $clienteId = (int)get_param('cliente_id');
         if ($clienteId <= 0) { echo json_encode(['ok' => false]); exit; }
 
-        $stCli = $this->pdo->prepare("SELECT * FROM clienti_fornitori WHERE id = ? LIMIT 1");
+        $stCli = $this->pdo->prepare("
+            SELECT cf.*, dc.listino_id
+            FROM clienti_fornitori cf
+            LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
+            WHERE cf.id = ? LIMIT 1
+        ");
         $stCli->execute([$clienteId]);
         $cliente = $stCli->fetch(PDO::FETCH_ASSOC);
         if (!$cliente) { echo json_encode(['ok' => false]); exit; }
@@ -279,7 +287,10 @@ final class SalesOrdersController extends BaseController
 
         echo json_encode([
             'ok'        => true,
-            'cliente'   => ['condizioni_pagamento' => $cliente['condizioni_pagamento'] ?? ''],
+            'cliente'   => [
+                'condizioni_pagamento' => $cliente['condizioni_pagamento'] ?? '',
+                'listino_id'           => $cliente['listino_id'] !== null ? (int)$cliente['listino_id'] : 1
+            ],
             'indirizzi' => $indirizzi,
             'contatti'  => $contatti,
         ]);
@@ -384,11 +395,13 @@ final class SalesOrdersController extends BaseController
                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
                    cf.telefono AS cliente_telefono, cf.email AS cliente_email,
                    p.numero_preventivo AS preventivo_numero,
-                   u.username AS creato_da_username
+                   u.username AS creato_da_username,
+                   lst.nome AS listino_nome
             FROM ordini_clienti o
             JOIN clienti_fornitori cf ON cf.id = o.cliente_id
             LEFT JOIN preventivi p ON p.id = o.preventivo_id
             LEFT JOIN utenti u ON u.id = o.creato_da
+            LEFT JOIN listini lst ON lst.id = o.listino_id
             WHERE o.id = ?
         ");
         $st->execute([$id]);
