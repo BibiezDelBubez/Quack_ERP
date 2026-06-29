@@ -209,7 +209,14 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
         ];
 
         if ($id === 0) {
-            // Esegue snapshotting iniziale
+            // ==============================================================================
+            // [AI WARNING - ARCHITETTURA IBRIDA]
+            // Le foreign keys `indirizzo_consegna_id` e `contatto_id` in rfq_testata, 
+            // offerte_testata e ordini_testata puntano obbligatoriamente alle tabelle 
+            // snapshot (indirizzi_documenti e contatti_documenti) e NON all'anagrafica.
+            // Questa funzione esegue lo snapshotting iniziale e restituisce gli ID storici 
+            // da inserire nel DB. Il database live è stato allineato a questo schema.
+            // ==============================================================================
             $snapAddrId = qk_upsert_document_address($pdo, $addrPayload, null);
             $snapContId = qk_upsert_document_contact($pdo, $contPayload, null);
 

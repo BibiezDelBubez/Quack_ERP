@@ -138,7 +138,11 @@ class RfqController extends BaseController
                 
                 // Enforce read-only lock for address and contact overrides if the RFQ status is not 'bozza'
                 $currentStatus = $detail['rfq']['stato'];
-                if ($currentStatus !== 'bozza') {
+                $isTerminalState = in_array($currentStatus, ['chiusa', 'revisionata'], true);
+
+                if ($isTerminalState) {
+                    $errors['_global'] = 'Accesso Negato: Impossibile modificare un documento chiuso e archiviato.';
+                } else if ($currentStatus !== 'bozza') {
                     $originalValues = $this->mapDetailToValues($detail['rfq']);
                     foreach ([
                         'indirizzo_consegna_id', 'consegna_via', 'consegna_civico', 'consegna_cap',

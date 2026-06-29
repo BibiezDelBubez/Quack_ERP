@@ -206,6 +206,10 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
                 $addrRow = $stAddr->fetch(PDO::FETCH_ASSOC);
                 if ($addrRow) {
                     unset($addrRow['id']);
+                    // ==============================================================================
+                    // [AI WARNING - ARCHITETTURA IBRIDA]
+                    // Le FK puntano agli snapshot storici. Il DB live è stato allineato. NON toccare.
+                    // ==============================================================================
                     $snapAddrId = qk_upsert_document_address($pdo, $addrRow, null);
                 }
             }

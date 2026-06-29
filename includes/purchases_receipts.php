@@ -143,7 +143,11 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
     $ordine = $st->fetch(PDO::FETCH_ASSOC);
     if (!$ordine) throw new \RuntimeException('Ordine non trovato o non in stato ricevibile.');
 
-    $pdo->beginTransaction();
+    $manageTrans = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $manageTrans = true;
+    }
     try {
         $numero = qk_next_numero_acquisto($pdo, 'ricezione');
 
@@ -199,11 +203,15 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
             ]);
         }
 
-        $pdo->commit();
+        if ($manageTrans) {
+            $pdo->commit();
+        }
         return $ricezione_id;
 
     } catch (\Throwable $e) {
-        $pdo->rollBack();
+        if ($manageTrans) {
+            $pdo->rollBack();
+        }
         throw $e;
     }
 }
@@ -264,6 +272,10 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 ? (float)$input['quantita_rifiutata']
                 : 0.0;
             $motivoRifiuto = $input['motivo_rifiuto'] ?? '';
+
+            if ($qtaAccettata < 0 || $qtaRifiutata < 0) {
+                throw new \RuntimeException('La quantità accettata o rifiutata non può essere negativa (tentativo di scarico irregolare).');
+            }
 
             // Convert to stock UoM using the transaction's conversion factor snapshot
             $quantita_stock = $qtaAccettata;
@@ -340,6 +352,14 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
 
             // Avanza pianificazione consegna
             _ricezione_avanza_pianificazione($pdo, $ordineRigaId, $qtaAccettata);
+
+            // Registra movimento di carico nel giornale movimenti
+            $pdo->prepare(
+                "INSERT INTO movimenti_magazzino
+                    (prodotto_id, lotto_id, tipo_movimento, quantita,
+                     documento_tipo, documento_id, creato_da, created_at)
+                 VALUES (?, ?, 'carico', ?, 'ricezione', ?, ?, CURRENT_TIMESTAMP)"
+            )->execute([$prodottoId, $lotto_id ?: null, $quantita_stock, $ricezione_id, $utente_id]);
         }
 
         // Aggiorna stato ordine padre
@@ -400,11 +420,11 @@ function _ricezione_gestisci_lotto(
         $pdo->prepare(
             "INSERT INTO lotti
                 (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
-                 prodotto_id, fornitore_id, ordine_testata_id, ricezione_riga_id,
+                 prodotto_id, origine_tipo, fornitore_id, ordine_testata_id, ricezione_riga_id,
                  data_scadenza, data_arrivo, numero_ddt_arrivo,
                  quantita_ricevuta, quantita_disponibile,
                  creato_da, created_at)
-             VALUES (?,?,?,?,?,?,?,?,DATE('now'),?,?,?,?,CURRENT_TIMESTAMP)"
+             VALUES (?,?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,?,CURRENT_TIMESTAMP)"
         )->execute([
             $lottoData['codice_lotto_interno'], // colonna legacy codice_lotto (NOT NULL)
             $lottoData['codice_lotto_interno'],

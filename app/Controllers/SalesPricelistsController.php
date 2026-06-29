@@ -384,6 +384,20 @@ final class SalesPricelistsController extends BaseController
         $qMin   = ($qMin === false || $qMin === null) ? 0.0 : $qMin;
         $sconto = ($sconto === false || $sconto === null) ? 0.0 : $sconto;
 
+        // Logical business validations
+        if ($prezzo < 0) {
+            echo json_encode(['ok' => false, 'error' => 'Il prezzo unitario non può essere negativo.']);
+            exit;
+        }
+        if ($sconto < 0 || $sconto > 100) {
+            echo json_encode(['ok' => false, 'error' => 'Lo sconto deve essere compreso tra 0 e 100%.']);
+            exit;
+        }
+        if ($qMin < 0) {
+            echo json_encode(['ok' => false, 'error' => 'La quantità minima dello scaglione non può essere negativa.']);
+            exit;
+        }
+
         try {
             if ($rigaId) {
                 // UPDATE

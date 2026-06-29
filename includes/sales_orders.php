@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/anagrafiche.php';
 require_once __DIR__ . '/prodotti.php';
+require_once __DIR__ . '/document_common.php';
 
 /**
  * Genera il prossimo numero progressivo per l'ordine cliente diretto.
@@ -55,55 +56,31 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
     try {
         $numero = $values['numero_ordine'];
 
-        // ── Snapshot cliente ────────────────────────────────────────────────
-        $stCli = $pdo->prepare(
-            "SELECT cf.ragione_sociale, cf.nome, cf.cognome, cf.partita_iva, cf.codice_fiscale,
-                    ia.via, ia.civico, ia.cap, ia.citta, ia.provincia, ia.nazione
-               FROM clienti_fornitori cf
-               LEFT JOIN indirizzi ia ON ia.soggetto_id = cf.id
-                                     AND ia.tipo IN ('sede_legale','fatturazione')
-                                     AND ia.predefinito = 1
-              WHERE cf.id = ?
-              LIMIT 1"
-        );
-        $stCli->execute([$values['cliente_id']]);
-        $cli = $stCli->fetch(PDO::FETCH_ASSOC) ?: [];
+        $denorm = qk_denormalize_document_details($pdo, $values);
 
-        $ragione_sociale = $cli['ragione_sociale'] ?? trim(($cli['nome'] ?? '') . ' ' . ($cli['cognome'] ?? ''));
-        $cliente_indirizzo = '';
-        if (!empty($cli['via'])) {
-            $cliente_indirizzo = trim(
-                ($cli['via'] ?? '') . ' ' . ($cli['civico'] ?? '') . ', ' .
-                ($cli['cap'] ?? '') . ' ' . ($cli['citta'] ?? '') .
-                (!empty($cli['provincia']) ? ' (' . $cli['provincia'] . ')' : '')
-            );
-        }
+        // ── Creazione snapshot strutturati (indirizzo e contatto) ───────────
+        $addrPayload = [
+            'indirizzo_master_id' => $values['indirizzo_spedizione_id'] ?? null,
+            'via' => $denorm['consegna_via'],
+            'civico' => $denorm['consegna_civico'],
+            'cap' => $denorm['consegna_cap'],
+            'citta' => $denorm['consegna_citta'],
+            'provincia' => $denorm['consegna_provincia'],
+            'nazione' => $denorm['consegna_nazione'],
+            'presso' => $denorm['consegna_presso'],
+            'referente_consegna' => $denorm['consegna_referente'],
+            'telefono_consegna' => $denorm['consegna_telefono'],
+            'note_consegna' => $denorm['consegna_note'],
+        ];
+        $indirizzo_consegna_id = qk_upsert_document_address($pdo, $addrPayload);
 
-        // ── Snapshot indirizzo spedizione (se selezionato da anagrafica) ────
-        $indirizzo_spedizione_id = !empty($values['indirizzo_spedizione_id']) && is_numeric($values['indirizzo_spedizione_id'])
-            ? (int)$values['indirizzo_spedizione_id']
-            : null;
-
-        if ($indirizzo_spedizione_id) {
-            $stAddr = $pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
-            $stAddr->execute([$indirizzo_spedizione_id]);
-            $addr = $stAddr->fetch(PDO::FETCH_ASSOC);
-            if ($addr) {
-                // Override solo se i campi POST non hanno già sovrascrittura
-                foreach (['via','civico','cap','citta','provincia','nazione','presso','note_consegna'] as $field) {
-                    if (empty($values['consegna_' . ($field === 'note_consegna' ? 'note' : $field)])) {
-                        $mapKey = $field === 'note_consegna' ? 'consegna_note' : 'consegna_' . $field;
-                        $values[$mapKey] = $addr[$field] ?? '';
-                    }
-                }
-                if (empty($values['consegna_referente'])) {
-                    $values['consegna_referente'] = $addr['referente_consegna'] ?? '';
-                }
-                if (empty($values['consegna_telefono'])) {
-                    $values['consegna_telefono'] = $addr['telefono_consegna'] ?? '';
-                }
-            }
-        }
+        $contPayload = [
+            'contatto_master_id' => $values['contatto_id'] ?? null,
+            'nome' => $values['contatto_nome'] ?? '',
+            'email' => $values['contatto_email'] ?? '',
+            'telefono' => $values['contatto_telefono'] ?? '',
+        ];
+        $contatto_snapshot_id = qk_upsert_document_contact($pdo, $contPayload);
 
         // ── Inserimento testata ordine ───────────────────────────────────────
         $st = $pdo->prepare("
@@ -118,6 +95,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 consegna_provincia, consegna_nazione, consegna_presso,
                 consegna_referente, consegna_telefono, consegna_note,
                 contatto_id, contatto_nome, contatto_email, contatto_telefono,
+                indirizzo_consegna_id, contatto_snapshot_id,
                 cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
                 creato_da, created_at, updated_at
             ) VALUES (
@@ -131,6 +109,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
+                ?, ?,
                 ?, ?, ?, ?,
                 ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
@@ -147,25 +126,27 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
             $values['valuta'] ?: 'EUR',
             !empty($values['listino_id']) ? (int)$values['listino_id'] : 1,
             $values['note'] ?: null,
-            $indirizzo_spedizione_id,
-            $values['consegna_via'] ?: null,
-            $values['consegna_civico'] ?: null,
-            $values['consegna_cap'] ?: null,
-            $values['consegna_citta'] ?: null,
-            $values['consegna_provincia'] ?: null,
-            $values['consegna_nazione'] ?: 'IT',
-            $values['consegna_presso'] ?: null,
-            $values['consegna_referente'] ?: null,
-            $values['consegna_telefono'] ?: null,
-            $values['consegna_note'] ?: null,
+            $values['indirizzo_spedizione_id'] ?: null,
+            $denorm['consegna_via'] ?: null,
+            $denorm['consegna_civico'] ?: null,
+            $denorm['consegna_cap'] ?: null,
+            $denorm['consegna_citta'] ?: null,
+            $denorm['consegna_provincia'] ?: null,
+            $denorm['consegna_nazione'] ?: 'IT',
+            $denorm['consegna_presso'] ?: null,
+            $denorm['consegna_referente'] ?: null,
+            $denorm['consegna_telefono'] ?: null,
+            $denorm['consegna_note'] ?: null,
             $values['contatto_id'] ?: null,
             $values['contatto_nome'] ?: null,
             $values['contatto_email'] ?: null,
             $values['contatto_telefono'] ?: null,
-            $ragione_sociale ?: null,
-            $cli['partita_iva'] ?? null,
-            $cli['codice_fiscale'] ?? null,
-            $cliente_indirizzo ?: null,
+            $indirizzo_consegna_id,
+            $contatto_snapshot_id,
+            $denorm['cliente_ragione_sociale'] ?: null,
+            $denorm['cliente_partita_iva'] ?: null,
+            $denorm['cliente_codice_fiscale'] ?: null,
+            $denorm['cliente_indirizzo'] ?: null,
             $user_id,
         ]);
         $ordine_id = (int) $pdo->lastInsertId();

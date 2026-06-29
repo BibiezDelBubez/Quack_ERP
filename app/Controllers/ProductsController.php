@@ -1728,6 +1728,26 @@ final class ProductsController extends BaseController
         // Se non specificato esplicitamente, ereditiamo l'unità di acquisto definita sul fornitore
         $uomId     = $n('unita_misura_id') !== null ? (int)$n('unita_misura_id') : (int)$prodForn['unita_misura_acquisto_id'];
 
+        if ($prezzo < 0) {
+            echo json_encode(['ok' => false, 'error' => 'Il prezzo non può essere negativo.']); exit;
+        }
+        if ($sconto < 0 || $sconto > 100) {
+            echo json_encode(['ok' => false, 'error' => 'Lo sconto percentuale deve essere compreso tra 0 e 100.']); exit;
+        }
+
+        // [Bug 3] Controllo sovrapposizione scaglioni
+        $stmtDup = $this->pdo->prepare("SELECT id FROM prodotti_fornitori_prezzi WHERE listino_acquisto_id = :listino_id AND prodotto_fornitore_id = :pfid AND quantita_minima = :qmin AND id != :riga_id");
+        $stmtDup->execute([
+            ':listino_id' => $listinoId,
+            ':pfid'       => $pfId,
+            ':qmin'       => $qta,
+            ':riga_id'    => $id
+        ]);
+        if ($stmtDup->fetch()) {
+            echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità.']);
+            exit;
+        }
+
         try {
             if ($id > 0) {
                 // UPDATE — verifica ownership tramite prodotto_fornitore_id

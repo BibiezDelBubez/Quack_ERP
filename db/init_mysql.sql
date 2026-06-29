@@ -455,6 +455,16 @@ CREATE TABLE IF NOT EXISTS prodotti (
     peso_netto_kg        DECIMAL(10,3),                                        -- peso netto contenuto; distinto da quantita_contenuto (es. tanica 25 l ≠ 25 kg)
     peso_lordo_kg        DECIMAL(10,3),
     ean                  VARCHAR(14),                                          -- EAN/barcode della confezione
+
+    -- =========================================================================================================
+    -- [AI WARNING - CRITICAL RULE ENFORCEMENT]
+    -- DO NOT MOVE `scorta_minima` TO `giacenze` OR ANY OTHER TABLE. IT MUST REMAIN IN `prodotti`.
+    -- THIS IS A HARD ARCHITECTURAL REQUIREMENT. The DashboardController relies heavily on p.scorta_minima.
+    -- ANY LLM OR AI AGENT THAT ATTEMPTS TO "NORMALIZE" THIS INTO GIACENZE WILL BREAK THE ENTIRE APP.
+    -- DO NOT TOUCH THIS FIELD UNDER ANY CIRCUMSTANCE.
+    -- =========================================================================================================
+    scorta_minima        DECIMAL(10,3)          DEFAULT 0,                     
+
     traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
     markup_fallback_perc DECIMAL(5,2)  DEFAULT NULL,                           -- override del markup di fallback per vendite su costo
     note_interne         TEXT,
@@ -580,63 +590,6 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
 );
 
 -- =============================================================================
--- 16. ACQUISTO — ORDINI ACQUISTO
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS ordini_acquisto (
-    id                     INT AUTO_INCREMENT PRIMARY KEY,
-    numero                 VARCHAR(20)  NOT NULL UNIQUE,  -- es. RFQ/2026/0001; generato da tabella sequenze
-    fornitore_id           INTEGER      REFERENCES clienti_fornitori(id),
-    stato                  TEXT         NOT NULL DEFAULT 'bozza'
-                                         CHECK (stato IN (
-                                             'bozza','inviato','confermato',
-                                             'parzialmente_ricevuto','ricevuto','annullato')),
-    data_ordine            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data_consegna_prevista DATE,                        -- calcolata da lead_time o inserita a mano
-    indirizzo_consegna_id  INTEGER      REFERENCES indirizzi(id),  -- dove deve arrivare la merce
-    condizioni_pagamento   TEXT,                        -- default da dettagli_fornitori
-    valuta                 CHAR(3)      NOT NULL DEFAULT 'EUR',
-    note_fornitore         TEXT,                        -- visibili al fornitore sul documento
-    note_interne           TEXT,
-    riferimento_rfq_interno TEXT,                      --codice interno richiesta preventivo
-	riferimento_fornitore  TEXT,                       -- codice fornitore dell'offerta
-    ltri_riferimenti        TEXT,                         -- lo spazio per scrivere "Rif. Vs. Listino…" o "Rif. Vs. Offerta N°..."", o "accordo telefonico con signor Caio"
-    imponibile             DECIMAL(10,2),               -- totale imponibile (memorizzato per velocità)
-    totale_iva             DECIMAL(10,2),               -- totale IVA (memorizzato per velocità)
-    totale                 DECIMAL(10,2),               -- totale ivato (memorizzato per velocità)
-    inviato_il             DATETIME,                    -- valorizzato alla transizione → inviato
-    confermato_il          DATETIME,                    -- valorizzato alla transizione → confermato
-    creato_da              INTEGER      REFERENCES utenti(id),
-    created_at             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS ordini_acquisto_righe (
-    id                     INT AUTO_INCREMENT PRIMARY KEY,
-    ordine_id              INTEGER       NOT NULL REFERENCES ordini_acquisto(id) ON DELETE CASCADE,
-    posizione_riga         INTEGER       NOT NULL DEFAULT 0,  -- ordine di visualizzazione delle righe a schermo
-    prodotto_id            INTEGER       NOT NULL REFERENCES prodotti(id),
-    descrizione            VARCHAR(255),                       -- override del nome prodotto sulla riga
-    sku_fornitore          VARCHAR(50),                        -- copiato da prodotti_fornitori al momento dell'inserimento
-    quantita_ordinata      DECIMAL(10,3) NOT NULL,
-    quantita_ricevuta      DECIMAL(10,3) NOT NULL DEFAULT 0,  -- aggiornato ad ogni ricevimento; quando >= quantita_ordinata l'ordine è completato
-    unita_misura_id        INTEGER       REFERENCES unita_misura(id),
-    prezzo_unitario        DECIMAL(10,4),                      -- prezzo netto; precompilato da prodotti_fornitori_prezzi
-    sconto_perc            DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    iva_perc               DECIMAL(5,2)  NOT NULL DEFAULT 22,  -- cristallizzata al momento dell'ordine
-    imponibile_riga        DECIMAL(10,2),                      -- prezzo × qtà × (1-sconto); memorizzato per velocità
-    iva_riga               DECIMAL(10,2),                      -- memorizzato per velocità
-    data_consegna_prevista DATE,                               -- override per la singola riga; NULL = usa la data dell'ordine
-    quantita_stock         DECIMAL(10,3),                      -- quantità in unità stock
-    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
-    unita_misura_stock_id  BIGINT UNSIGNED, -- UoM di stock
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
-    num_factor_snapshot    INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
-    den_factor_snapshot    INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
-    note                   TEXT
-);
-
--- =============================================================================
 -- 17. LOTTI — TRACCIABILITÀ
 -- =============================================================================
 -- Un lotto corrisponde a una partita di merce ricevuta.
@@ -650,8 +603,6 @@ CREATE TABLE IF NOT EXISTS lotti (
 	codice_lotto_interno         VARCHAR(50)   NOT NULL,               -- Il "nostro" codice unico (generato dall'ERP o inserito a mano);
     prodotto_id          INTEGER       NOT NULL REFERENCES prodotti(id),
     fornitore_id         INTEGER       REFERENCES clienti_fornitori(id),  -- fornitore da cui è arrivato il lotto
-    ordine_acquisto_id   INTEGER       REFERENCES ordini_acquisto(id),    -- ordine di acquisto di origine
-    ricevimento_riga_id  INTEGER,                              -- riferimento soft a ricevimento_merce_righe(id)
     data_produzione      DATE,
     data_scadenza        DATE,                                 -- usata per FEFO e alerting; NULL se il prodotto non scade
     data_arrivo          DATE,                                 -- data di arrivo in magazzino
@@ -662,40 +613,6 @@ CREATE TABLE IF NOT EXISTS lotti (
     creato_da            INTEGER       NOT NULL REFERENCES utenti(id),
     created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
    UNIQUE (codice_lotto_fornitore, prodotto_id, fornitore_id)
-);
-
--- =============================================================================
--- 18. RICEVIMENTO MERCE
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS ricevimento_merce (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    numero          VARCHAR(20)  NOT NULL UNIQUE,  -- es. RIC/2026/0001; generato dalla tabella sequenze
-    ordine_id       INTEGER      NOT NULL REFERENCES ordini_acquisto(id),
-    fornitore_id    INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza intenzionale per comodità
-    stato           TEXT         NOT NULL DEFAULT 'bozza'
-                                  CHECK (stato IN ('bozza','completato','annullato')),  -- bozza=in attesa, completato=merce registrata
-    data_attesa     DATE,                          -- data attesa di arrivo; calcolata al momento della conferma ordine
-    data_effettiva  DATETIME,                      -- data e ora effettiva di ricezione; valorizzata alla conferma
-    note            TEXT,
-    creato_da       INTEGER      REFERENCES utenti(id),
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS ricevimento_merce_righe (
-    id                INT AUTO_INCREMENT PRIMARY KEY,
-    ricevimento_id    INTEGER       NOT NULL REFERENCES ricevimento_merce(id) ON DELETE CASCADE,
-    ordine_riga_id    INTEGER       REFERENCES ordini_acquisto_righe(id),  -- riga dell'ordine a cui si riferisce
-    prodotto_id       INTEGER       NOT NULL REFERENCES prodotti(id),      -- ridondanza intenzionale per comodità
-    lotto_id          INTEGER       REFERENCES lotti(id),                  -- lotto registrato per questa riga; NULL se prodotto non traccia lotti
-    quantita_ricevuta DECIMAL(10,3) NOT NULL,                              -- quantità fisicamente ricevuta
-    quantita_stock    DECIMAL(10,3),                                  -- quantità in unità stock
-    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
-    unita_misura_stock_id BIGINT UNSIGNED,      -- UoM di stock
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
-    num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
-    den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
-    note              TEXT
 );
 
 -- =============================================================================
@@ -1051,15 +968,12 @@ CREATE INDEX IF NOT EXISTS idx_prodotto_adr_prodotto          ON prodotto_classi
 CREATE INDEX IF NOT EXISTS idx_prodotto_adr_codice_onu        ON prodotto_classificazioni_adr(codice_onu_id);
 CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prodotto    ON prodotti_fornitori(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_fornitore   ON prodotti_fornitori(fornitore_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_acquisto_stato          ON ordini_acquisto(stato);
-CREATE INDEX IF NOT EXISTS idx_ordini_acquisto_fornitore      ON ordini_acquisto(fornitore_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
 CREATE INDEX IF NOT EXISTS idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
 CREATE INDEX IF NOT EXISTS idx_lotti_fornitore                ON lotti(fornitore_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_data_arrivo              ON lotti(data_arrivo);
 CREATE INDEX IF NOT EXISTS idx_lotti_data_scadenza            ON lotti(data_scadenza);
-CREATE INDEX IF NOT EXISTS idx_ricevimento_merce_ordine       ON ricevimento_merce(ordine_id);
 CREATE INDEX IF NOT EXISTS idx_giacenze_prodotto              ON giacenze(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_movimenti_prodotto             ON movimenti_magazzino(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_movimenti_lotto                ON movimenti_magazzino(lotto_id);
@@ -1082,11 +996,9 @@ CREATE INDEX IF NOT EXISTS idx_fatture_stato                  ON fatture(stato);
 -- Indici sulle righe di dettaglio (SQLite non indicizza automaticamente le FK)
 CREATE INDEX IF NOT EXISTS idx_preventivi_righe_preventivo          ON preventivi_righe(preventivo_id);
 CREATE INDEX IF NOT EXISTS idx_ordini_clienti_righe_ordine          ON ordini_clienti_righe(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_acquisto_righe_ordine         ON ordini_acquisto_righe(ordine_id);
 CREATE INDEX IF NOT EXISTS idx_fatture_righe_fattura                ON fatture_righe(fattura_id);
 CREATE INDEX IF NOT EXISTS idx_spedizioni_righe_spedizione          ON spedizioni_righe(spedizione_id);
 CREATE INDEX IF NOT EXISTS idx_documenti_trasporto_righe_dt         ON documenti_trasporto_righe(documento_trasporto_id);
-CREATE INDEX IF NOT EXISTS idx_ricevimento_merce_righe_ricevimento  ON ricevimento_merce_righe(ricevimento_id);
 CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prezzi_pf         ON prodotti_fornitori_prezzi(prodotto_fornitore_id);
 
 -- Indice composito per query di vendita (ricerca prezzo per listino + prodotto)
@@ -1222,8 +1134,6 @@ INSERT IGNORE INTO canali_vendita (codice, nome) VALUES
     ('agente',        'Agente');
 
 INSERT IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES
-    ('ordine_acquisto',        'RFQ/', 2026, 0, 4),
-    ('ricevimento_merce',      'RIC/', 2026, 0, 4),
     ('preventivo',             'PREV/',2026, 0, 4),
     ('ordine_cliente',         'ODC/', 2026, 0, 4),
     ('fattura',                'FT/',  2026, 0, 4),

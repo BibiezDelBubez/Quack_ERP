@@ -6,6 +6,10 @@ Options -Indexes
 RewriteCond %{REQUEST_URI} !/db/crea_db\.php$ [NC]
 RewriteRule ^(app|includes|db)/ - [F,L]
 
+# Blocca scratch/, patch DB e file di test nella root
+RewriteRule ^scratch/ - [F,L]
+RewriteRule ^(patch_db\d*|migrazione_listini|test_api|test_mpdf|test_docx)\.php$ - [F,L]
+
 # Forza le "route directory" legacy a passare dal front controller
 # (evita l'index listing di Apache su /dashboard/, /customers/, ecc.)
 RewriteRule ^(dashboard|customers|suppliers|orders|offers|products|profile|utenti|settings|adr)(/.*)?$ index.php [L,QSA]

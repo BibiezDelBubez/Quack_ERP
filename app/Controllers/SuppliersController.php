@@ -142,7 +142,7 @@ class SuppliersController extends BaseController
         $indirizzi_preload = qk_list_indirizzi_fornitore($this->pdo, $entity_id);
 
         // Recupera i listini d'acquisto associati a questo fornitore
-        $stmtListini = $this->pdo->prepare("SELECT * FROM listini_acquisto WHERE fornitore_id = ? ORDER BY id DESC");
+        $stmtListini = $this->pdo->prepare("SELECT * FROM listini_acquisto WHERE fornitore_id = ? AND attivo = 1 ORDER BY id DESC");
         $stmtListini->execute([$entity_id]);
         $listini_acquisto = $stmtListini->fetchAll(PDO::FETCH_ASSOC);
 

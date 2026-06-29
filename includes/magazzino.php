@@ -71,7 +71,7 @@ function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all', st
                 p.id, p.sku_interno, p.nome, p.traccia_lotti,
                 u.codice AS uom,
                 CASE 
-                    WHEN p.tipo = 'kit' THEN (
+                    WHEN p.tipo = \'kit\' THEN (
                         SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
                         FROM componenti_kit ck
                         LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
@@ -82,7 +82,7 @@ function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all', st
                 COALESCE(g.quantita_riservata, 0)                     AS qta_riservata,
                 COALESCE(g.quantita_in_arrivo, 0)                     AS qta_in_arrivo,
                 CASE 
-                    WHEN p.tipo = 'kit' THEN (
+                    WHEN p.tipo = \'kit\' THEN (
                         SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
                         FROM componenti_kit ck
                         LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
@@ -131,7 +131,7 @@ function qk_prodotto_stock_info(PDO $pdo, int $prodotto_id): ?array
                 p.id, p.nome, p.sku_interno, p.traccia_lotti, p.tipo,
                 u.codice  AS uom, u.id AS uom_id,
                 CASE 
-                    WHEN p.tipo = 'kit' THEN (
+                    WHEN p.tipo = \'kit\' THEN (
                         SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
                         FROM componenti_kit ck
                         LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
@@ -223,9 +223,9 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
     $pdo->prepare(
         'INSERT INTO lotti
              (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
-              prodotto_id, data_scadenza, data_arrivo,
+              prodotto_id, origine_tipo, data_scadenza, data_arrivo,
               quantita_ricevuta, quantita_disponibile, creato_da)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         VALUES (?, ?, ?, ?, \'rettifica\', ?, ?, ?, ?, ?)'
     )->execute([
         $codiceInterno,      // codice_lotto (campo storico NOT NULL)
         $codiceInterno,      // codice_lotto_interno

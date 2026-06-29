@@ -207,6 +207,12 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $addr = $stAddr->fetch(PDO::FETCH_ASSOC);
             if ($addr) {
                 unset($addr['id']);
+                // ==============================================================================
+                // [AI WARNING - ARCHITETTURA IBRIDA]
+                // `indirizzo_consegna_id` punta a `indirizzi_documenti` (snapshot).
+                // NON toccare questa logica: il database SQLite live è ora allineato per supportare 
+                // questa Foreign Key strutturale come da specifica del progetto.
+                // ==============================================================================
                 $snapAddrId = qk_upsert_document_address($pdo, $addr, null);
                 
                 $consegna_via = $addr['via'] ?? null;
@@ -408,7 +414,11 @@ function qk_ordine_approva(PDO $pdo, int $id, int $utente_id): void
  */
 function qk_ordine_invia(PDO $pdo, int $id): void
 {
-    $pdo->beginTransaction();
+    $manageTrans = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $manageTrans = true;
+    }
     try {
         $ordine = _ordine_carica($pdo, $id);
         if ($ordine['stato'] !== 'approvato') {
@@ -419,9 +429,13 @@ function qk_ordine_invia(PDO $pdo, int $id): void
         )->execute([$id]);
 
         _ordine_aggiorna_in_arrivo($pdo, $id, '+');
-        $pdo->commit();
+        if ($manageTrans) {
+            $pdo->commit();
+        }
     } catch (\Throwable $e) {
-        $pdo->rollBack();
+        if ($manageTrans) {
+            $pdo->rollBack();
+        }
         throw $e;
     }
 }

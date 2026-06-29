@@ -105,7 +105,7 @@ class WarehouseController extends BaseController
         if ($filter === 'in_arrivo') {
             $sql = "SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
                            COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
-                           (SELECT rt.id FROM ricevimento_merce rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
+                           (SELECT rt.id FROM ricezioni_testata rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
                       FROM ordini_testata ot
                  LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
                      WHERE ot.stato IN ('inviato', 'parzialmente_ricevuto')

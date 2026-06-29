@@ -48,6 +48,18 @@ if ($requiresAuth && !is_authenticated()) {
     redirect('login');
 }
 
+if (!empty($route['permission']) && !can($route['permission'])) {
+    http_response_code(403);
+    // Se è una chiamata AJAX/API restituisce JSON, altrimenti pagina HTML
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) || str_contains($_SERVER['REQUEST_URI'] ?? '', '/api/')) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Accesso negato. Permesso richiesto: ' . $route['permission']]);
+    } else {
+        echo '<h1>403 — Accesso negato</h1><p>Non hai i permessi per eseguire questa operazione.</p>';
+    }
+    exit;
+}
+
 switch ($route['type']) {
     case 'redirect':
         header('Location: ' . url($route['target']));

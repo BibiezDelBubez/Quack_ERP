@@ -38,7 +38,7 @@ La magia del sistema sta nel fatto che **entrambe le interfacce scrivono e leggo
 
 ### Vendite (Sales)
 - **Struttura Dati**: Le righe dei prezzi (`listini_prezzi`) hanno un vincolo forte (`listino_id NOT NULL`). 
-- **Comportamento**: Quando un utente aggiunge un prezzo nella scheda prodotto, è obbligato a specificare a quale listino appartiene (o il sistema applica un Listino Base di default, es. ID=1).
+- **Comportamento**: Quando un utente aggiunge un prezzo nella scheda prodotto, è obbligato a specificare a quale listino appartiene (o il sistema applica il Listino Base di default, identificato dal campo `is_default = 1` nella tabella `listini`).
 - **Risultato**: Sincronizzazione perfetta. Aggiungere un prezzo nel tab prodotto aggiorna istantaneamente la visione del listino globale.
 
 ### Acquisti (Purchases)

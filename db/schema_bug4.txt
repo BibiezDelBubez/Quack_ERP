@@ -1,0 +1,144 @@
+RFQ:
+CREATE TABLE rfq_testata (
+    id                      INTEGER      PRIMARY KEY AUTOINCREMENT,
+
+    -- Identificazione documento
+    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. RFQ/2026/0001 — generato da sequenze
+    versione                INTEGER      NOT NULL DEFAULT 1, -- parte da 1; incrementato a ogni revisione
+    rfq_padre_id            INTEGER      REFERENCES rfq_testata(id),
+                                                            -- FK a sé stesso: punta alla versione precedente.
+                                                            -- NULL sulla prima versione.
+
+    -- Stato del documento
+    stato                   TEXT         NOT NULL DEFAULT 'bozza'
+                                          CHECK (stato IN (
+                                              'bozza',       -- in compilazione, non ancora inviata
+                                              'inviata',     -- inviata al fornitore; diventa read-only
+                                              'revisionata', -- sostituita da una versione più nuova
+                                              'chiusa'       -- scelta fatta (offerta accettata o rifiutata) o annullata manualmente
+                                          )),
+
+    -- Fornitore e spedizione
+    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
+    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi(id),    -- dove dovrà arrivare la merce
+
+    -- Date
+    data_emissione          DATE         NOT NULL DEFAULT (DATE('now')), -- data di creazione della RFQ
+    data_scadenza           DATE,                                         -- data entro cui il fornitore deve rispondere
+
+    -- Condizioni commerciali
+    condizioni_pagamento    TEXT,         -- es. "30 gg d.f.f.m.", copiato da dettagli_fornitori e sovra-scrivibile
+    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
+
+    -- Testi
+    note_fornitore          TEXT,         -- visibili al fornitore sul documento PDF
+    note_interne            TEXT,         -- solo per uso interno, non stampate
+
+    -- Totali (memorizzati per velocità, ricalcolati a ogni salvataggio)
+    imponibile              DECIMAL(10,2),
+    totale_iva              DECIMAL(10,2),
+    totale                  DECIMAL(10,2),
+
+    -- Audit
+    inviata_il              DATETIME,     -- valorizzato alla transizione → inviata
+    creato_da               INTEGER      REFERENCES utenti(id),
+    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME
+, riferimento_rfq_interno TEXT, azienda_interna_id INTEGER, incoterm_codice CHAR(3) REFERENCES incoterms(codice), incoterm_luogo VARCHAR(150), consegna_via VARCHAR(150), consegna_civico VARCHAR(10), consegna_cap VARCHAR(10), consegna_citta VARCHAR(100), consegna_provincia CHAR(2), consegna_nazione CHAR(2) DEFAULT 'IT', consegna_presso VARCHAR(100), consegna_referente VARCHAR(80), consegna_telefono VARCHAR(20), consegna_note VARCHAR(255), contatto_id INTEGER REFERENCES clienti_fornitori(id), contatto_nome VARCHAR(100), contatto_telefono VARCHAR(20), contatto_email VARCHAR(150), fornitore_telefono VARCHAR(20), fornitore_email VARCHAR(150), listino_acquisto_id INTEGER REFERENCES listini_acquisto(id), metodo_pagamento_id INTEGER REFERENCES metodi_pagamento(id), resa_porto TEXT CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')), uom_mode VARCHAR(15) DEFAULT 'commercial')
+
+OFFERTE:
+CREATE TABLE offerte_testata (
+    id                      INTEGER      PRIMARY KEY AUTOINCREMENT,
+
+    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. OFF/2026/0001
+    rfq_id                  INTEGER      REFERENCES rfq_testata(id), -- RFQ di origine; NULL se offerta spontanea
+    fornitore_id            INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
+
+    stato                   TEXT         NOT NULL DEFAULT 'in_valutazione'
+                                          CHECK (stato IN (
+                                              'in_valutazione', -- appena inserita, non ancora decisa
+                                              'accettata',      -- scelta come base per l'ordine
+                                              'rifiutata'       -- scartata
+                                          )),
+
+    -- Date offerta
+    data_offerta            DATE         NOT NULL DEFAULT (DATE('now')),
+    data_scadenza_offerta   DATE,         -- data entro cui l'offerta è valida (indicata dal fornitore)
+
+    -- Condizioni commerciali dell'offerta
+    condizioni_pagamento    TEXT,
+    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
+    riferimento_fornitore   VARCHAR(100), -- numero offerta del fornitore (per comunicazioni future)
+
+    -- Testi
+    note_fornitore          TEXT,         -- annotazioni sull'offerta ricevuta
+    note_interne            TEXT,
+
+    -- Totali
+    imponibile              DECIMAL(10,2),
+    totale_iva              DECIMAL(10,2),
+    totale                  DECIMAL(10,2),
+
+    -- Audit valutazione
+    valutata_il             DATETIME,     -- quando è stata accettata o rifiutata
+    valutata_da             INTEGER      REFERENCES utenti(id),
+
+    creato_da               INTEGER      REFERENCES utenti(id),
+    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME
+, allegato_path VARCHAR(255), motivo_rifiuto TEXT, contatto_id INTEGER REFERENCES clienti_fornitori(id), contatto_nome VARCHAR(100), contatto_telefono VARCHAR(20), contatto_email VARCHAR(150), fornitore_telefono VARCHAR(20), fornitore_email VARCHAR(150), listino_acquisto_id INTEGER REFERENCES listini_acquisto(id), metodo_pagamento_id INTEGER REFERENCES metodi_pagamento(id), resa_porto TEXT CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')), indirizzo_consegna_id INTEGER REFERENCES indirizzi_documenti(id) ON DELETE SET NULL)
+
+ORDINI:
+CREATE TABLE ordini_testata (
+    id                      INTEGER      PRIMARY KEY AUTOINCREMENT,
+
+    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. ODA/2026/0001
+    offerta_id              INTEGER      REFERENCES offerte_testata(id),  -- offerta da cui è stato generato
+    rfq_id                  INTEGER      REFERENCES rfq_testata(id),      -- ridondanza di comodità
+
+    fornitore_id            INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
+
+    stato                   TEXT         NOT NULL DEFAULT 'bozza'
+                                          CHECK (stato IN (
+                                              'bozza',                   -- in preparazione
+                                              'in_approvazione',         -- in attesa di approvazione interna
+                                              'approvato',               -- approvato internamente, non ancora inviato
+                                              'inviato',                 -- inviato al fornitore
+                                              'parzialmente_ricevuto',   -- almeno una ricezione parziale registrata
+                                              'completato',              -- tutte le righe completamente ricevute
+                                              'annullato'
+                                          )),
+
+    -- Date
+    data_ordine             DATE         NOT NULL DEFAULT (DATE('now')),
+    data_consegna_prevista  DATE,         -- data di consegna globale dell'ordine
+
+    -- Spedizione
+    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi(id),
+
+    -- Condizioni commerciali (cristallizzate al momento dell'ordine)
+    condizioni_pagamento    TEXT,
+    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
+
+    -- Riferimenti
+    riferimento_fornitore   VARCHAR(100), -- numero d'ordine del fornitore (comunicato dopo l'invio)
+    altri_riferimenti       TEXT,          -- campo libero per riferimenti aggiuntivi (es. contratto, accordo)
+
+    -- Testi
+    note_fornitore          TEXT,
+    note_interne            TEXT,
+
+    -- Totali
+    imponibile              DECIMAL(10,2),
+    totale_iva              DECIMAL(10,2),
+    totale                  DECIMAL(10,2),
+
+    -- Audit transizioni di stato
+    approvato_il            DATETIME,
+    approvato_da            INTEGER      REFERENCES utenti(id),
+    inviato_il              DATETIME,
+
+    creato_da               INTEGER      REFERENCES utenti(id),
+    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME
+, riferimento_rfq_interno TEXT, azienda_interna_id INTEGER, incoterm_codice CHAR(3) REFERENCES incoterms(codice), incoterm_luogo VARCHAR(150), consegna_via VARCHAR(150), consegna_civico VARCHAR(10), consegna_cap VARCHAR(10), consegna_citta VARCHAR(100), consegna_provincia CHAR(2), consegna_nazione CHAR(2) DEFAULT 'IT', consegna_presso VARCHAR(100), consegna_referente VARCHAR(80), consegna_telefono VARCHAR(20), consegna_note VARCHAR(255), contatto_id INTEGER REFERENCES clienti_fornitori(id), contatto_nome VARCHAR(100), contatto_telefono VARCHAR(20), contatto_email VARCHAR(150), fornitore_telefono VARCHAR(20), fornitore_email VARCHAR(150), listino_acquisto_id INTEGER REFERENCES listini_acquisto(id), metodo_pagamento_id INTEGER REFERENCES metodi_pagamento(id), resa_porto TEXT CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')), uom_mode VARCHAR(15) DEFAULT 'commercial', versione INTEGER NOT NULL DEFAULT 1, ordine_padre_id INTEGER REFERENCES ordini_testata(id) ON DELETE SET NULL)

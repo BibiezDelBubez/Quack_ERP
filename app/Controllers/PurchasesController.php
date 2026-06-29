@@ -10,7 +10,7 @@ final class PurchasesController extends BaseController
         $rfq_bozza = (int) $this->pdo->query("SELECT COUNT(*) FROM rfq_testata WHERE stato = 'bozza'")->fetchColumn();
         $rfq_inviata = (int) $this->pdo->query("SELECT COUNT(*) FROM rfq_testata WHERE stato = 'inviata'")->fetchColumn();
         $ordini_attivi = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
-        $listini_attivi = (int) $this->pdo->query("SELECT COUNT(*) FROM listini_acquisto WHERE valido_dal IS NULL OR valido_dal <= CURRENT_DATE AND (valido_al IS NULL OR valido_al >= CURRENT_DATE)")->fetchColumn();
+        $listini_attivi = (int) $this->pdo->query("SELECT COUNT(*) FROM listini_acquisto WHERE attivo = 1 AND (valido_dal IS NULL OR valido_dal <= CURRENT_DATE) AND (valido_al IS NULL OR valido_al >= CURRENT_DATE)")->fetchColumn();
 
         // 2. Ultime RFQ (max 5)
         $st = $this->pdo->query("
@@ -56,8 +56,8 @@ final class PurchasesController extends BaseController
         $sql = "SELECT la.*, 
                        COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_nome
                 FROM listini_acquisto la
-                LEFT JOIN clienti_fornitori cf ON cf.id = la.fornitore_id
-                WHERE 1=1";
+                JOIN clienti_fornitori cf ON cf.id = la.fornitore_id
+                WHERE la.attivo = 1";
 
         $params = [];
         if ($search) {
@@ -169,8 +169,8 @@ final class PurchasesController extends BaseController
             "SELECT la.*, 
                     COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_label
              FROM listini_acquisto la
-             LEFT JOIN clienti_fornitori cf ON cf.id = la.fornitore_id
-             WHERE la.id = :id"
+             JOIN clienti_fornitori cf ON cf.id = la.fornitore_id
+             WHERE la.id = :id AND la.attivo = 1"
         );
         $stmt->execute([':id' => $id]);
         $pricelist = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -321,7 +321,7 @@ final class PurchasesController extends BaseController
         }
 
         try {
-            $this->pdo->prepare("DELETE FROM listini_acquisto WHERE id = :id")->execute([':id' => $id]);
+            $this->pdo->prepare("UPDATE listini_acquisto SET attivo = 0, valido_al = CURRENT_DATE WHERE id = :id")->execute([':id' => $id]);
             redirect_with('purchases/pricelists', 'success', 'Listino acquisto eliminato con successo.');
         } catch (Throwable $e) {
             redirect_with('purchases/pricelists', 'danger', "Impossibile eliminare il listino: " . $e->getMessage());
@@ -343,6 +343,7 @@ final class PurchasesController extends BaseController
             SELECT id, nome_listino
             FROM listini_acquisto
             WHERE fornitore_id = :fid
+              AND attivo = 1
               AND (valido_dal IS NULL OR valido_dal <= :data_rif)
               AND (valido_al IS NULL OR valido_al >= :data_rif)
             ORDER BY id DESC
@@ -569,6 +570,15 @@ final class PurchasesController extends BaseController
         $qMin   = ($qMin === false || $qMin === null) ? 0.0 : $qMin;
         $sconto = ($sconto === false || $sconto === null) ? 0.0 : $sconto;
 
+        if ($prezzo < 0) {
+            echo json_encode(['ok' => false, 'error' => 'Il prezzo non può essere negativo.']);
+            exit;
+        }
+        if ($sconto < 0 || $sconto > 100) {
+            echo json_encode(['ok' => false, 'error' => 'Lo sconto percentuale deve essere compreso tra 0 e 100.']);
+            exit;
+        }
+
         try {
             $this->pdo->beginTransaction();
 
@@ -587,6 +597,20 @@ final class PurchasesController extends BaseController
                 $this->pdo->prepare("INSERT INTO prodotti_fornitori (prodotto_id, fornitore_id, attivo, ordine_preferenza_fornitore, sku_fornitore) VALUES (:pid, :fid, 1, 10, :sku)")
                          ->execute([':pid' => $prodottoId, ':fid' => $fornitoreId, ':sku' => $skuFornitore ?: null]);
                 $pfId = (int)$this->pdo->lastInsertId();
+            }
+
+            // [Bug 3] Controllo sovrapposizione scaglioni
+            $stmtDup = $this->pdo->prepare("SELECT id FROM prodotti_fornitori_prezzi WHERE listino_acquisto_id = :listino_id AND prodotto_fornitore_id = :pfid AND quantita_minima = :qmin AND id != :riga_id");
+            $stmtDup->execute([
+                ':listino_id' => $listinoId,
+                ':pfid'       => $pfId,
+                ':qmin'       => $qMin,
+                ':riga_id'    => $rigaId ?: 0
+            ]);
+            if ($stmtDup->fetch()) {
+                $this->pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità.']);
+                exit;
             }
 
             if ($rigaId) {

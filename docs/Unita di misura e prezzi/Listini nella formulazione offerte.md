@@ -134,7 +134,7 @@ Il Pricing Engine di backend deve operare secondo una cascata logica rigida per 
 *   **Level 2: Accordo Quadro / Contratto Cliente**: Condizioni contrattuali specifiche stipulate per il singolo cliente e valide per la data del documento.
 *   **Level 3: Listino Dedicato Cliente**: Cerca nel listino prezzi associato all'anagrafica cliente, validando scaglioni e date.
 *   **Level 4: Listino Categoria Cliente**: Cerca nei listini associati alla classe o categoria commerciale del cliente (es. *Listino Grossisti*).
-*   **Level 5: Listino Standard / Pubblico**: Cerca nel listino generale predefinito (ID = 1).
+*   **Level 5: Listino Standard / Pubblico**: Cerca nel listino generale predefinito (marcato `is_default = 1` nella tabella `listini`).
 *   **Level 6: Ricarico su Costo (Cost-Plus)**: In assenza di listini attivi, legge il costo d'acquisto del fornitore primario e applica la percentuale di ricarico definita a livello globale o per categoria di prodotto.
 *   **Level 7: Manuale**: Precompila `0.00` con badge rosso di errore, forzando l'inserimento manuale.
 
@@ -166,7 +166,7 @@ Il Pricing Engine di backend deve operare secondo una cascata logica rigida per 
     *   Se l'anagrafica del fornitore/cliente ha **meno di 15 listini**, il selettore è una dropdown classica.
     *   Se ci sono **più di 15 listini**, si trasforma in un input di tipo **autocomplete** con ricerca dinamica asincrona basata su testo parziale.
 *   **Preselezione / Default**:
-    *   *Vendite*: Preseleziona automaticamente il listino collegato alla scheda cliente (`dettagli_clienti.listino_id`). Se vuoto, preseleziona il *Listino Pubblico* (ID=1).
+    *   *Vendite*: Preseleziona automaticamente il listino collegato alla scheda cliente (`dettagli_clienti.listino_id`). Se vuoto, preseleziona il *Listino Pubblico* (quello marcato `is_default = 1` nella tabella `listini`).
     *   *Acquisti*: Preseleziona il listino preferenziale del fornitore o lascia il campo vuoto se non esistono accordi, avviando il calcolo basato su costi base.
 *   **Avviso di Ricalcolo**: Se l'utente modifica manualmente il listino in testata del documento commerciale, il sistema mostra un modal di conferma: *"Desideri aggiornare i prezzi di tutte le righe in base al nuovo listino selezionato? (Nota: i prezzi modificati manualmente verranno ricalcolati)"*.
 

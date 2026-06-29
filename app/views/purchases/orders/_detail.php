@@ -19,8 +19,8 @@ $isPartRicevuto = $currStato === 'parzialmente_ricevuto';
 $isCompletato   = $currStato === 'completato';
 $isAnnullato    = $currStato === 'annullato';
 
-$canSave = $isBozza || $isInAppr || $isApprovato;
-$canEditLogistics = $isBozza || $isInAppr || $isApprovato;
+$canSave = !$isCompletato && !$isAnnullato;
+$canEditLogistics = !$isCompletato && !$isAnnullato;
 
 // Find draft reception if any
 $draftRicezione = null;

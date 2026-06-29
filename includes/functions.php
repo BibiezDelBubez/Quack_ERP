@@ -105,7 +105,29 @@ function redirect_with(string $path, string $type, string $message): never {
 /** Utente corrente autenticato */
 function current_user(): ?array {
     $user = $_SESSION['qk_user'] ?? null;
-    return is_array($user) ? $user : null;
+    if (!is_array($user)) return null;
+
+    // Riconvalida dal DB ogni 10 minuti
+    $last_check = $_SESSION['qk_user_last_check'] ?? 0;
+    if (time() - $last_check > 600) {
+        global $pdo;
+        if (isset($pdo)) {
+            $st = $pdo->prepare('SELECT u.id, r.codice AS role, u.attivo FROM utenti u JOIN ruoli r ON r.id = u.ruolo_id WHERE u.id = ?');
+            $st->execute([$user['id']]);
+            $row = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$row || !$row['attivo']) {
+                session_destroy();
+                header('Location: ' . (defined('BASE_URL') ? BASE_URL : '') . '/login');
+                exit;
+            }
+            // Aggiorna role in sessione nel caso sia cambiato
+            $_SESSION['qk_user']['role'] = $row['role'];
+            $_SESSION['qk_user_last_check'] = time();
+            $user = $_SESSION['qk_user'];
+        }
+    }
+
+    return $user;
 }
 
 /** True se sessione autenticata */
@@ -355,26 +377,39 @@ function qk_next_sequence_number(PDO $pdo, string $tipo): string
 {
     $anno = (int) date('Y');
 
-    $st = $pdo->prepare(
-        'SELECT id, prefisso, anno, numero_corrente, padding
-           FROM sequenze WHERE tipo = ? LIMIT 1'
-    );
-    $st->execute([$tipo]);
-    $seq = $st->fetch(PDO::FETCH_ASSOC);
+    // BEGIN IMMEDIATE acquisisce subito il lock esclusivo su SQLite,
+    // rendendo atomica la lettura+incremento e azzerando la race condition.
+    $ownTransaction = !$pdo->inTransaction();
+    if ($ownTransaction) $pdo->exec('BEGIN IMMEDIATE');
 
-    if (!$seq) {
-        throw new \RuntimeException("Sequenza '$tipo' non trovata nella tabella sequenze.");
+    try {
+        $st = $pdo->prepare(
+            'SELECT id, prefisso, anno, numero_corrente, padding
+               FROM sequenze WHERE tipo = ? LIMIT 1'
+        );
+        $st->execute([$tipo]);
+        $seq = $st->fetch(PDO::FETCH_ASSOC);
+
+        if (!$seq) {
+            if ($ownTransaction) $pdo->rollBack();
+            throw new \RuntimeException("Sequenza '$tipo' non trovata nella tabella sequenze.");
+        }
+
+        if ((int) $seq['anno'] !== $anno) {
+            $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
+                ->execute([$anno, $seq['id']]);
+            $seq['numero_corrente'] = 0;
+        }
+
+        $next = (int) $seq['numero_corrente'] + 1;
+        $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
+            ->execute([$next, $seq['id']]);
+
+        if ($ownTransaction) $pdo->commit();
+    } catch (\Throwable $e) {
+        if ($ownTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
     }
-
-    if ((int) $seq['anno'] !== $anno) {
-        $pdo->prepare('UPDATE sequenze SET anno = ?, numero_corrente = 0 WHERE id = ?')
-            ->execute([$anno, $seq['id']]);
-        $seq['numero_corrente'] = 0;
-    }
-
-    $next = (int) $seq['numero_corrente'] + 1;
-    $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
-        ->execute([$next, $seq['id']]);
 
     $pad = (int) $seq['padding'];
     return $seq['prefisso'] . $anno . '/' . str_pad((string) $next, $pad, '0', STR_PAD_LEFT);

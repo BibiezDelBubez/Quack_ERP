@@ -72,8 +72,12 @@ class PurchaseOrdersController extends BaseController
 
         $errors = [];
 
+        $isTerminalState = in_array($detail['ordine']['stato'], ['completato', 'annullato'], true);
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if (!csrf_verify()) {
+            if ($isTerminalState) {
+                $errors['_global'] = 'Accesso Negato: Impossibile modificare un documento chiuso e archiviato.';
+            } elseif (!csrf_verify()) {
                 $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
             } else {
                 $note_fornitore     = post('note_fornitore', '');
@@ -141,15 +145,24 @@ class PurchaseOrdersController extends BaseController
                         throw new \RuntimeException("Non è possibile confermare l'ordine: tutte le righe devono avere una quantità e un prezzo unitario maggiori di zero.");
                     }
 
-                    qk_ordine_invia($this->pdo, $id);
-                    flash_set('success', 'Ordine confirmed e inviato al fornitore.');
+                    // Avvia Macro-Transazione (Tutto o Niente)
+                    $this->pdo->beginTransaction();
+                    try {
+                        qk_ordine_invia($this->pdo, $id);
 
-                    // Create dynamic reception
-                    require_once INCLUDES_DIR . '/purchases_receipts.php';
-                    $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
-                    $stCheckRec->execute([$id]);
-                    if (!$stCheckRec->fetch()) {
-                        qk_ricezione_apri($this->pdo, $id, (int)current_user()['id']);
+                        // Create dynamic reception
+                        require_once INCLUDES_DIR . '/purchases_receipts.php';
+                        $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
+                        $stCheckRec->execute([$id]);
+                        if (!$stCheckRec->fetch()) {
+                            qk_ricezione_apri($this->pdo, $id, (int)current_user()['id']);
+                        }
+
+                        $this->pdo->commit();
+                        flash_set('success', 'Ordine confermato e inviato al fornitore. Ricezione in magazzino predisposta.');
+                    } catch (\Throwable $e) {
+                        $this->pdo->rollBack();
+                        throw $e;
                     }
                     break;
 

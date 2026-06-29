@@ -195,102 +195,6 @@ function qk_crea_prodotto_rapido(PDO $pdo, array $data): int
     }
 }
 
-/**
- * Recupera e restituisce i dati denormalizzati di azienda, cliente e consegna per l'integrità storica.
- */
-function qk_denormalize_offerta_details(PDO $pdo, array $values): array
-{
-    $azienda = null;
-    if (!empty($values['azienda_interna_id'])) {
-        $stAz = $pdo->prepare("
-            SELECT cf.ragione_sociale, cf.partita_iva, cf.codice_fiscale, cf.email, cf.telefono,
-                   ind.via, ind.civico, ind.cap, ind.citta, ind.provincia, ind.nazione,
-                   az.iban_default
-            FROM aziende_interne az
-            JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'sede_legale'
-            WHERE az.id = ?
-            LIMIT 1
-        ");
-        $stAz->execute([(int)$values['azienda_interna_id']]);
-        $azienda = $stAz->fetch(PDO::FETCH_ASSOC);
-    }
-
-    $cliente = null;
-    if (!empty($values['cliente_id'])) {
-        $stCli = $pdo->prepare("
-            SELECT cf.ragione_sociale, cf.nome, cf.cognome, cf.partita_iva, cf.codice_fiscale,
-                   ind.via, ind.civico, ind.cap, ind.citta, ind.provincia, ind.nazione
-            FROM clienti_fornitori cf
-            LEFT JOIN indirizzi ind ON ind.soggetto_id = cf.id AND ind.tipo = 'sede_legale'
-            WHERE cf.id = ?
-            LIMIT 1
-        ");
-        $stCli->execute([(int)$values['cliente_id']]);
-        $cliente = $stCli->fetch(PDO::FETCH_ASSOC);
-    }
-
-    $consegna = null;
-    if (!empty($values['consegna_via'])) {
-        $consegna = [
-            'via'                => $values['consegna_via'] ?? null,
-            'civico'             => $values['consegna_civico'] ?? null,
-            'cap'                => $values['consegna_cap'] ?? null,
-            'citta'              => $values['consegna_citta'] ?? null,
-            'provincia'          => $values['consegna_provincia'] ?? null,
-            'nazione'            => $values['consegna_nazione'] ?? null,
-            'presso'             => $values['consegna_presso'] ?? null,
-            'referente_consegna' => $values['consegna_referente'] ?? null,
-            'telefono_consegna'  => $values['consegna_telefono'] ?? null,
-            'note_consegna'      => $values['consegna_note'] ?? null,
-        ];
-    } elseif (!empty($values['indirizzo_spedizione_id']) && is_numeric($values['indirizzo_spedizione_id'])) {
-        $stInd = $pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
-        $stInd->execute([(int)$values['indirizzo_spedizione_id']]);
-        $consegna = $stInd->fetch(PDO::FETCH_ASSOC);
-    }
-
-    $azienda_ragione_sociale = $azienda['ragione_sociale'] ?? null;
-    $azienda_partita_iva     = $azienda['partita_iva'] ?? null;
-    $azienda_codice_fiscale  = $azienda['codice_fiscale'] ?? null;
-    $azienda_indirizzo       = $azienda ? trim(($azienda['via'] ?? '') . ' ' . ($azienda['civico'] ?? '') . ', ' . ($azienda['cap'] ?? '') . ' ' . ($azienda['citta'] ?? '') . ' (' . ($azienda['provincia'] ?? '') . ')') : null;
-    $azienda_telefono        = $azienda['telefono'] ?? null;
-    $azienda_email           = $azienda['email'] ?? null;
-    $azienda_iban            = $azienda['iban_default'] ?? null;
-
-    $cliente_label = '';
-    if ($cliente) {
-        $cliente_label = $cliente['ragione_sociale'] ?: trim(($cliente['nome'] ?? '') . ' ' . ($cliente['cognome'] ?? ''));
-    }
-    $cliente_ragione_sociale = $cliente_label ?: null;
-    $cliente_partita_iva     = $cliente['partita_iva'] ?? null;
-    $cliente_codice_fiscale  = $cliente['codice_fiscale'] ?? null;
-    $cliente_indirizzo       = $cliente ? trim(($cliente['via'] ?? '') . ' ' . ($cliente['civico'] ?? '') . ', ' . ($cliente['cap'] ?? '') . ' ' . ($cliente['citta'] ?? '') . ' (' . ($cliente['provincia'] ?? '') . ')') : null;
-
-    return [
-        'azienda_ragione_sociale' => $azienda_ragione_sociale,
-        'azienda_partita_iva'     => $azienda_partita_iva,
-        'azienda_codice_fiscale'  => $azienda_codice_fiscale,
-        'azienda_indirizzo'       => $azienda_indirizzo,
-        'azienda_telefono'        => $azienda_telefono,
-        'azienda_email'           => $azienda_email,
-        'azienda_iban'            => $azienda_iban,
-        'cliente_ragione_sociale' => $cliente_ragione_sociale,
-        'cliente_partita_iva'     => $cliente_partita_iva,
-        'cliente_codice_fiscale'  => $cliente_codice_fiscale,
-        'cliente_indirizzo'       => $cliente_indirizzo,
-        'consegna_via'            => $consegna['via'] ?? null,
-        'consegna_civico'         => $consegna['civico'] ?? null,
-        'consegna_cap'            => $consegna['cap'] ?? null,
-        'consegna_citta'          => $consegna['citta'] ?? null,
-        'consegna_provincia'      => $consegna['provincia'] ?? null,
-        'consegna_nazione'        => $consegna['nazione'] ?? null,
-        'consegna_presso'         => $consegna['presso'] ?? null,
-        'consegna_referente'      => $consegna['referente_consegna'] ?? null,
-        'consegna_telefono'       => $consegna['telefono_consegna'] ?? null,
-        'consegna_note'           => $consegna['note_consegna'] ?? null,
-    ];
-}
 
 /**
  * Calcola i valori economici e logistici di una riga preventivo.
@@ -448,7 +352,31 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         $margine_euro = round($imponibile - $totale_costo, 2);
         $margine_perc = $imponibile > 0 ? round(($margine_euro / $imponibile) * 100, 2) : 0.0;
 
-        $denorm = qk_denormalize_offerta_details($pdo, $values);
+        $denorm = qk_denormalize_document_details($pdo, $values);
+
+        // Creazione snapshot strutturati (indirizzo e contatto)
+        $addrPayload = [
+            'indirizzo_master_id' => $values['indirizzo_spedizione_id'] ?? null,
+            'via' => $denorm['consegna_via'],
+            'civico' => $denorm['consegna_civico'],
+            'cap' => $denorm['consegna_cap'],
+            'citta' => $denorm['consegna_citta'],
+            'provincia' => $denorm['consegna_provincia'],
+            'nazione' => $denorm['consegna_nazione'],
+            'presso' => $denorm['consegna_presso'],
+            'referente_consegna' => $denorm['consegna_referente'],
+            'telefono_consegna' => $denorm['consegna_telefono'],
+            'note_consegna' => $denorm['consegna_note'],
+        ];
+        $indirizzo_consegna_id = qk_upsert_document_address($pdo, $addrPayload);
+
+        $contPayload = [
+            'contatto_master_id' => $values['contatto_id'] ?? null,
+            'nome' => $values['contatto_nome'] ?? '',
+            'email' => $values['contatto_email'] ?? '',
+            'telefono' => $values['contatto_telefono'] ?? '',
+        ];
+        $contatto_snapshot_id = qk_upsert_document_contact($pdo, $contPayload);
 
         // Inserimento testata
         $sqlHead = "INSERT INTO preventivi (
@@ -458,6 +386,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             note_cliente, note_interne, oggetto, creato_da, created_at, updated_at,
             azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
             cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
+            indirizzo_consegna_id, contatto_snapshot_id,
             consegna_via, consegna_civico, consegna_cap, consegna_citta, consegna_provincia, consegna_nazione, consegna_presso, consegna_referente, consegna_telefono, consegna_note
         ) VALUES (
             :numero_preventivo, :riferimento_interno, :cliente_id, :azienda_interna_id, :listino_id, :alla_ca, :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono, :indirizzo_spedizione_id, :data_offerta, :data_scadenza, :data_consegna_richiesta,
@@ -466,6 +395,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             :note_cliente, :note_interne, :oggetto, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
             :azienda_ragione_sociale, :azienda_partita_iva, :azienda_codice_fiscale, :azienda_indirizzo, :azienda_telefono, :azienda_email, :azienda_iban,
             :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
+            :indirizzo_consegna_id, :contatto_snapshot_id,
             :consegna_via, :consegna_civico, :consegna_cap, :consegna_citta, :consegna_provincia, :consegna_nazione, :consegna_presso, :consegna_referente, :consegna_telefono, :consegna_note
         )";
 
@@ -512,6 +442,8 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             ':cliente_partita_iva'     => $denorm['cliente_partita_iva'],
             ':cliente_codice_fiscale'  => $denorm['cliente_codice_fiscale'],
             ':cliente_indirizzo'       => $denorm['cliente_indirizzo'],
+            ':indirizzo_consegna_id'   => $indirizzo_consegna_id,
+            ':contatto_snapshot_id'    => $contatto_snapshot_id,
             ':consegna_via'            => $denorm['consegna_via'],
             ':consegna_civico'         => $denorm['consegna_civico'],
             ':consegna_cap'            => $denorm['consegna_cap'],
@@ -641,6 +573,14 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
 {
     $pdo->beginTransaction();
     try {
+        // Enforce domain logic: verify the existing state of the quote before modifying it
+        $stState = $pdo->prepare('SELECT stato FROM preventivi WHERE id = ?');
+        $stState->execute([$id]);
+        $oldState = $stState->fetchColumn();
+        if ($oldState !== 'bozza') {
+            throw new Exception("Impossibile modificare il preventivo: lo stato attuale è '$oldState'. Le modifiche sono consentite solo in stato 'bozza'.");
+        }
+
         $stCv = $pdo->prepare('SELECT id FROM canali_vendita WHERE codice = ?');
         $stCv->execute([$values['canale_vendita'] ?? 'email_diretta']);
         $canale_vendita_id = $stCv->fetchColumn() ?: null;
@@ -666,7 +606,38 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         $margine_euro = round($imponibile - $totale_costo, 2);
         $margine_perc = $imponibile > 0 ? round(($margine_euro / $imponibile) * 100, 2) : 0.0;
 
-        $denorm = qk_denormalize_offerta_details($pdo, $values);
+        $denorm = qk_denormalize_document_details($pdo, $values);
+
+        // Fetch existing snapshot IDs
+        $stOldSnap = $pdo->prepare("SELECT indirizzo_consegna_id, contatto_snapshot_id FROM preventivi WHERE id = ?");
+        $stOldSnap->execute([$id]);
+        $oldSnap = $stOldSnap->fetch(PDO::FETCH_ASSOC) ?: [];
+        $existing_indirizzo_consegna_id = $oldSnap['indirizzo_consegna_id'] ?? null;
+        $existing_contatto_snapshot_id = $oldSnap['contatto_snapshot_id'] ?? null;
+
+        // Upsert snapshot strutturati
+        $addrPayload = [
+            'indirizzo_master_id' => $values['indirizzo_spedizione_id'] ?? null,
+            'via' => $denorm['consegna_via'],
+            'civico' => $denorm['consegna_civico'],
+            'cap' => $denorm['consegna_cap'],
+            'citta' => $denorm['consegna_citta'],
+            'provincia' => $denorm['consegna_provincia'],
+            'nazione' => $denorm['consegna_nazione'],
+            'presso' => $denorm['consegna_presso'],
+            'referente_consegna' => $denorm['consegna_referente'],
+            'telefono_consegna' => $denorm['consegna_telefono'],
+            'note_consegna' => $denorm['consegna_note'],
+        ];
+        $indirizzo_consegna_id = qk_upsert_document_address($pdo, $addrPayload, $existing_indirizzo_consegna_id);
+
+        $contPayload = [
+            'contatto_master_id' => $values['contatto_id'] ?? null,
+            'nome' => $values['contatto_nome'] ?? '',
+            'email' => $values['contatto_email'] ?? '',
+            'telefono' => $values['contatto_telefono'] ?? '',
+        ];
+        $contatto_snapshot_id = qk_upsert_document_contact($pdo, $contPayload, $existing_contatto_snapshot_id);
 
         $sqlUpdateHead = "UPDATE preventivi SET
             cliente_id = :cliente_id,
@@ -708,6 +679,8 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             cliente_partita_iva = :cliente_partita_iva,
             cliente_codice_fiscale = :cliente_codice_fiscale,
             cliente_indirizzo = :cliente_indirizzo,
+            indirizzo_consegna_id = :indirizzo_consegna_id,
+            contatto_snapshot_id = :contatto_snapshot_id,
             consegna_via = :consegna_via,
             consegna_civico = :consegna_civico,
             consegna_cap = :consegna_cap,
@@ -763,6 +736,8 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             ':cliente_partita_iva'     => $denorm['cliente_partita_iva'],
             ':cliente_codice_fiscale'  => $denorm['cliente_codice_fiscale'],
             ':cliente_indirizzo'       => $denorm['cliente_indirizzo'],
+            ':indirizzo_consegna_id'   => $indirizzo_consegna_id,
+            ':contatto_snapshot_id'    => $contatto_snapshot_id,
             ':consegna_via'            => $denorm['consegna_via'],
             ':consegna_civico'         => $denorm['consegna_civico'],
             ':consegna_cap'            => $denorm['consegna_cap'],
@@ -1022,30 +997,112 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         // 2. Generate ODC number
         $numeroOrdine = qk_next_numero_ordine_cliente($pdo);
 
+        // 2a. Check and generate snapshot IDs if missing (for older quotes)
+        $indirizzo_consegna_id = $quota['indirizzo_consegna_id'] ?? null;
+        if (!$indirizzo_consegna_id && !empty($quota['consegna_via'])) {
+            $addrPayload = [
+                'indirizzo_master_id' => $quota['indirizzo_spedizione_id'] ?? null,
+                'via' => $quota['consegna_via'],
+                'civico' => $quota['consegna_civico'] ?? '',
+                'cap' => $quota['consegna_cap'] ?? '',
+                'citta' => $quota['consegna_citta'] ?? '',
+                'provincia' => $quota['consegna_provincia'] ?? '',
+                'nazione' => $quota['consegna_nazione'] ?? 'IT',
+                'presso' => $quota['consegna_presso'] ?? '',
+                'referente_consegna' => $quota['consegna_referente'] ?? '',
+                'telefono_consegna' => $quota['consegna_telefono'] ?? '',
+                'note_consegna' => $quota['consegna_note'] ?? '',
+            ];
+            $indirizzo_consegna_id = qk_upsert_document_address($pdo, $addrPayload);
+            // Optionally update the preventivo with this ID to avoid recreating it
+            $pdo->prepare("UPDATE preventivi SET indirizzo_consegna_id = ? WHERE id = ?")->execute([$indirizzo_consegna_id, $id]);
+        }
+
+        $contatto_snapshot_id = $quota['contatto_snapshot_id'] ?? null;
+        if (!$contatto_snapshot_id && !empty($quota['contatto_nome'])) {
+            $contPayload = [
+                'contatto_master_id' => $quota['contatto_id'] ?? null,
+                'nome' => $quota['contatto_nome'] ?? '',
+                'email' => $quota['contatto_email'] ?? '',
+                'telefono' => $quota['contatto_telefono'] ?? '',
+            ];
+            $contatto_snapshot_id = qk_upsert_document_contact($pdo, $contPayload);
+            $pdo->prepare("UPDATE preventivi SET contatto_snapshot_id = ? WHERE id = ?")->execute([$contatto_snapshot_id, $id]);
+        }
+
         // 3. Create ordini_clienti head
         $sqlHead = "INSERT INTO ordini_clienti (
-            numero_ordine, preventivo_id, cliente_id, listino_id, indirizzo_spedizione_id, data_ordine, data_consegna_prevista, stato, note, creato_da, created_at, updated_at
+            numero_ordine, preventivo_id, cliente_id, azienda_interna_id, data_ordine, data_consegna_prevista,
+            stato, stato_fatturazione, riferimento_interno, condizioni_pagamento, trasporto, valuta,
+            listino_id, note, indirizzo_spedizione_id,
+            consegna_via, consegna_civico, consegna_cap, consegna_citta,
+            consegna_provincia, consegna_nazione, consegna_presso,
+            consegna_referente, consegna_telefono, consegna_note,
+            contatto_id, contatto_nome, contatto_email, contatto_telefono,
+            indirizzo_consegna_id, contatto_snapshot_id,
+            cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
+            creato_da, created_at, updated_at
         ) VALUES (
-            :numero_ordine, :preventivo_id, :cliente_id, :listino_id, :indirizzo_spedizione_id, CURRENT_DATE, :data_consegna_prevista, 'in_lavorazione', :note, :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            :numero_ordine, :preventivo_id, :cliente_id, :azienda_interna_id, CURRENT_DATE, :data_consegna_prevista,
+            'in_lavorazione', 'da_fatturare', :riferimento_interno, :condizioni_pagamento, :trasporto, :valuta,
+            :listino_id, :note, :indirizzo_spedizione_id,
+            :consegna_via, :consegna_civico, :consegna_cap, :consegna_citta,
+            :consegna_provincia, :consegna_nazione, :consegna_presso,
+            :consegna_referente, :consegna_telefono, :consegna_note,
+            :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono,
+            :indirizzo_consegna_id, :contatto_snapshot_id,
+            :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
+            :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )";
         $stHead = $pdo->prepare($sqlHead);
         $stHead->execute([
             ':numero_ordine'           => $numeroOrdine,
             ':preventivo_id'           => $id,
             ':cliente_id'              => $quota['cliente_id'],
-            ':listino_id'              => !empty($quota['listino_id']) ? (int)$quota['listino_id'] : 1,
-            ':indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?: null,
+            ':azienda_interna_id'      => $quota['azienda_interna_id'] ?: null,
             ':data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
+            ':riferimento_interno'     => $quota['riferimento_interno'] ?: null,
+            ':condizioni_pagamento'    => $quota['condizioni_pagamento'] ?: null,
+            ':trasporto'               => $quota['trasporto'] ?: null,
+            ':valuta'                  => $quota['valuta'] ?: 'EUR',
+            ':listino_id'              => !empty($quota['listino_id']) ? (int)$quota['listino_id'] : (int)($pdo->query("SELECT id FROM listini WHERE is_default = 1 AND attivo = 1 LIMIT 1")->fetchColumn() ?: 0),
             ':note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),
+            ':indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?: null,
+            ':consegna_via'            => $quota['consegna_via'] ?: null,
+            ':consegna_civico'         => $quota['consegna_civico'] ?: null,
+            ':consegna_cap'            => $quota['consegna_cap'] ?: null,
+            ':consegna_citta'          => $quota['consegna_citta'] ?: null,
+            ':consegna_provincia'      => $quota['consegna_provincia'] ?: null,
+            ':consegna_nazione'        => $quota['consegna_nazione'] ?: 'IT',
+            ':consegna_presso'         => $quota['consegna_presso'] ?: null,
+            ':consegna_referente'      => $quota['consegna_referente'] ?: null,
+            ':consegna_telefono'       => $quota['consegna_telefono'] ?: null,
+            ':consegna_note'           => $quota['consegna_note'] ?: null,
+            ':contatto_id'             => $quota['contatto_id'] ?: null,
+            ':contatto_nome'           => $quota['contatto_nome'] ?: null,
+            ':contatto_email'          => $quota['contatto_email'] ?: null,
+            ':contatto_telefono'       => $quota['contatto_telefono'] ?: null,
+            ':indirizzo_consegna_id'   => $indirizzo_consegna_id ?: null,
+            ':contatto_snapshot_id'    => $contatto_snapshot_id ?: null,
+            ':cliente_ragione_sociale' => $quota['cliente_ragione_sociale'] ?: null,
+            ':cliente_partita_iva'     => $quota['cliente_partita_iva'] ?: null,
+            ':cliente_codice_fiscale'  => $quota['cliente_codice_fiscale'] ?: null,
+            ':cliente_indirizzo'       => $quota['cliente_indirizzo'] ?: null,
             ':creato_da'               => $userId
         ]);
         $ordineId = (int)$pdo->lastInsertId();
 
         // 4. Create ordini_clienti_righe and reserve stock quantities
         $sqlLine = "INSERT INTO ordini_clienti_righe (
-            ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata, quantita_spedita, unita_misura_id, prezzo_unitario, costo_unitario, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot, num_factor_snapshot, den_factor_snapshot, note
+            ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata, quantita_spedita,
+            unita_misura_id, prezzo_unitario, sconto_perc, iva_perc, costo_unitario,
+            quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
+            num_factor_snapshot, den_factor_snapshot, quantita_confezione, note
         ) VALUES (
-            :ordine_id, :preventivo_riga_id, :prodotto_id, :descrizione, :quantita_ordinata, 0, :unita_misura_id, :prezzo_unitario, :costo_unitario, :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot, :num_factor_snapshot, :den_factor_snapshot, :note
+            :ordine_id, :preventivo_riga_id, :prodotto_id, :descrizione, :quantita_ordinata, 0,
+            :unita_misura_id, :prezzo_unitario, :sconto_perc, :iva_perc, :costo_unitario,
+            :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
+            :num_factor_snapshot, :den_factor_snapshot, :quantita_confezione, :note
         )";
         $stLine = $pdo->prepare($sqlLine);
 
@@ -1063,14 +1120,17 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
                 ':descrizione'        => $r['descrizione'],
                 ':quantita_ordinata'  => $r['quantita'],
                 ':unita_misura_id'    => $r['unita_misura_id'] ?: null,
-                ':prezzo_unitario'    => $r['prezzo_unitario'],
-                ':costo_unitario'     => $r['costo_unitario'],
+                ':prezzo_unitario'    => $r['prezzo_unitario'] ?? 0,
+                ':sconto_perc'        => $r['sconto_perc'] ?? 0,
+                ':iva_perc'           => $r['iva_perc'] ?? 22,
+                ':costo_unitario'     => $r['costo_unitario'] ?? 0,
                 ':quantita_stock'     => $r['quantita_stock'],
                 ':unita_misura_stock_id' => $r['unita_misura_stock_id'] ?: null,
                 ':quantita_contenuto_snapshot' => $r['quantita_contenuto_snapshot'] ?? 1.0,
                 ':num_factor_snapshot' => $r['num_factor_snapshot'] ?? 1,
                 ':den_factor_snapshot' => $r['den_factor_snapshot'] ?? 1,
-                ':note'               => $r['note_riga'] ?? ''
+                ':quantita_confezione' => $r['quantita_confezione'] ?? null,
+                ':note'               => qk_null_if_empty($r['note_riga'] ?? '')
             ]);
 
             // Reserve stock

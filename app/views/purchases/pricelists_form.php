@@ -786,6 +786,14 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!prodottoId) { flashRow(tr, 'Seleziona un prodotto.'); return false; }
       if (!prezzo || isNaN(parseFloat(prezzo))) { flashRow(tr, 'Inserisci un prezzo valido.'); return false; }
 
+      const scontoInput = tr.querySelector('.r-sconto').value.trim() || '0';
+      const scontoVal = parseFloat(scontoInput);
+      if (scontoVal > 50) {
+        if (!confirm('Attenzione: stai applicando uno sconto eccezionale superiore al 50%. Sei sicuro di voler procedere?')) {
+          return false;
+        }
+      }
+
       // Check duplicates before saving
       runBusinessValidations();
       if (tr.dataset.hasDuplicate === 'true') {

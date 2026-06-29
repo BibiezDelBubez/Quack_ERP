@@ -7,6 +7,13 @@ require_once INCLUDES_DIR . '/sales_quotes.php';
 
 final class SalesOrdersController extends BaseController
 {
+    /** Restituisce l'ID del listino marcato is_default=1, oppure null se non esiste. */
+    private function getDefaultListinoId(): ?int
+    {
+        $row = $this->pdo->query("SELECT id FROM listini WHERE is_default = 1 AND attivo = 1 LIMIT 1")->fetch();
+        return $row ? (int)$row['id'] : null;
+    }
+
     public function index(): void
     {
         $search = get_param('q', '');
@@ -143,7 +150,7 @@ final class SalesOrdersController extends BaseController
             'condizioni_pagamento'    => '',
             'trasporto'               => 'Franco destino',
             'valuta'                  => 'EUR',
-            'listino_id'              => '1', // default listino standard (id=1)
+            'listino_id'              => $this->getDefaultListinoId() ?? '', // listino marcato is_default=1
             'note'                    => '',
             'indirizzo_spedizione_id' => '',
             'consegna_via'            => '',
@@ -179,7 +186,7 @@ final class SalesOrdersController extends BaseController
             'condizioni_pagamento'    => $s('condizioni_pagamento'),
             'trasporto'               => $s('trasporto'),
             'valuta'                  => $s('valuta', 'EUR'),
-            'listino_id'              => $s('listino_id', '1'),
+            'listino_id'              => $s('listino_id', (string)($this->getDefaultListinoId() ?? '')),
             'note'                    => $s('note'),
             'indirizzo_spedizione_id' => $s('indirizzo_spedizione_id'),
             'consegna_via'            => $s('consegna_via'),
@@ -275,12 +282,12 @@ final class SalesOrdersController extends BaseController
 
         $stCont = $this->pdo->prepare("
             SELECT id,
-                   COALESCE(nome_completo, TRIM(COALESCE(nome,'') || ' ' || COALESCE(cognome,''))) AS nome_completo,
+                   COALESCE(nome || ' ' || COALESCE(cognome, ''), ragione_sociale) AS nome_completo,
                    email, telefono, cellulare
-              FROM contatti
-             WHERE soggetto_id = ?
+              FROM clienti_fornitori
+             WHERE parent_id = ?
                AND attivo = 1
-             ORDER BY principale DESC, nome_completo ASC
+             ORDER BY nome, cognome
         ");
         $stCont->execute([$clienteId]);
         $contatti = $stCont->fetchAll(PDO::FETCH_ASSOC);
@@ -289,7 +296,7 @@ final class SalesOrdersController extends BaseController
             'ok'        => true,
             'cliente'   => [
                 'condizioni_pagamento' => $cliente['condizioni_pagamento'] ?? '',
-                'listino_id'           => $cliente['listino_id'] !== null ? (int)$cliente['listino_id'] : 1
+                'listino_id'           => $cliente['listino_id'] !== null ? (int)$cliente['listino_id'] : $this->getDefaultListinoId()
             ],
             'indirizzi' => $indirizzi,
             'contatti'  => $contatti,
