@@ -1304,7 +1304,10 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
             NULL AS uom_comm_id,
             (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
               WHERE pfp.prodotto_fornitore_id = pf.id
-                AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario";
+                AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario,
+            (SELECT pfp.unita_misura_id FROM prodotti_fornitori_prezzi pfp
+              WHERE pfp.prodotto_fornitore_id = pf.id
+                AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario_uom_id";
     }
 
     $st = $pdo->prepare(

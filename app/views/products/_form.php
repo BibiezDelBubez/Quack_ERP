@@ -498,7 +498,8 @@ window.QkPF = {
                   <input type="number" name="quantita_contenuto"
                          class="qk-form-control"
                          value="<?= e($v['quantita_contenuto'] ?? '') ?>"
-                         placeholder="Es. 25.000" min="0" step="0.001">
+                         placeholder="Es. 25 oppure 12.5" min="0.001" step="0.001"
+                         title="Massimo 3 cifre decimali (es. 12.5 o 0.75)">
                 </div>
               </div>
 

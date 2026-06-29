@@ -158,7 +158,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 prezzo_unitario, sconto_perc, iva_perc, costo_unitario,
                 quantita_confezione, quantita_contenuto_snapshot,
                 num_factor_snapshot, den_factor_snapshot,
-                quantita_stock, unita_misura_stock_id,
+                quantita_stock, system_unit_price_stock, unita_misura_stock_id,
                 quantita_spedita, note,
                 created_at
             ) VALUES (
@@ -166,7 +166,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 ?, ?, ?, ?,
                 ?, ?,
                 ?, ?,
-                ?, ?,
+                ?, ?, ?,
                 0, ?,
                 CURRENT_TIMESTAMP
             )
@@ -195,31 +195,13 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
             $um_codice = $r['unita_misura'] ?? 'pz';
             $um_id = $getUomId($pdo, $um_codice);
 
-            // Calcola equivalenti in unità stock
-            $qtaStock = $qta;
-            $um_stock_id = $um_id;
-            $factor = 1.0;
-            $num_factor_snapshot = 1;
-            $den_factor_snapshot = 1;
-
-            if ($prodotto_id && $um_id) {
-                $prodUm = qk_prodotto_get_uom_info($pdo, $prodotto_id);
-                if ($prodUm) {
-                    $um_stock_id = $prodUm['unita_misura_stock_id'];
-                    $content_um_id = $prodUm['unita_contenuto_id'];
-                    $factor = (float) ($prodUm['quantita_contenuto'] ?? 1.0);
-                    if ($factor <= 0) $factor = 1.0;
-                    $num_factor_snapshot = $prodUm['num_factor'];
-                    $den_factor_snapshot = $prodUm['den_factor'];
-
-                    if ((int)$um_id === $um_stock_id) {
-                        $qtaStock = $qta;
-                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $factor > 0) {
-                        // Q_stock = Q_comm / F_conv
-                        $qtaStock = (float)bcdiv((string)$qta, (string)$factor, 3);
-                    }
-                }
-            }
+            // Calcola equivalenti in unità stock (centralizzato in qk_uom_converti_riga)
+            $uomResult = qk_uom_converti_riga($pdo, $prodotto_id ? (int)$prodotto_id : null, $um_id ? (int)$um_id : null, $qta, (float)($r['prezzo_unitario'] ?? 0));
+            $qtaStock            = $uomResult['quantita_stock'];
+            $um_stock_id         = $uomResult['unita_misura_stock_id'];
+            $factor              = $uomResult['quantita_contenuto_snapshot'];
+            $num_factor_snapshot = $uomResult['num_factor_snapshot'];
+            $den_factor_snapshot = $uomResult['den_factor_snapshot'];
 
             // Costo unitario
             $costo = (float) ($r['costo_unitario'] ?? 0);
@@ -239,6 +221,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 $num_factor_snapshot,
                 $den_factor_snapshot,
                 round($qtaStock, 3),
+                $uomResult['system_unit_price_stock'],
                 $um_stock_id,
                 $r['note_riga'] ?: null,
             ]);

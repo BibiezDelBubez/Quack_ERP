@@ -56,28 +56,7 @@ Questo documento costituisce l'analisi e la specifica di riferimento per la gest
 
 ---
 
-## 2. Connessione e Gestione UoM nei Grandi ERP Best-in-Class
-
-### SAP ERP (S/4HANA)
-*   **Listini e Prezzi**: Utilizza la **Condition Technique** (procedura di calcolo con sequenze di accesso). I record di condizione sono memorizzati combinando chiavi specifiche (es. Cliente/Materiale/UoM).
-*   **Gestione Unità di Misure (UoM)**: SAP gestisce tre tipi di UoM: *Base UoM* (stoccaggio), *Sales UoM* (vendita) e *Purchase UoM* (acquisto). Se un listino è definito in "Scatole da 12" ma l'ordine viene inserito in "Pezzi", il motore di pricing di SAP esegue automaticamente la conversione del prezzo unitario applicando il fattore di conversione definito nell'anagrafica materiale prima di esporlo a video.
-*   **RFQ & PO**: I prezzi di acquisto sono gestiti negli **Info Records**. L'Info Record definisce l'unità di misura d'acquisto specifica del fornitore e le relative scale di sconti quantità per quella specifica UoM.
-
-### Oracle NetSuite
-*   **Listini e Prezzi**: I prezzi sono strutturati in **Price Levels** legati ai clienti.
-*   **Gestione Unità di Misure (UoM)**: NetSuite utilizza gli **UoM Schedules** (tabelle di conversione unità). Ogni articolo è associato a un set di unità (es. *Pezzo, Scatola, Pallet*). Nei listini prezzi, l'utente può inserire tariffe specifiche per ciascuna unità di misura. In fase di compilazione del preventivo o dell'ordine, se l'utente cambia l'unità di misura della riga, NetSuite aggiorna istantaneamente il prezzo unitario suggerito pescando il valore associato a quella specifica UoM nel listino prezzi del cliente.
-
-### Odoo
-*   **Listini e Prezzi**: Gestisce i listini prezzi (**Pricelists**) configurabili con formule e regole a cascata.
-*   **Gestione Unità di Misure (UoM)**: Odoo organizza le UoM in **UoM Categories** (es. Peso, Volume, Unità). La conversione tra UoM della stessa categoria è gestita da fattori moltiplicatori/divisori fissi. Nei listini di vendita o nelle Vendor Pricelists d'acquisto, il prezzo può essere espresso in un'UoM specifica. All'inserimento della riga, il sistema verifica l'UoM selezionata e, se differisce da quella del listino, calcola il prezzo proporzionato applicando il fattore di conversione in tempo reale.
-
-### Microsoft Dynamics 365 Business Central
-*   **Listini e Prezzi**: Utilizza i **Sales Price Lists** e **Purchase Price Lists** associabili a clienti, fornitori o campagne.
-*   **Gestione Unità di Misure (UoM)**: Ogni articolo ha una *Base Unit of Measure*. È possibile definire unità alternative (es. *Confezione da 6 pz*) con i relativi codici e fattori di conversione. Nei listini prezzi (vendita e acquisto), le righe di prezzo sono esplicitamente legate al codice unità di misura. Se il motore di pricing non trova un prezzo specifico per l'UoM inserita sulla riga del documento, applica il prezzo dell'unità di misura base convertendolo in proporzione al fattore di conversione memorizzato sulla scheda dell'articolo.
-
----
-
-## 3. Analisi delle Logiche di Connessione e UX/UI: Pregi, Difetti e Stato dell'Arte
+## 2. Analisi delle Logiche di Connessione e UX/UI: Pregi, Difetti e Stato dell'Arte
 
 ### Approccio A: Calcolo Continuo in Tempo Reale (Odoo / SAP)
 Il sistema ricalcola il prezzo ad ogni variazione di quantità, UoM o dati di testata, a meno che la riga non sia stata esplicitamente bloccata in modalità manuale.
@@ -177,49 +156,4 @@ Il Pricing Engine di backend deve operare secondo una cascata logica rigida per 
 
 ---
 
-## 5. Specifiche di Integrazione e Conversione Multi-UoM (dalla Specifica di Riferimento)
-
-### A. I Pilastri della Gestione UoM e Prezzi
-Come definito nel manuale architetturale di riferimento di Quack ERP:
-1.  **Immutabilità Transazionale**: Quando un documento viene finalizzato, tutti i fattori di conversione, i prezzi unitari e le UoM attive in quel momento sono copiati (snapshottati) nelle righe del documento per isolare lo storico da variazioni anagrafiche successive.
-2.  **Base UoM Unica per Prodotto**: Il magazzino gestisce saldi e lotti solo ed esclusivamente nell'unità base di stoccaggio. Qualsiasi movimento logistico in unità alternativa viene preventivamente convertito e registrato in Base UoM.
-3.  **Listini in UoM Nativa**: I listini vendite, acquisti e RRP conservano il prezzo unitario legato all'UoM con cui sono stati negoziati commerciali (es. prezzo espresso a KG o a FUSTO), adattando il valore a video in base alle relazioni di conversione.
-
-### B. Relazione Matematica ad Alta Precisione
-La relazione tra l'unità commerciale e quella di stoccaggio è gestita tramite la formula:
-
-$$\text{1 Unità Commerciale (Alt)} = \left(\frac{\text{Numeratore}}{\text{Denominatore}}\right) \times \text{Unità di Stock (Base)}$$
-
-Il database transazionale (`sales_order_lines`, `preventivi_righe`, `ordini_righe`) deve memorizzare lo snapshot dei coefficienti di conversione attivi al salvataggio:
-*   `num_factor_snapshot DECIMAL(18,9)`
-*   `den_factor_snapshot DECIMAL(18,9)`
-*   `quantita_stock DECIMAL(18,4)`
-*   `system_unit_price_stock DECIMAL(18,4)`
-
-### C. Matrice delle Eccezioni Multi-UoM
-
-| Caso Limite / Eccezione | Comportamento del Sistema | Rationale Tecnico |
-| :--- | :--- | :--- |
-| **1. Cambio della Base UoM post-movimenti** | **Vietata.** Il campo viene disabilitato in UI e bloccato in Backend. | Se modificata, corromperebbe lo storico dei movimenti di magazzino e il costo medio ponderato. |
-| **2. Cambio della Base UoM senza movimenti** | **Consentita.** Il sistema aggiorna i preventivi/ordini in stato "bozza" associati. | Poiché non ci sono transazioni fisiche a magazzino, è possibile allineare le bozze commerciali. |
-| **3. UoM Commerciale non definita** | La UI consente solo la selezione della UoM di Stock. | Evita divisioni per zero o configurazioni invalide. |
-| **4. Modifica del fattore di conversione ($F_{conv}$)** | I listini storici continuano a funzionare con il nuovo fattore per le nuove transazioni. I vecchi ordini salvati rimangono intatti. | Lo snapshot `quantita_contenuto_snapshot` sulle righe passate isola lo storico dalle modifiche anagrafiche future. |
-| **5. Prezzo consigliato (RRP) multi-UoM** | Il venditore inserisce l'RRP specificando la UoM (es. `200 €/fusto` o `8 €/kg`). | Consente il confronto coerente tra prezzi consigliati dai fornitori e listini interni sia a peso che a pezzo. |
-
----
-
-## 6. Piano di Allineamento e Implementazione del Codice
-
-### A. Modifiche al Database
-*   `ALTER TABLE listini_prezzi ADD COLUMN unita_misura_id INTEGER REFERENCES unita_misura(id)`
-*   `ALTER TABLE prodotti_fornitori_prezzi ADD COLUMN unita_misura_id INTEGER REFERENCES unita_misura(id)`
-*   `ALTER TABLE prodotti_fornitori ADD COLUMN rrp_unita_misura_id INTEGER REFERENCES unita_misura(id)`
-*   Righe dei documenti aggiornate con `quantita_contenuto_snapshot DECIMAL(10,3)`, `quantita_stock DECIMAL(10,3)`, e `unita_misura_stock_id`.
-
-### B. Logiche Backend PHP
-1.  In `ProductsController.php` implementare il controllo dei movimenti di magazzino prima di consentire la modifica del campo `unita_misura_stock_id`.
-2.  In `includes/sales_quotes.php` e negli altri helper transazionali, inserire il calcolo di `quantita_stock` e la scrittura dei campi snapshot all'atto dell'inserimento/modifica delle righe.
-
-### C. Logiche Frontend JavaScript
-1.  Migliorare `window.qkConvertUom` in `assets/js/app.js` per gestire le conversioni bidirezionali dei prezzi e delle quantità esposte in tabella in tempo reale durante il toggling della modalità UoM attiva.
-2.  Integrare il selettore dell'UoM della riga per restringere la scelta solo alle unità abilitate per il prodotto.
+> Le sezioni "Specifiche di Integrazione Multi-UoM" e "Piano di Allineamento" sono state rimosse da questo file perché incorporate nella Versione Definitiva (PARTE 3 e Sezione 8). Fare riferimento a quella come unica fonte.

@@ -833,10 +833,10 @@ final class SalesPricelistsController extends BaseController
         $rrp_max = null;
 
         $stRrp = $this->pdo->prepare('
-            SELECT pf.rrp_min, pf.rrp_max,
-                   (SELECT MIN(pfp.prezzo) 
-                    FROM prodotti_fornitori_prezzi pfp 
-                    WHERE pfp.prodotto_fornitore_id = pf.id 
+            SELECT pf.rrp_min, pf.rrp_max, pf.rrp_unita_misura_id,
+                   (SELECT MIN(pfp.prezzo)
+                    FROM prodotti_fornitori_prezzi pfp
+                    WHERE pfp.prodotto_fornitore_id = pf.id
                       AND pfp.quantita_minima = 0) AS costo_unitario
             FROM prodotti_fornitori pf
             WHERE pf.prodotto_id = ? AND pf.attivo = 1
@@ -845,25 +845,31 @@ final class SalesPricelistsController extends BaseController
         ');
         $stRrp->execute([$prodottoId]);
         $rrpData = $stRrp->fetch(PDO::FETCH_ASSOC);
+        $rrp_unita_misura_id = null;
         if ($rrpData) {
             $costo_unitario = (float)($rrpData['costo_unitario'] ?? 0.0);
             $rrp_min = $rrpData['rrp_min'] !== null ? (float)$rrpData['rrp_min'] : null;
             $rrp_max = $rrpData['rrp_max'] !== null ? (float)$rrpData['rrp_max'] : null;
+            // Restituiamo la UoM nativa dell'RRP così il frontend sa se convertire o meno
+            $rrp_unita_misura_id = $rrpData['rrp_unita_misura_id'] !== null
+                ? (int)$rrpData['rrp_unita_misura_id']
+                : null;
         }
 
         if ($priceInfo) {
             echo json_encode([
-                'ok'              => true,
-                'prezzo_unitario' => $priceInfo['prezzo_unitario'],
-                'sconto_perc'     => $priceInfo['sconto_perc'],
-                'valuta'          => $priceInfo['valuta'],
-                'listino_id'      => $priceInfo['listino_id'],
-                'prezzo_sorgente' => $priceInfo['prezzo_sorgente'],
-                'origine'         => $priceInfo['origine'],
-                'costo_unitario'  => $costo_unitario,
-                'rrp_min'         => $rrp_min,
-                'rrp_max'         => $rrp_max,
-                'unita_misura_id' => $priceInfo['unita_misura_id'],
+                'ok'                 => true,
+                'prezzo_unitario'    => $priceInfo['prezzo_unitario'],
+                'sconto_perc'        => $priceInfo['sconto_perc'],
+                'valuta'             => $priceInfo['valuta'],
+                'listino_id'         => $priceInfo['listino_id'],
+                'prezzo_sorgente'    => $priceInfo['prezzo_sorgente'],
+                'origine'            => $priceInfo['origine'],
+                'costo_unitario'     => $costo_unitario,
+                'rrp_min'            => $rrp_min,
+                'rrp_max'            => $rrp_max,
+                'rrp_unita_misura_id'=> $rrp_unita_misura_id,
+                'unita_misura_id'    => $priceInfo['unita_misura_id'],
             ]);
         } else {
             echo json_encode([

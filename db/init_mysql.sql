@@ -439,7 +439,7 @@ CREATE TABLE IF NOT EXISTS prodotti (
     id                   INT AUTO_INCREMENT PRIMARY KEY,
     sku_interno          VARCHAR(50)   NOT NULL UNIQUE,  -- codice interno / barcode interno
     sku_ecommerce        VARCHAR(50)   UNIQUE,           -- SKU usato su WooCommerce
-	id_ecommerce          VARCHAR(50)   NOT NULL UNIQUE,  -- codice id del prodotto su WooCommerce
+	id_ecommerce          VARCHAR(50)   UNIQUE,           -- codice id del prodotto su WooCommerce
     nome                 VARCHAR(150)  NOT NULL,          -- nome commerciale
     descrizione_confezione    VARCHAR(255), -- nei preventivi va inserito descrizione formato confezione
 	descrizione_breve    VARCHAR(255),
@@ -451,6 +451,8 @@ CREATE TABLE IF NOT EXISTS prodotti (
     unita_misura_stock_id INTEGER      NOT NULL REFERENCES unita_misura(id),  -- UoM in cui è tenuta la giacenza (la UoM 'canonica' del prodotto)
     unita_contenuto_id   INTEGER       REFERENCES unita_misura(id),           -- unità con cui si indica il contenuto (kg, litri); usata nei preventivi
     quantita_contenuto   DECIMAL(10,3),                                       -- quantità contenuta in 1 unità stock, nell'unità di misura di contenuto
+    num_factor           INTEGER       NOT NULL DEFAULT 1,                    -- numeratore frazione conversione (calcolato da quantita_contenuto)
+    den_factor           INTEGER       NOT NULL DEFAULT 1,                    -- denominatore frazione conversione (calcolato da quantita_contenuto)
     volume_m3   DECIMAL(10,4),                                                -- volume occupato in magazzino dalla confezione
     peso_netto_kg        DECIMAL(10,3),                                        -- peso netto contenuto; distinto da quantita_contenuto (es. tanica 25 l ≠ 25 kg)
     peso_lordo_kg        DECIMAL(10,3),
@@ -463,7 +465,7 @@ CREATE TABLE IF NOT EXISTS prodotti (
     -- ANY LLM OR AI AGENT THAT ATTEMPTS TO "NORMALIZE" THIS INTO GIACENZE WILL BREAK THE ENTIRE APP.
     -- DO NOT TOUCH THIS FIELD UNDER ANY CIRCUMSTANCE.
     -- =========================================================================================================
-    scorta_minima        DECIMAL(10,3)          DEFAULT 0,                     
+    scorta_minima        DECIMAL(10,3) NOT NULL DEFAULT 0,
 
     traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
     markup_fallback_perc DECIMAL(5,2)  DEFAULT NULL,                           -- override del markup di fallback per vendite su costo
@@ -551,7 +553,7 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori (
 CREATE TABLE IF NOT EXISTS listini_acquisto (
 	id    INT AUTO_INCREMENT PRIMARY KEY,
 	fornitore_id    INTEGER       NOT NULL REFERENCES clienti_fornitori(id),
-	nome_listino	VARCHAR(100),
+	nome_listino	VARCHAR(100) NOT NULL,
 	valido_dal   DATE,
 	valido_al   DATE,
 	note TEXT,
@@ -599,7 +601,7 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
 
 CREATE TABLE IF NOT EXISTS lotti (
     id                   INT AUTO_INCREMENT PRIMARY KEY,
-    codice_lotto_fornitore         VARCHAR(50)   NOT NULL,               -- numero lotto dalla bolla del fornitore; UNIQUE per prodotto_id. prima si chiamava "codice_lotto"
+    codice_lotto_fornitore         VARCHAR(50),                          -- numero lotto dalla bolla del fornitore; nullable per lotti da produzione/rettifica interna
 	codice_lotto_interno         VARCHAR(50)   NOT NULL,               -- Il "nostro" codice unico (generato dall'ERP o inserito a mano);
     prodotto_id          INTEGER       NOT NULL REFERENCES prodotti(id),
     fornitore_id         INTEGER       REFERENCES clienti_fornitori(id),  -- fornitore da cui è arrivato il lotto
@@ -1311,7 +1313,15 @@ CREATE TABLE IF NOT EXISTS rfq_righe (
     data_consegna_richiesta DATE,         -- Data di consegna richiesta per questo specifico articolo (Arrivo previsto)
     e_rifiutato             BOOLEAN       NOT NULL DEFAULT 0, -- Se il fornitore RIFIUTA di quotare questa riga (1 = Rifiutata/Non quotabile, 0 = Attiva)
 
-    note                    TEXT
+    note                    TEXT,
+
+    -- Snapshot UoM (architettura Multi-UoM)
+    quantita_stock              DECIMAL(10,3),
+    system_unit_price_stock     DECIMAL(18,4)  DEFAULT 0.00,
+    unita_misura_stock_id       INTEGER        REFERENCES unita_misura(id),
+    quantita_contenuto_snapshot DECIMAL(10,3)  DEFAULT 1.0,
+    num_factor_snapshot         INTEGER        NOT NULL DEFAULT 1,
+    den_factor_snapshot         INTEGER        NOT NULL DEFAULT 1
 );
 
 -- Offerte ricevute (Preventivi Fornitore)
@@ -1452,8 +1462,11 @@ CREATE TABLE IF NOT EXISTS ordini_righe (
     data_consegna_prevista      DATE,         -- Override data di consegna della riga
     data_consegna_richiesta     DATE,         -- Data di consegna originariamente richiesta
     quantita_stock              DECIMAL(10,3),                      -- quantità in unità stock
+    system_unit_price_stock     DECIMAL(18,4) DEFAULT 0.00,         -- prezzo unitario convertito in UoM stock
     unita_misura_stock_id       INTEGER       REFERENCES unita_misura(id), -- UoM di stock
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,          -- snapshot del fattore di conversione
+    num_factor_snapshot         INTEGER       NOT NULL DEFAULT 1,    -- numeratore frazione di conversione
+    den_factor_snapshot         INTEGER       NOT NULL DEFAULT 1,    -- denominatore frazione di conversione
     note                        TEXT
 );
 
@@ -1488,6 +1501,8 @@ CREATE TABLE IF NOT EXISTS ricezioni_righe (
     quantita_stock          DECIMAL(10,3),
     unita_misura_stock_id   INTEGER       REFERENCES unita_misura(id),
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    num_factor_snapshot     INTEGER       NOT NULL DEFAULT 1,
+    den_factor_snapshot     INTEGER       NOT NULL DEFAULT 1,
     note                    TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

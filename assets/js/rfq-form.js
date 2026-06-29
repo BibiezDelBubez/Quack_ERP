@@ -87,6 +87,7 @@ document.addEventListener('DOMContentLoaded', function () {
       uom_id:        p.uom_id ?? '',
       uom:           p.uom ?? '',
       prezzo:        p.prezzo_unitario ?? '',
+      prezzo_uom_id: p.prezzo_unitario_uom_id ?? null,
       iva_perc:      p.iva_perc ?? '22',
       uom_comm:      p.uom_comm || p.uom_comm_prod || p.uom || '—',
       uom_comm_id:   p.uom_comm_id || p.uom_comm_prod_id || p.uom_id || '',
@@ -228,9 +229,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (sel.prezzo)        prezzoInput.value = sel.prezzo;
         if (sel.iva_perc && ivaInput) ivaInput.value = sel.iva_perc;
 
-        // Converte e allinea le UoM in base al modo corrente
+        // Converte e allinea le UoM in base al modo corrente.
+        // Determina la UoM nativa del prezzo fornitore per scegliere la direzione giusta.
+        let priceFromMode = 'stock'; // default: prezzo in UoM stock
+        if (sel.prezzo_uom_id) {
+          const stockId = String(sel.uom_id || '');
+          const commId  = String(sel.uom_comm_id || sel.uom_comm_prod_id || sel.uom_id || '');
+          if (String(sel.prezzo_uom_id) === commId && commId !== stockId) {
+            priceFromMode = 'commercial';
+          }
+        }
         const mode = document.getElementById('rfq-uom-mode')?.value || 'commercial';
-        setRowUomMode(tr, mode, 'stock');
+        setRowUomMode(tr, mode, priceFromMode);
 
         recalcRowTotal(tr);
 

@@ -1015,6 +1015,12 @@ final class ProductsController extends BaseController
             }
         }
 
+        // Validazione quantita_contenuto: max 3 decimali, positivo se presente
+        $errQta = qk_prodotti_valida_quantita_contenuto($v['quantita_contenuto'] ?? null);
+        if ($errQta !== null) {
+            $errors['quantita_contenuto'] = $errQta;
+        }
+
         return $errors;
     }
 

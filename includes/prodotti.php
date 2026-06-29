@@ -20,6 +20,23 @@ function qk_prodotti_decimal(?string $s): ?float
     return $s === '' ? null : (float) $s;
 }
 
+/**
+ * Valida quantita_contenuto: deve essere un numero positivo con al massimo 3 decimali.
+ * Restituisce null se valido, stringa di errore altrimenti.
+ */
+function qk_prodotti_valida_quantita_contenuto(?string $s): ?string
+{
+    if ($s === null || trim($s) === '') return null; // campo facoltativo
+    $s = trim(str_replace(',', '.', $s));
+    if (!is_numeric($s)) return 'La quantità per confezione deve essere un numero.';
+    if ((float)$s <= 0) return 'La quantità per confezione deve essere maggiore di zero.';
+    // Controlla max 3 decimali
+    if (strpos($s, '.') !== false && strlen(substr($s, strpos($s, '.') + 1)) > 3) {
+        return 'La quantità per confezione accetta al massimo 3 cifre decimali (es. 12.500).';
+    }
+    return null;
+}
+
 /* =============================================================================
    LOOKUP
 ============================================================================= */
@@ -887,4 +904,69 @@ function qk_prodotto_get_uom_info(PDO $pdo, int $prodotto_id): ?array
         'num_factor' => isset($res['num_factor']) ? (int)$res['num_factor'] : 1,
         'den_factor' => isset($res['den_factor']) ? (int)$res['den_factor'] : 1,
     ];
+}
+
+/**
+ * Converte quantità e prezzo unitario dalla UoM della riga alla UoM stock del prodotto.
+ *
+ * Usa BCMath con frazioni intere (num/den) per evitare deriva floating-point.
+ * Chiamare da ogni punto in cui si salvano righe transazionali
+ * (preventivi, ordini vendita, ordini acquisto, RFQ).
+ *
+ * @param PDO      $pdo         Connessione DB
+ * @param int|null $prodotto_id ID prodotto (null → nessuna conversione)
+ * @param int|null $um_id       UoM della riga (stock o commerciale)
+ * @param float    $qta         Quantità nella UoM di riga
+ * @param float    $pu          Prezzo unitario nella UoM di riga (0 se non disponibile)
+ *
+ * @return array{
+ *   quantita_stock: float,
+ *   system_unit_price_stock: float,
+ *   unita_misura_stock_id: int|null,
+ *   quantita_contenuto_snapshot: float,
+ *   num_factor_snapshot: int,
+ *   den_factor_snapshot: int,
+ * }
+ */
+function qk_uom_converti_riga(PDO $pdo, ?int $prodotto_id, ?int $um_id, float $qta, float $pu): array
+{
+    $result = [
+        'quantita_stock'              => $qta,
+        'system_unit_price_stock'     => $pu,
+        'unita_misura_stock_id'       => $um_id,
+        'quantita_contenuto_snapshot' => 1.0,
+        'num_factor_snapshot'         => 1,
+        'den_factor_snapshot'         => 1,
+    ];
+
+    if (!$prodotto_id || !$um_id) {
+        return $result;
+    }
+
+    $prodUm = qk_prodotto_get_uom_info($pdo, $prodotto_id);
+    if (!$prodUm) {
+        return $result;
+    }
+
+    $result['unita_misura_stock_id']       = $prodUm['unita_misura_stock_id'];
+    $result['quantita_contenuto_snapshot'] = $prodUm['quantita_contenuto'];
+    $result['num_factor_snapshot']         = $prodUm['num_factor'];
+    $result['den_factor_snapshot']         = $prodUm['den_factor'];
+
+    $content_um_id = $prodUm['unita_contenuto_id'];
+    $qc            = $prodUm['quantita_contenuto'];
+
+    if ((int)$um_id === $prodUm['unita_misura_stock_id']) {
+        // Già in UoM stock — nessuna conversione necessaria.
+    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $qc > 0) {
+        // Q_stock = Q_comm / F_conv
+        $result['quantita_stock'] = (float)bcdiv((string)$qta, (string)$qc, 3);
+        // P_stock = P_comm × (den / num)
+        $inverseRate = bcdiv((string)$prodUm['den_factor'], (string)$prodUm['num_factor'], 9);
+        $result['system_unit_price_stock'] = (float)bcmul((string)$pu, $inverseRate, 4);
+    }
+    // Se um_id non corrisponde né a stock né a commerciale: lascia i valori di default
+    // (caso anomalo — UoM sconosciuta al sistema).
+
+    return $result;
 }

@@ -8,6 +8,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/purchases_common.php';
+require_once __DIR__ . '/prodotti.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -561,14 +562,19 @@ function _rfq_insert_righe(PDO $pdo, int $rfq_id, array $righe): void
         'INSERT INTO rfq_righe
             (rfq_id, posizione_riga, prodotto_id, descrizione, sku_fornitore,
              quantita_richiesta, unita_misura_id, prezzo_indicativo, note, iva_perc, iva_riga,
-             data_consegna_richiesta, e_rifiutato)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+             data_consegna_richiesta, e_rifiutato,
+             quantita_stock, system_unit_price_stock, unita_misura_stock_id,
+             quantita_contenuto_snapshot, num_factor_snapshot, den_factor_snapshot)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     );
     foreach ($righe as $pos => $r) {
-        $qty = (float)$r['quantita_richiesta'];
-        $price = ($r['prezzo_indicativo'] ?? '') !== '' ? (float)$r['prezzo_indicativo'] : 0.0;
+        $qty     = (float)$r['quantita_richiesta'];
+        $price   = ($r['prezzo_indicativo'] ?? '') !== '' ? (float)$r['prezzo_indicativo'] : 0.0;
         $ivaPerc = ($r['iva_perc'] ?? '') !== '' ? (float)$r['iva_perc'] : 22.0;
         $ivaRiga = $qty * $price * ($ivaPerc / 100.0);
+        $um_id   = ($r['unita_misura_id'] ?? '') !== '' ? (int)$r['unita_misura_id'] : null;
+
+        $uomResult = qk_uom_converti_riga($pdo, !empty($r['prodotto_id']) ? (int)$r['prodotto_id'] : null, $um_id, $qty, $price);
 
         $st->execute([
             $rfq_id,
@@ -577,13 +583,19 @@ function _rfq_insert_righe(PDO $pdo, int $rfq_id, array $righe): void
             $r['descrizione'] ?? '',
             $r['sku_fornitore'] ?? '',
             $qty,
-            ($r['unita_misura_id'] ?? '') !== '' ? (int)$r['unita_misura_id'] : null,
+            $um_id,
             ($r['prezzo_indicativo'] ?? '') !== '' ? $price : null,
             $r['note'] ?? '',
             $ivaPerc,
             round($ivaRiga, 4),
             !empty($r['data_consegna_richiesta']) ? $r['data_consegna_richiesta'] : null,
             !empty($r['e_rifiutato']) ? (int)$r['e_rifiutato'] : 0,
+            $uomResult['quantita_stock'],
+            $uomResult['system_unit_price_stock'],
+            $uomResult['unita_misura_stock_id'],
+            $uomResult['quantita_contenuto_snapshot'],
+            $uomResult['num_factor_snapshot'],
+            $uomResult['den_factor_snapshot'],
         ]);
     }
 }

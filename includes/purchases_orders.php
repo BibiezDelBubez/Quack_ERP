@@ -304,9 +304,10 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                 (ordine_id, offerta_riga_id, posizione_riga, prodotto_id, descrizione, sku_fornitore,
                  quantita_ordinata, quantita_ricevuta, unita_misura_id,
                  prezzo_unitario, sconto_perc, iva_perc, imponibile_riga, iva_riga,
-                 tolleranza_esubero_perc, data_consegna_prevista, quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
+                 tolleranza_esubero_perc, data_consegna_prevista,
+                 quantita_stock, system_unit_price_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
                  num_factor_snapshot, den_factor_snapshot, note)
-             VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,0,?,?,?,?,?,?,?)"
+             VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)"
         );
         $stPian = $pdo->prepare(
             "INSERT INTO ordini_righe_pianificazione
@@ -319,43 +320,16 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $um_id = $r['unita_misura_id'];
             $qta = (float)$r['quantita_offerta'];
 
-            // Convert to stock UoM with high-precision architecture
-            $quantita_stock = $qta;
-            $unita_misura_stock_id = $um_id;
-            $quantita_contenuto_snapshot = 1.0;
-            $num_factor_snapshot = 1;
-            $den_factor_snapshot = 1;
-            if ($prodotto_id && $um_id) {
-                $prodUm = qk_prodotto_get_uom_info($pdo, $prodotto_id);
-                if ($prodUm) {
-                    $unita_misura_stock_id = $prodUm['unita_misura_stock_id'];
-                    $content_um_id = $prodUm['unita_contenuto_id'];
-                    $quantita_contenuto_snapshot = $prodUm['quantita_contenuto'];
+            $pu = (float)($r['prezzo_unitario'] ?? 0);
 
-                    /*
-                     * =========================================================================
-                     * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
-                     * To prevent precision drift and guarantee contract safety:
-                     * 1. Conversion factors between stock UoM and commercial UoM must be stored
-                     *    as exact, simplified integer fractions (num_factor / den_factor) in the database.
-                     * 2. Every transactional line snapshot (Offers, Sales/Purchase Orders, Receipts)
-                     *    must copy these factors at creation time into `num_factor_snapshot` and
-                     *    `den_factor_snapshot` to avoid historical data changes when products are edited.
-                     * 3. Do NOT use approximate decimal division or float conversion factors directly
-                     *    in transactions. Always reference the exact snapshot fraction.
-                     * =========================================================================
-                     */
-                    $num_factor_snapshot = $prodUm['num_factor'];
-                    $den_factor_snapshot = $prodUm['den_factor'];
-
-                    if ((int)$um_id === $unita_misura_stock_id) {
-                        $quantita_stock = $qta;
-                    } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
-                        // Stock quantity calculation using BCMath to avoid float precision issues in supply chain
-                        $quantita_stock = (float)bcdiv((string)$qta, (string)$quantita_contenuto_snapshot, 3);
-                    }
-                }
-            }
+            // Conversione quantità e prezzo in UoM stock (centralizzata in qk_uom_converti_riga)
+            $uomResult = qk_uom_converti_riga($pdo, $prodotto_id ? (int)$prodotto_id : null, $um_id ? (int)$um_id : null, $qta, $pu);
+            $quantita_stock              = $uomResult['quantita_stock'];
+            $system_unit_price_stock     = $uomResult['system_unit_price_stock'];
+            $unita_misura_stock_id       = $uomResult['unita_misura_stock_id'];
+            $quantita_contenuto_snapshot = $uomResult['quantita_contenuto_snapshot'];
+            $num_factor_snapshot         = $uomResult['num_factor_snapshot'];
+            $den_factor_snapshot         = $uomResult['den_factor_snapshot'];
 
             $stRiga->execute([
                 $ordine_id, $r['id'], $r['posizione_riga'],
@@ -364,7 +338,7 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                 $r['prezzo_unitario'], $r['sconto_perc'], $r['iva_perc'],
                 $r['imponibile_riga'], $r['iva_riga'],
                 $r['data_consegna_prevista'],
-                $quantita_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot,
+                $quantita_stock, $system_unit_price_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot,
                 $num_factor_snapshot, $den_factor_snapshot,
                 $r['note'],
             ]);

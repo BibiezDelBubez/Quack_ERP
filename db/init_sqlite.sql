@@ -435,7 +435,7 @@ CREATE TABLE IF NOT EXISTS prodotti (
     id                   INTEGER       PRIMARY KEY AUTOINCREMENT,
     sku_interno          VARCHAR(50)   NOT NULL UNIQUE,  -- codice interno / barcode interno
     sku_ecommerce        VARCHAR(50)   UNIQUE,           -- SKU usato su WooCommerce
-	id_ecommerce          VARCHAR(50)   NOT NULL UNIQUE,  -- codice id del prodotto su WooCommerce
+	id_ecommerce          VARCHAR(50)   UNIQUE,           -- codice id del prodotto su WooCommerce
     nome                 VARCHAR(150)  NOT NULL,          -- nome commerciale
     descrizione_confezione    VARCHAR(255), -- nei preventivi va inserito descrizione formato confezione
 	descrizione_breve    VARCHAR(255),
@@ -447,6 +447,8 @@ CREATE TABLE IF NOT EXISTS prodotti (
     unita_misura_stock_id INTEGER      NOT NULL REFERENCES unita_misura(id),  -- UoM in cui Ã¨ tenuta la giacenza (la UoM 'canonica' del prodotto)
     unita_contenuto_id   INTEGER       REFERENCES unita_misura(id),           -- unitÃ  con cui si indica il contenuto (kg, litri); usata nei preventivi
     quantita_contenuto   DECIMAL(10,3),                                       -- quantitÃ  contenuta in 1 unitÃ  stock, nell'unitÃ  di misura di contenuto
+    num_factor           INTEGER       NOT NULL DEFAULT 1,                    -- numeratore frazione conversione (calcolato da quantita_contenuto)
+    den_factor           INTEGER       NOT NULL DEFAULT 1,                    -- denominatore frazione conversione (calcolato da quantita_contenuto)
     volume_m3   DECIMAL(10,4),                                                -- volume occupato in magazzino dalla confezione
     peso_netto_kg        DECIMAL(10,3),                                        -- peso netto contenuto; distinto da quantita_contenuto (es. tanica 25 l â‰  25 kg)
     peso_lordo_kg        DECIMAL(10,3),
@@ -459,7 +461,7 @@ CREATE TABLE IF NOT EXISTS prodotti (
     -- ANY LLM OR AI AGENT THAT ATTEMPTS TO "NORMALIZE" THIS INTO GIACENZE WILL BREAK THE ENTIRE APP.
     -- DO NOT TOUCH THIS FIELD UNDER ANY CIRCUMSTANCE.
     -- =========================================================================================================
-    scorta_minima        DECIMAL(10,3)          DEFAULT 0,                     
+    scorta_minima        DECIMAL(10,3) NOT NULL DEFAULT 0,
 
     traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
     is_adr               BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = prodotto soggetto ad ADR
@@ -652,7 +654,7 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori (
 CREATE TABLE IF NOT EXISTS listini_acquisto (
 	id    INTEGER    PRIMARY KEY AUTOINCREMENT,
 	fornitore_id    INTEGER       NOT NULL REFERENCES clienti_fornitori(id),
-	nome_listino	VARCHAR(100),
+	nome_listino	VARCHAR(100) NOT NULL,
 	valido_dal   DATE,
 	valido_al   DATE,
 	note TEXT,
@@ -705,7 +707,7 @@ CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto
 
 CREATE TABLE IF NOT EXISTS lotti (
     id                   INTEGER       PRIMARY KEY AUTOINCREMENT,
-    codice_lotto_fornitore         VARCHAR(50)   NOT NULL,               -- numero lotto dalla bolla del fornitore; UNIQUE per prodotto_id. prima si chiamava "codice_lotto"
+    codice_lotto_fornitore         VARCHAR(50),                          -- numero lotto dalla bolla del fornitore; nullable per lotti da produzione/rettifica interna
 	codice_lotto_interno         VARCHAR(50)   NOT NULL,               -- Il "nostro" codice unico (generato dall'ERP o inserito a mano);
     prodotto_id          INTEGER       NOT NULL REFERENCES prodotti(id),
       origine_tipo         TEXT,                                 -- 'acquisto' | 'produzione' | 'reso' | 'rettifica' | 'trasferimento'
@@ -1637,7 +1639,15 @@ CREATE TABLE IF NOT EXISTS rfq_righe (
     data_consegna_richiesta DATE,         -- Data di consegna richiesta per questo specifico articolo (Arrivo previsto)
     e_rifiutato             BOOLEAN       NOT NULL DEFAULT 0, -- Se il fornitore RIFIUTA di quotare questa riga (1 = Rifiutata/Non quotabile, 0 = Attiva)
 
-    note                    TEXT
+    note                    TEXT,
+
+    -- Snapshot UoM (architettura Multi-UoM)
+    quantita_stock              DECIMAL(10,3),                   -- quantitÃ  convertita in UoM stock
+    system_unit_price_stock     DECIMAL(18,4)  DEFAULT 0.00,     -- prezzo unitario convertito in UoM stock
+    unita_misura_stock_id       INTEGER        REFERENCES unita_misura(id),
+    quantita_contenuto_snapshot DECIMAL(10,3)  DEFAULT 1.0,      -- snapshot fattore di conversione
+    num_factor_snapshot         INTEGER        NOT NULL DEFAULT 1,
+    den_factor_snapshot         INTEGER        NOT NULL DEFAULT 1
 );
 
 -- Offerte ricevute (Preventivi Fornitore)
@@ -1780,8 +1790,11 @@ CREATE TABLE IF NOT EXISTS ordini_righe (
     data_consegna_prevista      DATE,         -- Override data di consegna della riga
     data_consegna_richiesta     DATE,         -- Data di consegna originariamente richiesta
     quantita_stock              DECIMAL(10,3),                      -- quantitÃ  in unitÃ  stock
+    system_unit_price_stock     DECIMAL(18,4) DEFAULT 0.00,         -- prezzo unitario convertito in UoM stock
     unita_misura_stock_id       INTEGER       REFERENCES unita_misura(id), -- UoM di stock
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,          -- snapshot del fattore di conversione
+    num_factor_snapshot         INTEGER       NOT NULL DEFAULT 1,    -- numeratore frazione di conversione
+    den_factor_snapshot         INTEGER       NOT NULL DEFAULT 1,    -- denominatore frazione di conversione
     note                        TEXT
 );
 
@@ -1800,24 +1813,6 @@ CREATE TABLE IF NOT EXISTS ricezioni_testata (
     creato_da               INTEGER      REFERENCES utenti(id),
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME
-);
-
-CREATE TABLE IF NOT EXISTS ricezioni_righe (
-    id                      INTEGER       PRIMARY KEY AUTOINCREMENT,
-    ricezione_id            INTEGER       NOT NULL REFERENCES ricezioni_testata(id) ON DELETE CASCADE,
-    ordine_riga_id          INTEGER       REFERENCES ordini_righe(id),
-    pianificazione_id       INTEGER       REFERENCES ordini_righe_pianificazione(id),
-    prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
-    lotto_id                INTEGER       REFERENCES lotti(id),
-    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantitÃ  fisicamente conteggiata all'arrivo
-    quantita_accettata      DECIMAL(10,3),             -- quantitÃ  approvata per il magazzino
-    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,
-    motivo_rifiuto          TEXT,
-    ubicazione_stoccaggio   VARCHAR(50),
-    quantita_stock          DECIMAL(10,3),
-    unita_misura_stock_id   INTEGER       REFERENCES unita_misura(id),
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
-    note                    TEXT
 );
 
 -- Indici per le nuove tabelle v2
@@ -2039,7 +2034,7 @@ CREATE TABLE IF NOT EXISTS ricezioni_testata (
 
     numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. RIC/2026/0001
     ordine_id               INTEGER      NOT NULL REFERENCES ordini_testata(id),
-    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comodità
+    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comoditï¿½
 
     stato                   TEXT         NOT NULL DEFAULT 'bozza'
                                           CHECK (stato IN (
@@ -2071,19 +2066,19 @@ CREATE TABLE IF NOT EXISTS ricezioni_righe (
     pianificazione_id       INTEGER       REFERENCES ordini_righe_pianificazione(id),
                                           -- tranche di pianificazione a cui appartiene questa ricezione
 
-    -- Prodotto (ridondanza per comodità)
+    -- Prodotto (ridondanza per comoditï¿½)
     prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
 
     -- Lotto (NULL se prodotto non traccia_lotti)
     lotto_id                INTEGER       REFERENCES lotti(id),
 
-    -- Quantità
-    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantità fisicamente conteggiata all'arrivo
-    quantita_accettata      DECIMAL(10,3),             -- quantità approvata per il magazzino (default = quantita_ricevuta)
-    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,  -- quantità respinta (merce difettosa, errori)
+    -- Quantitï¿½
+    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantitï¿½ fisicamente conteggiata all'arrivo
+    quantita_accettata      DECIMAL(10,3),             -- quantitï¿½ approvata per il magazzino (default = quantita_ricevuta)
+    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,  -- quantitï¿½ respinta (merce difettosa, errori)
     motivo_rifiuto          TEXT,          -- motivo del rifiuto parziale/totale
-    ubicazione_stoccaggio   VARCHAR(50),   -- dove è stata messa la merce
-    quantita_stock          DECIMAL(10,3), -- quantità convertita in stock
+    ubicazione_stoccaggio   VARCHAR(50),   -- dove ï¿½ stata messa la merce
+    quantita_stock          DECIMAL(10,3), -- quantitï¿½ convertita in stock
     unita_misura_stock_id   INTEGER       REFERENCES unita_misura(id),
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
     num_factor_snapshot     INTEGER DEFAULT 1,

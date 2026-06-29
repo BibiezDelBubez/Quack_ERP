@@ -202,7 +202,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (!qtyInput || !priceInput || !umInput) return;
 
-    const haUnitaCommerciale = tr.dataset.uomCommercialId && qFactor > 1;
+    // Fix: qFactor > 1 escludeva prodotti con contenuto frazionario (es. flaconi 0.75L).
+    // Il check corretto è: esiste una UoM commerciale diversa da quella di stock, con fattore valido.
+    const haUnitaCommerciale = tr.dataset.uomCommercialId &&
+      tr.dataset.uomCommercialId !== tr.dataset.uomStockId &&
+      qFactor > 0 && qFactor !== 1;
     if (!haUnitaCommerciale) {
       umInput.value = tr.dataset.uomStock || 'pz';
       return;
@@ -453,10 +457,34 @@ document.addEventListener('DOMContentLoaded', function () {
       let rrpMinConvertito = rrpMinRaw;
       let rrpMaxConvertito = rrpMaxRaw;
 
-      if (currentUomMode === 'commercial' && qFactor > 1) {
+      // Fix: stesso bug qFactor > 1 — va convertito anche per fattori < 1 (es. 0.75)
+      const hasCommercialUom = tr.dataset.uomCommercialId &&
+        tr.dataset.uomCommercialId !== tr.dataset.uomStockId &&
+        qFactor > 0 && qFactor !== 1;
+
+      // Costo fornitore: è sempre in UoM stock (viene da prodotti_fornitori_prezzi)
+      if (currentUomMode === 'commercial' && hasCommercialUom) {
         costoConvertito = costoBase / qFactor;
-        if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw / qFactor;
-        if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw / qFactor;
+      }
+
+      // RRP: può essere in UoM stock o commerciale secondo rrp_unita_misura_id
+      if (hasCommercialUom) {
+        const rrpUomId = tr.dataset.rrpUomId ? parseInt(tr.dataset.rrpUomId) : null;
+        const rrpIsCommercial = rrpUomId && rrpUomId === parseInt(tr.dataset.uomCommercialId);
+        if (currentUomMode === 'commercial' && !rrpIsCommercial) {
+          // RRP è in stock, sto mostrando in commerciale → divido
+          if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw / qFactor;
+          if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw / qFactor;
+        } else if (currentUomMode === 'stock' && rrpIsCommercial) {
+          // RRP è in commerciale, sto mostrando in stock → moltiplico
+          if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw * qFactor;
+          if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw * qFactor;
+        }
+        // Se rrpUomId è null (dato vecchio senza UoM), fallback: assume stock come prima
+        if (rrpUomId === null && currentUomMode === 'commercial') {
+          if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw / qFactor;
+          if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw / qFactor;
+        }
       }
 
       const rowCostTotal = Math.round(costoConvertito * qta * 100) / 100;
@@ -1322,6 +1350,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (data.rrp_max !== undefined) {
           tr.dataset.rrpMax = data.rrp_max !== null ? data.rrp_max : '';
+        }
+        // Salva la UoM nativa dell'RRP: serve a calcTotali per sapere se convertire
+        if (data.rrp_unita_misura_id !== undefined) {
+          tr.dataset.rrpUomId = data.rrp_unita_misura_id !== null ? data.rrp_unita_misura_id : '';
         }
         calcTotali();
       }

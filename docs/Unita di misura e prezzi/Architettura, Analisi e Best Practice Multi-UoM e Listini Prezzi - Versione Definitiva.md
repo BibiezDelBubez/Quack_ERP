@@ -401,14 +401,51 @@ Seguendo questo schema architetturale:
 Di seguito si riportano le decisioni concordate per l'allineamento del codice sorgente:
 
 ### A. Frazione di Conversione (Numeratore / Denominatore) a Database
-*   **Decisione**: Per eliminare le imprecisioni numeriche sui valori periodici senza complicare la UX, l'utente continuerà a inserire un valore decimale semplice a schermo (es. `25` o `0.468`). 
-*   **Logica Backend/Frontend**: Il sistema trasformerà deterministicamente il decimale in frazione di interi moltiplicando per potenze di 10 (es. `0.468` -> `468 / 1000`; `25` -> `1 / 25`). Nessun algoritmo di approssimazione con frazioni continue verrà usato, salvaguardando il determinismo contabile.
+
+**Decisione**: L'utente inserisce il valore di contenuto come decimale semplice (es. `25`, `12.5`, `0.75`). Il backend converte deterministicamente il decimale in coppia di interi numeratore/denominatore tramite potenze di 10, con riduzione al minimo comune denominatore (GCD):
+
+*   `25` → num=`1`, den=`25`
+*   `12.5` → 125/10 → GCD=5 → num=`1`, den=`2` (cioè 12.5 = 25/2, esatto)
+*   `0.75` → 75/100 → GCD=25 → num=`3`, den=`4` (esatto)
+*   `12.3` → 123/10 → GCD=1 → num=`123`, den=`10` (esatto)
+
+Tutti i calcoli a database usano questa coppia intera, evitando la deriva tipica dei float (`1/3 = 0.33333...`). Il frontend usa il decimale `quantita_contenuto` solo a scopo visivo; il ricalcolo autoritativo avviene sempre nel backend con BCMath.
+
+**Perché questo meccanismo è sufficiente**: il caso problematico (frazione periodica come `1/3`) non si presenta nei contesti reali di Quack — nessun prodotto industriale viene confezionato in "un terzo di litro" da inserire come `0.333`. I valori reali sono sempre decimali finiti (12.5 kg, 0.75 L, 25 kg), per i quali il meccanismo per potenze di 10 produce risultati esatti al 100%.
+
+**Validazione obbligatoria**: il campo `quantita_contenuto` accetta al massimo 3 cifre decimali. Valori con più di 3 decimali vanno rigettati con messaggio di errore esplicito.
 
 ### B. Inibizione Cambio UoM Stock Post-Movimentazione
 *   **Decisione**: La modifica della UoM di Stock (`unita_misura_stock_id`) su prodotti che hanno già movimenti registrati in `movimenti_magazzino` viene inibita e bloccata a livello di validazione backend.
 
 ### C. Mantenimento UoM Nativa nei Listini di Acquisto
 *   **Decisione**: Aggiungere la colonna `unita_misura_id` alla tabella `prodotti_fornitori_prezzi` per consentire di definire a listino se lo scaglione di prezzo d'acquisto è concordato per l'unità di stock o per quella commerciale.
+
+### D. Modello di Conversione UoM: Approccio Selezionato e Roadmap
+
+Esistono due architetture possibili per gestire le conversioni di unità di misura per prodotto:
+
+**Approccio 1 — Singola UoM Commerciale per Prodotto (IMPLEMENTAZIONE ATTUALE)**
+
+Ogni prodotto ha al massimo un "alter ego commerciale" oltre alla UoM di stock:
+*   `unita_misura_stock_id`: l'unità fisica di magazzino (es. Fusto) — obbligatoria
+*   `unita_contenuto_id`: l'unità commerciale (es. Kg) — facoltativa
+*   `num_factor` / `den_factor`: il rapporto esatto tra le due (es. 1 fusto = 25 kg → num=25, den=1)
+
+Se un prodotto non ha `unita_contenuto_id`, tutte le transazioni avvengono solo in unità di stock. Se ce l'ha, l'utente può inserire e visualizzare quantità e prezzi in entrambe le unità. Il backend converte automaticamente. È la scelta corretta e sufficiente per Quack nella fase attuale.
+
+**Approccio 2 — N Conversioni per Prodotto (ROADMAP FUTURA, non implementato)**
+
+Ogni prodotto può avere più unità alternative contemporaneamente, gestite in una tabella dedicata `product_uom_conversions` (ispirata alla tabella MARM di SAP):
+
+```
+Prodotto: Cloro (stock UoM: Fusto)
+  └─ Conversione A: 1 Fusto = 25 Kg    (num=25, den=1)
+  └─ Conversione B: 1 Fusto = 22 Litri (num=22, den=1)
+  └─ Conversione C: 1 Pallet = 50 Fusti (num=50, den=1)
+```
+
+Questo approccio va implementato solo se emergerà la necessità concreta di vendere lo stesso prodotto in più unità alternative sullo stesso documento. Qualunque riferimento in questo documento a una tabella `product_uom_conversions` descrive questo scenario futuro, non l'implementazione attuale.
 
 ---
 
