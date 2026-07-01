@@ -4,12 +4,12 @@
 
 Quack ERP è un gestionale web che ho scritto per un'azienda che distribuisce prodotti chimici, con particolare focus sui prodotti per la depurazione dell'acqua.
 
-Colma le lacune dei tradizionali gestionali open source gratuiti, aggiungendo funzionalità come i calcoli ADR per il trasporto di merci pericolose, il controllo dei permessi per la vendita di sostanze regolamentate e il tracciamento obbligatorio dei lotti.
+Colma le lacune dei tradizionali gestionali open source gratuiti, aggiungendo funzionalità come i calcoli ADR per il trasporto di merci pericolose, il controllo dei permessi per la vendita di sostanze regolamentate e il traccia\mento obbligatorio dei lotti.
 
-Quando ho progetto Quack ERP ho pensato alla convivenza di due requisiti che di solito non si trovano nello stesso gestionale
+Quando ho progettato Quack ERP ho pensato alla convivenza di due requisiti che di solito non si trovano nello stesso gestionale
 
-- **Architettura DB robusta e rigida e la possibilità di uno storico completo** (stile SAP/Oracle): il database non sovrascrive mai i dati passati. Modifichi un RFQ, un preventivo o un ordine? Il sistema salva ogni versione. Puoi sempre vedere cosa era stato concordato all'inizio.
-- **Interfaccia comoda** (stile Odoo/Dynamics/NetSuite): anche se sotto c'è un database rigido, l'uso quotidiano è veloce e pulito, non un labirinto di menu.
+1. **Architettura DB rigida e strutturata con possibilità di uno storico completo** (stile SAP/Oracle): il database non sovrascrive mai i dati passati. Modifichi un RFQ, un preventivo o un ordine? Il sistema salva ogni versione. Puoi sempre vedere cosa era stato concordato all'inizio.
+2. **Interfaccia comoda** (stile Odoo/Dynamics/NetSuite): anche se sotto c'è un database rigido, l'uso quotidiano è veloce e pulito, non un labirinto di menu.
 
 #### Funzioni principali
 
@@ -75,4 +75,4 @@ Quando ho progetto Quack ERP ho pensato alla convivenza di due requisiti che di 
 
 In teoria l'acronimo sta per **Q**uoting **U**tility and **A**DR **C**hemical **K**eeper, perché all'inizio era nato solo come una piccola utility per fare i preventivi e calcolare le esenzioni ADR, per poi diventare un vero gestionale.
 
-Ma in realtà: a chi non piacciono le anatre
+Ma in realtà: a chi non piacciono le anatre?
