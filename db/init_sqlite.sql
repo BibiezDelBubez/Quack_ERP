@@ -46,21 +46,10 @@ PRAGMA foreign_keys = ON;
 -- Raggruppa le UoM convertibili tra loro (es. Massa, Volume).
 -- Impedisce conversioni tra categorie diverse.
 
-CREATE TABLE IF NOT EXISTS unita_misura_categorie (
-    id   INTEGER     PRIMARY KEY AUTOINCREMENT,
-    nome VARCHAR(50) NOT NULL,
-    note TEXT
-);
-
--- =============================================================================
--- 2. UNITÀ DI MISURA
--- =============================================================================
-
 CREATE TABLE IF NOT EXISTS unita_misura (
     id            INTEGER       PRIMARY KEY AUTOINCREMENT,
     codice        VARCHAR(10)   NOT NULL UNIQUE,  -- es. kg, l, pz, ml
     descrizione   VARCHAR(50)   NOT NULL,          -- nome leggibile
-    categoria_id  INTEGER       REFERENCES unita_misura_categorie(id),
     fattore_base  DECIMAL(20,10) NOT NULL DEFAULT 1, -- fattore verso la UoM di riferimento della categoria
     e_riferimento BOOLEAN       NOT NULL DEFAULT 0   -- se 1, è la UoM di riferimento della categoria (un solo TRUE per categoria)
 );
@@ -779,6 +768,10 @@ CREATE TABLE IF NOT EXISTS inventari_righe (
 -- =============================================================================
 -- 20. LOG STATI ORDINI
 -- =============================================================================
+-- NOTA BENE: Questa tabella è attualmente inutilizzata nel codice PHP.
+-- È stata mantenuta nello schema come predisposizione (Audit Trail) per una 
+-- futura implementazione dello storico dei passaggi di stato dei documenti
+-- (es. chi ha confermato un preventivo o spedito un ordine, e quando).
 
 CREATE TABLE IF NOT EXISTS log_stati_ordini (
     id               INTEGER      PRIMARY KEY AUTOINCREMENT,
@@ -829,31 +822,31 @@ CREATE TABLE IF NOT EXISTS preventivi (
     margine_euro            DECIMAL(10,2),
     margine_perc            DECIMAL(5,2),
     -- Dati denormalizzati dell'azienda venditrice per integrità storica (best practice)
-    azienda_ragione_sociale VARCHAR(255),
-    azienda_partita_iva     VARCHAR(30),
-    azienda_codice_fiscale  VARCHAR(30),
-    azienda_indirizzo       VARCHAR(255),
-    azienda_telefono        VARCHAR(50),
-    azienda_email           VARCHAR(100),
-    azienda_iban            VARCHAR(50),
+    azienda_ragione_sociale TEXT,
+    azienda_partita_iva     TEXT,
+    azienda_codice_fiscale  TEXT,
+    azienda_indirizzo       TEXT,
+    azienda_telefono        TEXT,
+    azienda_email           TEXT,
+    azienda_iban            TEXT,
 
     -- Dati denormalizzati del cliente per integrità storica (best practice)
-    cliente_ragione_sociale VARCHAR(255),
-    cliente_partita_iva     VARCHAR(30),
-    cliente_codice_fiscale  VARCHAR(30),
-    cliente_indirizzo       VARCHAR(255),
+    cliente_ragione_sociale TEXT,
+    cliente_partita_iva     TEXT,
+    cliente_codice_fiscale  TEXT,
+    cliente_indirizzo       TEXT,
 
     -- Spedizione denormalizzata per integrità storica (best practice)
-    consegna_via            VARCHAR(150),
-    consegna_civico         VARCHAR(10),
-    consegna_cap            VARCHAR(10),
-    consegna_citta          VARCHAR(100),
-    consegna_provincia      CHAR(2),
-    consegna_nazione        CHAR(2),
-    consegna_presso         VARCHAR(100),
-    consegna_referente      VARCHAR(80),
-    consegna_telefono       VARCHAR(20),
-    consegna_note           VARCHAR(255),
+    consegna_via            TEXT,
+    consegna_civico         TEXT,
+    consegna_cap            TEXT,
+    consegna_citta          TEXT,
+    consegna_provincia      TEXT,
+    consegna_nazione        TEXT,
+    consegna_presso         TEXT,
+    consegna_referente      TEXT,
+    consegna_telefono       TEXT,
+    consegna_note           TEXT,
 
     indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),
     contatto_snapshot_id    INTEGER      REFERENCES contatti_documenti(id),
@@ -961,14 +954,7 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     created_at         DATETIME      DEFAULT CURRENT_TIMESTAMP
   );
 
--- Lotti assegnati a ogni riga ordine (split multi-lotto possibile)
-CREATE TABLE IF NOT EXISTS ordini_clienti_righe_lotti (
-    id             INTEGER       PRIMARY KEY AUTOINCREMENT,
-    ordine_riga_id INTEGER       NOT NULL REFERENCES ordini_clienti_righe(id) ON DELETE CASCADE,
-    lotto_id       INTEGER       NOT NULL REFERENCES lotti(id),
-    quantita       DECIMAL(10,3) NOT NULL,  -- quantità del lotto assegnata a questa riga
-    UNIQUE (ordine_riga_id, lotto_id)
-);
+
 
 -- =============================================================================
 -- 22. FATTURE
@@ -1129,8 +1115,7 @@ CREATE INDEX IF NOT EXISTS idx_preventivi_stato               ON preventivi(stat
 CREATE INDEX IF NOT EXISTS idx_preventivi_created_at          ON preventivi(created_at);
 CREATE INDEX IF NOT EXISTS idx_ordini_clienti_cliente         ON ordini_clienti(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_ordini_clienti_stato           ON ordini_clienti(stato);
-CREATE INDEX IF NOT EXISTS idx_oc_righe_lotti_riga            ON ordini_clienti_righe_lotti(ordine_riga_id);
-CREATE INDEX IF NOT EXISTS idx_oc_righe_lotti_lotto           ON ordini_clienti_righe_lotti(lotto_id);
+
 CREATE INDEX IF NOT EXISTS idx_spedizioni_ordine              ON spedizioni(ordine_id);
 CREATE INDEX IF NOT EXISTS idx_spedizioni_righe_lotto         ON spedizioni_righe(lotto_id);
 CREATE INDEX IF NOT EXISTS idx_ddt_righe_lotto                ON documenti_trasporto_righe(lotto_id);
@@ -1235,22 +1220,16 @@ END;
 -- SEED DATA
 -- =============================================================================
 
-INSERT OR IGNORE INTO unita_misura_categorie (id, nome) VALUES
-    (1, 'Massa'),
-    (2, 'Volume'),
-    (3, 'Quantità'),
-    (4, 'Lunghezza');
-
-INSERT OR IGNORE INTO unita_misura (codice, descrizione, categoria_id, fattore_base, e_riferimento) VALUES
-    ('kg',  'Chilogrammo',  1, 1.0,         1),
-    ('g',   'Grammo',       1, 0.001,        0),
-    ('mg',  'Milligrammo',  1, 0.000001,     0),
-    ('t',   'Tonnellata',   1, 1000.0,       0),
-    ('l',   'Litro',        2, 1.0,          1),
-    ('ml',  'Millilitro',   2, 0.001,        0),
-    ('pz',  'Pezzo',        3, 1.0,          1),
-    ('m',   'Metro',        4, 1.0,          1),
-    ('cm',  'Centimetro',   4, 0.01,         0);
+INSERT OR IGNORE INTO unita_misura (codice, descrizione, fattore_base, e_riferimento) VALUES
+    ('kg',  'Chilogrammo',  1.0,         1),
+    ('g',   'Grammo',       0.001,       0),
+    ('mg',  'Milligrammo',  0.000001,    0),
+    ('t',   'Tonnellata',   1000.0,      0),
+    ('l',   'Litro',        1.0,         1),
+    ('ml',  'Millilitro',   0.001,       0),
+    ('pz',  'Pezzo',        1.0,         1),
+    ('m',   'Metro',        1.0,         1),
+    ('cm',  'Centimetro',   0.01,        0);
 
 INSERT OR IGNORE INTO adr_classi_pericolo (codice, denominazione, ha_divisioni) VALUES
     ('1',   'Materie ed oggetti esplosivi',                                                          1),
