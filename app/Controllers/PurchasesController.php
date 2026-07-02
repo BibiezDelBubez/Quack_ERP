@@ -780,6 +780,23 @@ final class PurchasesController extends BaseController
                 $validoAl     = !empty($row['valido_al']) ? trim((string)$row['valido_al']) : null;
                 $note         = !empty($row['note']) ? trim((string)$row['note']) : null;
 
+                // Stessa validazione di apiSaveRiga(): prezzo/sconto/quantita_minima non validi vengono saltati, non salvati ciecamente.
+                if ($prezzo < 0) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): il prezzo non può essere negativo — saltata.';
+                    continue;
+                }
+                if ($sconto < 0 || $sconto > 100) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): lo sconto percentuale deve essere tra 0 e 100 — saltata.';
+                    continue;
+                }
+                if ($qMin < 0) {
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): la quantità minima non può essere negativa — saltata.';
+                    continue;
+                }
+
                 // Cerca o crea il record in prodotti_fornitori
                 $stmtPf = $this->pdo->prepare("SELECT id, sku_fornitore FROM prodotti_fornitori WHERE prodotto_id = :pid AND fornitore_id = :fid LIMIT 1");
                 $stmtPf->execute([':pid' => $prodottoId, ':fid' => $fornitoreId]);

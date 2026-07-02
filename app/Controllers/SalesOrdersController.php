@@ -374,7 +374,13 @@ final class SalesOrdersController extends BaseController
         if ($id <= 0) { redirect(url('sales/orders')); }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if (!csrf_verify()) {
+            $statoCorrente = $this->pdo->prepare("SELECT stato FROM ordini_clienti WHERE id = ?");
+            $statoCorrente->execute([$id]);
+            $isTerminalState = in_array($statoCorrente->fetchColumn(), ['completato', 'annullato'], true);
+
+            if ($isTerminalState) {
+                flash_set('error', 'Accesso negato: impossibile modificare un ordine già completato o annullato.');
+            } elseif (!csrf_verify()) {
                 flash_set('error', 'Sessione scaduta. Ricarica la pagina e riprova.');
             } else {
                 $note                   = post('note', '');
@@ -560,6 +566,40 @@ final class SalesOrdersController extends BaseController
             $order = $st->fetch(PDO::FETCH_ASSOC);
             if (!$order) throw new \Exception("Ordine non trovato.");
 
+            // Risoluzione indirizzo di spedizione con la stessa logica a cascata
+            // usata nelle fasi precedenti del ciclo vendite (preventivo/ordine):
+            // 1) indirizzo esplicitamente selezionato sull'ordine
+            // 2) master address dietro allo snapshot strutturato (indirizzi_documenti)
+            // 3) indirizzo di spedizione predefinito del cliente
+            // Se nessuno è risolvibile, si blocca con un errore chiaro invece di
+            // forzare NULL su una colonna NOT NULL (che prima causava il crash SQL).
+            $indirizzoSpedizioneId = !empty($order['indirizzo_spedizione_id']) ? (int)$order['indirizzo_spedizione_id'] : null;
+
+            if (!$indirizzoSpedizioneId && !empty($order['indirizzo_consegna_id'])) {
+                $stSnap = $this->pdo->prepare("SELECT indirizzo_master_id FROM indirizzi_documenti WHERE id = ?");
+                $stSnap->execute([$order['indirizzo_consegna_id']]);
+                $masterId = $stSnap->fetchColumn();
+                if ($masterId) { $indirizzoSpedizioneId = (int)$masterId; }
+            }
+
+            if (!$indirizzoSpedizioneId) {
+                $stDef = $this->pdo->prepare("
+                    SELECT id FROM indirizzi
+                    WHERE soggetto_id = ? AND attivo = 1
+                    ORDER BY (tipo = 'spedizione' AND predefinito = 1) DESC,
+                             predefinito DESC,
+                             id ASC
+                    LIMIT 1
+                ");
+                $stDef->execute([$order['cliente_id']]);
+                $fallbackId = $stDef->fetchColumn();
+                if ($fallbackId) { $indirizzoSpedizioneId = (int)$fallbackId; }
+            }
+
+            if (!$indirizzoSpedizioneId) {
+                throw new \Exception("Impossibile creare la spedizione: il cliente non ha nessun indirizzo di consegna valido. Seleziona un indirizzo sull'ordine prima di procedere.");
+            }
+
             $stLines = $this->pdo->prepare("
                 SELECT r.*, p.traccia_lotti, p.nome AS prodotto_nome, p.sku_interno, p.tipo
                 FROM ordini_clienti_righe r
@@ -576,7 +616,7 @@ final class SalesOrdersController extends BaseController
             $this->pdo->prepare("
                 INSERT INTO spedizioni (numero_spedizione, ordine_id, data_spedizione, indirizzo_spedizione_id, vettore, tracking, stato, creato_da, created_at)
                 VALUES (?, ?, CURRENT_DATE, ?, ?, ?, 'spedita', ?, CURRENT_TIMESTAMP)
-            ")->execute([$numSped, $orderId, $order['indirizzo_spedizione_id'] ?: null, $vettore ?: null, $tracking ?: null, $userId]);
+            ")->execute([$numSped, $orderId, $indirizzoSpedizioneId, $vettore ?: null, $tracking ?: null, $userId]);
             $spedizioneId = (int)$this->pdo->lastInsertId();
 
             // Gestione Upload Foto Spedizione (Pallet)
@@ -612,7 +652,7 @@ final class SalesOrdersController extends BaseController
             $this->pdo->prepare("
                 INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, creato_da, created_at, updated_at)
                 VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ")->execute([$numDdt, $spedizioneId, $orderId, $order['cliente_id'], $order['indirizzo_spedizione_id'] ?: null, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg, $userId]);
+            ")->execute([$numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg, $userId]);
             $ddtId = (int)$this->pdo->lastInsertId();
 
             $stInsSpedRiga = $this->pdo->prepare("INSERT INTO spedizioni_righe (spedizione_id, ordine_riga_id, prodotto_id, lotto_id, quantita, note) VALUES (?, ?, ?, ?, ?, '')");

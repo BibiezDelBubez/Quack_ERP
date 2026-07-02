@@ -662,7 +662,8 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
     valido_dal            DATE,                               -- NULL = sempre valido
     valido_al             DATE,                               -- NULL = senza scadenza
     note                  TEXT,
-	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id) ON DELETE CASCADE
+	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id) ON DELETE CASCADE,
+    UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima)
 );
 
 
