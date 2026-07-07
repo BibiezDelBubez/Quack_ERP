@@ -922,6 +922,31 @@ final class ProductsController extends BaseController
         exit;
     }
 
+    public function deleteRrp(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $id         = post('id'); // UUID
+        $prodottoId = (int) post('prodotto_id');
+
+        if (!$id || $prodottoId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Record non specificato.']); exit;
+        }
+
+        try {
+            $this->pdo->prepare('DELETE FROM prodotti_rrp WHERE id = :id AND prodotto_id = :pid')
+                      ->execute([':id' => $id, ':pid' => $prodottoId]);
+
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => 'Errore durante la rimozione.']);
+        }
+        exit;
+    }
+
     /* ── Helper privati ───────────────────────────────────────────────────── */
 
     private function defaultValues(): array

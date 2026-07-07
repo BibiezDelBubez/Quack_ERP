@@ -185,13 +185,350 @@ class PurchaseOrdersController extends BaseController
 
         redirect(url('purchases/orders/edit') . '?id=' . $id);
     }
-
     public function pdf(): void
     {
-        // TODO: generazione PDF ordine di acquisto
         $id = (int) get_param('id', '0');
-        flash_set('danger', 'La stampa PDF degli ordini non è ancora disponibile.');
-        redirect(url('purchases/orders/edit') . '?id=' . $id);
+        if ($id <= 0) {
+            redirect(url('purchases/orders'));
+        }
+
+        $detail = qk_ordine_detail($this->pdo, $id);
+        if (!$detail) {
+            redirect(url('purchases/orders'));
+        }
+
+        $ordine = $detail['ordine'];
+        $righe = $detail['righe'];
+
+        // Recupera azienda interna o quella predefinita
+        $azienda = null;
+        if (!empty($ordine['azienda_interna_id'])) {
+            $stmtAz = $this->pdo->prepare(
+                "SELECT cf.*, az.*
+                   FROM aziende_interne az
+                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+                  WHERE az.id = ? LIMIT 1"
+            );
+            $stmtAz->execute([(int)$ordine['azienda_interna_id']]);
+            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$azienda) {
+            $stmtAz = $this->pdo->query(
+                "SELECT cf.*, az.*
+                   FROM aziende_interne az
+                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+                  WHERE az.predefinita = 1 LIMIT 1"
+            );
+            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC) ?: [];
+        }
+
+        // Fetch supplier address
+        $indirizzoFornitore = '';
+        if (!empty($ordine['fornitore_id'])) {
+            $stInd = $this->pdo->prepare("
+                SELECT * FROM indirizzi 
+                WHERE soggetto_id = ? 
+                ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
+                LIMIT 1
+            ");
+            $stInd->execute([(int)$ordine['fornitore_id']]);
+            $indForn = $stInd->fetch(PDO::FETCH_ASSOC);
+            if ($indForn) {
+                $indirizzoFornitore = $indForn['via'] . ' ' . $indForn['civico'] . '<br>' . $indForn['cap'] . ' ' . $indForn['citta'] . ' (' . $indForn['provincia'] . ')';
+            }
+        }
+
+        // Genera il PDF
+        $mpdf = new \Mpdf\Mpdf([
+            'mode'          => 'utf-8',
+            'format'        => 'A4',
+            'margin_top'    => 45,
+            'margin_bottom' => 25,
+            'margin_left'   => 12,
+            'margin_right'  => 12,
+            'tempDir'       => upload_ensure_dir('mpdf_tmp'),
+        ]);
+
+        $mpdf->SetTitle('Ordine Acquisto - ' . $ordine['numero']);
+        $mpdf->SetAuthor('Quack ERP');
+
+        // Header Image (Intestazione stampati)
+        $headerHtml = '';
+        if (!empty($azienda['header_path']) && file_exists(upload_abs($azienda['header_path']))) {
+            $headerHtml = '<img src="' . upload_abs($azienda['header_path']) . '" style="width:100%; max-height:35mm;">';
+        } elseif (!empty($azienda['logo_path']) && file_exists(upload_abs($azienda['logo_path']))) {
+            $headerHtml = '
+            <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
+                <tr>
+                    <td style="width:50%;"><img src="' . upload_abs($azienda['logo_path']) . '" style="max-height:22mm;"></td>
+                    <td style="width:50%; text-align:right; font-weight:bold; font-size:14pt; color:#1a5276; vertical-align:middle;">
+                        ORDINE DI ACQUISTO A FORNITORE
+                    </td>
+                </tr>
+            </table>';
+        } else {
+            $headerHtml = '
+            <table style="width:100%; border-collapse:collapse; font-family:sans-serif; border-bottom:1px solid #ccc; padding-bottom:3mm;">
+                <tr>
+                    <td style="width:60%;">
+                        <strong style="font-size:14pt; color:#1a5276;">' . e($azienda['ragione_sociale'] ?? 'Gemina S.r.l.') . '</strong><br>
+                        <span style="font-size:8pt; color:#666;">P.IVA: ' . e($azienda['partita_iva'] ?? '') . ' | Email: ' . e($azienda['email'] ?? '') . ' | Tel: ' . e($azienda['telefono'] ?? '') . '</span>
+                    </td>
+                    <td style="width:40%; text-align:right; font-weight:bold; font-size:12pt; color:#1a5276; vertical-align:middle;">
+                        ORDINE DI ACQUISTO A FORNITORE
+                    </td>
+                </tr>
+            </table>';
+        }
+
+        $mpdf->SetHTMLHeader('
+            <div style="width:100%; font-family:sans-serif; margin-bottom:5mm;">
+                ' . $headerHtml . '
+            </div>
+        ');
+
+        $mpdf->SetHTMLFooter('
+            <div style="border-top:1px solid #999; padding-top:3mm; font-size:8pt; color:#666; text-align:center; font-family:sans-serif;">
+                Pagina {PAGENO} di {nbpg} — Ordine N°: ' . e($ordine['numero']) . '
+            </div>
+        ');
+
+        $html = '
+        <style>
+            body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #222; }
+            h2 { font-size: 11pt; color: #1a5276; border-bottom: 1.5pt solid #1a5276; padding-bottom: 1mm; margin-top: 5mm; margin-bottom: 3mm; text-transform: uppercase; }
+            .info-table { width: 100%; border-collapse: collapse; margin-top: 1mm; margin-bottom: 0; }
+            .info-table td { padding: 0.8mm 0; font-size: 9.5pt; vertical-align: top; }
+            .info-table .lbl { font-weight: bold; color: #555; width: 30%; }
+            .info-box { padding: 0; }
+            
+            .righe-table { width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 4mm; }
+            .righe-table th { background: #1a5276; color: #fff; padding: 2.2mm 2mm; font-size: 9pt; text-align: center; }
+            .righe-table td { padding: 2.2mm 2mm; font-size: 9pt; border-bottom: 0.5pt solid #ccc; }
+            .righe-table .num { text-align: right; font-family: monospace; }
+            .righe-table .center { text-align: center; }
+            .righe-table tr.zebra { background-color: #f8fafc; }
+            
+            .totals-table { width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 4mm; }
+            .totals-table td { padding: 1.5mm 2mm; font-size: 9.5pt; }
+            .totals-table .val { text-align: right; font-weight: bold; width: 120px; }
+            
+            .cond-table { width: 100%; border-collapse: collapse; }
+            .cond-table td { padding: 2.5mm 3mm; font-size: 9.5pt; vertical-align: top; border-bottom: 0.3pt solid #eee; }
+            .cond-table .lbl { font-weight: bold; color: #444; width: 25%; }
+        </style>';
+
+        // Contact details
+        $contattoNome = $ordine['contatto_nome'] ?: '';
+        $contattoTel = $ordine['contatto_telefono'] ?: $ordine['fornitore_telefono'] ?: '';
+        $contattoEmail = $ordine['contatto_email'] ?: $ordine['fornitore_email'] ?: '';
+
+        // BLOCK 1: Info Generali e Recapiti
+        $html .= '
+        <table style="width:100%; border-collapse:collapse; margin-top:2mm; margin-bottom:5mm;">
+            <tr>
+                <td style="width:48%; vertical-align:top;">
+                    <div class="info-box">
+                        <strong style="font-size:11pt; color:#1a5276;">Dettagli Ordine</strong>
+                        <table class="info-table">
+                            <tr>
+                                <td class="lbl">Rif. Interno:</td>
+                                <td><strong>' . e($ordine['riferimento_interno'] ?: '—') . '</strong></td>
+                            </tr>
+                            <tr>
+                                <td class="lbl">Rif. RFQ:</td>
+                                <td>' . e($ordine['rfq_numero'] ?: $ordine['riferimento_rfq_interno'] ?: '—') . '</td>
+                            </tr>
+                            <tr>
+                                <td class="lbl">Rif. Prev. Forn.:</td>
+                                <td>' . e($ordine['riferimento_fornitore'] ?: '—') . '</td>
+                            </tr>
+                            <tr>
+                                <td class="lbl">Data Ordine:</td>
+                                <td>' . e(fmt_date($ordine['data_ordine'])) . '</td>
+                            </tr>
+                        </table>
+                    </div>
+                </td>
+                
+                <td style="width:4%;">&nbsp;</td>
+                
+                <td style="width:48%; vertical-align:top;">
+                    <div class="info-box">
+                        <strong style="font-size:11pt; color:#1a5276;">Spett.le Fornitore</strong>
+                        <div style="margin-top:1.5mm; font-size:9.5pt; line-height:1.45;">
+                            <strong>' . e($ordine['fornitore_nome']) . '</strong><br>
+                            ' . ($indirizzoFornitore ?: '—') . '<br>
+                            ' . (!empty($contattoNome) ? 'Alla c.a.: <strong>' . e($contattoNome) . '</strong><br>' : '') . '
+                            ' . (!empty($contattoTel) ? 'Tel: ' . e($contattoTel) : '') . 
+                            (!empty($contattoEmail) ? ' | Email: ' . e($contattoEmail) : '') . '
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>';
+
+        // BLOCK 2: Righe Articoli
+        $html .= '
+        <h2>Prodotti Ordinati</h2>
+        <table class="righe-table">
+            <thead>
+                <tr>
+                    <th style="width:15%">SKU Fornitore</th>
+                    <th style="width:30%">Descrizione</th>
+                    <th style="width:15%">Formato</th>
+                    <th style="width:10%; text-align:right;">Q.tà</th>
+                    <th style="width:8%; text-align:center;">UdM</th>
+                    <th style="width:11%; text-align:right;">Prezzo Unitario</th>
+                    <th style="width:11%; text-align:right;">Totale</th>
+                </tr>
+            </thead>
+            <tbody>';
+
+        $fill = false;
+        foreach ($righe as $r) {
+            $zebraClass = $fill ? ' class="zebra"' : '';
+            $qty = (float)$r['quantita_ordinata'];
+            $um = $r['uom'] ?: 'pz';
+            
+            $prezzo = (float)($r['prezzo_unitario'] ?? 0);
+            $rigaTotale = $qty * $prezzo; // Potrebbe anche essere letto dal database 'imponibile_riga' o 'totale_riga'
+            // check db field for line total
+            $totaleRiga = isset($r['imponibile_riga']) ? (float)$r['imponibile_riga'] : $rigaTotale;
+
+            $html .= '
+                <tr' . $zebraClass . '>
+                    <td class="center"><strong>' . e($r['sku_fornitore'] ?: '—') . '</strong></td>
+                    <td>' . e($r['descrizione'] ?: $r['prodotto_nome']) . '</td>
+                    <td class="center">' . e($r['formato'] ?: '—') . '</td>
+                    <td class="num"><strong>' . fmt_qty($qty) . '</strong></td>
+                    <td class="center">' . e($um) . '</td>
+                    <td class="num">' . fmt_money($prezzo) . '</td>
+                    <td class="num"><strong>' . fmt_money($totaleRiga) . '</strong></td>
+                </tr>';
+            
+            $fill = !$fill;
+        }
+
+        $html .= '
+            </tbody>
+        </table>';
+
+        // BLOCK 3: Totali
+        $imponibile = (float)$ordine['imponibile'];
+        $iva = (float)$ordine['totale_iva'];
+        $totale = (float)$ordine['totale'];
+        
+        $html .= '
+        <table class="totals-table">
+            <tr>
+                <td style="width:50%;">&nbsp;</td>
+                <td style="text-align:right; color:#666; white-space:nowrap;">Totale Imponibile:</td>
+                <td class="val">' . fmt_money($imponibile) . '</td>
+            </tr>
+            <tr>
+                <td>&nbsp;</td>
+                <td style="text-align:right; color:#666; white-space:nowrap;">Totale I.V.A.:</td>
+                <td class="val">' . fmt_money($iva) . '</td>
+            </tr>
+            <tr>
+                <td>&nbsp;</td>
+                <td style="text-align:right; font-weight:bold; color:#1a5276; white-space:nowrap;">Totale Documento:</td>
+                <td class="val" style="color:#1a5276; border-top:1px solid #1a5276;">' . fmt_money($totale) . '</td>
+            </tr>
+        </table>';
+
+        // BLOCK 4: Condizioni di Fornitura
+        $consegnaIndirizzo = '—';
+        if (!empty($ordine['consegna_via'])) {
+            $consegnaIndirizzo = '<strong>' . e($ordine['consegna_presso'] ?: ($azienda['ragione_sociale'] ?? '')) . '</strong> - ' .
+                                 e($ordine['consegna_via']) . ' ' . e($ordine['consegna_civico']) . ', ' .
+                                 e($ordine['consegna_cap']) . ' ' . e($ordine['consegna_citta']) . ' (' . e($ordine['consegna_provincia']) . ')';
+            if (!empty($ordine['consegna_referente'])) {
+                $consegnaIndirizzo .= ' (Ref: ' . e($ordine['consegna_referente']) . ')';
+            }
+            if (!empty($ordine['consegna_telefono'])) {
+                $consegnaIndirizzo .= ' - Tel: ' . e($ordine['consegna_telefono']);
+            }
+        }
+
+        $resaPortoLabel = '—';
+        if (($ordine['resa_porto'] ?? '') === 'porto_franco') {
+            $resaPortoLabel = 'Porto Franco (A carico venditore)';
+        } elseif (($ordine['resa_porto'] ?? '') === 'porto_assegnato') {
+            $resaPortoLabel = 'Porto Assegnato (A carico acquirente)';
+        }
+
+        $resaCondizioni = '—';
+        if (!empty($ordine['incoterm_codice'])) {
+            $resaCondizioni = '<strong>' . e($ordine['incoterm_codice']) . '</strong> - ' . e($ordine['incoterm_luogo'] ?: 'Sede di consegna');
+            if ($resaPortoLabel !== '—') {
+                $resaCondizioni .= ' (' . $resaPortoLabel . ')';
+            }
+        } elseif ($resaPortoLabel !== '—') {
+            $resaCondizioni = $resaPortoLabel;
+        }
+
+        $html .= '
+        <h2>Condizioni di Fornitura</h2>
+        <table class="cond-table">
+            <tr>
+                <td class="lbl">Consegna Richiesta:</td>
+                <td>' . (!empty($ordine['data_consegna_prevista']) ? e(fmt_date($ordine['data_consegna_prevista'])) : 'Non specificata') . '</td>
+            </tr>
+            <tr>
+                <td class="lbl">Luogo di Consegna:</td>
+                <td>' . $consegnaIndirizzo . '</td>
+            </tr>
+            <tr>
+                <td class="lbl">Modalità Pagamento:</td>
+                <td>' . e($ordine['metodo_pagamento_descrizione'] ?: $ordine['condizioni_pagamento'] ?: 'Come da accordi') . '</td>
+            </tr>
+            <tr>
+                <td class="lbl">Termini di Resa:</td>
+                <td>' . $resaCondizioni . '</td>
+            </tr>';
+
+        if (!empty($ordine['note_fornitore'])) {
+            $html .= '
+            <tr>
+                <td class="lbl">Note al Fornitore:</td>
+                <td>' . nl2br(e($ordine['note_fornitore'])) . '</td>
+            </tr>';
+        }
+
+        $html .= '
+        </table>';
+
+        $html .= '
+        <div style="margin-top:15mm; page-break-inside:avoid;">
+            <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
+                <tr>
+                    <td style="width:45%; vertical-align:bottom; padding-bottom:6px;">
+                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">Timbro e Firma per Accettazione</span><br>
+                        <span style="font-size:7.5pt; color:#777777;">Fornitore (per accettazione ordine e condizioni)</span>
+                    </td>
+                    <td style="width:10%;"></td>
+                    <td style="width:45%; vertical-align:bottom; padding-bottom:6px; text-align:right;">
+                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">Firma Autorizzata</span><br>
+                        <span style="font-size:7.5pt; color:#777777;">Il responsabile acquisti</span>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border:1px dashed #bbbbbb; padding:12px; height:30mm; vertical-align:bottom; background-color:#fafafa;">
+                        <div style="border-bottom:1px solid #aaaaaa; width:80%;"></div>
+                    </td>
+                    <td></td>
+                    <td style="border:1px dashed #bbbbbb; padding:12px; height:30mm; vertical-align:bottom; background-color:#fafafa;">
+                        <div style="border-bottom:1px solid #aaaaaa; width:80%; margin-left:auto;"></div>
+                    </td>
+                </tr>
+            </table>
+        </div>';
+
+        $mpdf->WriteHTML($html);
+        $mpdf->Output('OrdineAcquisto_' . clean_filename($ordine['numero']) . '.pdf', \Mpdf\Output\Destination::INLINE);
+        exit;
     }
 
     public function docx(): void
