@@ -55,13 +55,14 @@ final class AdrController extends BaseController
         $imballaggi = $this->pdo->query(
             'SELECT codice, descrizione FROM adr_gruppi_imballaggio ORDER BY codice'
         )->fetchAll();
+        $categorieConcat = db_group_concat_sql('c.categoria_galleria', ', ');
         $gallerie   = $this->pdo->query(
-            'SELECT g.codice, g.si_applica_a_cisterna, g.descrizione,
-                    GROUP_CONCAT(c.categoria_galleria, ", ") AS categorie
+            "SELECT g.codice, g.si_applica_a_cisterna, g.descrizione,
+                    {$categorieConcat} AS categorie
                FROM adr_codici_restrizione_gallerie g
           LEFT JOIN adr_restrizione_gallerie_categorie c ON c.restrizione_codice = g.codice
            GROUP BY g.codice
-           ORDER BY g.codice'
+           ORDER BY g.codice"
         )->fetchAll();
         $categorie_trasporto = $this->pdo->query(
             'SELECT categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione

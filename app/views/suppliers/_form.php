@@ -486,7 +486,7 @@ $nIndirizzi = count($indirizzi_preload);
           <div class="qksa-predefinito-row mb-3">
             <label class="qksa-check-label">
               <input type="checkbox" name="predefinito" value="1" id="chkPredefinito">
-              <span>Imposta come indirizzo predefinito per questo tipo</span>
+              <span>Imposta come predefinito per questo tipo di sede</span>
             </label>
           </div>
 

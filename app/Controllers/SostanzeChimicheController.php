@@ -21,6 +21,9 @@ final class SostanzeChimicheController extends BaseController
     {
         $search = get_param('q');
 
+        $hCodesConcat    = db_group_concat_sql('h_codice', ' ');
+        $pittogrammiConcat = db_group_concat_sql('pittogramma_cod', ',');
+
         $sql = "
             SELECT s.id, s.nome, s.codice_cas, s.nome_tecnico, s.gruppo_imballaggio,
                    s.concentrazione_min_pct, s.concentrazione_max_pct,
@@ -29,8 +32,8 @@ final class SostanzeChimicheController extends BaseController
                    c.codice_onu, c.classe_pericolo,
                    (SELECT COUNT(*) FROM prodotti p WHERE p.sostanza_chimica_id = s.id AND p.attivo = 1) AS n_prodotti,
                    (SELECT COUNT(*) FROM sostanze_chimiche_schede sd WHERE sd.sostanza_id = s.id AND sd.e_corrente = 1) AS n_schede,
-                   (SELECT GROUP_CONCAT(h_codice, ' ') FROM sostanze_h_statements WHERE sostanza_id = s.id) AS h_codes,
-                   (SELECT GROUP_CONCAT(pittogramma_cod, ',') FROM sostanze_pittogrammi WHERE sostanza_id = s.id) AS pittogrammi
+                   (SELECT {$hCodesConcat} FROM sostanze_h_statements WHERE sostanza_id = s.id) AS h_codes,
+                   (SELECT {$pittogrammiConcat} FROM sostanze_pittogrammi WHERE sostanza_id = s.id) AS pittogrammi
               FROM sostanze_chimiche s
          LEFT JOIN adr_codici_onu c ON c.id = s.codice_onu_id
              WHERE 1=1
@@ -410,11 +413,23 @@ final class SostanzeChimicheController extends BaseController
         }
 
         try {
-            $this->pdo->prepare("
-                INSERT OR REPLACE INTO sostanze_chimiche_restrizioni
-                    (sostanza_id, restriction_type_id, concentrazione_min, concentrazione_max, note)
-                VALUES (?, ?, ?, ?, ?)
-            ")->execute([$sostanzaId, $restrictionTypeId, $concMin, $concMax, $note]);
+            // NB: la PK è composta (sostanza_id, restriction_type_id).
+            // "INSERT OR REPLACE" (sqlite) rigenera anche created_at; l'equivalente
+            // mysql (ON DUPLICATE KEY UPDATE) invece lo preserva alla prima riga —
+            // differenza minore, accettabile per questa tabella di sola configurazione.
+            $sql = DB_DRIVER === 'mysql'
+                ? "INSERT INTO sostanze_chimiche_restrizioni
+                       (sostanza_id, restriction_type_id, concentrazione_min, concentrazione_max, note)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE
+                       concentrazione_min = VALUES(concentrazione_min),
+                       concentrazione_max = VALUES(concentrazione_max),
+                       note = VALUES(note)"
+                : "INSERT OR REPLACE INTO sostanze_chimiche_restrizioni
+                       (sostanza_id, restriction_type_id, concentrazione_min, concentrazione_max, note)
+                   VALUES (?, ?, ?, ?, ?)";
+
+            $this->pdo->prepare($sql)->execute([$sostanzaId, $restrictionTypeId, $concMin, $concMax, $note]);
 
             // Ricarica la riga appena inserita con i dati del tipo
             $row = $this->pdo->prepare("
@@ -620,7 +635,7 @@ final class SostanzeChimicheController extends BaseController
         $this->pdo->prepare('DELETE FROM sostanze_h_statements WHERE sostanza_id = ?')->execute([$id]);
         $hCodes = array_filter((array)($_POST['h_statements'] ?? []));
         if ($hCodes) {
-            $stH = $this->pdo->prepare('INSERT OR IGNORE INTO sostanze_h_statements (sostanza_id, h_codice) VALUES (?,?)');
+            $stH = $this->pdo->prepare(db_insert_ignore_sql('sostanze_h_statements (sostanza_id, h_codice) VALUES (?,?)'));
             foreach ($hCodes as $code) {
                 $stH->execute([$id, trim((string)$code)]);
             }
@@ -630,7 +645,7 @@ final class SostanzeChimicheController extends BaseController
         $this->pdo->prepare('DELETE FROM sostanze_p_statements WHERE sostanza_id = ?')->execute([$id]);
         $pCodes = array_filter((array)($_POST['p_statements'] ?? []));
         if ($pCodes) {
-            $stP = $this->pdo->prepare('INSERT OR IGNORE INTO sostanze_p_statements (sostanza_id, p_codice) VALUES (?,?)');
+            $stP = $this->pdo->prepare(db_insert_ignore_sql('sostanze_p_statements (sostanza_id, p_codice) VALUES (?,?)'));
             foreach ($pCodes as $code) {
                 $stP->execute([$id, trim((string)$code)]);
             }
@@ -640,7 +655,7 @@ final class SostanzeChimicheController extends BaseController
         $this->pdo->prepare('DELETE FROM sostanze_pittogrammi WHERE sostanza_id = ?')->execute([$id]);
         $pittCodes = array_filter((array)($_POST['pittogrammi'] ?? []));
         if ($pittCodes) {
-            $stPitt = $this->pdo->prepare('INSERT OR IGNORE INTO sostanze_pittogrammi (sostanza_id, pittogramma_cod) VALUES (?,?)');
+            $stPitt = $this->pdo->prepare(db_insert_ignore_sql('sostanze_pittogrammi (sostanza_id, pittogramma_cod) VALUES (?,?)'));
             foreach ($pittCodes as $code) {
                 $stPitt->execute([$id, trim((string)$code)]);
             }

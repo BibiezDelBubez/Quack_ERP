@@ -361,7 +361,7 @@ function qk_sync_prodotto_tags(PDO $pdo, int $prodotto_id, array $tag_ids): void
 
     if (!empty($tag_ids)) {
         $ins = $pdo->prepare(
-            'INSERT OR IGNORE INTO prodotti_tag (prodotto_id, tag_id) VALUES (:pid, :tid)'
+            db_insert_ignore_sql('prodotti_tag (prodotto_id, tag_id) VALUES (:pid, :tid)')
         );
         foreach ($tag_ids as $tid) {
             $ins->execute([':pid' => $prodotto_id, ':tid' => (int) $tid]);

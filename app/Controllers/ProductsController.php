@@ -239,8 +239,10 @@ final class ProductsController extends BaseController
             ")->execute([$id]);
             $this->pdo->prepare("DELETE FROM prodotti_fornitori WHERE prodotto_id = ?")->execute([$id]);
 
-            // Forza vincoli FK in SQLite
-            $this->pdo->exec("PRAGMA foreign_keys = ON;");
+            // Forza vincoli FK in SQLite (in MySQL/InnoDB sono sempre attivi)
+            if (DB_DRIVER === 'sqlite') {
+                $this->pdo->exec("PRAGMA foreign_keys = ON;");
+            }
 
             // Proviamo la cancellazione fisica
             $stmt = $this->pdo->prepare("DELETE FROM prodotti WHERE id = ?");
@@ -1994,8 +1996,8 @@ final class ProductsController extends BaseController
 
         try {
             $this->pdo->prepare(
-                'INSERT OR IGNORE INTO prodotti_restrizioni (prodotto_id, restriction_type_id, note)
-                 VALUES (:pid, :rtid, :note)'
+                db_insert_ignore_sql('prodotti_restrizioni (prodotto_id, restriction_type_id, note)
+                 VALUES (:pid, :rtid, :note)')
             )->execute([':pid' => $prodottoId, ':rtid' => $restrictionTypeId, ':note' => $note ?: null]);
 
             // Restituisce la riga con il nome del tipo

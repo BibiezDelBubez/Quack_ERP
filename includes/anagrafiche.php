@@ -1761,8 +1761,10 @@ function qk_delete_soggetto(PDO $pdo, int $id): void
     // Proviamo la cancellazione fisica abilitando i vincoli di FK
     $pdo->beginTransaction();
     try {
-        // Forza vincoli in SQLite per essere sicuri
-        $pdo->exec("PRAGMA foreign_keys = ON;");
+        // Forza vincoli in SQLite per essere sicuri (in MySQL/InnoDB sono sempre attivi)
+        if (DB_DRIVER === 'sqlite') {
+            $pdo->exec("PRAGMA foreign_keys = ON;");
+        }
         
         $stmt = $pdo->prepare("DELETE FROM clienti_fornitori WHERE id = ?");
         $stmt->execute([$id]);

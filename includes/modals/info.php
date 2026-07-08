@@ -15,20 +15,30 @@
  */
 
 // ── Dati DB ──────────────────────────────────────────────────────────────────
+$_info_db_driver   = DB_DRIVER;
 $_info_sqlite_ver  = '—';
 $_info_db_size     = '—';
 $_info_db_path     = '—';
 
-if (isset($pdo)) {
-    try {
-        $_info_sqlite_ver = $pdo->query('SELECT sqlite_version()')->fetchColumn();
-    } catch (Exception $_e) {}
-}
+if (DB_DRIVER === 'mysql') {
+    if (isset($pdo)) {
+        try {
+            $_info_sqlite_ver = $pdo->query('SELECT VERSION()')->fetchColumn();
+        } catch (Exception $_e) {}
+    }
+    $_info_db_path = DB_MYSQL_HOST . ':' . DB_MYSQL_PORT . '/' . DB_MYSQL_NAME;
+} else {
+    if (isset($pdo)) {
+        try {
+            $_info_sqlite_ver = $pdo->query('SELECT sqlite_version()')->fetchColumn();
+        } catch (Exception $_e) {}
+    }
 
-$_db_file = APP_ROOT_DIR . '/db/database.sqlite';
-if (file_exists($_db_file)) {
-    $_info_db_size = number_format(filesize($_db_file) / 1024, 1, ',', '.') . ' KB';
-    $_info_db_path = realpath($_db_file);
+    $_db_file = DB_DIR . '/database.sqlite';
+    if (file_exists($_db_file)) {
+        $_info_db_size = number_format(filesize($_db_file) / 1024, 1, ',', '.') . ' KB';
+        $_info_db_path = realpath($_db_file);
+    }
 }
 
 // ── Librerie PHP (composer.lock) ─────────────────────────────────────────────
@@ -152,18 +162,20 @@ unset($_db_file, $_e, $_info_user);
             </tr>
             <tr>
               <th>Tipo</th>
-              <td>SQLite</td>
+              <td><?= e($_info_db_driver === 'mysql' ? 'MySQL' : 'SQLite') ?></td>
             </tr>
             <tr>
-              <th>Versione SQLite</th>
+              <th>Versione <?= e($_info_db_driver === 'mysql' ? 'MySQL' : 'SQLite') ?></th>
               <td><code><?= e($_info_sqlite_ver) ?></code></td>
             </tr>
+            <?php if ($_info_db_driver !== 'mysql'): ?>
             <tr>
               <th>Dimensione file</th>
               <td><?= e($_info_db_size) ?></td>
             </tr>
+            <?php endif; ?>
             <tr>
-              <th>Percorso</th>
+              <th><?= e($_info_db_driver === 'mysql' ? 'Connessione' : 'Percorso') ?></th>
               <td style="font-size:.75rem;word-break:break-all;color:var(--qk-text-muted)">
                 <?= e($_info_db_path) ?>
               </td>

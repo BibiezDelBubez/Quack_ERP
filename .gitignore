@@ -24,3 +24,8 @@ Thumbs.db
 # File di supporto
 /file supporto/
 
+# DB SQLite: ora vive fuori progetto (DB_DIR in config.php); questi pattern
+# proteggono nel caso qualcuno lo ricrei per errore dentro db/
+db/*.sqlite
+db/.fuse_hidden*
+

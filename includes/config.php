@@ -46,6 +46,27 @@ define('INCLUDES_DIR', APP_ROOT_DIR . '/includes');
 ─────────────────────────────────────────────────────────────────────────── */
 define('UPLOAD_DIR', 'C:/Quack_ERP_data');
 
+/* ── Cartella database (fuori dalla cartella di progetto) ─────────────────
+   In sviluppo:  C:/Quack_ERP_data/db
+   In produzione Linux: es. /var/www/quack-data/db
+   Cambia SOLO questo define per adattare l'ambiente.
+─────────────────────────────────────────────────────────────────────────── */
+define('DB_DIR', 'C:/Quack_ERP_data/db');
+
+/* ── Driver database — UNICA FONTE DI VERITÀ ──────────────────────────────
+   'sqlite' oggi, 'mysql' quando lo schema/logica sarà stabile.
+   Lo switch consiste nel cambiare DB_DRIVER (+ le credenziali sotto se mysql).
+─────────────────────────────────────────────────────────────────────────── */
+define('DB_DRIVER',   'sqlite');   // 'sqlite' | 'mysql'
+
+// Usate solo se DB_DRIVER === 'mysql'
+define('DB_MYSQL_HOST',    getenv('QK_DB_HOST')   ?: '127.0.0.1');
+define('DB_MYSQL_PORT',    getenv('QK_DB_PORT')   ?: '3306');
+define('DB_MYSQL_NAME',    getenv('QK_DB_NAME')   ?: 'quack_erp');
+define('DB_MYSQL_USER',    getenv('QK_DB_USER')   ?: 'root');
+define('DB_MYSQL_PASS',    getenv('QK_DB_PASS')   ?: '');
+define('DB_MYSQL_CHARSET', getenv('QK_DB_CHARSET') ?: 'utf8mb4');
+
 /* ── Registro temi — UNICA FONTE DI VERITÀ ────────────────────────────────
    Aggiungere o rimuovere un tema: modificare SOLO questo array.
    Ogni voce: slug (CSS data-theme), label (UI), swatch (style inline CSS).

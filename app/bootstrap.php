@@ -7,6 +7,18 @@ require_once __DIR__ . '/../includes/error_reporter.php';
 if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
     require_once __DIR__ . '/../vendor/autoload.php';
 }
+
+// Verifica che la cartella del database esista (solo rilevante per SQLite:
+// se il file non è ancora stato spostato/creato, l'app deve fallire in modo
+// chiaro invece di ricrearne uno vuoto in un posto sbagliato).
+if (DB_DRIVER === 'sqlite' && !is_dir(DB_DIR)) {
+    if (APP_ENV === 'development') {
+        die('<b>ERRORE CONFIGURAZIONE:</b> La cartella DB non esiste: <code>' . DB_DIR . '</code><br>Creala manualmente o aggiorna DB_DIR in <code>includes/config.php</code>.');
+    } else {
+        error_log('[Quack] DB_DIR non trovata: ' . DB_DIR);
+    }
+}
+
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/pagination.php';
@@ -51,15 +63,7 @@ if (isset($_GET['switch_azienda_id']) && is_authenticated()) {
 // =======================================================================================
 if (isset($pdo)) {
     try {
-        $stmt = $pdo->query("PRAGMA table_info(prodotti)");
-        $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $hasScortaMinima = false;
-        foreach ($columns as $col) {
-            if ($col['name'] === 'scorta_minima') {
-                $hasScortaMinima = true;
-                break;
-            }
-        }
+        $hasScortaMinima = db_table_has_column($pdo, 'prodotti', 'scorta_minima');
         if (!$hasScortaMinima) {
             die("
             <h1 style='color:red;'>CRITICAL ARCHITECTURE VIOLATION</h1>

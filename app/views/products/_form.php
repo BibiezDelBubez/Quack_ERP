@@ -927,7 +927,7 @@ window.QkPF = {
               <div class="text-end d-flex align-items-center gap-3">
                 <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .5rem;">
                   <label class="qk-form-label mb-0 text-nowrap" style="font-size:.85rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
-                  <select id="sales-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
+                  <select id="sales-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 28px 2px 8px; font-size:.85rem; height:auto;">
                     <option value="commercial">Unità commerciale (<?= e($um_comm_codice ?: $um) ?>)</option>
                     <option value="stock" selected>Unità di stock (<?= e($um) ?>)</option>
                   </select>
@@ -1538,7 +1538,7 @@ window.QkPF = {
 
                    <div class="d-flex align-items-center gap-1">
                      <label class="qk-form-label mb-0 text-nowrap" style="font-size:.78rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
-                     <select id="drawer-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.78rem; height:auto;">
+                     <select id="drawer-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 28px 2px 8px; font-size:.78rem; height:auto;">
                         <option value="commercial">Unità commerciale (<?= e($um_comm_codice ?: $um) ?>)</option>
                         <option value="stock" selected>Unità di stock (<?= e($um) ?>)</option>
                      </select>
@@ -1603,7 +1603,7 @@ window.QkPF = {
             <div class="qk-table-toolbar-left">
               <div class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap: .5rem; padding-left: .5rem;">
                 <label class="qk-form-label mb-0 text-nowrap" style="font-size:.85rem; font-weight:600; color:var(--qk-text-muted)">Visualizza in:</label>
-                <select id="purchase-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 8px; font-size:.85rem; height:auto;">
+                <select id="purchase-uom-mode" class="form-select form-select-sm" style="width:auto; padding:2px 28px 2px 8px; font-size:.85rem; height:auto;">
                   <option value="commercial">Unità commerciale (<?= e($um_comm_codice ?: $um) ?>)</option>
                   <option value="stock" selected>Unità di stock (<?= e($um) ?>)</option>
                 </select>

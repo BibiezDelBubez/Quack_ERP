@@ -804,12 +804,7 @@ function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
         }
 
         // 4. Create new quote record in Bozza status (storico = 0, stato = 'bozza')
-        $columns = [];
-        $stmtCol = $pdo->query("PRAGMA table_info(preventivi)");
-        while ($col = $stmtCol->fetch(PDO::FETCH_ASSOC)) {
-            if ($col['name'] === 'id') continue;
-            $columns[] = $col['name'];
-        }
+        $columns = array_filter(db_table_columns($pdo, 'preventivi'), fn($c) => $c !== 'id');
 
         $colList = implode(", ", $columns);
         $insertSql = "INSERT INTO preventivi ($colList) SELECT $colList FROM preventivi WHERE id = :orig_id";
@@ -834,12 +829,7 @@ function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
         ]);
 
         // 6. Copy righe items from original quote
-        $righeCols = [];
-        $stmtRigheCol = $pdo->query("PRAGMA table_info(preventivi_righe)");
-        while ($col = $stmtRigheCol->fetch(PDO::FETCH_ASSOC)) {
-            if ($col['name'] === 'id') continue;
-            $righeCols[] = $col['name'];
-        }
+        $righeCols = array_filter(db_table_columns($pdo, 'preventivi_righe'), fn($c) => $c !== 'id');
 
         $righeColsWithoutPrev = array_filter($righeCols, fn($c) => $c !== 'preventivo_id');
         $colListRighe = implode(", ", $righeColsWithoutPrev);
@@ -880,12 +870,7 @@ function qk_preventivo_duplica(PDO $pdo, int $id, int $userId): int
         $newNum = qk_next_numero_offerta($pdo);
 
         // 3. Create list of columns
-        $columns = [];
-        $stmtCol = $pdo->query("PRAGMA table_info(preventivi)");
-        while ($col = $stmtCol->fetch(PDO::FETCH_ASSOC)) {
-            if ($col['name'] === 'id') continue;
-            $columns[] = $col['name'];
-        }
+        $columns = array_filter(db_table_columns($pdo, 'preventivi'), fn($c) => $c !== 'id');
 
         $colList = implode(", ", $columns);
         $insertSql = "INSERT INTO preventivi ($colList) SELECT $colList FROM preventivi WHERE id = :orig_id";
@@ -910,12 +895,7 @@ function qk_preventivo_duplica(PDO $pdo, int $id, int $userId): int
         ]);
 
         // 5. Copy righe items from original quote
-        $righeCols = [];
-        $stmtRigheCol = $pdo->query("PRAGMA table_info(preventivi_righe)");
-        while ($col = $stmtRigheCol->fetch(PDO::FETCH_ASSOC)) {
-            if ($col['name'] === 'id') continue;
-            $righeCols[] = $col['name'];
-        }
+        $righeCols = array_filter(db_table_columns($pdo, 'preventivi_righe'), fn($c) => $c !== 'id');
 
         $righeColsWithoutPrev = array_filter($righeCols, fn($c) => $c !== 'preventivo_id');
         $colListRighe = implode(", ", $righeColsWithoutPrev);

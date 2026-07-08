@@ -4,6 +4,67 @@
  * Includi DOPO config.php
  */
 
+/* ── DB portability helpers (sqlite/mysql) ───────────────────────────────────
+   Isolano qui le poche differenze di sintassi tra i due motori, così il resto
+   del codice non deve mai controllare DB_DRIVER direttamente.
+─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Restituisce i nomi delle colonne di una tabella, indipendentemente dal
+ * motore attivo. Sostituisce i vari "PRAGMA table_info($table)" sparsi nel
+ * codice (che funzionano solo su SQLite).
+ *
+ * @return string[] nomi colonna
+ */
+function db_table_columns(PDO $pdo, string $table): array {
+    if (DB_DRIVER === 'mysql') {
+        $stmt = $pdo->prepare(
+            'SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
+        );
+        $stmt->execute([$table]);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    $stmt = $pdo->query("PRAGMA table_info(" . $table . ")");
+    return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'name');
+}
+
+/**
+ * Restituisce true se la tabella ha la colonna indicata. Comodo per i
+ * controlli "esiste questa colonna?" prima di usarla in una query.
+ */
+function db_table_has_column(PDO $pdo, string $table, string $column): bool {
+    return in_array($column, db_table_columns($pdo, $table), true);
+}
+
+/**
+ * Espressione GROUP_CONCAT compatibile col motore attivo:
+ *   - sqlite: "GROUP_CONCAT(col, 'sep')"
+ *   - mysql:  "GROUP_CONCAT(col SEPARATOR 'sep')"
+ *
+ * $expr può essere una colonna o un'espressione SQL (es. "c.categoria_galleria").
+ */
+function db_group_concat_sql(string $expr, string $separator = ','): string {
+    $sep = str_replace("'", "''", $separator);
+    return DB_DRIVER === 'mysql'
+        ? "GROUP_CONCAT({$expr} SEPARATOR '{$sep}')"
+        : "GROUP_CONCAT({$expr}, '{$sep}')";
+}
+
+/**
+ * Prefisso SQL per un INSERT che deve ignorare i duplicati, nella sintassi
+ * corretta per il motore attivo:
+ *   - sqlite: "INSERT OR IGNORE INTO tabella (...) VALUES (...)"
+ *   - mysql:  "INSERT IGNORE INTO tabella (...) VALUES (...)"
+ *
+ * Uso: $pdo->prepare(db_insert_ignore_sql('prodotti_tag (prodotto_id, tag_id) VALUES (:pid, :tid)'))
+ */
+function db_insert_ignore_sql(string $tableColumnsValues): string {
+    $prefix = DB_DRIVER === 'mysql' ? 'INSERT IGNORE INTO ' : 'INSERT OR IGNORE INTO ';
+    return $prefix . $tableColumnsValues;
+}
+
 /* ── Output ───────────────────────────────────────────────────────────────── */
 
 /** Escape HTML per output sicuro */
