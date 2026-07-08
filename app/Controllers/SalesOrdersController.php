@@ -535,14 +535,20 @@ final class SalesOrdersController extends BaseController
         $prodottoId = (int)get_param('prodotto_id');
         if ($prodottoId <= 0) { echo json_encode(['error' => 'prodotto_id mancante']); exit; }
 
+        // Disponibilità per magazzino (Piano Multi-Magazzino §3.8): legge da
+        // lotti_giacenze scoped al magazzino attivo, non più dal campo
+        // aggregato legacy lotti.quantita_disponibile (rimosso, §3.9).
+        $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+
         $st = $this->pdo->prepare("
             SELECT l.id, COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice,
-                   l.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at
+                   lg.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at
             FROM lotti l
-            WHERE l.prodotto_id = ? AND l.quantita_disponibile > 0
+            JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+            WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0
             ORDER BY CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END, l.data_scadenza ASC, l.created_at ASC
         ");
-        $st->execute([$prodottoId]);
+        $st->execute([$magazzinoId, $prodottoId]);
         echo json_encode(['lotti' => $st->fetchAll(PDO::FETCH_ASSOC)]);
         exit;
     }
@@ -662,7 +668,6 @@ final class SalesOrdersController extends BaseController
 
             $stInsSpedRiga = $this->pdo->prepare("INSERT INTO spedizioni_righe (spedizione_id, ordine_riga_id, prodotto_id, lotto_id, quantita, note) VALUES (?, ?, ?, ?, ?, '')");
             $stInsDdtRiga  = $this->pdo->prepare("INSERT INTO documenti_trasporto_righe (documento_trasporto_id, prodotto_id, descrizione, quantita, unita_misura_id, lotto_id, codice_lotto, is_adr, numero_onu, classe_adr, packing_group, posizione_riga, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')");
-            $stUpLotto     = $this->pdo->prepare("UPDATE lotti SET quantita_disponibile = quantita_disponibile - ? WHERE id = ?");
             // Decremento per-magazzino della disponibilità di lotto (fonte di verità
             // dal Piano Multi-Magazzino §3.8). L'INSERT iniziale con valore negativo
             // gestisce il caso raro in cui la riga lotti_giacenze non esista ancora
@@ -707,18 +712,26 @@ final class SalesOrdersController extends BaseController
                         $anyShipped = true;
                         $qtaStock   = $qta * $snap;
 
-                        $stLotInfo = $this->pdo->prepare("SELECT id, quantita_disponibile, COALESCE(codice_lotto_interno, codice_lotto) AS cl FROM lotti WHERE id = ?");
-                        $stLotInfo->execute([$lottoId]);
+                        // Disponibilità per QUESTO magazzino di spedizione, non l'aggregato
+                        // legacy: lo stesso lotto può avere quantità diverse in sedi diverse
+                        // (Piano Multi-Magazzino §3.8/§3.9).
+                        $stLotInfo = $this->pdo->prepare("
+                            SELECT l.id, COALESCE(lg.quantita_disponibile, 0) AS quantita_disponibile,
+                                   COALESCE(l.codice_lotto_interno, l.codice_lotto) AS cl
+                            FROM lotti l
+                            LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+                            WHERE l.id = ?
+                        ");
+                        $stLotInfo->execute([$magazzinoSpedId, $lottoId]);
                         $lot = $stLotInfo->fetch(PDO::FETCH_ASSOC);
                         if (!$lot) throw new \Exception("Lotto {$lottoId} non trovato.");
-                        if ($lot['quantita_disponibile'] < $qtaStock) throw new \Exception("Giacenza insufficiente lotto {$lot['cl']}.");
+                        if ($lot['quantita_disponibile'] < $qtaStock) throw new \Exception("Giacenza insufficiente lotto {$lot['cl']} nel magazzino di spedizione.");
 
                         $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, $lottoId, $qta]);
                         $stAdr->execute([$prodId]);
                         $adr = $stAdr->fetch(PDO::FETCH_ASSOC);
                         $isAdr = !empty($adr) ? 1 : 0;
                         $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], $lottoId, $lot['cl'], $isAdr, $isAdr ? 'UN '.$adr['codice_onu'] : null, $isAdr ? $adr['classe_pericolo'] : null, $isAdr ? $adr['gruppo_imballaggio'] : null, $pos++]);
-                        $stUpLotto->execute([$qtaStock, $lottoId]);
                         $stUpLottoGiac->execute([$lottoId, $magazzinoSpedId, $qtaStock, $qtaStock]);
                         $stUpGiac->execute([$qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
                         $stUpOrdRiga->execute([$qta, $lineId]);

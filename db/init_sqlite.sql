@@ -705,8 +705,18 @@ CREATE TABLE IF NOT EXISTS lotti (
     data_scadenza        DATE,                                 -- usata per FEFO e alerting; NULL se il prodotto non scade
     data_arrivo          DATE,                                 -- data di arrivo in magazzino
     numero_ddt_arrivo    VARCHAR(50),                          -- numero DDT del fornitore
-    quantita_ricevuta    DECIMAL(10,3) NOT NULL,               -- quantità totale ricevuta per questo lotto
-    quantita_disponibile DECIMAL(10,3) NOT NULL,               -- giacenza corrente del lotto
+    quantita_ricevuta    DECIMAL(10,3) NOT NULL,               -- quantità totale ricevuta per questo lotto (storico immutabile)
+
+    -- RIMOSSA (era qui): quantita_disponibile. Era il campo aggregato unico
+    -- per la giacenza corrente del lotto, valido finché l'ERP gestiva un solo
+    -- magazzino. Con il multi-magazzino la disponibilità di un lotto è per
+    -- coppia (lotto, magazzino) e vive in `lotti_giacenze` — un lotto può
+    -- avere quantità diverse in sedi diverse, o essere presente solo in
+    -- alcune. Il totale aggregato indipendente dalla sede (utile ad es. per
+    -- un richiamo prodotto) si calcola con
+    -- `SELECT lotto_id, SUM(quantita_disponibile) FROM lotti_giacenze GROUP BY lotto_id`,
+    -- non con una colonna denormalizzata qui. Vedi Piano di Implementazione
+    -- Multi-Magazzino, §3.8/§3.9.
     note                 TEXT,
     creato_da            INTEGER       NOT NULL REFERENCES utenti(id),
     created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -736,7 +746,8 @@ CREATE TABLE IF NOT EXISTS magazzini (
                                      CHECK (tipo IN (
                                          'fisico',       -- sito reale dove la merce è fisicamente stoccata
                                          'virtuale',      -- non un luogo reale: usato per modellare stati come "in quarantena", "reso da verificare"
-                                         'conto_terzi'    -- deposito gestito da un 3PL/logista esterno per nostro conto
+                                         'conto_terzi',   -- merce nostra depositata presso un polo logistico esterno
+                                         'conto_lavoro'   -- merce nostra inviata a un terzista per lavorazione
                                      )),
 
     -- A quale azienda interna fa capo il sito (per intestazione DDT/documenti generati da qui).
@@ -751,9 +762,30 @@ CREATE TABLE IF NOT EXISTS magazzini (
     -- Nullable: si può censire un magazzino subito e aggiungere l'indirizzo dopo.
     indirizzo_id        INTEGER      REFERENCES indirizzi(id),
 
+    -- Gerarchia spaziale (docs/Gestione Magazzino e Lotti/Trasferimenti tra Magazzini
+    -- come Documento.md, §7.1): un magazzino virtuale/conto_terzi/conto_lavoro può avere
+    -- come genitore SOLO un magazzino fisico radice (tipo='fisico' AND parent_id IS
+    -- NULL) — vincolo a due soli livelli, imposto a livello applicativo in
+    -- MagazziniController::validate() (SQLite non esprime facilmente in un CHECK una
+    -- condizione che dipende da un'altra riga della stessa tabella). Due magazzini
+    -- condividono la stessa "radice fisica" quando COALESCE(parent_id, id) coincide:
+    -- è il criterio che decide se un trasferimento tra loro può essere un Giroconto
+    -- istantaneo o richiede il documento con transito. NULL per i magazzini fisici
+    -- radice (comportamento di sempre, retrocompatibile con i dati già seminati).
+    parent_id           INTEGER      REFERENCES magazzini(id),
+
+    -- Chi gestisce fisicamente questo sito quando non è nostro (tipo='conto_terzi'
+    -- o 'conto_lavoro'): punta all'anagrafica fornitore/cliente già esistente invece
+    -- di ripetere nome/indirizzo del terzista in testo libero — riusa
+    -- clienti_fornitori/indirizzi come fa il resto di Quack, non li duplica.
+    -- Nullable: non si applica ai magazzini fisico/virtuale.
+    soggetto_esterno_id INTEGER      REFERENCES clienti_fornitori(id),
+
     -- Esiste sempre un solo magazzino predefinito nel sistema: è quello preselezionato
     -- di default in ogni schermata finché l'utente non sceglie diversamente per la sessione
-    -- o per lo specifico documento. Vedi indice UNIQUE parziale sotto.
+    -- o per lo specifico documento. Vedi indice UNIQUE parziale sotto. Deve essere sempre
+    -- un magazzino fisico radice (tipo='fisico' AND parent_id IS NULL) — vincolo
+    -- applicativo, vedi le quattro funzioni di fallback in includes/magazzino.php.
     predefinito         BOOLEAN      NOT NULL DEFAULT 0,
 
     -- Soft-delete: un magazzino non si cancella mai fisicamente (è referenziato da giacenze,
@@ -769,6 +801,9 @@ CREATE TABLE IF NOT EXISTS magazzini (
 -- contemporaneamente (invece di fidarsi solo della disciplina applicativa).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_magazzini_un_predefinito
     ON magazzini(predefinito) WHERE predefinito = 1;
+
+-- Lookup per gerarchia (radice fisica di un magazzino, elenco figli di una radice).
+CREATE INDEX IF NOT EXISTS idx_magazzini_parent ON magazzini(parent_id);
 
 
 -- -----------------------------------------------------------------------------
@@ -2024,6 +2059,10 @@ INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) 
     ('rfq',      'RFQ/', 2026, 0, 4),
     ('offerta',  'OFF/', 2026, 0, 4),
     ('ordine',   'ODA/', 2026, 0, 4);
+
+-- Numerazione trasferimenti tra magazzini (Piano Multi-Magazzino §4.2)
+INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES
+    ('trasferimento', 'TRF/', 2026, 0, 4);
 
 -- =============================================================================
 -- COMPLIANCE TABLES & SEEDS

@@ -424,8 +424,8 @@ function _ricezione_gestisci_lotto(
     if (!empty($lottoData['id'])) {
         // Lotto esistente: aggiorna il totale storico ricevuto (lotti.quantita_ricevuta,
         // dato immutabile aggregato, non una giacenza corrente) e la giacenza del
-        // lotto NEL MAGAZZINO di questa ricezione (lotti_giacenze, non più il
-        // campo aggregato lotti.quantita_disponibile — vedi Piano Multi-Magazzino §3.1/§3.9).
+        // lotto NEL MAGAZZINO di questa ricezione (lotti_giacenze — il campo
+        // aggregato lotti.quantita_disponibile è stato rimosso, §3.9).
         $lot_id = (int)$lottoData['id'];
         $pdo->prepare(
             'UPDATE lotti SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
@@ -443,17 +443,17 @@ function _ricezione_gestisci_lotto(
     }
 
     if (!empty($lottoData['codice_lotto_interno'])) {
-        // Nuovo lotto (anagrafica). quantita_disponibile qui è legacy (colonna
-        // NOT NULL ancora presente su `lotti`, verrà rimossa in §3.9): la fonte
-        // di verità per "dove si trova" è lotti_giacenze, popolata subito dopo.
+        // Nuovo lotto (anagrafica). `lotti.quantita_disponibile` è stata
+        // rimossa (§3.9): la fonte di verità per "dove si trova" è
+        // lotti_giacenze, popolata subito dopo.
         $pdo->prepare(
             "INSERT INTO lotti
                 (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
                  prodotto_id, origine_tipo, fornitore_id, ordine_testata_id, ricezione_riga_id,
                  data_scadenza, data_arrivo, numero_ddt_arrivo,
-                 quantita_ricevuta, quantita_disponibile,
+                 quantita_ricevuta,
                  creato_da, created_at)
-             VALUES (?,?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,?,CURRENT_TIMESTAMP)"
+             VALUES (?,?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,CURRENT_TIMESTAMP)"
         )->execute([
             $lottoData['codice_lotto_interno'], // colonna legacy codice_lotto (NOT NULL)
             $lottoData['codice_lotto_interno'],
@@ -464,7 +464,6 @@ function _ricezione_gestisci_lotto(
             $ricezione_riga_id,
             ($lottoData['data_scadenza'] ?? '') !== '' ? $lottoData['data_scadenza'] : null,
             ($lottoData['numero_ddt'] ?? '') !== '' ? $lottoData['numero_ddt'] : null,
-            $qta,
             $qta,
             $utente_id,
         ]);

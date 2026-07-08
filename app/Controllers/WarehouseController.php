@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/magazzino.php';
+require_once INCLUDES_DIR . '/trasferimenti.php';
 
 /**
  * WarehouseController — modulo Magazzino.
@@ -727,6 +728,199 @@ class WarehouseController extends BaseController
         $rows = qk_prodotti_search_stock($this->pdo, $q);
         ob_end_clean();
         echo json_encode(['ok' => true, 'prodotti' => $rows]);
+        exit;
+    }
+
+    /* ── Trasferimenti tra magazzini (Piano Multi-Magazzino §3.4, §4.2) ──────── */
+
+    public function transfers(): void
+    {
+        $search = get_param('q', '');
+        $stato  = get_param('stato', '');
+
+        $statiValidi = ['', 'bozza', 'in_transito', 'completato', 'annullato'];
+        if (!in_array($stato, $statiValidi, true)) $stato = '';
+
+        $pag = qk_pagination_params(['data', 'numero', 'stato'], 'data', 'desc');
+
+        $total = qk_trasferimenti_count($this->pdo, $search, $stato);
+        $trasferimenti = qk_trasferimenti_list($this->pdo, $search, $stato, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
+
+        $page_title    = 'Trasferimenti tra Magazzini';
+        $page_subtitle = 'Movimentazioni interne tra sedi';
+        $breadcrumbs   = [
+            ['label' => 'Magazzino', 'url' => url('warehouse')],
+            ['label' => 'Trasferimenti'],
+        ];
+        $page_actions  = '<a href="' . url('warehouse/transfers/create') . '" class="btn-qk btn-qk-primary">
+            <i class="fa-solid fa-plus"></i> Nuovo trasferimento
+        </a>';
+        $extra_css = ['warehouse.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/transfers_list.php', compact(
+            'search', 'stato', 'total', 'trasferimenti', 'pag',
+            'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions', 'extra_css'
+        ));
+    }
+
+    public function createTransfer(): void
+    {
+        $errors = [];
+        $magazzini = qk_magazzini_list($this->pdo, true);
+
+        $values = [
+            'magazzino_origine_id'      => '',
+            'magazzino_destinazione_id' => '',
+            'data_richiesta'            => date('Y-m-d'),
+            'note'                      => '',
+        ];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
+            } else {
+                $values['magazzino_origine_id']      = post('magazzino_origine_id', '');
+                $values['magazzino_destinazione_id'] = post('magazzino_destinazione_id', '');
+                $values['data_richiesta']            = post('data_richiesta', date('Y-m-d'));
+                $values['note']                      = post('note', '');
+
+                $prodottiPost = $_POST['riga_prodotto_id'] ?? [];
+                $lottiPost    = $_POST['riga_lotto_id'] ?? [];
+                $qtaPost      = $_POST['riga_quantita'] ?? [];
+
+                $righe = [];
+                foreach ($prodottiPost as $i => $pid) {
+                    if (empty($pid)) continue;
+                    $righe[] = [
+                        'prodotto_id'         => (int) $pid,
+                        'lotto_id'            => !empty($lottiPost[$i]) ? (int) $lottiPost[$i] : null,
+                        'quantita_richiesta'  => (float) ($qtaPost[$i] ?? 0),
+                    ];
+                }
+
+                try {
+                    $header = [
+                        'magazzino_origine_id'      => (int) $values['magazzino_origine_id'],
+                        'magazzino_destinazione_id' => (int) $values['magazzino_destinazione_id'],
+                        'data_richiesta'            => $values['data_richiesta'],
+                        'note'                      => $values['note'],
+                    ];
+                    $id = qk_insert_trasferimento($this->pdo, $header, $righe, (int) current_user()['id']);
+                    redirect_with('warehouse/transfers/view?id=' . $id, 'success', 'Trasferimento creato in bozza.');
+                } catch (\Throwable $e) {
+                    $errors['_global'] = $e->getMessage();
+                }
+            }
+        }
+
+        $page_title    = 'Nuovo trasferimento';
+        $page_subtitle = 'Sposta merce da un magazzino a un altro';
+        $breadcrumbs   = [
+            ['label' => 'Magazzino', 'url' => url('warehouse')],
+            ['label' => 'Trasferimenti', 'url' => url('warehouse/transfers')],
+            ['label' => 'Nuovo'],
+        ];
+        $extra_css = ['warehouse.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/transfers_form.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'errors', 'values', 'magazzini'
+        ));
+    }
+
+    public function viewTransfer(): void
+    {
+        $id = (int) get_param('id', '0');
+        if ($id <= 0) redirect(url('warehouse/transfers'));
+
+        $detail = qk_trasferimento_detail($this->pdo, $id);
+        if (!$detail) redirect(url('warehouse/transfers'));
+
+        $page_title    = 'Trasferimento ' . $detail['testata']['numero'];
+        $page_subtitle = $detail['testata']['magazzino_origine_nome'] . ' → ' . $detail['testata']['magazzino_destinazione_nome'];
+        $breadcrumbs   = [
+            ['label' => 'Magazzino', 'url' => url('warehouse')],
+            ['label' => 'Trasferimenti', 'url' => url('warehouse/transfers')],
+            ['label' => $detail['testata']['numero']],
+        ];
+        $extra_css = ['warehouse.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/transfers_detail.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css', 'detail'
+        ));
+    }
+
+    /**
+     * POST /warehouse/transfers/action
+     * Body: id, azione ('partenza' | 'conferma_arrivo' | 'annulla')
+     */
+    public function transferAction(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            redirect(url('warehouse/transfers'));
+        }
+
+        $id     = (int) post('id', '0');
+        $azione = post('azione', '');
+        $utente_id = (int) current_user()['id'];
+
+        try {
+            switch ($azione) {
+                case 'partenza':
+                    qk_trasferimento_registra_partenza($this->pdo, $id, $utente_id);
+                    flash_set('success', 'Partenza registrata: giacenza scaricata dal magazzino di origine.');
+                    break;
+
+                case 'conferma_arrivo':
+                    $rigaIds  = $_POST['riga_id'] ?? [];
+                    $qtaPost  = $_POST['quantita_arrivata'] ?? [];
+                    $notePost = $_POST['nota_discrepanza'] ?? [];
+                    $quantitaArrivata = [];
+                    $noteDiscrepanza  = [];
+                    foreach ($rigaIds as $i => $rid) {
+                        $quantitaArrivata[(int) $rid] = (float) ($qtaPost[$i] ?? 0);
+                        $noteDiscrepanza[(int) $rid]  = (string) ($notePost[$i] ?? '');
+                    }
+                    qk_conferma_arrivo_trasferimento($this->pdo, $id, $quantitaArrivata, $noteDiscrepanza, $utente_id);
+                    flash_set('success', 'Arrivo confermato: giacenza caricata nel magazzino di destinazione.');
+                    break;
+
+                case 'annulla':
+                    qk_annulla_trasferimento($this->pdo, $id, $utente_id);
+                    flash_set('success', 'Trasferimento annullato.');
+                    break;
+
+                default:
+                    flash_set('danger', "Azione '$azione' non riconosciuta.");
+            }
+        } catch (\Throwable $e) {
+            flash_set('danger', $e->getMessage());
+        }
+
+        redirect(url('warehouse/transfers/view') . '?id=' . $id);
+    }
+
+    /**
+     * GET /warehouse/api/lotti-per-magazzino?prodotto_id=X&magazzino_id=Y
+     * Lotti disponibili per un prodotto in UN magazzino specifico (usato dal
+     * form di creazione trasferimento per popolare la select lotto in base
+     * al magazzino di origine scelto — a differenza di apiProdottoInfo, che
+     * restituisce tutti i lotti aggregati indipendentemente dalla sede).
+     */
+    public function apiLottiPerMagazzino(): void
+    {
+        ob_start();
+        header('Content-Type: application/json');
+        $prodotto_id  = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
+        $magazzino_id = filter_input(INPUT_GET, 'magazzino_id', FILTER_VALIDATE_INT);
+        if (!$prodotto_id || !$magazzino_id) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'prodotto_id e magazzino_id sono obbligatori']);
+            exit;
+        }
+        $lotti = qk_lotti_by_prodotto($this->pdo, $prodotto_id, true, $magazzino_id);
+        ob_end_clean();
+        echo json_encode(['ok' => true, 'lotti' => $lotti]);
         exit;
     }
 }

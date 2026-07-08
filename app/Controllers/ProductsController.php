@@ -134,10 +134,16 @@ final class ProductsController extends BaseController
                     && ($loaded['traccia_lotti'] ?? '0') === '1'
                     && $values['traccia_lotti'] === '0'
                 ) {
+                    // Giacenza lotto aggregata su TUTTI i magazzini (Piano Multi-Magazzino
+                    // §3.9): lotti.quantita_disponibile è stata rimossa, la fonte di
+                    // verità è lotti_giacenze. Il guard resta a livello prodotto (non ha
+                    // senso permettere di disabilitare la tracciatura lotti se il prodotto
+                    // ha ancora stock a lotto ovunque si trovi).
                     $stLotti = $this->pdo->prepare(
-                        'SELECT COUNT(*) AS n, COALESCE(SUM(quantita_disponibile), 0) AS tot
-                           FROM lotti
-                          WHERE prodotto_id = ? AND quantita_disponibile > 0'
+                        'SELECT COUNT(DISTINCT l.id) AS n, COALESCE(SUM(lg.quantita_disponibile), 0) AS tot
+                           FROM lotti l
+                           JOIN lotti_giacenze lg ON lg.lotto_id = l.id
+                          WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0'
                     );
                     $stLotti->execute([$entity_id]);
                     $lottiAttivi = $stLotti->fetch(PDO::FETCH_ASSOC);

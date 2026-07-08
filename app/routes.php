@@ -116,6 +116,11 @@ return [
     '/warehouse/reorder'              => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'reorder',         'auth' => true],
     '/warehouse/api/prodotto-info'    => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiProdottoInfo',     'auth' => true],
     '/warehouse/api/prodotti-search'  => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiProdottiSearch',   'auth' => true],
+    '/warehouse/transfers'            => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'transfers',       'auth' => true],
+    '/warehouse/transfers/create'     => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'createTransfer',  'auth' => true, 'permission' => 'manage_warehouse'],
+    '/warehouse/transfers/view'       => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'viewTransfer',    'auth' => true],
+    '/warehouse/transfers/action'     => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'transferAction',  'auth' => true, 'permission' => 'manage_warehouse'],
+    '/warehouse/api/lotti-per-magazzino' => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiLottiPerMagazzino', 'auth' => true],
 
     // File server — serve i file da UPLOAD_DIR (fuori da htdocs)
     '/uploads'          => ['type' => 'controller', 'controller' => 'FileController', 'action' => 'serve', 'auth' => true],

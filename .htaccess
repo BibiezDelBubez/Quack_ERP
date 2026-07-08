@@ -2,8 +2,9 @@
 RewriteEngine On
 Options -Indexes
 
-# Blocca accesso diretto a directory interne (escluso crea_db.php temporaneamente)
+# Blocca accesso diretto a directory interne (escluso crea_db.php e crea_db_sqlite.php)
 RewriteCond %{REQUEST_URI} !/db/crea_db\.php$ [NC]
+RewriteCond %{REQUEST_URI} !/db/crea_db_sqlite\.php$ [NC]
 RewriteRule ^(app|includes|db)/ - [F,L]
 
 # Blocca scratch/, patch DB e file di test nella root
@@ -19,6 +20,7 @@ RewriteRule ^ecommerce(/.*)?$ index.php [L,QSA]
 RewriteCond %{REQUEST_URI} \.php$ [NC]
 RewriteCond %{REQUEST_URI} !/index\.php$ [NC]
 RewriteCond %{REQUEST_URI} !/db/crea_db\.php$ [NC]
+RewriteCond %{REQUEST_URI} !/db/crea_db_sqlite\.php$ [NC]
 RewriteCond %{REQUEST_URI} !/test_mpdf\.php$ [NC]
 RewriteCond %{REQUEST_URI} !/test_docx\.php$ [NC]
 RewriteRule ^ index.php [L,QSA]

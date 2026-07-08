@@ -303,7 +303,13 @@ function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili
  * Crea un nuovo lotto manualmente (usato nel form movimento quando tipo=carico).
  *
  * Campi obbligatori nel DB (NOT NULL senza default):
- *   codice_lotto, prodotto_id, quantita_ricevuta, quantita_disponibile, creato_da
+ *   codice_lotto, prodotto_id, quantita_ricevuta, creato_da
+ *
+ * NOTA (Piano Multi-Magazzino §3.9): `lotti.quantita_disponibile` è stata
+ * rimossa — la fonte di verità della disponibilità per lotto è ora
+ * `lotti_giacenze`, per (lotto, magazzino). Il chiamante deve creare/aggiornare
+ * la riga `lotti_giacenze` corrispondente subito dopo (vedi
+ * qk_insert_movimento_manuale, che lo fa già).
  *
  * @param array{
  *   codice_lotto_interno: string,
@@ -312,7 +318,6 @@ function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili
  *   data_scadenza: ?string,
  *   data_arrivo: ?string,
  *   quantita_ricevuta: float,
- *   quantita_disponibile: float,
  * } $v
  * @return int  id del lotto creato
  */
@@ -327,8 +332,8 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
         'INSERT INTO lotti
              (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
               prodotto_id, origine_tipo, data_scadenza, data_arrivo,
-              quantita_ricevuta, quantita_disponibile, creato_da)
-         VALUES (?, ?, ?, ?, \'rettifica\', ?, ?, ?, ?, ?)'
+              quantita_ricevuta, creato_da)
+         VALUES (?, ?, ?, ?, \'rettifica\', ?, ?, ?, ?)'
     )->execute([
         $codiceInterno,      // codice_lotto (campo storico NOT NULL)
         $codiceInterno,      // codice_lotto_interno
@@ -337,7 +342,6 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
         $v['data_scadenza']  ?? null,
         $v['data_arrivo']    ?? null,
         $v['quantita_ricevuta'],
-        $v['quantita_disponibile'],
         $utente_id,
     ]);
 
@@ -511,7 +515,6 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
                 'data_scadenza'          => ($nl['data_scadenza']  ?? '') !== '' ? $nl['data_scadenza']  : null,
                 'data_arrivo'            => ($nl['data_arrivo']    ?? '') !== '' ? $nl['data_arrivo']    : null,
                 'quantita_ricevuta'      => $v['quantita'],
-                'quantita_disponibile'   => $v['quantita'], // legacy, vedi §3.9; la fonte di verità è lotti_giacenze (passo 4)
             ], $utente_id);
         }
 
