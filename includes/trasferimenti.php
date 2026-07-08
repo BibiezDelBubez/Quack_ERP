@@ -26,9 +26,9 @@ function qk_next_numero_trasferimento(PDO $pdo): string
     return qk_next_sequence_number($pdo, 'trasferimento');
 }
 
-function qk_trasferimenti_count(PDO $pdo, string $search = '', string $stato = ''): int
+function qk_trasferimenti_count(PDO $pdo, string $search = '', string $stato = '', string $tipoCreazione = ''): int
 {
-    [$where, $params] = _qk_trasferimenti_where($search, $stato);
+    [$where, $params] = _qk_trasferimenti_where($search, $stato, $tipoCreazione);
     $sql = "SELECT COUNT(*) FROM trasferimenti_magazzino t
             JOIN magazzini mo ON mo.id = t.magazzino_origine_id
             JOIN magazzini md ON md.id = t.magazzino_destinazione_id
@@ -39,7 +39,7 @@ function qk_trasferimenti_count(PDO $pdo, string $search = '', string $stato = '
 }
 
 /** @internal */
-function _qk_trasferimenti_where(string $search, string $stato): array
+function _qk_trasferimenti_where(string $search, string $stato, string $tipoCreazione = ''): array
 {
     $where = ['1=1'];
     $params = [];
@@ -52,6 +52,10 @@ function _qk_trasferimenti_where(string $search, string $stato): array
         $where[] = 't.stato = ?';
         $params[] = $stato;
     }
+    if ($tipoCreazione !== '') {
+        $where[] = 't.tipo_creazione = ?';
+        $params[] = $tipoCreazione;
+    }
     return [$where, $params];
 }
 
@@ -62,15 +66,16 @@ function qk_trasferimenti_list(
     string $sort = 'data',
     string $dir = 'desc',
     int $limit = 50,
-    int $offset = 0
+    int $offset = 0,
+    string $tipoCreazione = ''
 ): array {
     if (!in_array($dir, ['asc', 'desc'], true)) $dir = 'desc';
     $sortMap = ['data' => 't.created_at', 'numero' => 't.numero', 'stato' => 't.stato'];
     $orderCol = $sortMap[$sort] ?? 't.created_at';
 
-    [$where, $params] = _qk_trasferimenti_where($search, $stato);
+    [$where, $params] = _qk_trasferimenti_where($search, $stato, $tipoCreazione);
 
-    $sql = "SELECT t.id, t.numero, t.stato, t.data_richiesta, t.data_partenza, t.data_arrivo,
+    $sql = "SELECT t.id, t.numero, t.stato, t.tipo_creazione, t.data_richiesta, t.data_partenza, t.data_arrivo,
                    t.created_at,
                    mo.nome AS magazzino_origine_nome, md.nome AS magazzino_destinazione_nome,
                    (SELECT COUNT(*) FROM trasferimenti_magazzino_righe r WHERE r.trasferimento_id = t.id) AS n_righe
@@ -106,7 +111,7 @@ function qk_trasferimento_detail(PDO $pdo, int $id): ?array
 
     $stRighe = $pdo->prepare(
         "SELECT r.*, p.nome AS prodotto_nome, p.sku_interno, p.traccia_lotti,
-                COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice_lotto,
+                COALESCE(l.codice_lotto_interno, l.codice_lotto_fornitore) AS codice_lotto,
                 u.codice AS uom
            FROM trasferimenti_magazzino_righe r
            JOIN prodotti p ON p.id = r.prodotto_id
@@ -152,17 +157,20 @@ function qk_insert_trasferimento(PDO $pdo, array $header, array $righe, int $ute
     $pdo->beginTransaction();
     try {
         $numero = qk_next_numero_trasferimento($pdo);
+        $tipoCreazione = in_array($header['tipo_creazione'] ?? '', ['trasferimento', 'diretto'], true)
+            ? $header['tipo_creazione'] : 'trasferimento';
 
         $st = $pdo->prepare(
             "INSERT INTO trasferimenti_magazzino
                 (numero, magazzino_origine_id, magazzino_destinazione_id, stato,
-                 data_richiesta, note, creato_da, created_at)
-             VALUES (?, ?, ?, 'bozza', ?, ?, ?, CURRENT_TIMESTAMP)"
+                 tipo_creazione, data_richiesta, note, creato_da, created_at)
+             VALUES (?, ?, ?, 'bozza', ?, ?, ?, ?, CURRENT_TIMESTAMP)"
         );
         $st->execute([
             $numero,
             $origineId,
             $destinazioneId,
+            $tipoCreazione,
             $header['data_richiesta'] !== '' ? $header['data_richiesta'] : date('Y-m-d'),
             trim((string) ($header['note'] ?? '')) ?: null,
             $utente_id,
@@ -457,4 +465,52 @@ function qk_annulla_trasferimento(PDO $pdo, int $id, int $utente_id): void
         $pdo->rollBack();
         throw $e;
     }
+}
+
+/**
+ * Trasferimento diretto: Regola A del §7.2 (Trasferimenti tra Magazzini come
+ * Documento.md). Spostamento istantaneo tra due magazzini che condividono la
+ * stessa radice fisica (es. sede e una sua ubicazione virtuale) — nessun
+ * camion coinvolto, quindi nessun senso a passare per lo stato in_transito.
+ * Nome allineato al lessico usato dagli ERP best-in-class in italiano: SAP
+ * chiama "trasferimento diretto" il movimento con uscita/entrata simultanea
+ * (tipo 301/311), concettualmente lo stesso del Giornale di Trasferimento di
+ * Dynamics 365, contrapposto all'Ordine di Trasferimento con transito.
+ *
+ * Riusa in sequenza le funzioni già scritte per il documento pieno
+ * (qk_insert_trasferimento -> qk_trasferimento_registra_partenza ->
+ * qk_conferma_arrivo_trasferimento con quantita_arrivata = quantita_richiesta)
+ * invece di duplicare la logica di scarico/carico: zero secondo percorso.
+ * Ogni funzione gestisce la propria transazione (non annidate): se una fase
+ * fallisce a metà, il trasferimento resta nello stato raggiunto fin lì
+ * (tipicamente 'in_transito'), esattamente come un documento pieno interrotto
+ * — nessuna incoerenza, l'utente può confermare l'arrivo manualmente dopo.
+ *
+ * @throws \RuntimeException se origine e destinazione non condividono la stessa radice fisica
+ */
+function qk_registra_trasferimento_diretto(PDO $pdo, array $header, array $righe, int $utente_id): int
+{
+    $origineId = (int) ($header['magazzino_origine_id'] ?? 0);
+    $destinazioneId = (int) ($header['magazzino_destinazione_id'] ?? 0);
+
+    if (!$origineId || !$destinazioneId || !qk_magazzino_stessa_radice($pdo, $origineId, $destinazioneId)) {
+        throw new \RuntimeException(
+            'Il trasferimento diretto è ammesso solo tra magazzini che condividono la stessa radice fisica. ' .
+            'Per uno spostamento verso una sede fisicamente diversa, crea un trasferimento con transito.'
+        );
+    }
+
+    $header['tipo_creazione'] = 'diretto';
+    $id = qk_insert_trasferimento($pdo, $header, $righe, $utente_id);
+    qk_trasferimento_registra_partenza($pdo, $id, $utente_id);
+
+    $stRighe = $pdo->prepare('SELECT id, quantita_richiesta FROM trasferimenti_magazzino_righe WHERE trasferimento_id = ?');
+    $stRighe->execute([$id]);
+    $quantitaArrivata = [];
+    foreach ($stRighe->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $quantitaArrivata[(int) $r['id']] = (float) $r['quantita_richiesta'];
+    }
+    qk_conferma_arrivo_trasferimento($pdo, $id, $quantitaArrivata, [], $utente_id);
+
+    return $id;
 }

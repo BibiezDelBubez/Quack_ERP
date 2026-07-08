@@ -2,7 +2,9 @@
 /**
  * settings/magazzini/_form.php
  * Variabili attese: $mode ('create'|'edit'), $entity_id (?int),
- *   $values (array), $errors (array), $aziende (array)
+ *   $values (array), $errors (array), $aziende (array),
+ *   $radici (array, fisici radice per il selettore genitore, esclude se stesso),
+ *   $soggetti (array, clienti_fornitori per il selettore conto_terzi/conto_lavoro)
  */
 $isEdit = $mode === 'edit';
 $v = $values;
@@ -50,10 +52,11 @@ $v = $values;
           <div class="qk-form-row">
             <div class="qk-form-group">
               <label class="qk-form-label">Tipo <span class="required">*</span></label>
-              <select name="tipo" class="qk-form-control <?= isset($errors['tipo']) ? 'is-invalid' : '' ?>">
+              <select name="tipo" id="selectTipoMagazzino" class="qk-form-control <?= isset($errors['tipo']) ? 'is-invalid' : '' ?>">
                 <option value="fisico" <?= $v['tipo'] === 'fisico' ? 'selected' : '' ?>>Fisico</option>
                 <option value="virtuale" <?= $v['tipo'] === 'virtuale' ? 'selected' : '' ?>>Virtuale (es. quarantena, reso da verificare)</option>
                 <option value="conto_terzi" <?= $v['tipo'] === 'conto_terzi' ? 'selected' : '' ?>>Conto terzi (gestito da un 3PL)</option>
+                <option value="conto_lavoro" <?= $v['tipo'] === 'conto_lavoro' ? 'selected' : '' ?>>Conto lavoro (merce inviata a un terzista)</option>
               </select>
               <?php if (isset($errors['tipo'])): ?>
               <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['tipo']) ?></span>
@@ -70,6 +73,49 @@ $v = $values;
                 <?php endforeach; ?>
               </select>
               <span class="qk-form-hint mt-1 d-block">Da quale azienda interna vengono emessi i documenti (DDT) partiti da questo sito. Necessaria per censire l'indirizzo sotto.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gerarchia spaziale (Trasferimenti tra Magazzini come Documento.md, §7.1) -->
+      <div class="qk-card mb-3" id="cardGerarchia">
+        <div class="qk-card-header"><span class="qk-card-title"><i class="fa-solid fa-sitemap me-2"></i>Gerarchia spaziale</span></div>
+        <div class="qk-card-body">
+          <div class="qk-form-row">
+            <div class="qk-form-group" id="groupParentId">
+              <label class="qk-form-label">Magazzino genitore</label>
+              <select name="parent_id" id="selectParentId" class="qk-form-control <?= isset($errors['parent_id']) ? 'is-invalid' : '' ?>">
+                <option value="">— Nessuno (sede esterna indipendente) —</option>
+                <?php foreach ($radici as $r): ?>
+                <option value="<?= $r['id'] ?>" <?= (int) $v['parent_id'] === (int) $r['id'] ? 'selected' : '' ?>>
+                  <?= e($r['nome']) ?>
+                </option>
+                <?php endforeach; ?>
+              </select>
+              <?php if (isset($errors['parent_id'])): ?>
+              <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['parent_id']) ?></span>
+              <?php endif; ?>
+              <span class="qk-form-hint mt-1 d-block">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                Se selezioni un genitore, stai dichiarando che questo magazzino condivide la stessa sede fisica: gli
+                spostamenti tra i due diventeranno istantanei (trasferimento diretto), senza documento di trasporto.
+              </span>
+            </div>
+            <div class="qk-form-group" id="groupSoggettoEsterno">
+              <label class="qk-form-label">Gestito da (soggetto esterno)</label>
+              <select name="soggetto_esterno_id" class="qk-form-control <?= isset($errors['soggetto_esterno_id']) ? 'is-invalid' : '' ?>">
+                <option value="">— Nessuno —</option>
+                <?php foreach ($soggetti as $s): ?>
+                <option value="<?= $s['id'] ?>" <?= (int) $v['soggetto_esterno_id'] === (int) $s['id'] ? 'selected' : '' ?>>
+                  <?= e($s['nome_display']) ?>
+                </option>
+                <?php endforeach; ?>
+              </select>
+              <?php if (isset($errors['soggetto_esterno_id'])): ?>
+              <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['soggetto_esterno_id']) ?></span>
+              <?php endif; ?>
+              <span class="qk-form-hint mt-1 d-block">Il terzista/3PL che gestisce fisicamente questo sito (conto terzi/conto lavoro).</span>
             </div>
           </div>
         </div>
@@ -155,3 +201,44 @@ $v = $values;
   </div>
 
 </div><!-- /qk-form-grid -->
+
+<script>
+(function () {
+  'use strict';
+  var selectTipo   = document.getElementById('selectTipoMagazzino');
+  var groupParent  = document.getElementById('groupParentId');
+  var selectParent = document.getElementById('selectParentId');
+  var groupSogg    = document.getElementById('groupSoggettoEsterno');
+  var form         = document.getElementById('formMagazzino');
+  if (!selectTipo || !form) return;
+
+  var parentIniziale = selectParent.value;
+
+  function aggiornaVisibilita() {
+    var tipo = selectTipo.value;
+    var isFisico = tipo === 'fisico';
+    groupParent.hidden = isFisico;
+    if (isFisico) selectParent.value = '';
+    groupSogg.hidden = !(tipo === 'conto_terzi' || tipo === 'conto_lavoro');
+  }
+
+  selectTipo.addEventListener('change', aggiornaVisibilita);
+  aggiornaVisibilita();
+
+  // Avviso esplicito (Trasferimenti tra Magazzini come Documento.md, §9.3):
+  // impostare/cambiare un parent_id dichiara che i due magazzini sono la
+  // stessa sede fisica, rendendo istantanei (trasferimento diretto) gli
+  // spostamenti tra loro — è una decisione strutturale, va confermata consapevolmente.
+  form.addEventListener('submit', function (e) {
+    if (selectParent.value !== '' && selectParent.value !== parentIniziale) {
+      var ok = window.confirm(
+        'Stai dichiarando che questi due magazzini sono la stessa sede fisica: ' +
+        'gli spostamenti tra loro diventeranno istantanei, senza documento di trasporto. Continuare?'
+      );
+      if (!ok) {
+        e.preventDefault();
+      }
+    }
+  });
+})();
+</script>

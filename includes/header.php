@@ -50,7 +50,11 @@ if (!empty($aziende_topbar)) {
 // Selettore magazzino attivo (Piano Multi-Magazzino §3.3/§3.10) — stesso
 // pattern del selettore azienda sopra, con qk_magazzino_attivo_id() come
 // unica fonte di verità per la risoluzione predefinita/fallback (§3.8).
-$magazzini_topbar = qk_magazzini_list($pdo, true);
+// Solo fisici radice (Trasferimenti tra Magazzini come Documento.md, §7.2):
+// una sede virtuale/conto_terzi/conto_lavoro non deve mai poter diventare la
+// sede "attiva" di sessione, anche se resta selezionabile come origine/
+// destinazione in un trasferimento (vedi qk_magazzini_list()).
+$magazzini_topbar = qk_magazzini_list($pdo, true, true);
 $attivo_magazzino = null;
 if (!empty($magazzini_topbar)) {
     try {

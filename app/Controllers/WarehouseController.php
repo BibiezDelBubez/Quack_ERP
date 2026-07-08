@@ -737,14 +737,17 @@ class WarehouseController extends BaseController
     {
         $search = get_param('q', '');
         $stato  = get_param('stato', '');
+        $creazione = get_param('creazione', '');
 
         $statiValidi = ['', 'bozza', 'in_transito', 'completato', 'annullato'];
         if (!in_array($stato, $statiValidi, true)) $stato = '';
+        $creazioneValide = ['', 'trasferimento', 'diretto'];
+        if (!in_array($creazione, $creazioneValide, true)) $creazione = '';
 
         $pag = qk_pagination_params(['data', 'numero', 'stato'], 'data', 'desc');
 
-        $total = qk_trasferimenti_count($this->pdo, $search, $stato);
-        $trasferimenti = qk_trasferimenti_list($this->pdo, $search, $stato, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
+        $total = qk_trasferimenti_count($this->pdo, $search, $stato, $creazione);
+        $trasferimenti = qk_trasferimenti_list($this->pdo, $search, $stato, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset'], $creazione);
 
         $page_title    = 'Trasferimenti tra Magazzini';
         $page_subtitle = 'Movimentazioni interne tra sedi';
@@ -752,14 +755,91 @@ class WarehouseController extends BaseController
             ['label' => 'Magazzino', 'url' => url('warehouse')],
             ['label' => 'Trasferimenti'],
         ];
-        $page_actions  = '<a href="' . url('warehouse/transfers/create') . '" class="btn-qk btn-qk-primary">
+        $page_actions  = '<a href="' . url('warehouse/transfers/diretto') . '" class="btn-qk btn-qk-secondary">
+            <i class="fa-solid fa-bolt"></i> Trasferimento diretto
+        </a>
+        <a href="' . url('warehouse/transfers/create') . '" class="btn-qk btn-qk-primary">
             <i class="fa-solid fa-plus"></i> Nuovo trasferimento
         </a>';
         $extra_css = ['warehouse.css'];
 
         $this->page(APP_ROOT_DIR . '/app/views/warehouse/transfers_list.php', compact(
-            'search', 'stato', 'total', 'trasferimenti', 'pag',
+            'search', 'stato', 'creazione', 'total', 'trasferimenti', 'pag',
             'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions', 'extra_css'
+        ));
+    }
+
+    /**
+     * Trasferimento diretto: form semplificato per lo spostamento istantaneo
+     * tra due magazzini con la stessa radice fisica (Trasferimenti tra
+     * Magazzini come Documento.md, §7.2, Regola A — nome allineato al lessico
+     * SAP/Dynamics 365, vedi qk_registra_trasferimento_diretto()). Riusa
+     * qk_magazzini_list($pdo, true) senza il filtro $soloRadiciFisiche: un
+     * virtuale/conto_terzi/conto_lavoro deve poter comparire come origine o
+     * destinazione qui, esattamente come nel form del trasferimento pieno.
+     */
+    public function trasferimentoDiretto(): void
+    {
+        $errors = [];
+        $magazzini = qk_magazzini_list($this->pdo, true);
+
+        $values = [
+            'magazzino_origine_id'      => '',
+            'magazzino_destinazione_id' => '',
+            'data_richiesta'            => date('Y-m-d'),
+            'note'                      => '',
+        ];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
+            } else {
+                $values['magazzino_origine_id']      = post('magazzino_origine_id', '');
+                $values['magazzino_destinazione_id'] = post('magazzino_destinazione_id', '');
+                $values['data_richiesta']            = post('data_richiesta', date('Y-m-d'));
+                $values['note']                      = post('note', '');
+
+                $prodottiPost = $_POST['riga_prodotto_id'] ?? [];
+                $lottiPost    = $_POST['riga_lotto_id'] ?? [];
+                $qtaPost      = $_POST['riga_quantita'] ?? [];
+
+                $righe = [];
+                foreach ($prodottiPost as $i => $pid) {
+                    if (empty($pid)) continue;
+                    $righe[] = [
+                        'prodotto_id'         => (int) $pid,
+                        'lotto_id'            => !empty($lottiPost[$i]) ? (int) $lottiPost[$i] : null,
+                        'quantita_richiesta'  => (float) ($qtaPost[$i] ?? 0),
+                    ];
+                }
+
+                try {
+                    $header = [
+                        'magazzino_origine_id'      => (int) $values['magazzino_origine_id'],
+                        'magazzino_destinazione_id' => (int) $values['magazzino_destinazione_id'],
+                        'data_richiesta'            => $values['data_richiesta'],
+                        'note'                      => $values['note'],
+                    ];
+                    $id = qk_registra_trasferimento_diretto($this->pdo, $header, $righe, (int) current_user()['id']);
+                    redirect_with('warehouse/transfers/view?id=' . $id, 'success', 'Trasferimento diretto registrato: giacenza spostata istantaneamente.');
+                } catch (\Throwable $e) {
+                    $errors['_global'] = $e->getMessage();
+                }
+            }
+        }
+
+        $page_title    = 'Trasferimento diretto';
+        $page_subtitle = 'Spostamento istantaneo tra sedi della stessa radice fisica';
+        $breadcrumbs   = [
+            ['label' => 'Magazzino', 'url' => url('warehouse')],
+            ['label' => 'Trasferimenti', 'url' => url('warehouse/transfers')],
+            ['label' => 'Trasferimento diretto'],
+        ];
+        $extra_css = ['warehouse.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/transfers_diretto.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'errors', 'values', 'magazzini'
         ));
     }
 

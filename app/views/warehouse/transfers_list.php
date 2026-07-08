@@ -1,7 +1,7 @@
 <?php
 /**
  * warehouse/transfers_list.php
- * Variabili: $trasferimenti, $total, $search, $stato, $pag
+ * Variabili: $trasferimenti, $total, $search, $stato, $creazione, $pag
  */
 $statoLabels = [
     ''            => 'Tutti gli stati',
@@ -16,11 +16,23 @@ $statoBadgeMap = [
     'completato'  => ['label' => 'Completato',  'cls' => 'confirmed'],
     'annullato'   => ['label' => 'Annullato',   'cls' => 'cancelled'],
 ];
+$creazioneLabels = [
+    ''              => 'Tutti',
+    'trasferimento' => 'Con transito',
+    'diretto'       => 'Diretti',
+];
 $base = url('warehouse/transfers');
 $sort = $pag['sort']; $dir = $pag['dir'];
 $hasFilters = $search !== '';
 ?>
 <?php $active_tab = 'transfers'; include __DIR__ . '/_subnav.php'; ?>
+
+<div class="qk-filter-pills mb-2">
+  <?php foreach ($creazioneLabels as $k => $lbl): ?>
+  <a href="<?= e(qk_list_url($base, ['creazione' => $k ?: null])) ?>"
+     class="qk-filter-pill <?= $creazione === $k ? 'active' : '' ?>"><?= e($lbl) ?></a>
+  <?php endforeach; ?>
+</div>
 
 <div class="qk-card">
   <div class="qk-table-toolbar">
@@ -31,13 +43,14 @@ $hasFilters = $search !== '';
                placeholder="Numero, magazzino…" value="<?= e($search) ?>" autocomplete="off">
       </div>
       <?php if ($stato !== ''): ?><input type="hidden" name="stato" value="<?= e($stato) ?>"><?php endif; ?>
+      <?php if ($creazione !== ''): ?><input type="hidden" name="creazione" value="<?= e($creazione) ?>"><?php endif; ?>
       <?php if ($sort !== 'data'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
       <?php if ($dir  !== 'desc'): ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
       <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm" title="Filtra">
         <i class="fa-solid fa-magnifying-glass"></i>
       </button>
       <?php if ($hasFilters): ?>
-      <a href="<?= $base ?><?= $stato ? '?stato='.e($stato) : '' ?>"
+      <a href="<?= e(qk_list_url($base, ['q' => null])) ?>"
          class="btn-qk btn-qk-secondary btn-qk-sm" title="Rimuovi filtri">
         <i class="fa-solid fa-xmark"></i>
       </a>
@@ -63,11 +76,12 @@ $hasFilters = $search !== '';
           <th class="text-center">Righe</th>
           <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'stato', $sort, $dir)) ?>">Stato<?= qk_sort_icon('stato', $sort, $dir) ?></a></th>
           <th class="qk-sortable"><a href="<?= e(qk_sort_url($base, 'data', $sort, $dir)) ?>">Data richiesta<?= qk_sort_icon('data', $sort, $dir) ?></a></th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         <?php if (empty($trasferimenti)): ?>
-        <tr><td colspan="6" class="qk-table-empty"><i class="fa-solid fa-truck-arrow-right"></i> Nessun trasferimento trovato.</td></tr>
+        <tr><td colspan="7" class="qk-table-empty"><i class="fa-solid fa-truck-arrow-right"></i> Nessun trasferimento trovato.</td></tr>
         <?php else: foreach ($trasferimenti as $t):
           $bd = $statoBadgeMap[$t['stato']] ?? ['label' => $t['stato'], 'cls' => 'draft'];
         ?>
@@ -82,6 +96,11 @@ $hasFilters = $search !== '';
           <td class="text-center"><?= (int) $t['n_righe'] ?></td>
           <td><span class="qk-badge <?= $bd['cls'] ?>"><?= e($bd['label']) ?></span></td>
           <td class="qk-text-muted" style="font-size:.82rem"><?= e(fmt_date($t['data_richiesta'])) ?></td>
+          <td>
+            <?php if ($t['tipo_creazione'] === 'diretto'): ?>
+            <span class="qk-badge draft" title="Spostamento istantaneo, stessa radice fisica"><i class="fa-solid fa-bolt"></i> Diretto</span>
+            <?php endif; ?>
+          </td>
         </tr>
         <?php endforeach; endif; ?>
       </tbody>

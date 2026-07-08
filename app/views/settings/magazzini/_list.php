@@ -4,9 +4,10 @@
  * Variabili attese: $magazzini, $total
  */
 $tipoLabel = [
-    'fisico'      => 'Fisico',
-    'virtuale'    => 'Virtuale',
-    'conto_terzi' => 'Conto terzi',
+    'fisico'       => 'Fisico',
+    'virtuale'     => 'Virtuale',
+    'conto_terzi'  => 'Conto terzi',
+    'conto_lavoro' => 'Conto lavoro',
 ];
 ?>
 
@@ -47,11 +48,19 @@ $tipoLabel = [
         <tr<?= !$m['attivo'] ? ' class="qk-text-muted"' : '' ?>>
           <td>
             <div class="fw-semibold">
+              <?php if (!empty($m['parent_id'])): ?>
+                <i class="fa-solid fa-turn-up fa-rotate-90 qk-text-muted" style="font-size:.75rem" title="Sotto <?= e($m['parent_nome'] ?? '') ?>"></i>
+              <?php endif; ?>
               <a href="<?= url('settings/magazzini/edit?id=' . $m['id']) ?>">
                 <?= e($m['nome']) ?>
               </a>
             </div>
             <code style="font-size:.75rem"><?= e($m['codice']) ?></code>
+            <?php if (!empty($m['parent_nome'])): ?>
+              <div class="qk-text-muted" style="font-size:.72rem">↳ <?= e($m['parent_nome']) ?></div>
+            <?php elseif (!empty($m['soggetto_esterno_nome'])): ?>
+              <div class="qk-text-muted" style="font-size:.72rem"><i class="fa-solid fa-truck-field"></i> <?= e($m['soggetto_esterno_nome']) ?></div>
+            <?php endif; ?>
           </td>
           <td><?= e($tipoLabel[$m['tipo']] ?? $m['tipo']) ?></td>
           <td><?= $m['azienda_interna_nome'] ? e($m['azienda_interna_nome']) : '<span class="qk-text-muted">—</span>' ?></td>

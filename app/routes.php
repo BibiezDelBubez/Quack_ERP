@@ -118,6 +118,7 @@ return [
     '/warehouse/api/prodotti-search'  => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiProdottiSearch',   'auth' => true],
     '/warehouse/transfers'            => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'transfers',       'auth' => true],
     '/warehouse/transfers/create'     => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'createTransfer',  'auth' => true, 'permission' => 'manage_warehouse'],
+    '/warehouse/transfers/diretto'    => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'trasferimentoDiretto', 'auth' => true, 'permission' => 'manage_warehouse'],
     '/warehouse/transfers/view'       => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'viewTransfer',    'auth' => true],
     '/warehouse/transfers/action'     => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'transferAction',  'auth' => true, 'permission' => 'manage_warehouse'],
     '/warehouse/api/lotti-per-magazzino' => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiLottiPerMagazzino', 'auth' => true],

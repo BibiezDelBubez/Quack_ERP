@@ -675,27 +675,73 @@ function qk_prodotti_search_stock(PDO $pdo, string $q, int $limit = 20): array
 /**
  * Lista magazzini per anagrafica e selettori (topbar, form documento).
  *
- * @param bool $soloAttivi  se true (default), esclude i magazzini disattivati
- *                          (usato nei selettori: un magazzino disattivato non
- *                          deve poter essere scelto per nuove operazioni, ma
- *                          resta visibile nell'anagrafica con $soloAttivi=false)
+ * @param bool $soloAttivi         se true (default), esclude i magazzini disattivati
+ *                                 (usato nei selettori: un magazzino disattivato non
+ *                                 deve poter essere scelto per nuove operazioni, ma
+ *                                 resta visibile nell'anagrafica con $soloAttivi=false)
+ * @param bool $soloRadiciFisiche  se true, restituisce solo magazzini tipo='fisico'
+ *                                 AND parent_id IS NULL (Trasferimenti tra Magazzini
+ *                                 come Documento.md, §7.2): usato SOLO dal selettore
+ *                                 di sessione in header.php — una sede virtuale/
+ *                                 conto_terzi/conto_lavoro non deve mai diventare la
+ *                                 sede "attiva" di lavoro, ma deve restare selezionabile
+ *                                 come origine/destinazione di un trasferimento
+ *                                 (PurchaseOrdersController, WarehouseController::
+ *                                 createTransfer/trasferimentoDiretto NON passano questo flag).
  */
-function qk_magazzini_list(PDO $pdo, bool $soloAttivi = false): array
+function qk_magazzini_list(PDO $pdo, bool $soloAttivi = false, bool $soloRadiciFisiche = false): array
 {
     $sql = "SELECT m.id, m.codice, m.nome, m.tipo, m.predefinito, m.attivo, m.note,
-                   m.azienda_interna_id, m.indirizzo_id,
+                   m.azienda_interna_id, m.indirizzo_id, m.parent_id, m.soggetto_esterno_id,
                    ai.ragione_sociale AS azienda_interna_nome,
-                   i.citta AS indirizzo_citta, i.via AS indirizzo_via
+                   i.citta AS indirizzo_citta, i.via AS indirizzo_via,
+                   pm.nome AS parent_nome,
+                   COALESCE(NULLIF(cf.ragione_sociale, ''), TRIM(cf.nome || ' ' || COALESCE(cf.cognome, ''))) AS soggetto_esterno_nome
               FROM magazzini m
               LEFT JOIN aziende_interne az2 ON az2.id = m.azienda_interna_id
               LEFT JOIN clienti_fornitori ai ON ai.id = az2.soggetto_id
-              LEFT JOIN indirizzi i ON i.id = m.indirizzo_id";
+              LEFT JOIN indirizzi i ON i.id = m.indirizzo_id
+              LEFT JOIN magazzini pm ON pm.id = m.parent_id
+              LEFT JOIN clienti_fornitori cf ON cf.id = m.soggetto_esterno_id";
+    $where = [];
     if ($soloAttivi) {
-        $sql .= " WHERE m.attivo = 1";
+        $where[] = 'm.attivo = 1';
+    }
+    if ($soloRadiciFisiche) {
+        $where[] = "m.tipo = 'fisico' AND m.parent_id IS NULL";
+    }
+    if ($where) {
+        $sql .= ' WHERE ' . implode(' AND ', $where);
     }
     $sql .= " ORDER BY m.predefinito DESC, m.nome COLLATE NOCASE";
 
     return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Radice fisica di un magazzino (Trasferimenti tra Magazzini come Documento.md,
+ * §7.1): COALESCE(parent_id, id). Due magazzini con la stessa radice fisica
+ * possono usare il trasferimento diretto istantaneo invece del documento con transito.
+ */
+function qk_magazzini_radice_fisica(PDO $pdo, int $id): int
+{
+    $st = $pdo->prepare('SELECT COALESCE(parent_id, id) FROM magazzini WHERE id = ?');
+    $st->execute([$id]);
+    $radice = $st->fetchColumn();
+    if ($radice === false) {
+        throw new \RuntimeException('Magazzino non trovato.');
+    }
+    return (int) $radice;
+}
+
+/**
+ * True se due magazzini condividono la stessa radice fisica (§7.2, Regola A):
+ * criterio che decide se lo spostamento tra loro può essere un trasferimento
+ * diretto istantaneo o richiede il documento di trasferimento con transito.
+ */
+function qk_magazzino_stessa_radice(PDO $pdo, int $idA, int $idB): bool
+{
+    return qk_magazzini_radice_fisica($pdo, $idA) === qk_magazzini_radice_fisica($pdo, $idB);
 }
 
 /**
@@ -720,6 +766,8 @@ function qk_load_magazzino_form(PDO $pdo, int $id): ?array
         'tipo'                => (string) $row['tipo'],
         'azienda_interna_id'  => $row['azienda_interna_id'] !== null ? (int) $row['azienda_interna_id'] : null,
         'indirizzo_id'        => $row['indirizzo_id'] !== null ? (int) $row['indirizzo_id'] : null,
+        'parent_id'           => $row['parent_id'] !== null ? (int) $row['parent_id'] : null,
+        'soggetto_esterno_id' => $row['soggetto_esterno_id'] !== null ? (int) $row['soggetto_esterno_id'] : null,
         'predefinito'         => (bool) $row['predefinito'],
         'attivo'              => (bool) $row['attivo'],
         'note'                => (string) ($row['note'] ?? ''),
@@ -794,11 +842,13 @@ function qk_insert_magazzino(PDO $pdo, array $v): int
         }
 
         $aziendaInternaId = !empty($v['azienda_interna_id']) ? (int) $v['azienda_interna_id'] : null;
+        $parentId = !empty($v['parent_id']) ? (int) $v['parent_id'] : null;
+        $soggettoEsternoId = !empty($v['soggetto_esterno_id']) ? (int) $v['soggetto_esterno_id'] : null;
         $indirizzoId = _qk_magazzino_sync_indirizzo($pdo, $aziendaInternaId, null, $v);
 
         $st = $pdo->prepare(
-            "INSERT INTO magazzini (codice, nome, tipo, azienda_interna_id, indirizzo_id, predefinito, attivo, note, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)"
+            "INSERT INTO magazzini (codice, nome, tipo, azienda_interna_id, indirizzo_id, parent_id, soggetto_esterno_id, predefinito, attivo, note, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)"
         );
         $st->execute([
             trim((string) $v['codice']),
@@ -806,6 +856,8 @@ function qk_insert_magazzino(PDO $pdo, array $v): int
             $v['tipo'],
             $aziendaInternaId,
             $indirizzoId,
+            $parentId,
+            $soggettoEsternoId,
             (int) !empty($v['predefinito']),
             (int) ($v['attivo'] ?? true),
             trim((string) ($v['note'] ?? '')) ?: null,
@@ -815,9 +867,13 @@ function qk_insert_magazzino(PDO $pdo, array $v): int
         // Se è il primo magazzino mai creato (dataset senza seed), forzalo
         // comunque a predefinito: non deve mai esistere un sistema con
         // magazzini ma senza nessuno predefinito (qk_magazzino_attivo_id ne
-        // dipende).
+        // dipende). Solo se è un fisico radice: un virtuale/conto_terzi/
+        // conto_lavoro non può mai diventare il predefinito di sistema (§7.2) —
+        // in pratica non capita mai come primo record, perché un virtuale
+        // richiede un parent_id che punti a un fisico già esistente, ma il
+        // guard resta per coerenza con le altre 3 funzioni di fallback.
         $count = (int) $pdo->query("SELECT COUNT(*) FROM magazzini WHERE predefinito = 1")->fetchColumn();
-        if ($count === 0) {
+        if ($count === 0 && $v['tipo'] === 'fisico' && $parentId === null) {
             $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$id]);
         }
 
@@ -845,6 +901,8 @@ function qk_update_magazzino(PDO $pdo, int $id, array $v): void
         }
 
         $aziendaInternaId = !empty($v['azienda_interna_id']) ? (int) $v['azienda_interna_id'] : null;
+        $parentId = !empty($v['parent_id']) ? (int) $v['parent_id'] : null;
+        $soggettoEsternoId = !empty($v['soggetto_esterno_id']) ? (int) $v['soggetto_esterno_id'] : null;
         // L'indirizzo esistente è riusabile solo se l'azienda interna non è cambiata
         // (altrimenti apparterrebbe al soggetto sbagliato): in quel caso se ne crea uno nuovo.
         $indirizzoEsistente = ($aziendaInternaId === (int) ($cur['azienda_interna_id'] ?? 0))
@@ -855,7 +913,7 @@ function qk_update_magazzino(PDO $pdo, int $id, array $v): void
         $st = $pdo->prepare(
             "UPDATE magazzini SET
                 codice = ?, nome = ?, tipo = ?, azienda_interna_id = ?, indirizzo_id = ?,
-                predefinito = ?, attivo = ?, note = ?
+                parent_id = ?, soggetto_esterno_id = ?, predefinito = ?, attivo = ?, note = ?
              WHERE id = ?"
         );
         $st->execute([
@@ -864,6 +922,8 @@ function qk_update_magazzino(PDO $pdo, int $id, array $v): void
             $v['tipo'],
             $aziendaInternaId,
             $indirizzoId,
+            $parentId,
+            $soggettoEsternoId,
             (int) !empty($v['predefinito']),
             (int) !empty($v['attivo']),
             trim((string) ($v['note'] ?? '')) ?: null,
@@ -872,10 +932,12 @@ function qk_update_magazzino(PDO $pdo, int $id, array $v): void
 
         // Non deve mai restare un sistema senza alcun magazzino predefinito
         // (es. se l'utente toglie la spunta "predefinito" dall'unico che la
-        // aveva, senza assegnarla a un altro): riassegna al primo attivo.
+        // aveva, senza assegnarla a un altro): riassegna al primo attivo fisico
+        // radice (§7.2) — un virtuale/conto_terzi/conto_lavoro non può mai
+        // diventare il predefinito di sistema.
         $count = (int) $pdo->query("SELECT COUNT(*) FROM magazzini WHERE predefinito = 1")->fetchColumn();
         if ($count === 0) {
-            $fallbackId = $pdo->query("SELECT id FROM magazzini WHERE attivo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+            $fallbackId = $pdo->query("SELECT id FROM magazzini WHERE attivo = 1 AND tipo = 'fisico' AND parent_id IS NULL ORDER BY id LIMIT 1")->fetchColumn();
             if ($fallbackId) {
                 $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$fallbackId]);
             }
@@ -896,14 +958,20 @@ function qk_imposta_magazzino_predefinito(PDO $pdo, int $id): void
 {
     $pdo->beginTransaction();
     try {
-        $st = $pdo->prepare("SELECT attivo FROM magazzini WHERE id = ?");
+        $st = $pdo->prepare("SELECT attivo, tipo, parent_id FROM magazzini WHERE id = ?");
         $st->execute([$id]);
-        $attivo = $st->fetchColumn();
-        if ($attivo === false) {
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
             throw new \RuntimeException('Magazzino non trovato.');
         }
-        if (!$attivo) {
+        if (!$row['attivo']) {
             throw new \RuntimeException('Impossibile impostare come predefinito un magazzino disattivato.');
+        }
+        // Solo un fisico radice può essere il predefinito di sistema (§7.2):
+        // una sede virtuale/conto_terzi/conto_lavoro non ha senso come sede
+        // "attiva" preselezionata per nuove operazioni.
+        if ($row['tipo'] !== 'fisico' || $row['parent_id'] !== null) {
+            throw new \RuntimeException('Solo un magazzino fisico radice può essere impostato come predefinito.');
         }
 
         $pdo->query("UPDATE magazzini SET predefinito = 0");
@@ -954,7 +1022,7 @@ function qk_disattiva_magazzino(PDO $pdo, int $id): void
         $pdo->prepare("UPDATE magazzini SET attivo = 0, predefinito = 0 WHERE id = ?")->execute([$id]);
 
         if ($row['predefinito']) {
-            $fallbackId = $pdo->query("SELECT id FROM magazzini WHERE attivo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+            $fallbackId = $pdo->query("SELECT id FROM magazzini WHERE attivo = 1 AND tipo = 'fisico' AND parent_id IS NULL ORDER BY id LIMIT 1")->fetchColumn();
             if ($fallbackId) {
                 $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$fallbackId]);
             }

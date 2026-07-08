@@ -769,8 +769,8 @@ CREATE TABLE IF NOT EXISTS magazzini (
     -- MagazziniController::validate() (SQLite non esprime facilmente in un CHECK una
     -- condizione che dipende da un'altra riga della stessa tabella). Due magazzini
     -- condividono la stessa "radice fisica" quando COALESCE(parent_id, id) coincide:
-    -- è il criterio che decide se un trasferimento tra loro può essere un Giroconto
-    -- istantaneo o richiede il documento con transito. NULL per i magazzini fisici
+    -- è il criterio che decide se un trasferimento tra loro può essere diretto
+    -- (istantaneo) o richiede il documento con transito. NULL per i magazzini fisici
     -- radice (comportamento di sempre, retrocompatibile con i dati già seminati).
     parent_id           INTEGER      REFERENCES magazzini(id),
 
@@ -895,6 +895,18 @@ CREATE TABLE IF NOT EXISTS trasferimenti_magazzino (
     data_richiesta              DATE         NOT NULL,
     data_partenza               DATE,
     data_arrivo                 DATE,
+    -- Distingue il documento pieno (con transito, creato da createTransfer()) dal
+    -- Trasferimento diretto istantaneo (Trasferimenti tra Magazzini come
+    -- Documento.md, §7.2 — stesso termine usato da SAP per il movimento
+    -- immediato uscita/entrata simultanea, tipo 301/311, e concettualmente
+    -- equivalente al Giornale di Trasferimento di Dynamics 365, contrapposto
+    -- all'Ordine di Trasferimento con transito): il trasferimento diretto
+    -- incatena le stesse funzioni bozza->in_transito->completato in un'unica
+    -- chiamata (qk_registra_trasferimento_diretto), quindi a schema di stato
+    -- è indistinguibile da un trasferimento normale già completato — questo
+    -- tag serve solo per il filtro/tab nella UI, non cambia la logica di dominio.
+    tipo_creazione               TEXT         NOT NULL DEFAULT 'trasferimento'
+                                              CHECK (tipo_creazione IN ('trasferimento', 'diretto')),
     note                        TEXT,
     creato_da                   INTEGER      NOT NULL REFERENCES utenti(id),
     created_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

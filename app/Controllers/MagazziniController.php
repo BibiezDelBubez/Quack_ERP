@@ -35,6 +35,8 @@ final class MagazziniController extends BaseController
         $errors    = [];
         $values    = $this->defaultValues();
         $aziende   = qk_aziende_list($this->pdo);
+        $radici    = qk_magazzini_list($this->pdo, true, true);
+        $soggetti  = $this->soggettiEsterniList();
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!csrf_verify()) {
@@ -85,9 +87,14 @@ final class MagazziniController extends BaseController
             exit;
         }
 
-        $values  = array_merge($this->defaultValues(), $loaded);
-        $errors  = [];
-        $aziende = qk_aziende_list($this->pdo);
+        $values   = array_merge($this->defaultValues(), $loaded);
+        $errors   = [];
+        $aziende  = qk_aziende_list($this->pdo);
+        $radici   = array_values(array_filter(
+            qk_magazzini_list($this->pdo, true, true),
+            static fn(array $m): bool => (int) $m['id'] !== $entity_id
+        ));
+        $soggetti = $this->soggettiEsterniList();
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!csrf_verify()) {
@@ -196,20 +203,22 @@ final class MagazziniController extends BaseController
     private function defaultValues(): array
     {
         return [
-            'codice'             => '',
-            'nome'               => '',
-            'tipo'               => 'fisico',
-            'azienda_interna_id' => null,
-            'indirizzo_id'       => null,
-            'via'                => '',
-            'civico'             => '',
-            'cap'                => '',
-            'citta'              => '',
-            'provincia'          => '',
-            'nazione'            => 'IT',
-            'predefinito'        => false,
-            'attivo'             => true,
-            'note'               => '',
+            'codice'              => '',
+            'nome'                => '',
+            'tipo'                => 'fisico',
+            'azienda_interna_id'  => null,
+            'indirizzo_id'        => null,
+            'parent_id'           => null,
+            'soggetto_esterno_id' => null,
+            'via'                 => '',
+            'civico'              => '',
+            'cap'                 => '',
+            'citta'               => '',
+            'provincia'           => '',
+            'nazione'             => 'IT',
+            'predefinito'         => false,
+            'attivo'              => true,
+            'note'                => '',
         ];
     }
 
@@ -225,10 +234,27 @@ final class MagazziniController extends BaseController
             }
             $current[$k] = post($k, (string) $val);
         }
-        $current['azienda_interna_id'] = post('azienda_interna_id', '') !== '' ? (int) post('azienda_interna_id') : null;
+        $current['azienda_interna_id']  = post('azienda_interna_id', '') !== '' ? (int) post('azienda_interna_id') : null;
+        $current['parent_id']           = post('parent_id', '') !== '' ? (int) post('parent_id') : null;
+        $current['soggetto_esterno_id'] = post('soggetto_esterno_id', '') !== '' ? (int) post('soggetto_esterno_id') : null;
         $current['predefinito'] = isset($_POST['predefinito']) ? '1' : '0';
         $current['attivo']      = isset($_POST['attivo']) ? '1' : '0';
         return $current;
+    }
+
+    /**
+     * Anagrafica soggetti esterni per il selettore "gestito da" dei magazzini
+     * conto_terzi/conto_lavoro (§7.1) — riusa clienti_fornitori invece di
+     * duplicare nome/indirizzo del terzista in testo libero.
+     */
+    private function soggettiEsterniList(): array
+    {
+        return $this->pdo->query(
+            "SELECT id, COALESCE(NULLIF(ragione_sociale, ''), TRIM(nome || ' ' || COALESCE(cognome, ''))) AS nome_display
+               FROM clienti_fornitori
+              WHERE attivo = 1
+              ORDER BY nome_display COLLATE NOCASE"
+        )->fetchAll(PDO::FETCH_ASSOC);
     }
 
     private function validate(array $values, ?int $excludeId): array
@@ -248,9 +274,61 @@ final class MagazziniController extends BaseController
         if (trim((string) $values['nome']) === '') {
             $errors['nome'] = 'Il nome è obbligatorio.';
         }
-        if (!in_array($values['tipo'], ['fisico', 'virtuale', 'conto_terzi'], true)) {
+
+        $tipiValidi = ['fisico', 'virtuale', 'conto_terzi', 'conto_lavoro'];
+        if (!in_array($values['tipo'], $tipiValidi, true)) {
             $errors['tipo'] = 'Tipo magazzino non valido.';
         }
+
+        // Gerarchia spaziale a due soli livelli (Trasferimenti tra Magazzini
+        // come Documento.md, §7.1): un fisico è sempre radice (parent_id NULL);
+        // un virtuale/conto_terzi/conto_lavoro, se ha un genitore, può puntare
+        // SOLO a un fisico radice — mai a un altro non-fisico o a un fisico
+        // che a sua volta ha un genitore (vieterebbe di fatto un terzo livello).
+        $parentId = $values['parent_id'] !== null && $values['parent_id'] !== '' ? (int) $values['parent_id'] : null;
+        if ($values['tipo'] === 'fisico') {
+            if ($parentId !== null) {
+                $errors['parent_id'] = 'Un magazzino fisico non può avere un genitore: è sempre una radice.';
+            }
+        } elseif ($parentId !== null) {
+            if ($excludeId !== null && $parentId === $excludeId) {
+                $errors['parent_id'] = 'Un magazzino non può essere genitore di se stesso.';
+            } else {
+                $st = $this->pdo->prepare('SELECT tipo, parent_id FROM magazzini WHERE id = ?');
+                $st->execute([$parentId]);
+                $parent = $st->fetch(PDO::FETCH_ASSOC);
+                if (!$parent || $parent['tipo'] !== 'fisico' || $parent['parent_id'] !== null) {
+                    $errors['parent_id'] = 'Il genitore deve essere un magazzino fisico radice.';
+                }
+            }
+        }
+
+        // Un magazzino che ha già dei figli non può diventare a sua volta
+        // non-radice (perderebbe la radice fisica di riferimento per i suoi
+        // figli) né cambiare tipo lasciando di essere fisico.
+        if ($excludeId !== null) {
+            $st = $this->pdo->prepare('SELECT COUNT(*) FROM magazzini WHERE parent_id = ?');
+            $st->execute([$excludeId]);
+            if ((int) $st->fetchColumn() > 0) {
+                if ($values['tipo'] !== 'fisico') {
+                    $errors['tipo'] = 'Questo magazzino è già genitore di altri: non può cambiare tipo da fisico.';
+                }
+                if ($parentId !== null) {
+                    $errors['parent_id'] = 'Questo magazzino è già genitore di altri: non può a sua volta avere un genitore.';
+                }
+            }
+        }
+
+        $soggettoEsternoId = $values['soggetto_esterno_id'] !== null && $values['soggetto_esterno_id'] !== ''
+            ? (int) $values['soggetto_esterno_id'] : null;
+        if ($soggettoEsternoId !== null) {
+            $st = $this->pdo->prepare('SELECT id FROM clienti_fornitori WHERE id = ?');
+            $st->execute([$soggettoEsternoId]);
+            if (!$st->fetchColumn()) {
+                $errors['soggetto_esterno_id'] = 'Soggetto esterno non valido.';
+            }
+        }
+
         return $errors;
     }
 }
