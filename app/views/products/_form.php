@@ -418,16 +418,18 @@ window.QkPF = {
                 </div>
               </div>
               <div class="qk-form-row">
-                <!-- Scorta minima -->
+                <!-- Scorta minima: non più un campo del prodotto (era un unico valore
+                     azienda-wide, superato dal multi-magazzino). Qui mostriamo solo,
+                     a titolo informativo e non modificabile, la soglia impostata per
+                     il magazzino attivo — la modifica vera si fa nel modulo Magazzino,
+                     dove ha senso scegliere per quale sede. Vedi Piano Multi-Magazzino §3.5. -->
                 <div class="qk-form-group">
                   <label class="qk-form-label">
-                    Scorta minima
-                    <span class="qk-form-hint">Sotto questa soglia l'articolo risulterà sottoscorta</span>
+                    Scorta minima (magazzino attivo)
+                    <span class="qk-form-hint">Sola lettura: si imposta per magazzino nel modulo Magazzino, non da qui</span>
                   </label>
-                  <input type="number" name="scorta_minima"
-                         class="qk-form-control"
-                         value="<?= e($v['scorta_minima'] ?? '0') ?>"
-                         placeholder="0.000" min="0" step="0.001">
+                  <input type="number" class="qk-form-control" value="<?= e($v['scorta_minima'] ?? '0') ?>"
+                         placeholder="0.000" step="0.001" disabled readonly>
                 </div>
                 <!-- Spazio vuoto per allineamento layout -->
                 <div class="qk-form-group"></div>

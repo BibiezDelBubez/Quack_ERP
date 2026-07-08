@@ -1,0 +1,23 @@
+# EditorConfig — impostazioni condivise per tutti gli editor che lo supportano
+# nativamente (VS Code, PhpStorm, Sublime, ecc. — nessuna estensione richiesta
+# in VS Code, è supportato di serie).
+#
+# Introdotto dopo aver trovato testo con encoding corrotto in db/init_sqlite.sql
+# (caratteri accentati diventati "�"), quasi certamente testo incollato da una
+# fonte salvata in Windows-1252/Latin-1 dentro un file che deve restare UTF-8.
+# Questo file fa sì che gli editor compatibili salvino di default in UTF-8
+# senza BOM, riducendo il rischio che succeda di nuovo. Vedi anche
+# tools/check-utf8.php e .githooks/pre-commit per il controllo automatico.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = false
+indent_style = space
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false

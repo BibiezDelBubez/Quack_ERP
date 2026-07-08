@@ -139,7 +139,7 @@ class SuppliersController extends BaseController
         $contatti_preload = qk_list_contatti_fornitore($this->pdo, $entity_id);
 
         // Dati pre-caricati per gli indirizzi (PHP → JS via window.QkSupplierAddr)
-        $indirizzi_preload = qk_list_indirizzi_fornitore($this->pdo, $entity_id);
+        $indirizzi_preload = qk_list_indirizzi($this->pdo, $entity_id);
 
         // Recupera i listini d'acquisto associati a questo fornitore
         $stmtListini = $this->pdo->prepare("SELECT * FROM listini_acquisto WHERE fornitore_id = ? AND attivo = 1 ORDER BY id DESC");
@@ -282,7 +282,7 @@ class SuppliersController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'supplier_id mancante']);
             exit;
         }
-        $rows = qk_list_indirizzi_fornitore($this->pdo, $supplier_id);
+        $rows = qk_list_indirizzi($this->pdo, $supplier_id);
         ob_end_clean();
         echo json_encode(['ok' => true, 'indirizzi' => $rows]);
         exit;
@@ -351,14 +351,14 @@ class SuppliersController extends BaseController
 
         try {
             if ($address_id > 0) {
-                qk_update_indirizzo_fornitore($this->pdo, $address_id, $supplier_id, $v);
+                qk_update_indirizzo($this->pdo, $address_id, $supplier_id, $v);
                 $id = $address_id;
             } else {
-                $id = qk_insert_indirizzo_fornitore($this->pdo, $supplier_id, $v);
+                $id = qk_insert_indirizzo($this->pdo, $supplier_id, $v);
             }
 
             // Ricarica dalla DB per restituire i dati definitivi
-            $all   = qk_list_indirizzi_fornitore($this->pdo, $supplier_id);
+            $all   = qk_list_indirizzi($this->pdo, $supplier_id);
             $saved = null;
             foreach ($all as $addr) {
                 if ((int) $addr['id'] === (int) $id) { $saved = $addr; break; }
@@ -394,7 +394,7 @@ class SuppliersController extends BaseController
         }
 
         try {
-            qk_delete_indirizzo_fornitore($this->pdo, $address_id, $supplier_id);
+            qk_delete_indirizzo($this->pdo, $address_id, $supplier_id);
             ob_end_clean();
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {

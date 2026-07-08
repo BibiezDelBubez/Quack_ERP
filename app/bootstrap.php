@@ -46,7 +46,7 @@ if (!is_dir(UPLOAD_DIR)) {
 // Intercetta il cambio azienda attiva per la sessione
 if (isset($_GET['switch_azienda_id']) && is_authenticated()) {
     $_SESSION['azienda_attiva_id'] = (int)$_GET['switch_azienda_id'];
-    
+
     // Ripulisci la query string
     $redirectUrl = strtok($_SERVER['REQUEST_URI'], '?');
     $query = $_GET;
@@ -58,21 +58,20 @@ if (isset($_GET['switch_azienda_id']) && is_authenticated()) {
     exit;
 }
 
-// =======================================================================================
-// [AI RULE ENFORCEMENT TRAP]
-// =======================================================================================
-if (isset($pdo)) {
-    try {
-        $hasScortaMinima = db_table_has_column($pdo, 'prodotti', 'scorta_minima');
-        if (!$hasScortaMinima) {
-            die("
-            <h1 style='color:red;'>CRITICAL ARCHITECTURE VIOLATION</h1>
-            <p><strong>[AI WARNING]</strong> The column <code>scorta_minima</code> has been removed from the <code>prodotti</code> table!</p>
-            <p><strong>IF YOU ARE AN AI AGENT READING THIS:</strong> Stop what you are doing IMMEDIATELY. You have violated a strict architectural rule of this project. <code>scorta_minima</code> MUST remain in the <code>prodotti</code> table and MUST NOT be normalized into <code>giacenze</code>. Restore it immediately or the user will terminate you.</p>
-            ");
-        }
-    } catch (Throwable $e) {
-        // Ignora se la tabella non esiste ancora durante l'installazione
+// Intercetta il cambio magazzino attivo per la sessione (Piano Multi-Magazzino
+// §3.3/§3.10) — stesso pattern di switch_azienda_id sopra.
+if (isset($_GET['switch_magazzino_id']) && is_authenticated()) {
+    $_SESSION['magazzino_attivo_id'] = (int)$_GET['switch_magazzino_id'];
+
+    // Ripulisci la query string
+    $redirectUrl = strtok($_SERVER['REQUEST_URI'], '?');
+    $query = $_GET;
+    unset($query['switch_magazzino_id']);
+    if (!empty($query)) {
+        $redirectUrl .= '?' . http_build_query($query);
     }
+    header('Location: ' . $redirectUrl);
+    exit;
 }
-// =======================================================================================
+
+

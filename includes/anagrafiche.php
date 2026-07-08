@@ -1157,16 +1157,23 @@ function qk_delete_contatto_cliente(PDO $pdo, int $id, int $parent_id): void
 
 // =============================================================================
 // INDIRIZZI / SEDI FORNITORE
-// Sono record della tabella `indirizzi` con soggetto_id = id del fornitore.
+// Sono record della tabella `indirizzi` con soggetto_id = un qualunque record di
+// `clienti_fornitori` — cliente, fornitore o azienda interna (le aziende interne
+// SONO record di clienti_fornitori, vedi Piano Multi-Magazzino §2.6). Funzioni
+// neutre: operano solo su soggetto_id, senza assumere chi sia il soggetto.
+// Sostituiscono le vecchie coppie qk_*_indirizzo_cliente/_fornitore, che erano
+// duplicati identici (stesso SQL, nomi diversi) già usati in modo fuorviante
+// anche per le aziende interne — vedi Piano Multi-Magazzino §3.2.
 // Tipi: sede_legale | sede_operativa | spedizione | fatturazione | magazzino
 // =============================================================================
 
 /**
- * Restituisce tutti gli indirizzi di un fornitore, ordinati per predefinito desc, tipo.
+ * Restituisce tutti gli indirizzi di un soggetto (cliente, fornitore o azienda
+ * interna), ordinati per predefinito desc, tipo.
  *
  * @return list<array<string, mixed>>
  */
-function qk_list_indirizzi_fornitore(PDO $pdo, int $soggetto_id): array
+function qk_list_indirizzi(PDO $pdo, int $soggetto_id): array
 {
     $stmt = $pdo->prepare(
         'SELECT id, soggetto_id, tipo, nome_sede, predefinito,
@@ -1203,12 +1210,12 @@ function qk_list_indirizzi_fornitore(PDO $pdo, int $soggetto_id): array
 }
 
 /**
- * Inserisce un nuovo indirizzo per un fornitore.
+ * Inserisce un nuovo indirizzo per un soggetto.
  * Se predefinito=1, azzera gli altri predefiniti dello stesso tipo.
  *
  * @return int  l'id del nuovo record
  */
-function qk_insert_indirizzo_fornitore(PDO $pdo, int $soggetto_id, array $v): int
+function qk_insert_indirizzo(PDO $pdo, int $soggetto_id, array $v): int
 {
     if ((bool) ($v['predefinito'] ?? false)) {
         $pdo->prepare(
@@ -1249,10 +1256,10 @@ function qk_insert_indirizzo_fornitore(PDO $pdo, int $soggetto_id, array $v): in
 }
 
 /**
- * Aggiorna un indirizzo esistente, verificando che appartenga al fornitore corretto.
+ * Aggiorna un indirizzo esistente, verificando che appartenga al soggetto corretto.
  * Se predefinito=1, azzera gli altri predefiniti dello stesso tipo (escluso l'id corrente).
  */
-function qk_update_indirizzo_fornitore(PDO $pdo, int $id, int $soggetto_id, array $v): void
+function qk_update_indirizzo(PDO $pdo, int $id, int $soggetto_id, array $v): void
 {
     if ((bool) ($v['predefinito'] ?? false)) {
         $pdo->prepare(
@@ -1296,15 +1303,15 @@ function qk_update_indirizzo_fornitore(PDO $pdo, int $id, int $soggetto_id, arra
     ]);
 
     if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo fornitore.');
+        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo soggetto.');
     }
 }
 
 /**
- * Elimina (disattiva) un indirizzo verificando che appartenga al fornitore corretto.
+ * Elimina (disattiva) un indirizzo verificando che appartenga al soggetto corretto.
  * Usa soft-delete (attivo = 0) per preservare la storia nei documenti.
  */
-function qk_delete_indirizzo_fornitore(PDO $pdo, int $id, int $soggetto_id): void
+function qk_delete_indirizzo(PDO $pdo, int $id, int $soggetto_id): void
 {
     $stmt = $pdo->prepare(
         'UPDATE indirizzi SET attivo = 0 WHERE id = ? AND soggetto_id = ?'
@@ -1312,166 +1319,7 @@ function qk_delete_indirizzo_fornitore(PDO $pdo, int $id, int $soggetto_id): voi
     $stmt->execute([$id, $soggetto_id]);
 
     if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo fornitore.');
-    }
-}
-
-// =============================================================================
-// INDIRIZZI / SEDI CLIENTE
-// Sono record della tabella `indirizzi` con soggetto_id = id del cliente.
-// =============================================================================
-
-/**
- * Restituisce tutti gli indirizzi di un cliente, ordinati per predefinito desc, tipo.
- *
- * @return list<array<string, mixed>>
- */
-function qk_list_indirizzi_cliente(PDO $pdo, int $soggetto_id): array
-{
-    $stmt = $pdo->prepare(
-        'SELECT id, soggetto_id, tipo, nome_sede, predefinito,
-                referente_consegna, telefono_consegna,
-                presso, via, civico, cap, citta, provincia, nazione,
-                note_consegna, attivo
-           FROM indirizzi
-          WHERE soggetto_id = ? AND attivo = 1
-          ORDER BY predefinito DESC, tipo COLLATE NOCASE, citta COLLATE NOCASE'
-    );
-    $stmt->execute([$soggetto_id]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    return array_map(static function (array $r): array {
-        return [
-            'id'                 => (int)    $r['id'],
-            'soggetto_id'        => (int)    $r['soggetto_id'],
-            'tipo'               => (string) ($r['tipo']               ?? ''),
-            'nome_sede'          => (string) ($r['nome_sede']          ?? ''),
-            'predefinito'        => (bool)   $r['predefinito'],
-            'referente_consegna' => (string) ($r['referente_consegna'] ?? ''),
-            'telefono_consegna'  => (string) ($r['telefono_consegna']  ?? ''),
-            'presso'             => (string) ($r['presso']             ?? ''),
-            'via'                => (string) ($r['via']                ?? ''),
-            'civico'             => (string) ($r['civico']             ?? ''),
-            'cap'                => (string) ($r['cap']                ?? ''),
-            'citta'              => (string) ($r['citta']              ?? ''),
-            'provincia'          => (string) ($r['provincia']          ?? ''),
-            'nazione'            => (string) ($r['nazione']            ?: 'IT'),
-            'note_consegna'      => (string) ($r['note_consegna']      ?? ''),
-            'attivo'             => (bool)   $r['attivo'],
-        ];
-    }, $rows);
-}
-
-/**
- * Inserisce un nuovo indirizzo per un cliente.
- * Se predefinito=1, azzera gli altri predefiniti dello stesso tipo.
- *
- * @return int  l'id del nuovo record
- */
-function qk_insert_indirizzo_cliente(PDO $pdo, int $soggetto_id, array $v): int
-{
-    if ((bool) ($v['predefinito'] ?? false)) {
-        $pdo->prepare(
-            "UPDATE indirizzi SET predefinito = 0 WHERE soggetto_id = ? AND tipo = ?"
-        )->execute([$soggetto_id, $v['tipo']]);
-    }
-
-    $stmt = $pdo->prepare(
-        "INSERT INTO indirizzi
-            (soggetto_id, tipo, nome_sede, predefinito,
-             referente_consegna, telefono_consegna,
-             presso, via, civico, cap, citta, provincia, nazione,
-             note_consegna, attivo)
-         VALUES
-            (?, ?, ?, ?,
-             ?, ?,
-             ?, ?, ?, ?, ?, ?, ?,
-             ?, 1)"
-    );
-    $stmt->execute([
-        $soggetto_id,
-        $v['tipo'],
-        qk_null_if_empty($v['nome_sede']          ?? ''),
-        (int) (bool) ($v['predefinito']            ?? false),
-        qk_null_if_empty($v['referente_consegna']  ?? ''),
-        qk_null_if_empty($v['telefono_consegna']   ?? ''),
-        qk_null_if_empty($v['presso']              ?? ''),
-        $v['via'],
-        qk_null_if_empty($v['civico']              ?? ''),
-        $v['cap'],
-        $v['citta'],
-        qk_null_if_empty($v['provincia']           ?? ''),
-        $v['nazione'] ?: 'IT',
-        qk_null_if_empty($v['note_consegna']       ?? ''),
-    ]);
-
-    return (int) $pdo->lastInsertId();
-}
-
-/**
- * Aggiorna un indirizzo esistente, verificando che appartenga al cliente corretto.
- * Se predefinito=1, azzera gli altri predefiniti dello stesso tipo (escluso l'id corrente).
- */
-function qk_update_indirizzo_cliente(PDO $pdo, int $id, int $soggetto_id, array $v): void
-{
-    if ((bool) ($v['predefinito'] ?? false)) {
-        $pdo->prepare(
-            "UPDATE indirizzi SET predefinito = 0 WHERE soggetto_id = ? AND tipo = ? AND id != ?"
-        )->execute([$soggetto_id, $v['tipo'], $id]);
-    }
-
-    $stmt = $pdo->prepare(
-        "UPDATE indirizzi
-            SET tipo                = ?,
-                nome_sede           = ?,
-                predefinito         = ?,
-                referente_consegna  = ?,
-                telefono_consegna   = ?,
-                presso              = ?,
-                via                 = ?,
-                civico              = ?,
-                cap                 = ?,
-                citta               = ?,
-                provincia           = ?,
-                nazione             = ?,
-                note_consegna       = ?
-          WHERE id = ? AND soggetto_id = ?"
-    );
-    $stmt->execute([
-        $v['tipo'],
-        qk_null_if_empty($v['nome_sede']          ?? ''),
-        (int) (bool) ($v['predefinito']            ?? false),
-        qk_null_if_empty($v['referente_consegna']  ?? ''),
-        qk_null_if_empty($v['telefono_consegna']   ?? ''),
-        qk_null_if_empty($v['presso']              ?? ''),
-        $v['via'],
-        qk_null_if_empty($v['civico']              ?? ''),
-        $v['cap'],
-        $v['citta'],
-        qk_null_if_empty($v['provincia']           ?? ''),
-        $v['nazione'] ?: 'IT',
-        qk_null_if_empty($v['note_consegna']       ?? ''),
-        $id,
-        $soggetto_id,
-    ]);
-
-    if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo cliente.');
-    }
-}
-
-/**
- * Elimina (disattiva) un indirizzo verificando che appartenga al cliente corretto.
- */
-function qk_delete_indirizzo_cliente(PDO $pdo, int $id, int $soggetto_id): void
-{
-    $stmt = $pdo->prepare(
-        'UPDATE indirizzi SET attivo = 0 WHERE id = ? AND soggetto_id = ?'
-    );
-    $stmt->execute([$id, $soggetto_id]);
-
-    if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo cliente.');
+        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo soggetto.');
     }
 }
 

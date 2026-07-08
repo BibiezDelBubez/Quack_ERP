@@ -655,10 +655,26 @@ final class SalesOrdersController extends BaseController
             ")->execute([$numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg, $userId]);
             $ddtId = (int)$this->pdo->lastInsertId();
 
+            // Magazzino di spedizione: finché non esiste un selettore dedicato per le
+            // spedizioni (Piano Multi-Magazzino §4.13/§3.10), si usa il magazzino attivo
+            // come approssimazione interim, coerente con la prenotazione stock (§4.4).
+            $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
+
             $stInsSpedRiga = $this->pdo->prepare("INSERT INTO spedizioni_righe (spedizione_id, ordine_riga_id, prodotto_id, lotto_id, quantita, note) VALUES (?, ?, ?, ?, ?, '')");
             $stInsDdtRiga  = $this->pdo->prepare("INSERT INTO documenti_trasporto_righe (documento_trasporto_id, prodotto_id, descrizione, quantita, unita_misura_id, lotto_id, codice_lotto, is_adr, numero_onu, classe_adr, packing_group, posizione_riga, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')");
             $stUpLotto     = $this->pdo->prepare("UPDATE lotti SET quantita_disponibile = quantita_disponibile - ? WHERE id = ?");
-            $stUpGiac      = $this->pdo->prepare("UPDATE giacenze SET quantita_disponibile = quantita_disponibile - ?, quantita_riservata = quantita_riservata - ? WHERE prodotto_id = ?");
+            // Decremento per-magazzino della disponibilità di lotto (fonte di verità
+            // dal Piano Multi-Magazzino §3.8). L'INSERT iniziale con valore negativo
+            // gestisce il caso raro in cui la riga lotti_giacenze non esista ancora
+            // (es. lotto storico pre-migrazione mai passato da una ricezione scoped).
+            $stUpLottoGiac = $this->pdo->prepare("
+                INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
+                VALUES (?, ?, -?, CURRENT_TIMESTAMP)
+                ON CONFLICT(lotto_id, magazzino_id) DO UPDATE
+                    SET quantita_disponibile = quantita_disponibile - ?,
+                        updated_at = CURRENT_TIMESTAMP
+            ");
+            $stUpGiac      = $this->pdo->prepare("UPDATE giacenze SET quantita_disponibile = quantita_disponibile - ?, quantita_riservata = quantita_riservata - ? WHERE prodotto_id = ? AND magazzino_id = ?");
             $stUpOrdRiga   = $this->pdo->prepare("UPDATE ordini_clienti_righe SET quantita_spedita = quantita_spedita + ? WHERE id = ?");
             $stAdr         = $this->pdo->prepare("SELECT co.codice_onu, co.classe_pericolo, COALESCE(pca.gruppo_imballaggio_override, co.gruppo_imballaggio) AS gruppo_imballaggio FROM prodotto_classificazioni_adr pca JOIN adr_codici_onu co ON co.id = pca.codice_onu_id WHERE pca.prodotto_id = ? AND pca.e_corrente = 1 LIMIT 1");
 
@@ -703,9 +719,10 @@ final class SalesOrdersController extends BaseController
                         $isAdr = !empty($adr) ? 1 : 0;
                         $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], $lottoId, $lot['cl'], $isAdr, $isAdr ? 'UN '.$adr['codice_onu'] : null, $isAdr ? $adr['classe_pericolo'] : null, $isAdr ? $adr['gruppo_imballaggio'] : null, $pos++]);
                         $stUpLotto->execute([$qtaStock, $lottoId]);
-                        $stUpGiac->execute([$qtaStock, $qtaStock, $prodId]);
+                        $stUpLottoGiac->execute([$lottoId, $magazzinoSpedId, $qtaStock, $qtaStock]);
+                        $stUpGiac->execute([$qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
                         $stUpOrdRiga->execute([$qta, $lineId]);
-                        $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $qtaStock, $lottoId, $numDdt, $userId]);
+                        $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $lottoId, $numDdt, $userId]);
                     }
                 } else {
                     $qta = (float)($quantitaNoLottoPost[$lineId] ?? 0.0);
@@ -721,12 +738,12 @@ final class SalesOrdersController extends BaseController
                             $comps = $kitSt->fetchAll(PDO::FETCH_ASSOC);
                             foreach ($comps as $c) {
                                 $cQta = $c['quantita'] * $qtaStock;
-                                $stUpGiac->execute([$cQta, $cQta, $c['componente_id']]);
-                                $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $cQta, $numDdt, $userId]);
+                                $stUpGiac->execute([$cQta, $cQta, $c['componente_id'], $magazzinoSpedId]);
+                                $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $magazzinoSpedId, $cQta, $numDdt, $userId]);
                             }
                         } else {
-                            $stUpGiac->execute([$qtaStock, $qtaStock, $prodId]);
-                            $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $qtaStock, $numDdt, $userId]);
+                            $stUpGiac->execute([$qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
+                            $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $numDdt, $userId]);
                         }
                         
                         $stUpOrdRiga->execute([$qta, $lineId]);

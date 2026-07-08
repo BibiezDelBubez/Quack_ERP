@@ -1,0 +1,31 @@
+#!/bin/sh
+# Pre-commit hook — blocca il commit se uno dei file "staged" ha un encoding
+# non-UTF8 o contiene già caratteri di sostituzione U+FFFD (segno di una
+# corruzione di encoding avvenuta in passato, es. testo incollato in
+# Windows-1252/Latin-1 dentro un file UTF-8 — successo davvero in
+# db/init_sqlite.sql, vedi tools/check-utf8.php per i dettagli).
+#
+# Questo file vive in .githooks/ (versionato, condiviso col repo) invece che
+# in .git/hooks/ (locale, mai sincronizzato da git) proprio per evitare che la
+# protezione sparisca a un nuovo clone o checkout. Per attivarlo la prima
+# volta in un checkout locale:
+#
+#   git config core.hooksPath .githooks
+#
+# Da quel momento gira automaticamente ad ogni "git commit".
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$FILES" ]; then
+    exit 0
+fi
+
+if ! command -v php >/dev/null 2>&1; then
+    echo "[pre-commit] 'php' non trovato nel PATH: controllo encoding saltato (non bloccante)." >&2
+    echo "[pre-commit] Per attivarlo, assicurati che il php di XAMPP sia nel PATH di questo terminale." >&2
+    exit 0
+fi
+
+php "$REPO_ROOT/tools/check-utf8.php" $FILES
+exit $?

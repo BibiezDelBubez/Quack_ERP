@@ -57,6 +57,29 @@ switch (DB_DRIVER) {
                 ->fetchColumn();
 
             if (!$exists) {
+                // ── Backup di sicurezza pre-rebuild ──────────────────────────────
+                // Questo ramo ricrea l'INTERO schema da db/init_sqlite.sql, quindi
+                // se il file .sqlite esiste già ma manca la tabella 'utenti' NON è
+                // detto che sia un'installazione nuova: potrebbe essere un DB "vivo"
+                // corrotto, un file puntato per errore, o un path sbagliato in
+                // config.php. Rieseguire lo schema attuale sopra un DB del genere
+                // rischierebbe di perdere dati o di reintrodurre una struttura
+                // diversa da quella che l'utente si aspettava di trovare (è già
+                // successo in passato con lo spostamento di prodotti.scorta_minima,
+                // vedi il commento in db/init_sqlite.sql e il guard in
+                // app/bootstrap.php). Prima di toccare qualunque cosa, se il file
+                // esiste ed ha un contenuto, ne salviamo una copia timestampata.
+                if (is_file($db_path) && filesize($db_path) > 0) {
+                    $backup_dir = DB_DIR . '/backups';
+                    if (!is_dir($backup_dir)) {
+                        @mkdir($backup_dir, 0775, true);
+                    }
+                    if (is_dir($backup_dir) && is_writable($backup_dir)) {
+                        $backup_path = $backup_dir . '/database.sqlite.pre-rebuild-' . date('Ymd_His') . '.bak';
+                        @copy($db_path, $backup_path);
+                    }
+                }
+
                 $sql_file = APP_ROOT_DIR . '/db/init_sqlite.sql';
                 if (!is_readable($sql_file)) {
                     die('<b>Errore setup DB:</b> impossibile leggere <code>db/init_sqlite.sql</code>.');

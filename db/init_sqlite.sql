@@ -443,14 +443,11 @@ CREATE TABLE IF NOT EXISTS prodotti (
     peso_lordo_kg        DECIMAL(10,3),
     ean                  VARCHAR(14),                                          -- EAN/barcode della confezione
 
-    -- =========================================================================================================
-    -- [AI WARNING - CRITICAL RULE ENFORCEMENT]
-    -- DO NOT MOVE `scorta_minima` TO `giacenze` OR ANY OTHER TABLE. IT MUST REMAIN IN `prodotti`.
-    -- THIS IS A HARD ARCHITECTURAL REQUIREMENT. The DashboardController relies heavily on p.scorta_minima.
-    -- ANY LLM OR AI AGENT THAT ATTEMPTS TO "NORMALIZE" THIS INTO GIACENZE WILL BREAK THE ENTIRE APP.
-    -- DO NOT TOUCH THIS FIELD UNDER ANY CIRCUMSTANCE.
-    -- =========================================================================================================
-    scorta_minima        DECIMAL(10,3) NOT NULL DEFAULT 0,
+    -- RIMOSSA (era qui): scorta_minima. Era il campo storicamente unico per la
+    -- soglia di riordino, valido finché l'ERP gestiva un solo magazzino. Con
+    -- il multi-magazzino la soglia è per coppia (prodotto, magazzino) e vive
+    -- su giacenze.scorta_minima — vedi docs/Gestione Magazzino e Lotti/
+    -- Piano di Implementazione Multi-Magazzino.md, §3.5 e §3.6.
 
     traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
     is_adr               BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = prodotto soggetto ad ADR
@@ -720,25 +717,118 @@ CREATE TABLE IF NOT EXISTS lotti (
 -- 19. MAGAZZINO
 -- =============================================================================
 
+-- -----------------------------------------------------------------------------
+-- MAGAZZINI — anagrafica delle sedi fisiche/virtuali dove teniamo merce.
+-- Introdotta per superare l'ipotesi "1 solo magazzino" su cui l'ERP era stato
+-- disegnato inizialmente. Ogni riga è un luogo (fisico, o virtuale per casi
+-- come resi/scarti/quarantena) in cui possiamo avere giacenza. Le giacenze, i
+-- lotti e i movimenti diventano tutti relativi a un magazzino invece che
+-- all'azienda nel suo complesso. Vedi docs/Gestione Magazzino e Lotti/
+-- Piano di Implementazione Multi-Magazzino.md, Parte 3.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS magazzini (
+    id                  INTEGER      PRIMARY KEY AUTOINCREMENT,
+
+    codice              VARCHAR(20)  NOT NULL UNIQUE,   -- codice breve interno, es. 'MAG-01'; usato nei dropdown e nei log
+    nome                VARCHAR(100) NOT NULL,          -- nome descrittivo, es. 'Deposito Principale', 'Sito Bari'
+
+    tipo                TEXT         NOT NULL DEFAULT 'fisico'
+                                     CHECK (tipo IN (
+                                         'fisico',       -- sito reale dove la merce è fisicamente stoccata
+                                         'virtuale',      -- non un luogo reale: usato per modellare stati come "in quarantena", "reso da verificare"
+                                         'conto_terzi'    -- deposito gestito da un 3PL/logista esterno per nostro conto
+                                     )),
+
+    -- A quale azienda interna fa capo il sito (per intestazione DDT/documenti generati da qui).
+    -- Punta ad aziende_interne, non a clienti_fornitori: stesso pattern già usato da
+    -- preventivi.azienda_interna_id. Nullable: non tutti i magazzini devono per forza
+    -- essere legati a un'azienda specifica se in azienda ce n'è una sola.
+    azienda_interna_id  INTEGER      REFERENCES aziende_interne(id),
+
+    -- Indirizzo fisico del sito. Punta a un record di `indirizzi` con tipo = 'magazzino',
+    -- appartenente al soggetto (azienda interna) proprietario. NON usare indirizzi_documenti:
+    -- quella tabella è uno snapshot per singoli documenti d'acquisto/vendita, non un'anagrafica.
+    -- Nullable: si può censire un magazzino subito e aggiungere l'indirizzo dopo.
+    indirizzo_id        INTEGER      REFERENCES indirizzi(id),
+
+    -- Esiste sempre un solo magazzino predefinito nel sistema: è quello preselezionato
+    -- di default in ogni schermata finché l'utente non sceglie diversamente per la sessione
+    -- o per lo specifico documento. Vedi indice UNIQUE parziale sotto.
+    predefinito         BOOLEAN      NOT NULL DEFAULT 0,
+
+    -- Soft-delete: un magazzino non si cancella mai fisicamente (è referenziato da giacenze,
+    -- lotti_giacenze, movimenti storici), si disattiva. Sparisce dai selettori per nuove
+    -- operazioni ma resta leggibile negli storici.
+    attivo              BOOLEAN      NOT NULL DEFAULT 1,
+
+    note                TEXT,
+    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Garantisce a livello DB che non possano mai esistere due magazzini predefiniti
+-- contemporaneamente (invece di fidarsi solo della disciplina applicativa).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_magazzini_un_predefinito
+    ON magazzini(predefinito) WHERE predefinito = 1;
+
+
+-- -----------------------------------------------------------------------------
+-- GIACENZE — da "per prodotto" a "per prodotto, per magazzino".
+-- Prima esisteva un solo record di giacenza per prodotto in tutta l'azienda
+-- (UNIQUE su prodotto_id da solo). Con magazzino_id e l'UNIQUE su
+-- (prodotto_id, magazzino_id), lo stesso prodotto può avere righe di giacenza
+-- distinte in sedi diverse.
+-- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS giacenze (
     id                   INTEGER       PRIMARY KEY AUTOINCREMENT,
-    prodotto_id          INTEGER       NOT NULL UNIQUE REFERENCES prodotti(id),
-    quantita_disponibile DECIMAL(10,3) NOT NULL DEFAULT 0,  -- giacenza corrente; aggiornata a ogni movimento
-    quantita_riservata   DECIMAL(10,3) NOT NULL DEFAULT 0,  -- riservata per ordini clienti confermati
-    quantita_in_arrivo   DECIMAL(10,3) NOT NULL DEFAULT 0,  -- da ordini acquisto confermati non ancora ricevuti
-    scorta_minima        DECIMAL(10,3)          DEFAULT 0,  -- sotto questa soglia scatta l'alert
-    updated_at           DATETIME
+    prodotto_id          INTEGER       NOT NULL REFERENCES prodotti(id),
+    magazzino_id         INTEGER       NOT NULL REFERENCES magazzini(id),
+    quantita_disponibile DECIMAL(10,3) NOT NULL DEFAULT 0,  -- giacenza corrente in QUESTO magazzino; aggiornata a ogni movimento
+    quantita_riservata   DECIMAL(10,3) NOT NULL DEFAULT 0,  -- riservata per ordini clienti confermati (aggregata per prodotto, non per sede: vedi §4.4 del piano)
+    quantita_in_arrivo   DECIMAL(10,3) NOT NULL DEFAULT 0,  -- da ordini acquisto confermati con questo magazzino_destinazione_id, non ancora ricevuti
+    -- Soglia di riordino per QUESTA coppia (prodotto, magazzino). Prima dell'introduzione
+    -- del multi-magazzino era una colonna scritta ma mai letta (fonte di verità era
+    -- prodotti.scorta_minima, ora rimossa): da questo schema in avanti è l'UNICA fonte
+    -- di verità della soglia di sottoscorta, non un override facoltativo.
+    scorta_minima        DECIMAL(10,3) NOT NULL DEFAULT 0,  -- sotto questa soglia scatta l'alert, per questo magazzino
+    updated_at           DATETIME,
+    UNIQUE (prodotto_id, magazzino_id)
 );
+CREATE INDEX IF NOT EXISTS idx_giacenze_magazzino ON giacenze(magazzino_id);
+
+
+-- -----------------------------------------------------------------------------
+-- LOTTI_GIACENZE — quantità disponibile di un lotto, per magazzino.
+-- Un lotto (tabella lotti sotto, invariata nella struttura) è un'anagrafica
+-- unica per prodotto/fornitore/date; questa tabella scompone "quanto ne ho
+-- ancora" per sede fisica, così lo stesso codice lotto può risultare presente
+-- in più magazzini con quantità indipendenti (es. lotto X: 30 a Magazzino 1,
+-- 12 a Magazzino 2). Vedi Piano di Implementazione Multi-Magazzino, §3.1.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS lotti_giacenze (
+    id                   INTEGER       PRIMARY KEY AUTOINCREMENT,
+    lotto_id             INTEGER       NOT NULL REFERENCES lotti(id),
+    magazzino_id         INTEGER       NOT NULL REFERENCES magazzini(id),
+    quantita_disponibile DECIMAL(10,3) NOT NULL DEFAULT 0,  -- giacenza di QUESTO lotto in QUESTO magazzino
+    updated_at           DATETIME,
+    UNIQUE (lotto_id, magazzino_id)  -- un solo rigo per combinazione: gli aggiornamenti sono UPDATE, non nuovi INSERT
+);
+CREATE INDEX IF NOT EXISTS idx_lotti_giacenze_magazzino ON lotti_giacenze(magazzino_id);
+-- Vincolo applicativo (non esprimibile in modo portabile SQLite/MySQL in un CHECK):
+-- SUM(lotti_giacenze.quantita_disponibile) per un dato lotto_id non può mai superare
+-- lotti.quantita_ricevuta. Va garantito nella stessa transazione che scrive i
+-- movimenti, con lock pessimistico sulla riga per evitare race condition.
+
 
 CREATE TABLE IF NOT EXISTS movimenti_magazzino (
     id                  INTEGER       PRIMARY KEY AUTOINCREMENT,
     prodotto_id         INTEGER       NOT NULL REFERENCES prodotti(id),
     lotto_id            INTEGER       REFERENCES lotti(id),   -- NULL se il prodotto non traccia lotti
+    magazzino_id        INTEGER       REFERENCES magazzini(id),  -- sede in cui il movimento è avvenuto; nullable per compatibilità con movimenti storici pre-multimagazzino
     tipo_movimento      TEXT          NOT NULL CHECK (tipo_movimento IN (
                                           'carico','scarico','reso_cliente','reso_fornitore',
-                                          'rettifica','riserva','svincolo')),
+                                          'rettifica','riserva','svincolo','trasferimento')),
     quantita            DECIMAL(10,3) NOT NULL,               -- sempre positivo; il tipo_movimento indica la direzione
-    documento_tipo      VARCHAR(50),                          -- tipo documento sorgente (ordine_acquisto, ordine_cliente…)
+    documento_tipo      VARCHAR(50),                          -- tipo documento sorgente (ordine_acquisto, ordine_cliente, trasferimento…)
     documento_id        INTEGER,                              -- ID del documento sorgente
     canale_origine      VARCHAR(50),                          -- sistema che ha generato il movimento (es. sito, manuale, woocommerce, importazione)
     riferimento_esterno VARCHAR(100),                         -- ID documento nel sistema esterno (es. WC-10452 per WooCommerce)
@@ -747,9 +837,50 @@ CREATE TABLE IF NOT EXISTS movimenti_magazzino (
     created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- -----------------------------------------------------------------------------
+-- TRASFERIMENTI_MAGAZZINO — trasferimento interno come documento di prima classe.
+-- Un trasferimento tra due magazzini non è un evento istantaneo nella realtà
+-- fisica (il camion viaggia): modellarlo come documento con stato, invece che
+-- come singolo movimento, permette di rappresentare "merce in transito" e di
+-- avere un'unica riga da confermare all'arrivo. Vedi Piano di Implementazione
+-- Multi-Magazzino, §3.4 e §4.2 (trasferimento parziale, annullamento in transito).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS trasferimenti_magazzino (
+    id                          INTEGER      PRIMARY KEY AUTOINCREMENT,
+    numero                      VARCHAR(20)  NOT NULL UNIQUE,   -- es. 'TRF-2026-0001', stesso schema di numerazione degli altri documenti
+    magazzino_origine_id        INTEGER      NOT NULL REFERENCES magazzini(id),
+    magazzino_destinazione_id   INTEGER      NOT NULL REFERENCES magazzini(id),
+    stato                       TEXT         NOT NULL DEFAULT 'bozza'
+                                              CHECK (stato IN (
+                                                  'bozza',       -- documento in preparazione, nessun movimento ancora registrato
+                                                  'in_transito', -- merce scaricata dall'origine, non ancora caricata a destinazione
+                                                  'completato',  -- arrivo confermato, giacenze aggiornate su entrambi i lati
+                                                  'annullato'
+                                              )),
+    data_richiesta              DATE         NOT NULL,
+    data_partenza               DATE,
+    data_arrivo                 DATE,
+    note                        TEXT,
+    creato_da                   INTEGER      NOT NULL REFERENCES utenti(id),
+    created_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (magazzino_origine_id <> magazzino_destinazione_id)  -- un trasferimento verso se stesso non ha senso
+);
+
+CREATE TABLE IF NOT EXISTS trasferimenti_magazzino_righe (
+    id                    INTEGER       PRIMARY KEY AUTOINCREMENT,
+    trasferimento_id      INTEGER       NOT NULL REFERENCES trasferimenti_magazzino(id) ON DELETE CASCADE,
+    prodotto_id           INTEGER       NOT NULL REFERENCES prodotti(id),
+    lotto_id              INTEGER       REFERENCES lotti(id),   -- NULL se il prodotto non traccia lotti (prodotti.traccia_lotti = 0)
+    quantita_richiesta    DECIMAL(10,3) NOT NULL,   -- quanto si intendeva trasferire
+    quantita_arrivata     DECIMAL(10,3),            -- quanto è stato effettivamente confermato a destinazione; NULL finché non si conferma l'arrivo
+    note_discrepanza      TEXT                      -- motivo dell'eventuale differenza (rottura, errore di conta, ecc.)
+);
+
+
 CREATE TABLE IF NOT EXISTS inventari (
     id              INTEGER  PRIMARY KEY AUTOINCREMENT,
     data_inventario DATE     NOT NULL,
+    magazzino_id    INTEGER  REFERENCES magazzini(id),  -- sede oggetto dell'inventario; nullable per compatibilità con inventari storici pre-multimagazzino
     note            TEXT,
     stato           TEXT     NOT NULL DEFAULT 'bozza',  -- 'bozza' | 'convalidato'
     creato_da       INTEGER  NOT NULL REFERENCES utenti(id),
@@ -1136,9 +1267,22 @@ CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prezzi_pf         ON prodotti_
 -- Indice composito per query di vendita (ricerca prezzo per listino + prodotto)
 CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto      ON listini_prezzi(listino_id, prodotto_id);
 
--- Unicità UoM di riferimento per categoria (un solo e_riferimento = 1 per categoria)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_um_categoria_riferimento
-    ON unita_misura(categoria_id) WHERE e_riferimento = 1;
+-- BUG PRE-ESISTENTE CORRETTO: questo indice puntava a `unita_misura.categoria_id`,
+-- colonna che non è mai esistita nello schema (la tabella `unita_misura` non ha
+-- (e non ha mai avuto) una nozione di "categoria" — verificato che né il codice
+-- applicativo né docs/Unita di misura e prezzi/Architettura, Analisi e Best
+-- Practice Multi-UoM e Listini Prezzi - Versione Definitiva.md menzionano
+-- categoria_id o e_riferimento: la conversione tra UoM diverse è gestita per
+-- singolo prodotto tramite prodotti.num_factor/den_factor, non tramite un
+-- raggruppamento di UoM "compatibili" con una di riferimento. L'indice
+-- rendeva impossibile eseguire l'intero script da zero ("no such column:
+-- categoria_id"), quindi il vecchio meccanismo di auto-rebuild in
+-- includes/db.php (che riesegue questo file se manca la tabella 'utenti')
+-- avrebbe fallito a metà se mai fosse scattato su un DB vuoto.
+-- Corretto rendendo e_riferimento un flag globale (al più una UoM di
+-- riferimento in tutto il sistema), coerente con l'assenza di categorie.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_um_riferimento
+    ON unita_misura(e_riferimento) WHERE e_riferimento = 1;
 
 -- =============================================================================
 -- TRIGGERS — AGGIORNAMENTO AUTOMATICO TIMESTAMP (updated_at)
@@ -1220,6 +1364,16 @@ END;
 -- =============================================================================
 -- SEED DATA
 -- =============================================================================
+
+-- Magazzino predefinito: senza questa riga qk_magazzino_attivo_id() non
+-- avrebbe nulla da risolvere e l'intero modulo Magazzino smetterebbe di
+-- funzionare su un'installazione nuova. Rappresenta la sede unica su cui
+-- l'ERP operava implicitamente prima dell'introduzione del multi-magazzino:
+-- da qui in avanti tutte le giacenze/lotti/movimenti pre-esistenti vanno
+-- concettualmente attribuiti a QUESTO magazzino (vedi script di migrazione
+-- dati, se il DB di produzione ha già dati da preservare).
+INSERT OR IGNORE INTO magazzini (codice, nome, tipo, predefinito, attivo) VALUES
+    ('MAG-01', 'Magazzino Principale', 'fisico', 1, 1);
 
 INSERT OR IGNORE INTO unita_misura (codice, descrizione, fattore_base, e_riferimento) VALUES
     ('kg',  'Chilogrammo',  1.0,         1),
@@ -1704,7 +1858,16 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     data_ordine             DATE         NOT NULL DEFAULT (DATE('now')),
     data_consegna_prevista  DATE,
     indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),
-    
+
+    -- A quale magazzino è destinata la merce di questo ordine. Diverso da
+    -- indirizzo_consegna_id (che resta lo snapshot stampato sull'ordine): questo
+    -- campo serve al sistema per sapere DOVE accreditare la merce quando arriva,
+    -- non a cosa scrivere sul PDF. Nullable per compatibilità con ordini storici;
+    -- nei nuovi ordini va reso obbligatorio a livello applicativo, precompilato
+    -- col magazzino attivo di sessione. Vedi Piano di Implementazione
+    -- Multi-Magazzino, §2.7 e §3.4.
+    magazzino_destinazione_id INTEGER    REFERENCES magazzini(id),
+
     -- Termini di resa (Incoterms) - Denormalizzati in stile SAP
     incoterm_codice         CHAR(3)      REFERENCES incoterms(codice), -- Codice Incoterm a 3 lettere (es. EXW)
     incoterm_luogo          VARCHAR(150),                              -- Luogo o porto di resa
@@ -1789,6 +1952,14 @@ CREATE TABLE IF NOT EXISTS ricezioni_testata (
     data_effettiva          DATETIME,     -- data/ora effettiva di ricezione
     ddt_numero              VARCHAR(50),  -- numero DDT fornitore
     ddt_data                DATE,
+
+    -- Magazzino in cui è stata fisicamente accreditata la merce di QUESTA ricezione.
+    -- Campo indipendente da ordini_testata.magazzino_destinazione_id (di default lo
+    -- eredita, ma può differire: ricezione dirottata, o ordine ricevuto in più
+    -- tranche su magazzini diversi). Nullable per compatibilità con ricezioni
+    -- storiche. Vedi Piano di Implementazione Multi-Magazzino, §3.4.
+    magazzino_id            INTEGER      REFERENCES magazzini(id),
+
     note                    TEXT,
     creato_da               INTEGER      REFERENCES utenti(id),
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1812,7 +1983,12 @@ CREATE INDEX IF NOT EXISTS idx_ordini_testata_offerta   ON ordini_testata(offert
 CREATE INDEX IF NOT EXISTS idx_ordini_righe_ordine      ON ordini_righe(ordine_id);
 CREATE INDEX IF NOT EXISTS idx_ordini_righe_prodotto    ON ordini_righe(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_ricezioni_testata_ordine  ON ricezioni_testata(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_ricezioni_righe_ricezione ON ricezioni_righe(ricezione_id);
+-- BUG PRE-ESISTENTE CORRETTO: l'indice su ricezioni_righe(ricezione_id) era qui,
+-- ma la tabella ricezioni_righe viene creata solo più avanti nel file (vedi sotto,
+-- vicino a ricezioni_testata) — un CREATE INDEX su una tabella non ancora creata
+-- fa fallire l'intero script quando eseguito da zero (es. dal meccanismo di
+-- auto-rebuild di includes/db.php). Spostato subito dopo la CREATE TABLE di
+-- ricezioni_righe.
 
 -- Trigger per updated_at delle nuove tabelle v2
 CREATE TRIGGER IF NOT EXISTS trg_rfq_testata_updated_at
@@ -2014,7 +2190,7 @@ CREATE TABLE IF NOT EXISTS ricezioni_testata (
 
     numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. RIC/2026/0001
     ordine_id               INTEGER      NOT NULL REFERENCES ordini_testata(id),
-    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comodit�
+    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comodità
 
     stato                   TEXT         NOT NULL DEFAULT 'bozza'
                                           CHECK (stato IN (
@@ -2046,19 +2222,19 @@ CREATE TABLE IF NOT EXISTS ricezioni_righe (
     pianificazione_id       INTEGER       REFERENCES ordini_righe_pianificazione(id),
                                           -- tranche di pianificazione a cui appartiene questa ricezione
 
-    -- Prodotto (ridondanza per comodit�)
+    -- Prodotto (ridondanza per comodità)
     prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
 
     -- Lotto (NULL se prodotto non traccia_lotti)
     lotto_id                INTEGER       REFERENCES lotti(id),
 
-    -- Quantit�
-    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantit� fisicamente conteggiata all'arrivo
-    quantita_accettata      DECIMAL(10,3),             -- quantit� approvata per il magazzino (default = quantita_ricevuta)
-    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,  -- quantit� respinta (merce difettosa, errori)
+    -- Quantità
+    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantità fisicamente conteggiata all'arrivo
+    quantita_accettata      DECIMAL(10,3),             -- quantità approvata per il magazzino (default = quantita_ricevuta)
+    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,  -- quantità respinta (merce difettosa, errori)
     motivo_rifiuto          TEXT,          -- motivo del rifiuto parziale/totale
-    ubicazione_stoccaggio   VARCHAR(50),   -- dove � stata messa la merce
-    quantita_stock          DECIMAL(10,3), -- quantit� convertita in stock
+    ubicazione_stoccaggio   VARCHAR(50),   -- dove è stata messa la merce
+    quantita_stock          DECIMAL(10,3), -- quantità convertita in stock
     unita_misura_stock_id   INTEGER       REFERENCES unita_misura(id),
     quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
     num_factor_snapshot     INTEGER DEFAULT 1,
@@ -2066,6 +2242,8 @@ CREATE TABLE IF NOT EXISTS ricezioni_righe (
 
     note                    TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_ricezioni_righe_ricezione ON ricezioni_righe(ricezione_id);
 
 CREATE TRIGGER IF NOT EXISTS trg_ricezioni_testata_updated_at
 AFTER UPDATE ON ricezioni_testata

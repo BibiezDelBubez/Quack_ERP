@@ -251,10 +251,34 @@ foreach ($ricezioni as $rc) {
 
           <div class="qk-form-group mb-2">
             <label class="qk-form-label">Altri Riferimenti / Note Logistiche</label>
-            <input type="text" name="altri_riferimenti" class="qk-form-control" 
+            <input type="text" name="altri_riferimenti" class="qk-form-control"
                    value="<?= e($o['altri_riferimenti'] ?? '') ?>"
                    placeholder="Es. DDT di riferimento logistico, note corriere"
                    <?= $canEditLogistics ? '' : 'readonly' ?>>
+          </div>
+
+          <div class="qk-form-group mb-2">
+            <label class="qk-form-label">Magazzino Destinazione</label>
+            <?php if ($canEditLogistics): ?>
+            <select name="magazzino_destinazione_id" class="qk-form-control">
+              <option value="">— Non specificato —</option>
+              <?php foreach ($magazzini_options as $mg): ?>
+              <option value="<?= $mg['id'] ?>" <?= (int)($o['magazzino_destinazione_id'] ?? 0) === (int)$mg['id'] ? 'selected' : '' ?>>
+                <?= e($mg['nome']) ?>
+              </option>
+              <?php endforeach; ?>
+            </select>
+            <span class="qk-form-hint mt-1 d-block">Dove verrà accreditata la merce ricevuta per questo ordine.</span>
+            <?php else: ?>
+            <input type="text" class="qk-form-control" readonly
+                   value="<?php
+                     $mgNome = '—';
+                     foreach ($magazzini_options as $mg) {
+                         if ((int)$mg['id'] === (int)($o['magazzino_destinazione_id'] ?? 0)) { $mgNome = $mg['nome']; break; }
+                     }
+                     echo e($mgNome);
+                   ?>">
+            <?php endif; ?>
           </div>
         </div>
       </div>

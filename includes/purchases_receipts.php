@@ -17,6 +17,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/purchases_orders.php';
 require_once __DIR__ . '/prodotti.php';
+require_once __DIR__ . '/magazzino.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -151,10 +152,19 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
     try {
         $numero = qk_next_numero_acquisto($pdo, 'ricezione');
 
+        // Il magazzino della ricezione eredita di default quello di destinazione
+        // dell'ordine (ordini_testata.magazzino_destinazione_id, §2.7); se
+        // l'ordine è storico e non lo ha (colonna nullable per compatibilità),
+        // si ripiega sul magazzino attivo di sessione/predefinito. Vedi Piano
+        // Multi-Magazzino §3.4.
+        $magazzino_id = !empty($ordine['magazzino_destinazione_id'])
+            ? (int) $ordine['magazzino_destinazione_id']
+            : qk_magazzino_attivo_id($pdo);
+
         $pdo->prepare(
-            "INSERT INTO ricezioni_testata (numero, ordine_id, fornitore_id, stato, creato_da, created_at)
-             VALUES (?,?,?,'bozza',?,CURRENT_TIMESTAMP)"
-        )->execute([$numero, $ordine_id, $ordine['fornitore_id'], $utente_id]);
+            "INSERT INTO ricezioni_testata (numero, ordine_id, fornitore_id, magazzino_id, stato, creato_da, created_at)
+             VALUES (?,?,?,?,'bozza',?,CURRENT_TIMESTAMP)"
+        )->execute([$numero, $ordine_id, $ordine['fornitore_id'], $magazzino_id, $utente_id]);
         $ricezione_id = (int) $pdo->lastInsertId();
 
         // Pre-compila righe con le rimanenze
@@ -253,6 +263,12 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
         if (!$ricezione) throw new \RuntimeException('Ricezione non trovata o già completata.');
 
         $ordine_id = (int) $ricezione['ordine_id'];
+        // Magazzino su cui accreditare fisicamente la merce di questa ricezione
+        // (fissato all'apertura, vedi qk_ricezione_apri; fallback difensivo se
+        // per qualche motivo la riga risultasse senza magazzino_id).
+        $magazzino_id = !empty($ricezione['magazzino_id'])
+            ? (int) $ricezione['magazzino_id']
+            : qk_magazzino_attivo_id($pdo);
 
         // Carica le righe della ricezione
         $stRighe = $pdo->prepare('SELECT * FROM ricezioni_righe WHERE ricezione_id = ?');
@@ -319,7 +335,7 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
 
             if ($qtaAccettata <= 0) continue;
 
-            // Gestione lotto (usando quantita_stock)
+            // Gestione lotto (usando quantita_stock), nel magazzino di questa ricezione
             $lotto_id = _ricezione_gestisci_lotto(
                 $pdo,
                 $prodottoId,
@@ -328,7 +344,8 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 $rigaId,
                 $quantita_stock,
                 $input['lotto'] ?? [],
-                $utente_id
+                $utente_id,
+                $magazzino_id
             );
             if ($lotto_id) {
                 $pdo->prepare('UPDATE ricezioni_righe SET lotto_id = ? WHERE id = ?')
@@ -340,26 +357,26 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 'UPDATE ordini_righe SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
             )->execute([$qtaAccettata, $ordineRigaId]);
 
-            // Aggiorna giacenza disponibile (usando quantita_stock)
-            _ricezione_upsert_giacenza($pdo, $prodottoId, $quantita_stock);
+            // Aggiorna giacenza disponibile (usando quantita_stock), nel magazzino di questa ricezione
+            _ricezione_upsert_giacenza($pdo, $prodottoId, $magazzino_id, $quantita_stock);
 
-            // Decrementa in_arrivo (usando quantita_stock)
+            // Decrementa in_arrivo (usando quantita_stock), nello stesso magazzino
             $pdo->prepare(
                 'UPDATE giacenze
                     SET quantita_in_arrivo = MAX(0, quantita_in_arrivo - ?)
-                  WHERE prodotto_id = ?'
-            )->execute([$quantita_stock, $prodottoId]);
+                  WHERE prodotto_id = ? AND magazzino_id = ?'
+            )->execute([$quantita_stock, $prodottoId, $magazzino_id]);
 
             // Avanza pianificazione consegna
             _ricezione_avanza_pianificazione($pdo, $ordineRigaId, $qtaAccettata);
 
-            // Registra movimento di carico nel giornale movimenti
+            // Registra movimento di carico nel giornale movimenti, per il magazzino di questa ricezione
             $pdo->prepare(
                 "INSERT INTO movimenti_magazzino
-                    (prodotto_id, lotto_id, tipo_movimento, quantita,
+                    (prodotto_id, lotto_id, magazzino_id, tipo_movimento, quantita,
                      documento_tipo, documento_id, creato_da, created_at)
-                 VALUES (?, ?, 'carico', ?, 'ricezione', ?, ?, CURRENT_TIMESTAMP)"
-            )->execute([$prodottoId, $lotto_id ?: null, $quantita_stock, $ricezione_id, $utente_id]);
+                 VALUES (?, ?, ?, 'carico', ?, 'ricezione', ?, ?, CURRENT_TIMESTAMP)"
+            )->execute([$prodottoId, $lotto_id ?: null, $magazzino_id, $quantita_stock, $ricezione_id, $utente_id]);
         }
 
         // Aggiorna stato ordine padre
@@ -397,26 +414,38 @@ function _ricezione_gestisci_lotto(
     int    $ricezione_riga_id,
     float  $qta,
     array  $lottoData,
-    int    $utente_id
+    int    $utente_id,
+    int    $magazzino_id
 ): ?int {
     $traccia = $pdo->prepare('SELECT traccia_lotti FROM prodotti WHERE id = ?');
     $traccia->execute([$prodotto_id]);
     if (!(bool)$traccia->fetchColumn()) return null;
 
     if (!empty($lottoData['id'])) {
-        // Lotto esistente: aggiorna disponibile e ricevuto
+        // Lotto esistente: aggiorna il totale storico ricevuto (lotti.quantita_ricevuta,
+        // dato immutabile aggregato, non una giacenza corrente) e la giacenza del
+        // lotto NEL MAGAZZINO di questa ricezione (lotti_giacenze, non più il
+        // campo aggregato lotti.quantita_disponibile — vedi Piano Multi-Magazzino §3.1/§3.9).
         $lot_id = (int)$lottoData['id'];
         $pdo->prepare(
-            'UPDATE lotti
-                SET quantita_disponibile = quantita_disponibile + ?,
-                    quantita_ricevuta    = quantita_ricevuta    + ?
-              WHERE id = ?'
-        )->execute([$qta, $qta, $lot_id]);
+            'UPDATE lotti SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
+        )->execute([$qta, $lot_id]);
+
+        $pdo->prepare(
+            'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
+             VALUES (?, ?, ?, datetime(\'now\'))
+             ON CONFLICT(lotto_id, magazzino_id) DO UPDATE SET
+                 quantita_disponibile = quantita_disponibile + excluded.quantita_disponibile,
+                 updated_at = excluded.updated_at'
+        )->execute([$lot_id, $magazzino_id, $qta]);
+
         return $lot_id;
     }
 
     if (!empty($lottoData['codice_lotto_interno'])) {
-        // Nuovo lotto
+        // Nuovo lotto (anagrafica). quantita_disponibile qui è legacy (colonna
+        // NOT NULL ancora presente su `lotti`, verrà rimossa in §3.9): la fonte
+        // di verità per "dove si trova" è lotti_giacenze, popolata subito dopo.
         $pdo->prepare(
             "INSERT INTO lotti
                 (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
@@ -439,31 +468,38 @@ function _ricezione_gestisci_lotto(
             $qta,
             $utente_id,
         ]);
-        return (int) $pdo->lastInsertId();
+        $lot_id = (int) $pdo->lastInsertId();
+
+        $pdo->prepare(
+            'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
+             VALUES (?, ?, ?, datetime(\'now\'))'
+        )->execute([$lot_id, $magazzino_id, $qta]);
+
+        return $lot_id;
     }
 
     return null; // Prodotto traccia lotti ma nessun dato lotto fornito (validazione upstream)
 }
 
 /**
- * Inserisce o aggiorna la giacenza disponibile di un prodotto.
+ * Inserisce o aggiorna la giacenza disponibile di un prodotto NEL MAGAZZINO indicato.
  */
-function _ricezione_upsert_giacenza(PDO $pdo, int $prodotto_id, float $delta): void
+function _ricezione_upsert_giacenza(PDO $pdo, int $prodotto_id, int $magazzino_id, float $delta): void
 {
-    $exists = $pdo->prepare('SELECT id FROM giacenze WHERE prodotto_id = ?');
-    $exists->execute([$prodotto_id]);
+    $exists = $pdo->prepare('SELECT id FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?');
+    $exists->execute([$prodotto_id, $magazzino_id]);
     if ($exists->fetch()) {
         $pdo->prepare(
             'UPDATE giacenze
                 SET quantita_disponibile = quantita_disponibile + ?,
                     updated_at = CURRENT_TIMESTAMP
-              WHERE prodotto_id = ?'
-        )->execute([$delta, $prodotto_id]);
+              WHERE prodotto_id = ? AND magazzino_id = ?'
+        )->execute([$delta, $prodotto_id, $magazzino_id]);
     } else {
         $pdo->prepare(
-            'INSERT INTO giacenze (prodotto_id, quantita_disponibile, updated_at)
-             VALUES (?,?,CURRENT_TIMESTAMP)'
-        )->execute([$prodotto_id, $delta]);
+            'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, scorta_minima, updated_at)
+             VALUES (?,?,?,0,CURRENT_TIMESTAMP)'
+        )->execute([$prodotto_id, $magazzino_id, $delta]);
     }
 }
 

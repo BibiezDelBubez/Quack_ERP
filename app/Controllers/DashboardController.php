@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once INCLUDES_DIR . '/magazzino.php';
+
 final class DashboardController extends BaseController
 {
     public function index(): void
@@ -18,13 +20,16 @@ final class DashboardController extends BaseController
             "SELECT COUNT(*) FROM spedizioni WHERE stato = 'preparazione'"
         )->fetchColumn();
 
-        // KPI 3: Understock Warning
-        $sottoscorta_count = (int) $this->pdo->query("
+        // KPI 3: Understock Warning — nel magazzino attivo (soglia per coppia
+        // prodotto-magazzino da quando prodotti.scorta_minima è stata rimossa,
+        // vedi Piano Multi-Magazzino §3.5).
+        $stSottoscorta = $this->pdo->prepare("
             SELECT COUNT(*) FROM prodotti p
-            LEFT JOIN giacenze g ON g.prodotto_id = p.id
-            WHERE p.attivo = 1 AND p.scorta_minima > 0
-              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
-        ")->fetchColumn();
+            JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+            WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
+        ");
+        $stSottoscorta->execute([qk_magazzino_attivo_id($this->pdo)]);
+        $sottoscorta_count = (int) $stSottoscorta->fetchColumn();
 
         // KPI 4: Active supplier orders (incoming goods)
         $acquisti_in_arrivo = (int) $this->pdo->query(

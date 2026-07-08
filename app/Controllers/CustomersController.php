@@ -154,7 +154,7 @@ class CustomersController extends BaseController
         ];
 
         // Dati pre-caricati per gli indirizzi (PHP → JS via window.QkCustomerAddr)
-        $indirizzi_preload = qk_list_indirizzi_cliente($this->pdo, $entity_id);
+        $indirizzi_preload = qk_list_indirizzi($this->pdo, $entity_id);
 
         // Dati pre-caricati per i contatti (PHP → JS via window.QkCustomer)
         $contatti_preload = qk_list_contatti_cliente($this->pdo, $entity_id);
@@ -372,7 +372,7 @@ class CustomersController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'customer_id mancante']);
             exit;
         }
-        $rows = qk_list_indirizzi_cliente($this->pdo, $customer_id);
+        $rows = qk_list_indirizzi($this->pdo, $customer_id);
         ob_end_clean();
         echo json_encode(['ok' => true, 'indirizzi' => $rows]);
         exit;
@@ -441,14 +441,14 @@ class CustomersController extends BaseController
 
         try {
             if ($address_id > 0) {
-                qk_update_indirizzo_cliente($this->pdo, $address_id, $customer_id, $v);
+                qk_update_indirizzo($this->pdo, $address_id, $customer_id, $v);
                 $id = $address_id;
             } else {
-                $id = qk_insert_indirizzo_cliente($this->pdo, $customer_id, $v);
+                $id = qk_insert_indirizzo($this->pdo, $customer_id, $v);
             }
 
             // Ricarica dalla DB per restituire i dati definitivi
-            $all   = qk_list_indirizzi_cliente($this->pdo, $customer_id);
+            $all   = qk_list_indirizzi($this->pdo, $customer_id);
             $saved = null;
             foreach ($all as $addr) {
                 if ((int) $addr['id'] === (int) $id) { $saved = $addr; break; }
@@ -484,7 +484,7 @@ class CustomersController extends BaseController
         }
 
         try {
-            qk_delete_indirizzo_cliente($this->pdo, $address_id, $customer_id);
+            qk_delete_indirizzo($this->pdo, $address_id, $customer_id);
             ob_end_clean();
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {

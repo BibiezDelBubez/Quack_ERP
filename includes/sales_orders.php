@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/anagrafiche.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/document_common.php';
+require_once __DIR__ . '/magazzino.php';
 
 /**
  * Genera il prossimo numero progressivo per l'ordine cliente diretto.
@@ -226,13 +227,31 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 $r['note_riga'] ?: null,
             ]);
 
-            // Riserva quantità a magazzino
+            // Riserva quantità a magazzino. Per scelta di design (Piano
+            // Multi-Magazzino §4.4), la riserva alla conferma ordine NON sceglie
+            // ancora una sede specifica di spedizione (quella si decide solo alla
+            // spedizione, con FEFO): senza un motore ATP, come approssimazione si
+            // riserva sul magazzino attivo di sessione/predefinito. IMPORTANTE:
+            // qui la UPDATE deve specificare anche magazzino_id, altrimenti con
+            // più righe di giacenze per lo stesso prodotto (una per sede)
+            // aggiornerebbe erroneamente TUTTE le sedi invece di una sola.
             if ($prodotto_id) {
-                $pdo->prepare("
+                $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
+                $stRiserva = $pdo->prepare("
                     UPDATE giacenze
                        SET quantita_riservata = quantita_riservata + ?
-                     WHERE prodotto_id = ?
-                ")->execute([$qtaStock, $prodotto_id]);
+                     WHERE prodotto_id = ? AND magazzino_id = ?
+                ");
+                $stRiserva->execute([$qtaStock, $prodotto_id, $magazzinoRiservaId]);
+                if ($stRiserva->rowCount() === 0) {
+                    // Non esiste ancora una riga di giacenza per questo prodotto
+                    // in questo magazzino (prodotto mai movimentato qui): la creiamo
+                    // a quantità disponibile 0 e riservata = qtaStock.
+                    $pdo->prepare("
+                        INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                        VALUES (?, ?, 0, ?, 0, 0, CURRENT_TIMESTAMP)
+                    ")->execute([$prodotto_id, $magazzinoRiservaId, $qtaStock]);
+                }
             }
         }
 

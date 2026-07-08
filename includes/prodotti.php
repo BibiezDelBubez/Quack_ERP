@@ -479,19 +479,29 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
 
 function qk_load_prodotto_form(PDO $pdo, int $id): ?array
 {
+    // scorta_minima non è più un campo di `prodotti` (era un unico valore
+    // azienda-wide, superato dal multi-magazzino, vedi Piano Multi-Magazzino
+    // §3.5): qui si legge solo a titolo informativo la soglia impostata per
+    // il magazzino attivo, così il form prodotto può mostrarla senza poterla
+    // modificare direttamente — la modifica vera avviene nel contesto
+    // magazzino (WarehouseController), dove ha senso scegliere la sede.
+    $magazzinoAttivoId = qk_magazzino_attivo_id($pdo);
+
     $stmt = $pdo->prepare(
         'SELECT p.id, p.sku_interno, p.sku_ecommerce, p.nome, p.descrizione_breve,
                 p.descrizione_confezione, p.descrizione_completa, p.tipo, p.categoria_id,
                 p.note_interne, p.attivo, p.traccia_lotti, um.codice AS unita_misura,
                 p.peso_netto_kg, p.peso_lordo_kg, p.ean,
-                p.unita_contenuto_id, p.quantita_contenuto, p.scorta_minima,
+                p.unita_contenuto_id, p.quantita_contenuto,
+                COALESCE(g.scorta_minima, 0) AS scorta_minima,
                 COALESCE(p.is_adr, 0) AS is_adr, p.sostanza_chimica_id,
                 p.created_at, p.updated_at
          FROM prodotti p
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+         LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = :magazzino_id
          WHERE p.id = :id'
      );
-     $stmt->execute([':id' => $id]);
+     $stmt->execute([':id' => $id, ':magazzino_id' => $magazzinoAttivoId]);
      $row = $stmt->fetch(PDO::FETCH_ASSOC);
      if (!$row) {
          return null;
@@ -583,13 +593,13 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
                 tipo, categoria_id, note_interne,
                 attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
                 num_factor, den_factor, peso_netto_kg, peso_lordo_kg,
-                ean, scorta_minima, is_adr, sostanza_chimica_id, created_at)
+                ean, is_adr, sostanza_chimica_id, created_at)
              VALUES
                (:sku_interno, :sku_ecommerce, :nome, :desc_breve, :desc_confezione, :desc_completa,
                 :tipo, :cat_id, :note_int,
                 :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto,
                 :num_factor, :den_factor, :peso_netto, :peso_lordo,
-                :ean, :scorta_minima, :is_adr, :sostanza_chimica_id, CURRENT_TIMESTAMP)'
+                :ean, :is_adr, :sostanza_chimica_id, CURRENT_TIMESTAMP)'
         );
         $stmt->execute([
             ':sku_interno'       => trim($v['sku_interno']),
@@ -611,20 +621,26 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
             ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
-            ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
             ':sostanza_chimica_id'   => qk_prodotti_null($v['sostanza_chimica_id'] ?? '') !== null ? (int) $v['sostanza_chimica_id'] : null,
         ]);
 
         $id = (int) $pdo->lastInsertId();
 
+        // Crea la riga di giacenza per il nuovo prodotto nel magazzino attivo,
+        // a quantità zero. La soglia di riordino (scorta_minima) NON si imposta
+        // più qui: è per coppia (prodotto, magazzino) e va configurata a parte
+        // nel contesto magazzino (WarehouseController), dove ha senso scegliere
+        // per quale sede — un prodotto appena creato può non avere ancora
+        // bisogno di una soglia in ogni magazzino esistente. Vedi Piano
+        // Multi-Magazzino §3.5.
         if ($v['tipo'] === 'semplice') {
             $pdo->prepare(
-                'INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                 VALUES (:id, 0, 0, 0, :scorta_minima, CURRENT_TIMESTAMP)'
+                'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                 VALUES (:id, :magazzino_id, 0, 0, 0, 0, CURRENT_TIMESTAMP)'
             )->execute([
-                ':id' => $id,
-                ':scorta_minima' => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
+                ':id'           => $id,
+                ':magazzino_id' => qk_magazzino_attivo_id($pdo),
             ]);
         }
 
@@ -733,7 +749,6 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
                peso_netto_kg          = :peso_netto,
                peso_lordo_kg          = :peso_lordo,
                ean                    = :ean,
-               scorta_minima          = :scorta_minima,
                is_adr                 = :is_adr,
                sostanza_chimica_id        = :sostanza_chimica_id,
                updated_at             = CURRENT_TIMESTAMP
@@ -758,18 +773,16 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
             ':peso_netto'        => qk_prodotti_decimal($v['peso_netto_kg']),
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
-            ':scorta_minima'     => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
             ':id'                => $id,
         ]);
 
-        // Sincronizza anche la colonna scorta_minima in giacenze
-        $pdo->prepare(
-            'UPDATE giacenze SET scorta_minima = :scorta_minima WHERE prodotto_id = :id'
-        )->execute([
-            ':scorta_minima' => qk_prodotti_decimal($v['scorta_minima']) ?? 0.0,
-            ':id' => $id
-        ]);
+        // NOTA: qui c'era una sincronizzazione di scorta_minima verso
+        // `giacenze`, rimossa. `giacenze.scorta_minima` è ora per coppia
+        // (prodotto, magazzino) e va impostata dall'operatore nel contesto
+        // magazzino (WarehouseController), non copiata da un valore unico di
+        // prodotto — vedi Piano Multi-Magazzino §3.5. Il form prodotto non
+        // scrive più questo campo.
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {

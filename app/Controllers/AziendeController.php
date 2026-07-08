@@ -158,7 +158,7 @@ final class AziendeController extends BaseController
         $nIndirizzi = 0;
         $nContatti = 0;
         if ($soggetto_id > 0) {
-            $indirizzi_preload = qk_list_indirizzi_cliente($this->pdo, $soggetto_id);
+            $indirizzi_preload = qk_list_indirizzi($this->pdo, $soggetto_id);
             $contatti_preload = qk_list_contatti_cliente($this->pdo, $soggetto_id);
             $nIndirizzi = count($indirizzi_preload);
             $nContatti = count($contatti_preload);
@@ -323,7 +323,7 @@ final class AziendeController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'customer_id (soggetto_id) mancante']);
             exit;
         }
-        $rows = qk_list_indirizzi_cliente($this->pdo, $soggetto_id);
+        $rows = qk_list_indirizzi($this->pdo, $soggetto_id);
         ob_end_clean();
         echo json_encode(['ok' => true, 'indirizzi' => $rows]);
         exit;
@@ -392,14 +392,14 @@ final class AziendeController extends BaseController
 
         try {
             if ($address_id > 0) {
-                qk_update_indirizzo_cliente($this->pdo, $address_id, $soggetto_id, $v);
+                qk_update_indirizzo($this->pdo, $address_id, $soggetto_id, $v);
                 $id = $address_id;
             } else {
-                $id = qk_insert_indirizzo_cliente($this->pdo, $soggetto_id, $v);
+                $id = qk_insert_indirizzo($this->pdo, $soggetto_id, $v);
             }
 
             // Ricarica dalla DB per restituire i dati definitivi
-            $all   = qk_list_indirizzi_cliente($this->pdo, $soggetto_id);
+            $all   = qk_list_indirizzi($this->pdo, $soggetto_id);
             $saved = null;
             foreach ($all as $addr) {
                 if ((int) $addr['id'] === (int) $id) { $saved = $addr; break; }
@@ -435,7 +435,7 @@ final class AziendeController extends BaseController
         }
 
         try {
-            qk_delete_indirizzo_cliente($this->pdo, $address_id, $soggetto_id);
+            qk_delete_indirizzo($this->pdo, $address_id, $soggetto_id);
             ob_end_clean();
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {

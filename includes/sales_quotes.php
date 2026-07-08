@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/anagrafiche.php';
 require_once __DIR__ . '/prodotti.php';
+require_once __DIR__ . '/magazzino.php';
 
 /**
  * Genera il prossimo numero progressivo per il preventivo cliente.
@@ -181,11 +182,11 @@ function qk_crea_prodotto_rapido(PDO $pdo, array $data): int
             ':um_id' => $um_id,
         ]);
         $id = (int) $pdo->lastInsertId();
-        
+
         $pdo->prepare(
-            'INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, updated_at)
-             VALUES (:id, 0, 0, 0, CURRENT_TIMESTAMP)'
-        )->execute([':id' => $id]);
+            'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+             VALUES (:id, :magazzino_id, 0, 0, 0, 0, CURRENT_TIMESTAMP)'
+        )->execute([':id' => $id, ':magazzino_id' => qk_magazzino_attivo_id($pdo)]);
         
         $pdo->commit();
         return $id;
@@ -1052,10 +1053,11 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         )";
         $stLine = $pdo->prepare($sqlLine);
 
+        $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
         $stRes = $pdo->prepare("
-            UPDATE giacenze 
-            SET quantita_riservata = COALESCE(quantita_riservata, 0) + ? 
-            WHERE prodotto_id = ?
+            UPDATE giacenze
+            SET quantita_riservata = COALESCE(quantita_riservata, 0) + ?
+            WHERE prodotto_id = ? AND magazzino_id = ?
         ");
 
         foreach ($righe as $r) {
@@ -1081,14 +1083,14 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
 
             // Reserve stock
             if (!empty($r['prodotto_id']) && (float)$r['quantita_stock'] > 0) {
-                // Ensure giacenze row exists
-                $stCheckGia = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE prodotto_id = ?");
-                $stCheckGia->execute([$r['prodotto_id']]);
+                // Ensure giacenze row exists for (prodotto, magazzino attivo)
+                $stCheckGia = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
+                $stCheckGia->execute([$r['prodotto_id'], $magazzinoRiservaId]);
                 if ((int)$stCheckGia->fetchColumn() === 0) {
-                    $pdo->prepare("INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, updated_at) VALUES (?, 0, 0, 0, CURRENT_TIMESTAMP)")
-                        ->execute([$r['prodotto_id']]);
+                    $pdo->prepare("INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at) VALUES (?, ?, 0, 0, 0, 0, CURRENT_TIMESTAMP)")
+                        ->execute([$r['prodotto_id'], $magazzinoRiservaId]);
                 }
-                $stRes->execute([(float)$r['quantita_stock'], (int)$r['prodotto_id']]);
+                $stRes->execute([(float)$r['quantita_stock'], (int)$r['prodotto_id'], $magazzinoRiservaId]);
             }
         }
 

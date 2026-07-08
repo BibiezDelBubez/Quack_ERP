@@ -19,6 +19,7 @@ $_flash = flash_get();
 $_current_theme = ACTIVE_THEME;
 
 require_once INCLUDES_DIR . '/anagrafiche.php';
+require_once INCLUDES_DIR . '/magazzino.php';
 global $pdo;
 $aziende_topbar = qk_aziende_list($pdo);
 $attiva_azienda = null;
@@ -44,6 +45,29 @@ if (!empty($aziende_topbar)) {
         $attiva_azienda = $aziende_topbar[0];
     }
     $_SESSION['azienda_attiva_id'] = (int)$attiva_azienda['id'];
+}
+
+// Selettore magazzino attivo (Piano Multi-Magazzino §3.3/§3.10) — stesso
+// pattern del selettore azienda sopra, con qk_magazzino_attivo_id() come
+// unica fonte di verità per la risoluzione predefinita/fallback (§3.8).
+$magazzini_topbar = qk_magazzini_list($pdo, true);
+$attivo_magazzino = null;
+if (!empty($magazzini_topbar)) {
+    try {
+        $magazzinoAttivoId = qk_magazzino_attivo_id($pdo);
+        foreach ($magazzini_topbar as $mg) {
+            if ((int)$mg['id'] === $magazzinoAttivoId) {
+                $attivo_magazzino = $mg;
+                break;
+            }
+        }
+    } catch (\Throwable $e) {
+        $attivo_magazzino = null;
+    }
+    if (!$attivo_magazzino) {
+        $attivo_magazzino = $magazzini_topbar[0];
+    }
+    $_SESSION['magazzino_attivo_id'] = (int)$attivo_magazzino['id'];
 }
 ?>
 <!DOCTYPE html>
@@ -166,6 +190,38 @@ if (!empty($aziende_topbar)) {
         <div class="d-none d-md-flex align-items-center gap-1 text-muted" style="font-size:.8rem; font-weight:600; padding:6px 12px; border-radius:6px; background:var(--qk-bg-subtle);">
           <i class="fa-solid fa-building"></i>
           <span><?= e($attiva_azienda['ragione_sociale']) ?></span>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
+
+    <!-- Selettore Magazzino Attivo (Piano Multi-Magazzino §3.3/§3.10) -->
+    <?php if ($attivo_magazzino): ?>
+      <?php if (count($magazzini_topbar) > 1): ?>
+        <div class="dropdown">
+          <button class="qk-icon-btn dropdown-toggle border-0" data-bs-toggle="dropdown" aria-expanded="false" title="Magazzino Attivo" style="display:flex; align-items:center; gap:.4rem; font-size:.85rem; font-weight:600; padding:4px 10px; width:auto; border-radius:6px; background:var(--qk-bg-subtle);">
+            <i class="fa-solid fa-warehouse" style="font-size:1rem;"></i>
+            <span style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><?= e($attivo_magazzino['nome']) ?></span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li><span class="dropdown-header">Seleziona magazzino attivo</span></li>
+            <?php foreach ($magazzini_topbar as $mg): ?>
+              <li>
+                <a class="dropdown-item d-flex justify-content-between align-items-center <?= (int)$mg['id'] === (int)$attivo_magazzino['id'] ? 'active' : '' ?>"
+                   href="?switch_magazzino_id=<?= $mg['id'] ?>">
+                  <span><?= e($mg['nome']) ?></span>
+                  <?php if ((int)$mg['id'] === (int)$attivo_magazzino['id']): ?>
+                    <i class="fa-solid fa-check ms-2"></i>
+                  <?php endif; ?>
+                </a>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        </div>
+      <?php else: ?>
+        <!-- Singolo magazzino (visualizza statico senza dropdown) -->
+        <div class="d-none d-md-flex align-items-center gap-1 text-muted" style="font-size:.8rem; font-weight:600; padding:6px 12px; border-radius:6px; background:var(--qk-bg-subtle);">
+          <i class="fa-solid fa-warehouse"></i>
+          <span><?= e($attivo_magazzino['nome']) ?></span>
         </div>
       <?php endif; ?>
     <?php endif; ?>

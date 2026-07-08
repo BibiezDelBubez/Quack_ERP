@@ -305,18 +305,21 @@ final class ProductsController extends BaseController
             }
 
             // 3. Inserimento nuovo prodotto (EAN e SKU WooCommerce vengono resettati per evitare conflitti)
+            // scorta_minima non è più un campo di prodotti (multi-magazzino, §3.5):
+            // la copia non porta con sé alcuna soglia, la giacenza del nuovo
+            // prodotto nel magazzino attivo parte da 0 come per un prodotto nuovo.
             $insertStmt = $this->pdo->prepare('
                 INSERT INTO prodotti (
                     sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione,
                     descrizione_completa, tipo, categoria_id, note_interne, attivo,
                     traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
-                    peso_netto_kg, peso_lordo_kg, ean, scorta_minima, is_adr,
+                    peso_netto_kg, peso_lordo_kg, ean, is_adr,
                     sostanza_chimica_id, created_at
                 ) VALUES (
                     :sku_interno, NULL, :nome, :descrizione_breve, :descrizione_confezione,
                     :descrizione_completa, :tipo, :categoria_id, :note_interne, :attivo,
                     :traccia_lotti, :unita_misura_stock_id, :unita_contenuto_id, :quantita_contenuto,
-                    :peso_netto_kg, :peso_lordo_kg, NULL, :scorta_minima, :is_adr,
+                    :peso_netto_kg, :peso_lordo_kg, NULL, :is_adr,
                     :sostanza_chimica_id, CURRENT_TIMESTAMP
                 )
             ');
@@ -337,18 +340,17 @@ final class ProductsController extends BaseController
                 ':quantita_contenuto' => $prod['quantita_contenuto'] ?? null,
                 ':peso_netto_kg' => $prod['peso_netto_kg'] ?? null,
                 ':peso_lordo_kg' => $prod['peso_lordo_kg'] ?? null,
-                ':scorta_minima' => $prod['scorta_minima'] ?? 0,
                 ':is_adr' => $prod['is_adr'] ?? 0,
                 ':sostanza_chimica_id' => $prod['sostanza_chimica_id'] ?? null,
             ]);
 
             $newProductId = (int) $this->pdo->lastInsertId();
 
-            // 4. Crea riga giacenze per il nuovo prodotto
+            // 4. Crea riga giacenze per il nuovo prodotto nel magazzino attivo
             $this->pdo->prepare('
-                INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                VALUES (?, 0, 0, 0, ?, CURRENT_TIMESTAMP)
-            ')->execute([$newProductId, $prod['scorta_minima'] ?? 0]);
+                INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                VALUES (?, ?, 0, 0, 0, 0, CURRENT_TIMESTAMP)
+            ')->execute([$newProductId, qk_magazzino_attivo_id($this->pdo)]);
 
             // 5. Copia tag associati
             $tagsStmt = $this->pdo->prepare('SELECT tag_id FROM prodotti_tag WHERE prodotto_id = ?');
@@ -1603,17 +1605,22 @@ final class ProductsController extends BaseController
                     return (float) str_replace(',', '.', trim($v));
                 };
 
+                // NOTA: 'scorta_minima' non è più una colonna di prodotti (§3.5,
+                // multi-magazzino): se presente nel CSV, la colonna viene
+                // ignorata qui. La soglia va impostata per magazzino nel modulo
+                // Magazzino dopo l'importazione, non è più un dato di anagrafica
+                // prodotto importabile in blocco senza specificare la sede.
                 $this->pdo->prepare(
                     'INSERT INTO prodotti
                        (sku_interno, sku_ecommerce, nome, descrizione_breve, descrizione_confezione,
                         tipo, categoria_id, note_interne, attivo, traccia_lotti,
                         unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
-                        peso_netto_kg, peso_lordo_kg, ean, scorta_minima, is_adr, created_at)
+                        peso_netto_kg, peso_lordo_kg, ean, is_adr, created_at)
                      VALUES
                        (:sku, :sku_ec, :nome, :desc_b, :desc_conf,
                         :tipo, :cat_id, :note, :attivo, :traccia,
                         :um_id, :um_comm_id, :qta_cont,
-                        :peso_n, :peso_l, :ean, :scorta, :is_adr, CURRENT_TIMESTAMP)'
+                        :peso_n, :peso_l, :ean, :is_adr, CURRENT_TIMESTAMP)'
                 )->execute([
                     ':sku'        => $sku,
                     ':sku_ec'     => ($row['sku_ecommerce'] ?? '') !== '' ? trim($row['sku_ecommerce']) : null,
@@ -1631,18 +1638,25 @@ final class ProductsController extends BaseController
                     ':peso_n'     => $toFloat($row['peso_netto_kg'] ?? null),
                     ':peso_l'     => $toFloat($row['peso_lordo_kg'] ?? null),
                     ':ean'        => ($row['ean'] ?? '') !== '' ? trim($row['ean']) : null,
-                    ':scorta'     => $toFloat($row['scorta_minima'] ?? null) ?? 0.0,
                     ':is_adr'     => $isAdr,
                 ]);
 
                 $prodId = (int) $this->pdo->lastInsertId();
 
-                // Crea giacenza
+                // Crea giacenza nel magazzino attivo. Se il CSV porta una colonna
+                // scorta_minima, la usiamo comunque qui (una tantum, in fase di
+                // importazione) come soglia iniziale per il magazzino attivo — è
+                // l'unico punto in cui ha ancora senso leggerla dal CSV, perché qui
+                // sappiamo già per quale sede stiamo creando la riga di giacenza.
                 if ($tipo === 'semplice') {
                     $this->pdo->prepare(
-                        'INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                         VALUES (:id, 0, 0, 0, :scorta, CURRENT_TIMESTAMP)'
-                    )->execute([':id' => $prodId, ':scorta' => $toFloat($row['scorta_minima'] ?? null) ?? 0.0]);
+                        'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                         VALUES (:id, :magazzino_id, 0, 0, 0, :scorta, CURRENT_TIMESTAMP)'
+                    )->execute([
+                        ':id'           => $prodId,
+                        ':magazzino_id' => qk_magazzino_attivo_id($this->pdo),
+                        ':scorta'       => $toFloat($row['scorta_minima'] ?? null) ?? 0.0,
+                    ]);
                 }
 
                 // Prezzo di vendita base (listino 1)

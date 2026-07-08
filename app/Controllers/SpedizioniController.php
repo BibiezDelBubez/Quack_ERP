@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once INCLUDES_DIR . '/magazzino.php';
+
 final class SpedizioniController extends BaseController
 {
     /**
@@ -127,25 +129,32 @@ final class SpedizioniController extends BaseController
             redirect(url('sales/orders/edit') . '?id=' . $orderId);
         }
 
-        // Carica lotti disponibili per tutti i prodotti con traccia_lotti in un solo query
+        // Carica lotti disponibili per tutti i prodotti con traccia_lotti in un solo query.
+        // Disponibilità FEFO scoperta per magazzino attivo (Piano Multi-Magazzino §3.8/§4.13):
+        // finché non esiste un selettore magazzino dedicato per le spedizioni, la spedizione
+        // viene creata dal magazzino attivo (stessa approssimazione usata in
+        // SalesOrdersController::createShipment per lo scarico effettivo).
+        $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
         $prodIds = array_unique(array_filter(array_column($righe, 'prodotto_id')));
         $lottiPerProdotto = [];
         if (!empty($prodIds)) {
             $in = implode(',', array_map('intval', $prodIds));
-            $stLotti = $this->pdo->query("
+            $stLotti = $this->pdo->prepare("
                 SELECT l.prodotto_id,
                        l.id,
                        COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice,
-                       l.quantita_disponibile,
+                       lg.quantita_disponibile,
                        l.data_scadenza
                 FROM lotti l
+                JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
                 WHERE l.prodotto_id IN ($in)
-                  AND l.quantita_disponibile > 0
+                  AND lg.quantita_disponibile > 0
                 ORDER BY l.prodotto_id,
                          CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END,
                          l.data_scadenza ASC,
                          l.created_at ASC
             ");
+            $stLotti->execute([$magazzinoSpedId]);
             foreach ($stLotti->fetchAll(PDO::FETCH_ASSOC) as $lot) {
                 $lottiPerProdotto[$lot['prodotto_id']][] = $lot;
             }

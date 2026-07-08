@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/purchases_orders.php';
 require_once INCLUDES_DIR . '/word_helper.php';
+require_once INCLUDES_DIR . '/magazzino.php';
 
 /**
  * PurchaseOrdersController — Ordini di Acquisto (ciclo acquisti v2).
@@ -85,18 +86,24 @@ class PurchaseOrdersController extends BaseController
                 $rif_fornitore      = post('riferimento_fornitore', '');
                 $altri_rif          = post('altri_riferimenti', '');
                 $data_cons_prevista = post('data_consegna_prevista', '');
+                // Magazzino destinazione (Piano Multi-Magazzino §2.7/§3.4): modificabile
+                // finché l'ordine non è in stato terminale, come gli altri campi qui.
+                $magazzino_destinazione_id = post('magazzino_destinazione_id', '') !== ''
+                    ? (int) post('magazzino_destinazione_id')
+                    : null;
 
                 try {
                     $this->pdo->prepare(
                         'UPDATE ordini_testata SET
                             note_fornitore = ?, note_interne = ?,
                             riferimento_fornitore = ?, altri_riferimenti = ?,
-                            data_consegna_prevista = ?
+                            data_consegna_prevista = ?, magazzino_destinazione_id = ?
                           WHERE id = ?'
                     )->execute([
                         $note_fornitore, $note_interne,
                         $rif_fornitore, $altri_rif,
                         $data_cons_prevista !== '' ? $data_cons_prevista : null,
+                        $magazzino_destinazione_id,
                         $id,
                     ]);
                     $detail = qk_ordine_detail($this->pdo, $id);
@@ -108,6 +115,7 @@ class PurchaseOrdersController extends BaseController
         }
 
         $saved      = get_param('saved', '') === '1';
+        $magazzini_options = qk_magazzini_list($this->pdo, true);
         $page_title = 'Ordine ' . $detail['ordine']['numero'];
         $breadcrumbs = [
             ['label' => 'Acquisti', 'url' => url('purchases/orders')],

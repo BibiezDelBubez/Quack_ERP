@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/prodotti.php';
+require_once __DIR__ . '/magazzino.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -242,6 +243,16 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
 
         $numero = qk_next_numero_acquisto($pdo, 'ordine');
 
+        // Magazzino destinazione dell'ordine (Piano Multi-Magazzino §2.7/§3.4):
+        // precompilato con il magazzino attivo di sessione alla creazione,
+        // modificabile dal dettaglio ordine finché resta in stato non terminale
+        // (PurchaseOrdersController::edit()).
+        try {
+            $magazzinoDestinazioneId = qk_magazzino_attivo_id($pdo);
+        } catch (\Throwable $e) {
+            $magazzinoDestinazioneId = null; // dataset senza magazzini seedati: non blocca la creazione ordine
+        }
+
         $pdo->prepare(
             "INSERT INTO ordini_testata
                 (numero, offerta_id, rfq_id, fornitore_id, stato,
@@ -255,8 +266,8 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                  consegna_referente, consegna_telefono, consegna_note,
                  contatto_id, contatto_nome, contatto_telefono, contatto_email,
                  fornitore_telefono, fornitore_email, listino_acquisto_id,
-                 metodo_pagamento_id, resa_porto, created_at)
-             VALUES (?,?,?,?,'bozza',DATE('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+                 metodo_pagamento_id, resa_porto, magazzino_destinazione_id, created_at)
+             VALUES (?,?,?,?,'bozza',DATE('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
         )->execute([
             $numero,
             $offerta_id,
@@ -292,6 +303,7 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $offerta['listino_acquisto_id'],
             $offerta['metodo_pagamento_id'],
             $offerta['resa_porto'],
+            $magazzinoDestinazioneId,
         ]);
         $ordine_id = (int) $pdo->lastInsertId();
 
@@ -489,16 +501,34 @@ function _ordine_carica(PDO $pdo, int $id): array
  */
 function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): void
 {
+    // Magazzino destinazione dell'ordine (Piano Multi-Magazzino §3.4/§2.7); finché la
+    // UI di creazione ordine non lo imposta esplicitamente (§3.8, task #13), si ricade
+    // sul magazzino attivo, coerente con le altre approssimazioni interim del piano.
+    $stOrd = $pdo->prepare('SELECT magazzino_destinazione_id FROM ordini_testata WHERE id = ?');
+    $stOrd->execute([$ordine_id]);
+    $magazzinoId = (int)($stOrd->fetchColumn() ?: 0);
+    if ($magazzinoId <= 0) {
+        $magazzinoId = qk_magazzino_attivo_id($pdo);
+    }
+
     $righe = $pdo->prepare('SELECT prodotto_id, quantita_stock FROM ordini_righe WHERE ordine_id = ?');
     $righe->execute([$ordine_id]);
     $op = $segno === '+' ? '+' : '-';
     $st = $pdo->prepare(
         "UPDATE giacenze
             SET quantita_in_arrivo = MAX(0, quantita_in_arrivo $op ?)
-          WHERE prodotto_id = ?"
+          WHERE prodotto_id = ? AND magazzino_id = ?"
+    );
+    $stIns = $pdo->prepare(
+        "INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+         VALUES (?, ?, 0, 0, MAX(0, ?), 0, CURRENT_TIMESTAMP)"
     );
     foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $st->execute([$r['quantita_stock'] ?? $r['quantita_ordinata'], $r['prodotto_id']]);
+        $qta = $r['quantita_stock'] ?? $r['quantita_ordinata'];
+        $st->execute([$qta, $r['prodotto_id'], $magazzinoId]);
+        if ($st->rowCount() === 0) {
+            $stIns->execute([$r['prodotto_id'], $magazzinoId, $op === '+' ? $qta : 0]);
+        }
     }
 }
 
@@ -570,8 +600,8 @@ function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
             riferimento_fornitore, altri_riferimenti, note_fornitore, note_interne, imponibile,
             totale_iva, totale, creato_da, contatto_id, contatto_nome, contatto_telefono,
             contatto_email, fornitore_telefono, fornitore_email, listino_acquisto_id,
-            metodo_pagamento_id, resa_porto, versione, ordine_padre_id
-        ) VALUES (?, ?, ?, ?, \'bozza\', CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            metodo_pagamento_id, resa_porto, versione, ordine_padre_id, magazzino_destinazione_id
+        ) VALUES (?, ?, ?, ?, \'bozza\', CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $stmtInsOrd->execute([
             $nuovoNumero,
@@ -612,9 +642,10 @@ function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
             $ordine['metodo_pagamento_id'],
             $ordine['resa_porto'],
             $nuovaVersione,
-            $ordine_id
+            $ordine_id,
+            $ordine['magazzino_destinazione_id'] ?? null,
         ]);
-        
+
         $nuovoOrdineId = (int)$pdo->lastInsertId();
 
         // 5. Duplica le righe dell'ordine

@@ -33,13 +33,19 @@ class WarehouseController extends BaseController
             FROM giacenze g
         ")->fetchColumn();
 
-        // 2. Conta i prodotti Sottoscorta
-        $sottoscorta_count = (int) $this->pdo->query("
+        // 2. Conta i prodotti Sottoscorta NEL MAGAZZINO ATTIVO (la soglia è per
+        //    coppia prodotto-magazzino, non più un valore unico di prodotto —
+        //    vedi Piano Multi-Magazzino §3.5). Finché non esiste un selettore
+        //    magazzino in UI (§3.3/§3.10), la dashboard generale mostra il
+        //    sottoscorta della sede attiva di sessione/predefinita.
+        $magazzinoAttivoId = qk_magazzino_attivo_id($this->pdo);
+        $stSotto = $this->pdo->prepare("
             SELECT COUNT(*) FROM prodotti p
-            LEFT JOIN giacenze g ON g.prodotto_id = p.id
-            WHERE p.attivo = 1 AND p.scorta_minima > 0
-              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
-        ")->fetchColumn();
+            JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+            WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
+        ");
+        $stSotto->execute([$magazzinoAttivoId]);
+        $sottoscorta_count = (int) $stSotto->fetchColumn();
 
         // 3. Conta la merce in Arrivo (ordini acquisto pendenti)
         $in_arrivo_count = (int) $this->pdo->query("
@@ -62,17 +68,17 @@ class WarehouseController extends BaseController
         ");
         $recent_movements = $stmtM->fetchAll(PDO::FETCH_ASSOC);
 
-        // 6. Primi 5 prodotti vicini al sottoscorta
-        $stmtU = $this->pdo->query("
-            SELECT p.nome, COALESCE(g.quantita_disponibile, 0) AS quantita_disponibile, p.scorta_minima, u.codice AS uom
+        // 6. Primi 5 prodotti vicini al sottoscorta nel magazzino attivo
+        $stmtU = $this->pdo->prepare("
+            SELECT p.nome, COALESCE(g.quantita_disponibile, 0) AS quantita_disponibile, g.scorta_minima, u.codice AS uom
             FROM prodotti p
-            LEFT JOIN giacenze g ON g.prodotto_id = p.id
+            JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
             LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-            WHERE p.attivo = 1 AND p.scorta_minima > 0
-              AND (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) < p.scorta_minima
+            WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
             ORDER BY (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) ASC
             LIMIT 5
         ");
+        $stmtU->execute([$magazzinoAttivoId]);
         $understock_items = $stmtU->fetchAll(PDO::FETCH_ASSOC);
 
         $page_title    = 'Magazzino';
@@ -249,6 +255,13 @@ class WarehouseController extends BaseController
             'righe' => []
         ];
 
+        // Un inventario fisico è per un magazzino specifico (giacenza_teorica
+        // e le rettifiche generate sono scoping-ate a quella sede — vedi Piano
+        // Multi-Magazzino §3.4/§4.9). Finché non esiste un selettore magazzino
+        // dedicato al form inventario, un inventario nuovo usa il magazzino
+        // attivo; uno esistente mantiene il proprio (letto sotto da $inventario).
+        $magazzinoInventarioId = qk_magazzino_attivo_id($this->pdo);
+
         // Carica dati se stiamo modificando/visualizzando
         if ($id) {
             $stmt = $this->pdo->prepare("SELECT * FROM inventari WHERE id = ?");
@@ -259,6 +272,9 @@ class WarehouseController extends BaseController
             }
             $values['data_inventario'] = $inventario['data_inventario'];
             $values['note'] = $inventario['note'];
+            if (!empty($inventario['magazzino_id'])) {
+                $magazzinoInventarioId = (int) $inventario['magazzino_id'];
+            }
 
             // Righe esistenti dell'inventario
             $stmtR = $this->pdo->prepare("
@@ -277,22 +293,27 @@ class WarehouseController extends BaseController
                 $values['righe'][$key] = (string)$p['quantita_contata'];
             }
         } else {
-            // Nuova sessione: prendiamo tutti i prodotti con relative giacenze teoriche
-            // Se un prodotto gestisce lotti, splittiamo le giacenze teoriche per lotto
+            // Nuova sessione: prendiamo tutti i prodotti con le giacenze teoriche
+            // NEL MAGAZZINO di questo inventario. Se un prodotto gestisce lotti,
+            // splittiamo le giacenze teoriche per lotto (lotti_giacenze, per
+            // sede — vedi §3.1), non più sul campo aggregato lotti.quantita_disponibile.
             $sql = "
                 SELECT p.id AS prodotto_id, p.nome AS nome_prodotto, p.sku_interno, u.codice AS uom,
                        l.id AS lotto_id, l.codice_lotto_interno,
-                       CASE WHEN p.traccia_lotti = 1 THEN COALESCE(l.quantita_disponibile, 0)
+                       CASE WHEN p.traccia_lotti = 1 THEN COALESCE(lg.quantita_disponibile, 0)
                             ELSE COALESCE(g.quantita_disponibile, 0)
                        END AS giacenza_teorica
                 FROM prodotti p
-                LEFT JOIN giacenze g ON g.prodotto_id = p.id
+                LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
                 LEFT JOIN lotti l ON l.prodotto_id = p.id AND (p.traccia_lotti = 1)
+                LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
                 WHERE p.attivo = 1 AND p.tipo != 'kit'
                 ORDER BY p.nome COLLATE NOCASE, l.codice_lotto_interno ASC
             ";
-            $prodotti_inventario = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+            $stmtInv = $this->pdo->prepare($sql);
+            $stmtInv->execute([$magazzinoInventarioId, $magazzinoInventarioId]);
+            $prodotti_inventario = $stmtInv->fetchAll(PDO::FETCH_ASSOC);
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -316,12 +337,12 @@ class WarehouseController extends BaseController
                         $utente_id = (int)(current_user()['id'] ?? 0);
 
                         if (!$id) {
-                            // Inserisci testata
+                            // Inserisci testata (magazzino fissato alla creazione, non più cambiabile dopo)
                             $stmt = $this->pdo->prepare("
-                                INSERT INTO inventari (data_inventario, note, creato_da, stato)
-                                VALUES (?, ?, ?, 'bozza')
+                                INSERT INTO inventari (data_inventario, magazzino_id, note, creato_da, stato)
+                                VALUES (?, ?, ?, ?, 'bozza')
                             ");
-                            $stmt->execute([$data_inventario, $note, $utente_id]);
+                            $stmt->execute([$data_inventario, $magazzinoInventarioId, $note, $utente_id]);
                             $id = (int)$this->pdo->lastInsertId();
                         } else {
                             // Aggiorna testata
@@ -363,16 +384,17 @@ class WarehouseController extends BaseController
                                 $tipoMovimento = $delta > 0 ? 'carico' : 'scarico';
                                 $quantitaAssoluta = abs($delta);
 
-                                // 1. Crea il movimento di magazzino
+                                // 1. Crea il movimento di magazzino, per QUESTO magazzino
                                 $stmtMov = $this->pdo->prepare("
-                                    INSERT INTO movimenti_magazzino 
-                                    (prodotto_id, lotto_id, tipo_movimento, quantita, documento_tipo, documento_id, canale_origine, note, creato_da)
-                                    VALUES (?, ?, 'rettifica', ?, 'inventario', ?, 'manuale', ?, ?)
+                                    INSERT INTO movimenti_magazzino
+                                    (prodotto_id, lotto_id, magazzino_id, tipo_movimento, quantita, documento_tipo, documento_id, canale_origine, note, creato_da)
+                                    VALUES (?, ?, ?, 'rettifica', ?, 'inventario', ?, 'manuale', ?, ?)
                                 ");
                                 $noteMov = sprintf("Rettifica da inventario #%d. Scostamento: %+.3f", $id, $delta);
                                 $stmtMov->execute([
                                     $riga['prodotto_id'],
                                     $riga['lotto_id'],
+                                    $magazzinoInventarioId,
                                     $quantitaAssoluta,
                                     $id,
                                     $noteMov,
@@ -383,9 +405,9 @@ class WarehouseController extends BaseController
                                 // Associa il movimento alla riga
                                 $this->pdo->prepare("UPDATE inventari_righe SET movimento_id = ? WHERE id = ?")->execute([$movimentoId, $riga['id']]);
 
-                                // 2. Aggiorna giacenze totali prodotto
-                                $stGiac = $this->pdo->prepare("SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ?");
-                                $stGiac->execute([$riga['prodotto_id']]);
+                                // 2. Aggiorna la giacenza di QUESTO magazzino
+                                $stGiac = $this->pdo->prepare("SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
+                                $stGiac->execute([$riga['prodotto_id'], $magazzinoInventarioId]);
                                 $giac = $stGiac->fetch(PDO::FETCH_ASSOC);
 
                                 if ($giac) {
@@ -393,15 +415,21 @@ class WarehouseController extends BaseController
                                     $this->pdo->prepare("UPDATE giacenze SET quantita_disponibile = ?, updated_at = datetime('now') WHERE id = ?")
                                               ->execute([$nuovaQta, $giac['id']]);
                                 } else {
-                                    $this->pdo->prepare("INSERT INTO giacenze (prodotto_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, updated_at) 
-                                                         VALUES (?, ?, 0, 0, datetime('now'))")
-                                              ->execute([$riga['prodotto_id'], $delta]);
+                                    $this->pdo->prepare("INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+                                                         VALUES (?, ?, ?, 0, 0, 0, datetime('now'))")
+                                              ->execute([$riga['prodotto_id'], $magazzinoInventarioId, $delta]);
                                 }
 
-                                // 3. Aggiorna quantità disponibile lotto se tracciato
+                                // 3. Aggiorna quantità disponibile del lotto in QUESTO magazzino
+                                //    (lotti_giacenze, non più il campo aggregato lotti.quantita_disponibile)
                                 if ($riga['lotto_id']) {
-                                    $this->pdo->prepare("UPDATE lotti SET quantita_disponibile = quantita_disponibile + ? WHERE id = ?")
-                                              ->execute([$delta, $riga['lotto_id']]);
+                                    $this->pdo->prepare("
+                                        INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
+                                        VALUES (?, ?, ?, datetime('now'))
+                                        ON CONFLICT(lotto_id, magazzino_id) DO UPDATE SET
+                                            quantita_disponibile = quantita_disponibile + excluded.quantita_disponibile,
+                                            updated_at = excluded.updated_at
+                                    ")->execute([$riga['lotto_id'], $magazzinoInventarioId, $delta]);
                                 }
                             }
 
@@ -445,10 +473,15 @@ class WarehouseController extends BaseController
         $base   = url('warehouse/reorder');
         $search = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
 
+        // Il riordino è per il magazzino attivo: la soglia (giacenze.scorta_minima)
+        // e la giacenza libera sono per coppia (prodotto, magazzino), non più un
+        // valore unico di prodotto — vedi Piano Multi-Magazzino §3.5.
+        $magazzinoAttivoId = qk_magazzino_attivo_id($this->pdo);
+
         $sortColMap = [
             'nome'     => 'p.nome',
             'libera'   => '(COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0))',
-            'minima'   => 'p.scorta_minima',
+            'minima'   => 'g.scorta_minima',
             'arrivo'   => 'COALESCE(g.quantita_in_arrivo,0)',
             'fornitore'=> 'fornitore_nome',
         ];
@@ -461,7 +494,7 @@ class WarehouseController extends BaseController
         $sortCol = $sortColMap[$sort];
 
         $whereExtra = '';
-        $params     = [];
+        $params     = [$magazzinoAttivoId];
         if ($search !== '') {
             $whereExtra = 'AND (p.nome LIKE ? OR p.sku_interno LIKE ?)';
             $params[]   = "%$search%";
@@ -470,12 +503,11 @@ class WarehouseController extends BaseController
 
         $baseSql =
             "FROM prodotti p
-             LEFT JOIN giacenze g ON g.prodotto_id = p.id
+             JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
              LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
              LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
              LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
-             WHERE p.attivo = 1 AND p.scorta_minima > 0
-               AND (COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0)) < p.scorta_minima
+             WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
                " . $whereExtra;
 
         $stmtC = $this->pdo->prepare("SELECT COUNT(*) " . $baseSql);
@@ -488,7 +520,7 @@ class WarehouseController extends BaseController
                     COALESCE(g.quantita_riservata, 0) AS qta_riservata,
                     COALESCE(g.quantita_in_arrivo, 0) AS qta_in_arrivo,
                     (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) AS qta_libera,
-                    p.scorta_minima,
+                    g.scorta_minima,
                     pf.fornitore_id,
                     COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
                     (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
@@ -596,10 +628,14 @@ class WarehouseController extends BaseController
                     try {
                         $utente_id = (int) (current_user()['id'] ?? 0);
 
-                        // Costruisce il payload per qk_insert_movimento_manuale
+                        // Costruisce il payload per qk_insert_movimento_manuale.
+                        // magazzino_id: finché il form non espone un selettore
+                        // dedicato (§3.10), il movimento manuale si registra sempre
+                        // sul magazzino attivo di sessione/predefinito.
                         $movData = [
                             'tipo_movimento'      => $values['tipo_movimento'],
                             'prodotto_id'         => (int) $values['prodotto_id'],
+                            'magazzino_id'        => qk_magazzino_attivo_id($this->pdo),
                             'quantita'            => (float) $qtaStr,
                             'lotto_id'            => $values['lotto_id'] !== '' ? (int) $values['lotto_id'] : null,
                             'note'                => $values['note'],

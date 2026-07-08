@@ -109,7 +109,7 @@ final class SalesQuotesController extends BaseController
                             $user_id = (int) (current_user()['id'] ?? 0);
                             
                             if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
-                                $newAddrId = qk_insert_indirizzo_cliente($this->pdo, (int)$values['cliente_id'], [
+                                $newAddrId = qk_insert_indirizzo($this->pdo, (int)$values['cliente_id'], [
                                     'tipo' => 'spedizione',
                                     'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
                                     'predefinito' => false,
@@ -252,7 +252,7 @@ final class SalesQuotesController extends BaseController
                             $user_id = (int) (current_user()['id'] ?? 0);
                             
                             if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
-                                $newAddrId = qk_insert_indirizzo_cliente($this->pdo, (int)$values['cliente_id'], [
+                                $newAddrId = qk_insert_indirizzo($this->pdo, (int)$values['cliente_id'], [
                                     'tipo' => 'spedizione',
                                     'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
                                     'predefinito' => false,
