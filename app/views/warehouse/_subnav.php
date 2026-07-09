@@ -10,6 +10,7 @@ $subnav_tabs = [
     'movements' => ['label' => 'Movimenti',       'url' => url('warehouse/movements')],
     'inventories' => ['label' => 'Inventario fis.', 'url' => url('warehouse/inventories')],
     'reorder'   => ['label' => 'Riordino',        'url' => url('warehouse/reorder')],
+    'min-stock' => ['label' => 'Soglie di riordino', 'url' => url('warehouse/min-stock')],
     'transfers' => ['label' => 'Trasferimenti',   'url' => url('warehouse/transfers')],
 ];
 ?>

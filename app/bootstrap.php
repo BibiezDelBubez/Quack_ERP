@@ -58,20 +58,11 @@ if (isset($_GET['switch_azienda_id']) && is_authenticated()) {
     exit;
 }
 
-// Intercetta il cambio magazzino attivo per la sessione (Piano Multi-Magazzino
-// §3.3/§3.10) — stesso pattern di switch_azienda_id sopra.
-if (isset($_GET['switch_magazzino_id']) && is_authenticated()) {
-    $_SESSION['magazzino_attivo_id'] = (int)$_GET['switch_magazzino_id'];
-
-    // Ripulisci la query string
-    $redirectUrl = strtok($_SERVER['REQUEST_URI'], '?');
-    $query = $_GET;
-    unset($query['switch_magazzino_id']);
-    if (!empty($query)) {
-        $redirectUrl .= '?' . http_build_query($query);
-    }
-    header('Location: ' . $redirectUrl);
-    exit;
-}
+// Gestore switch_magazzino_id RIMOSSO (Opzione A, Magazzino Attivo - Analisi
+// e Alternative.md §9.3/§9.5): non esiste più un selettore astratto in topbar
+// da cui arrivava questo parametro. $_SESSION['magazzino_attivo_id'] si
+// aggiorna ora come effetto collaterale delle scelte esplicite fatte nelle
+// pagine che lo richiedono (Fix 1-3, §8.2-§8.4: WarehouseController::
+// createMovement()/stock()/reorder(), e createTransfer()/trasferimentoDiretto()).
 
 

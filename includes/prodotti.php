@@ -415,14 +415,24 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
     // Unified query with joins to fetch main sales price (listino 1, qty 0)
     $sqlRows = "SELECT p.id, p.sku_interno, p.nome, p.tipo, um.codice AS unita_misura,
                 p.attivo, c.nome AS categoria,
-                CASE 
+                CASE
                     WHEN p.tipo = 'kit' THEN (
-                        SELECT MIN(CAST(IFNULL(g2.quantita_disponibile, 0) / ck.quantita AS INT))
+                        -- Giacenza kit = MIN, tra i componenti, di (giacenza del componente
+                        -- SOMMATA su tutte le sedi) / quantità richiesta — non un semplice
+                        -- JOIN su giacenze (che senza SUM per-componente mescolerebbe righe
+                        -- di sedi diverse nello stesso MIN, dando un risultato senza senso).
+                        -- Stesso pattern già usato in _qk_stock_list_aggregato() di magazzino.php.
+                        SELECT MIN(CAST(IFNULL(
+                            (SELECT SUM(g3.quantita_disponibile) FROM giacenze g3 WHERE g3.prodotto_id = ck.componente_id)
+                        , 0) / ck.quantita AS INT))
                         FROM componenti_kit ck
-                        LEFT JOIN giacenze g2 ON g2.prodotto_id = ck.componente_id
                         WHERE ck.kit_id = p.id
                     )
-                    ELSE g.quantita_disponibile
+                    -- Prodotto semplice: giacenza aggregata su TUTTE le sedi (SUM), non la
+                    -- riga di un magazzino preso a caso — bug storico corretto (Best Practice
+                    -- UX-UI Multi-Magazzino nei Grandi ERP.md, §5, filo conduttore #2:
+                    -- l'aggregato è sempre una somma calcolata al volo, mai un valore singolo).
+                    ELSE SUM(g.quantita_disponibile)
                 END AS quantita_disponibile,
                 COALESCE(p.is_adr, 0) AS is_adr,
                 lp.prezzo_unitario AS prezzo_vendita,
@@ -453,7 +463,7 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
          ORDER BY " . match($sort) {
              'sku'       => 'p.sku_interno COLLATE NOCASE',
              'categoria' => 'c.nome COLLATE NOCASE',
-             'giacenza'  => 'g.quantita_disponibile',
+             'giacenza'  => 'quantita_disponibile',
              'prezzo'    => 'prezzo_vendita',
              'tipo'      => 'p.tipo',
              default     => 'p.nome COLLATE NOCASE',
@@ -511,6 +521,15 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
      $stmtPrice->execute([$id]);
      $prezzo_base = $stmtPrice->fetchColumn();
 
+     // Giacenza totale su tutte le sedi (Best Practice UX-UI Multi-Magazzino
+     // nei Grandi ERP.md, §5: "l'aggregato è una somma calcolata al volo").
+     // Mostrata sulla scheda prodotto come contatore cliccabile verso il
+     // dettaglio per sede — pattern Odoo ("In Stock"), stesso screen già
+     // costruito per le soglie di riordino (warehouse/min-stock?prodotto_id=).
+     $stmtGiac = $pdo->prepare('SELECT COALESCE(SUM(quantita_disponibile), 0) FROM giacenze WHERE prodotto_id = ?');
+     $stmtGiac->execute([$id]);
+     $quantita_disponibile_totale = (float) $stmtGiac->fetchColumn();
+
      return [
          'sku_interno'          => (string) ($row['sku_interno']         ?? ''),
          'sku_ecommerce'        => (string) ($row['sku_ecommerce']        ?? ''),
@@ -530,6 +549,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          'unita_contenuto_id'   => (string) ($row['unita_contenuto_id']   ?? ''),
          'quantita_contenuto'   => (string) ($row['quantita_contenuto']   ?? ''),
          'scorta_minima'        => (string) ($row['scorta_minima']        ?? '0'),
+         'quantita_disponibile_totale' => $quantita_disponibile_totale,
          'is_adr'               => (string) ($row['is_adr']               ?? '0'),
          'sostanza_chimica_id'      => (string) ($row['sostanza_chimica_id']      ?? ''),
          'prezzo_vendita_base'  => $prezzo_base !== false ? (string)$prezzo_base : '',

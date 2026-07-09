@@ -6,14 +6,17 @@
 
 declare(strict_types=1);
 
-// Definizione cartelle e file
-define('APP_ROOT_DIR', dirname(__DIR__));
+// Legge la configurazione reale dell'app (DB_MYSQL_*) invece di ripetere valori
+// a mano: altrimenti i default di questo form possono disallinearsi in silenzio
+// da quelli usati davvero da includes/db.php a runtime.
+require_once dirname(__DIR__) . '/includes/config.php';
+
 $sqlFile = APP_ROOT_DIR . '/db/init_mysql.sql';
 
-$host     = $_POST['host'] ?? '127.0.0.1';
-$dbname   = $_POST['dbname'] ?? 'quack_erp';
-$username = $_POST['username'] ?? 'root';
-$password = $_POST['password'] ?? '';
+$host     = $_POST['host'] ?? DB_MYSQL_HOST;
+$dbname   = $_POST['dbname'] ?? DB_MYSQL_NAME;
+$username = $_POST['username'] ?? DB_MYSQL_USER;
+$password = $_POST['password'] ?? DB_MYSQL_PASS;
 $error    = null;
 $success  = false;
 
@@ -230,7 +233,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </p>
     <?php else: ?>
         <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1.5rem;">
-            Questo script creerà il database MySQL specificato ed eseguirà le query presenti in <code>db/init_mysql.sql</code>.
+            Questo script crea il database MySQL specificato ed esegue le query presenti in <code>db/init_mysql.sql</code>.
+            Se il database esiste già con le tabelle già presenti, le query <code>CREATE TABLE IF NOT EXISTS</code>
+            non le modificano: per applicare uno schema aggiornato a un database esistente serve una migrazione
+            dedicata, non questo script.
         </p>
         <form method="post">
             <div class="form-group">

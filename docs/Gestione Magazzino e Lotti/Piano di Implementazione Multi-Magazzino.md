@@ -669,3 +669,54 @@ Pratica comune nella distribuzione chimica (fusti, cisternette IBC resi dal clie
 ### 4.16 Precisione decimale e arrotondamenti
 
 Tutte le quantità coinvolte (`giacenze`, `lotti`, `lotti_giacenze`, `movimenti_magazzino`) usano `DECIMAL(10,3)`, coerente con lo standard già in uso in tutto lo schema attuale (inclusa la doppia UoM stock/vendita già gestita da `prodotti.num_factor`/`den_factor`). Scomporre una giacenza tra più magazzini non introduce nuovi problemi di arrotondamento rispetto a oggi: la somma di righe `DECIMAL(10,3)` è esatta (non in virgola mobile), e il vincolo applicativo del §3.4 (somma per lotto ≤ quantità ricevuta) va verificato con lo stesso tipo di confronto già usato altrove nel codice, senza margini di tolleranza aggiuntivi da introdurre.
+
+---
+
+## Parte 5 — Iterazione post-rilascio: magazzino attivo e soglie di riordino
+
+Le Parti 1-4 sono state implementate e verificate end-to-end (§16 del changelog operativo). Questa parte raccoglie due decisioni prese *dopo* il rilascio, a seguito di un'indagine dedicata sulle best practice UX dei quattro ERP di riferimento (SAP, Oracle NetSuite, Microsoft Dynamics 365, Odoo) — entrambe documentate per esteso altrove, qui solo la sintesi operativa e la specifica di cosa implementare.
+
+### 5.1 Magazzino attivo: da selettore permanente in topbar a preferenza + campi espliciti
+
+**Decisione presa** (analisi completa in `Magazzino Attivo - Analisi e Alternative.md`, §9): nessuno dei quattro ERP di riferimento tiene un widget "sede corrente" sempre visibile su ogni schermata, a differenza dell'azienda/subsidiary che invece lo merita ovunque perché è davvero globale (tocca la testata legale di quasi ogni documento). Il magazzino riguarda solo un sottoinsieme di operazioni (giacenze, movimenti, lotti, trasferimenti, destinazione ordini/ricezioni): tenerlo comunque sempre in vista comunica implicitamente "conta ovunque", il che è falso.
+
+**Cosa cambia rispetto a quanto già implementato (§3.3/§3.10):**
+
+1. Il selettore scompare dalla topbar globale (`includes/header.php`) — non più un dropdown sempre visibile su ogni pagina, azienda-style.
+2. Il valore di sessione (`$_SESSION['magazzino_attivo_id']`, risoluzione invariata in `qk_magazzino_attivo_id()`: sessione → `predefinito` → primo attivo) resta, ma si aggiorna **come effetto collaterale** di un'azione esplicita — ogni volta che un utente sceglie un magazzino su una pagina che lo richiede (il campo del Fix 1 in "Nuovo movimento", i filtri di Fix 2/3 in "Giacenze"/"Riordino", l'origine di un trasferimento) — non più tramite un interruttore dedicato separato dall'azione che lo giustifica.
+3. Nuova pagina impostazioni personali (`/settings/profilo` o analoga, da verificare se esiste già un'area profilo utente in Quack) con un campo "Magazzino predefinito" — sul modello di Odoo (Profilo → Preferenze → Magazzino predefinito) e SAP (SU3, parametro `WRK`): un posto solo, visitato una tantum, non un controllo ambientale.
+4. I quattro Fix del piano UX (`Magazzino Attivo - Analisi e Alternative.md`, §8.2-8.5: campo esplicito su "Nuovo movimento", filtro esplicito su "Giacenze" e "Riordino" con opzione aggregata "Tutti i magazzini", nome sede nel KPI dashboard) restano validi e diventano **più importanti**, non meno: senza la falsa rete di sicurezza del selettore sempre a vista, l'unico modo per l'utente di sapere/scegliere su quale sede sta operando è il campo esplicito sulla pagina stessa.
+
+**Conseguenze implementative dirette:** rimuovere il blocco selettore da `includes/header.php` e il gestore `switch_magazzino_id` da `app/bootstrap.php`; ogni handler POST dei Fix 1-3 scrive `$_SESSION['magazzino_attivo_id']` quando riceve un `magazzino_id` esplicito dall'utente.
+
+### 5.2 Soglie di riordino per magazzino: la schermata mancante
+
+**Il problema, verificato sul codice, non presunto.** `giacenze.scorta_minima` esiste correttamente per coppia (prodotto, magazzino) fin dal §3.5 — ma oggi **non esiste alcuna schermata per modificarla**. È visibile in sola lettura in tre punti (`app/views/warehouse/stock.php:176`, dashboard, riordino) e nel form prodotto (`app/views/products/_form.php:429`) c'è persino un campo disabilitato con la scritta "si imposta per magazzino nel modulo Magazzino, non da qui" — promessa che nel codice attuale non è mantenuta da nessuna parte. L'unico modo per scrivere una soglia oggi è un import CSV in fase di creazione prodotto (`ProductsController.php:1653`) o restare a 0 per sempre.
+
+**Il confronto tra le quattro soluzioni esistenti, e la scelta.**
+
+| ERP | Dove si edita | Modello |
+|---|---|---|
+| SAP | Vista MRP1-4 del Material Master, per plant | Transazione pesante, un plant alla volta, richiede navigazione profonda — il meno contemporaneo dei quattro |
+| Microsoft Dynamics 365 | "Stockkeeping Unit Card", scheda anagrafica separata per combinazione articolo+sede | Introduce un nuovo concetto di master data (SKU) solo per questo — overhead concettuale non necessario in Quack, che ha già `giacenze` come tabella naturale per (prodotto, magazzino) |
+| Oracle NetSuite | Subtab "Locations" dentro la scheda prodotto, una riga per sede | Buono, ma vincolato a partire sempre dal singolo prodotto — scomodo per impostare/rivedere le soglie di un intero magazzino in un colpo solo |
+| **Odoo** | **Schermata dedicata "Regole di Riordino" (griglia), editabile inline, filtrabile per prodotto o per magazzino; raggiungibile anche dalla scheda prodotto** | **Scelta come modello**: nessun nuovo concetto di master data, pattern a griglia editabile contemporaneo (stesso stile di un foglio di calcolo web, non una transazione), doppia via d'accesso (vista per magazzino con tutti i prodotti, o filtrata su un prodotto con tutte le sedi) senza duplicare schermate |
+
+**Specifica per l'implementazione**, sul modello Odoo, adattato alle tabelle già esistenti (nessuna modifica allo schema: `giacenze` ha già tutto il necessario):
+
+- **Route**: `warehouse/min-stock` (`WarehouseController::minStock()`), aggiunta alla sotto-navigazione del modulo Magazzino (`_subnav.php`) accanto a Giacenze/Movimenti/Riordino/Trasferimenti; azione di salvataggio `warehouse/min-stock/save` (AJAX, non l'intera pagina).
+- **Filtri in pagina** (mai un default silenzioso): un `<select>` obbligatorio "Magazzino" (nessuna opzione "tutti" qui — si sta scrivendo un dato specifico per sede, non leggendo un aggregato) precompilato con `qk_magazzino_attivo_id()` come comodità iniziale ma sempre visibile e cambiabile; un campo ricerca testuale prodotto; un parametro opzionale `?prodotto_id=` che, se presente, pivotta la stessa schermata da "un magazzino, tutti i prodotti" a "un prodotto, tutti i magazzini" (stessa query, filtro invertito) — è il collegamento raggiungibile con un link dalla scheda prodotto, sostituendo il campo disabilitato di `_form.php:429` con `<a href="...">Modifica soglie di riordino →</a>`.
+- **Tabella**: colonne SKU, Prodotto, UoM, Giacenza disponibile (sola lettura, per contesto — non si edita da qui), Scorta minima (`<input type="number" step="0.001">` editabile), una riga per prodotto (nel magazzino scelto) o per magazzino (nel prodotto scelto).
+- **Salvataggio — non un pattern nuovo: si ricicla quello già esistente in Quack.** Il progetto ha già esattamente questo pattern (griglia editabile con autosave per singola cella) implementato e funzionante nella scheda prodotto, tab Fornitori/Prezzi d'acquisto — non va reinventato. Riferimento diretto da copiare:
+  - Vista: `app/views/products/_form.php` (righe 29-32, 82-87) — config JS in `window.QkPF` con URL endpoint e CSRF token.
+  - JS: `assets/js/products-suppliers.js` — celle marcate `class="flat-grid-td"`, input con `class="flat-grid-input"`; listener `change` su ogni input che richiama `triggerSave(row, tr)` (riga 315); `triggerSave` costruisce un `FormData`, fa `fetch(url, {method:'POST', body: fd})`, mostra `icon-saving` (spinner, `fa-spinner fa-spin`) durante la richiesta e `icon-saved` (spunta verde, `fa-check text-success`) per 2 secondi dopo il successo (`setTimeout` per rinasconderla); l'Enter nella griglia è intercettato e trasformato in `blur()` (righe 296-303) per evitare submit involontari.
+  - Controller: `ProductsController::saveForn()` (riga 571) come modello di endpoint — `header('Content-Type: application/json; charset=utf-8')`, verifica `REQUEST_METHOD === 'POST'` e `csrf_verify()`, risponde `json_encode(['ok' => true, 'row' => [...]])` o `['ok' => false, 'error' => '...']`.
+  - **Per questa schermata**: stessa struttura, endpoint nuovo `WarehouseController::saveMinStock()` (routing `POST warehouse/min-stock/save`), payload `{prodotto_id, magazzino_id, scorta_minima}`, upsert su `giacenze` (`INSERT ... ON CONFLICT(prodotto_id, magazzino_id) DO UPDATE SET scorta_minima = ?`, stesso pattern upsert già usato altrove nel progetto), stessa risposta JSON `{ok, row}`. Riuso letterale delle classi CSS `flat-grid-td`/`flat-grid-input` e delle icone `icon-saving`/`icon-saved` per coerenza visiva con la griglia già esistente — l'utente vede lo stesso comportamento in entrambe le schermate, non uno stile nuovo da imparare.
+- **Aggiornare `_form.php:429`**: il campo disabilitato diventa un link reale verso `warehouse/min-stock?prodotto_id=<id>`, mantenendo il valore corrente visibile come testo accanto al link per chi non clicca.
+
+### 5.3 Ordine di implementazione consolidato
+
+Le tappe 1-7 già tracciate per i magazzini virtuali/Trasferimento Diretto (`Trasferimenti tra Magazzini come Documento.md`, §7/§9) restano indipendenti da questa Parte 5 e procedono in parallelo. Per la Parte 5:
+
+1. §5.2 (soglie di riordino) — nessuna dipendenza da §5.1, si può implementare per prima: colma un buco funzionale reale (oggi impossibile impostare una soglia), a differenza di §5.1 che è un miglioramento UX su qualcosa già funzionante.
+2. §5.1 (rimozione selettore topbar) — da fare insieme ai quattro Fix del piano UX dedicato (`Magazzino Attivo - Analisi e Alternative.md` §8.1-8.5), nell'ordine già consigliato lì (§8.7): prima i campi/filtri espliciti, solo alla fine la rimozione del selettore dalla topbar — mai il contrario, altrimenti per una finestra di tempo non ci sarebbe alcun modo, né vecchio né nuovo, di sapere su quale magazzino si sta operando.

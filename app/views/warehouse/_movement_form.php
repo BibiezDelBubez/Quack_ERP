@@ -26,6 +26,32 @@ if ($prefillProdId && $values['prodotto_id'] === '') {
           action="<?= url('warehouse/movements/create') ?>">
       <?= csrf_field() ?>
 
+      <!-- Magazzino: campo esplicito, sempre visibile (Fix 1, §8.2 —
+           Magazzino Attivo - Analisi e Alternative.md). Va scelto per primo,
+           determina la giacenza e i lotti mostrati per il prodotto scelto
+           dopo, sullo stesso principio con cui i trasferimenti mettono
+           origine/destinazione in cima al form. -->
+      <div class="qk-card mb-3 mt-3">
+        <div class="qk-card-header"><span class="qk-card-title">Magazzino</span></div>
+        <div class="qk-card-body">
+          <div class="qk-form-group">
+            <label class="qk-form-label">Magazzino <span class="required">*</span></label>
+            <select name="magazzino_id" id="selectMagazzino"
+                    class="qk-form-control <?= isset($errors['magazzino_id']) ? 'is-invalid' : '' ?>">
+              <option value="">— seleziona —</option>
+              <?php foreach ($magazzini as $mg): ?>
+              <option value="<?= (int) $mg['id'] ?>" <?= (string)$values['magazzino_id'] === (string)$mg['id'] ? 'selected' : '' ?>>
+                <?= e($mg['nome']) ?>
+              </option>
+              <?php endforeach; ?>
+            </select>
+            <?php if (isset($errors['magazzino_id'])): ?>
+            <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['magazzino_id']) ?></span>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+
       <!-- Tipo movimento -->
       <div class="qk-card mb-3 mt-3">
         <div class="qk-card-header"><span class="qk-card-title">Tipo operazione</span></div>

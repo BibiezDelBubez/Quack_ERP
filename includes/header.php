@@ -198,37 +198,18 @@ if (!empty($magazzini_topbar)) {
       <?php endif; ?>
     <?php endif; ?>
 
-    <!-- Selettore Magazzino Attivo (Piano Multi-Magazzino §3.3/§3.10) -->
-    <?php if ($attivo_magazzino): ?>
-      <?php if (count($magazzini_topbar) > 1): ?>
-        <div class="dropdown">
-          <button class="qk-icon-btn dropdown-toggle border-0" data-bs-toggle="dropdown" aria-expanded="false" title="Magazzino Attivo" style="display:flex; align-items:center; gap:.4rem; font-size:.85rem; font-weight:600; padding:4px 10px; width:auto; border-radius:6px; background:var(--qk-bg-subtle);">
-            <i class="fa-solid fa-warehouse" style="font-size:1rem;"></i>
-            <span style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><?= e($attivo_magazzino['nome']) ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-            <li><span class="dropdown-header">Seleziona magazzino attivo</span></li>
-            <?php foreach ($magazzini_topbar as $mg): ?>
-              <li>
-                <a class="dropdown-item d-flex justify-content-between align-items-center <?= (int)$mg['id'] === (int)$attivo_magazzino['id'] ? 'active' : '' ?>"
-                   href="?switch_magazzino_id=<?= $mg['id'] ?>">
-                  <span><?= e($mg['nome']) ?></span>
-                  <?php if ((int)$mg['id'] === (int)$attivo_magazzino['id']): ?>
-                    <i class="fa-solid fa-check ms-2"></i>
-                  <?php endif; ?>
-                </a>
-              </li>
-            <?php endforeach; ?>
-          </ul>
-        </div>
-      <?php else: ?>
-        <!-- Singolo magazzino (visualizza statico senza dropdown) -->
-        <div class="d-none d-md-flex align-items-center gap-1 text-muted" style="font-size:.8rem; font-weight:600; padding:6px 12px; border-radius:6px; background:var(--qk-bg-subtle);">
-          <i class="fa-solid fa-warehouse"></i>
-          <span><?= e($attivo_magazzino['nome']) ?></span>
-        </div>
-      <?php endif; ?>
-    <?php endif; ?>
+    <!-- Selettore Magazzino Attivo: RIMOSSO dalla topbar globale (Opzione A,
+         Magazzino Attivo - Analisi e Alternative.md §9.3/§9.5). Il magazzino
+         non è un dato davvero globale come l'azienda sopra — riguarda solo
+         un sottoinsieme di schermate (giacenze, movimenti, riordino,
+         trasferimenti), dove ora ha un campo/filtro esplicito in pagina
+         (Fix 1-4, §8). Nessuno dei 4 ERP di riferimento (SAP, NetSuite,
+         Dynamics, Odoo) ha un widget "sede corrente" sempre in vista — la
+         risoluzione dati ($magazzini_topbar/$attivo_magazzino sopra) resta
+         invariata e alimenta ancora qk_magazzino_attivo_id(); cambia solo
+         il fatto che non esiste più un punto dedicato in astratto per
+         modificarla: si aggiorna come effetto collaterale delle scelte
+         esplicite fatte nelle pagine che la richiedono. -->
 
     <!-- Cambio tema -->
     <div class="dropdown">

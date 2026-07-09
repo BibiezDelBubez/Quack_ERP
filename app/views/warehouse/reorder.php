@@ -2,7 +2,8 @@
 /**
  * app/views/warehouse/reorder.php
  * Proposte di riordino per articoli sottoscorta.
- * Variabili: $proposals, $total, $pag, $search
+ * Variabili: $proposals, $total, $pag, $search, $magazzini, $magazzinoId
+ * — Fix 3, Magazzino Attivo - Analisi e Alternative.md §8.4.
  */
 $base = url('warehouse/reorder');
 $sort = $pag['sort'];
@@ -11,11 +12,33 @@ $dir  = $pag['dir'];
 
 <?php $active_tab = 'reorder'; include __DIR__ . '/_subnav.php'; ?>
 
+<!-- Selettore magazzino: sempre esplicito, mai un default silenzioso (§8.4) -->
+<div class="qk-card mb-3">
+  <div class="qk-card-body py-2">
+    <form method="get" action="<?= e($base) ?>" class="d-flex align-items-center gap-2 flex-wrap">
+      <?php if ($sort !== 'nome'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
+      <?php if ($dir  !== 'asc'):  ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+      <?php if ($search !== ''):  ?><input type="hidden" name="q" value="<?= e($search) ?>"><?php endif; ?>
+      <label class="qk-form-label mb-0">Magazzino</label>
+      <select name="magazzino_id" class="qk-form-control qk-form-control-sm" style="max-width:280px" onchange="this.form.submit()">
+        <option value="0" <?= $magazzinoId === 0 ? 'selected' : '' ?>>Tutti i magazzini</option>
+        <?php foreach ($magazzini as $mg): ?>
+        <option value="<?= (int) $mg['id'] ?>" <?= $magazzinoId === (int) $mg['id'] ? 'selected' : '' ?>><?= e($mg['nome']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <?php if ($magazzinoId === 0): ?>
+      <span class="qk-form-hint"><i class="fa-solid fa-circle-info"></i> Fabbisogno aggregato su tutte le sedi: "Genera RFQ" è disabilitato, scegli una sede per generare un ordine.</span>
+      <?php endif; ?>
+    </form>
+  </div>
+</div>
+
 <!-- Ricerca -->
 <div class="qk-toolbar mb-3">
   <form method="get" action="<?= e($base) ?>" class="qk-search-form">
     <?php if ($sort !== 'nome'):  ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><?php endif; ?>
     <?php if ($dir  !== 'asc'):   ?><input type="hidden" name="dir"  value="<?= e($dir) ?>"><?php endif; ?>
+    <?php if ($magazzinoId !== 0): ?><input type="hidden" name="magazzino_id" value="<?= (int) $magazzinoId ?>"><?php endif; ?>
     <div class="qk-search-wrap">
       <i class="fa-solid fa-magnifying-glass"></i>
       <input type="search" name="q" value="<?= e($search) ?>"
@@ -97,13 +120,18 @@ $dir  = $pag['dir'];
             <?php endif; ?>
           </td>
           <td class="text-end">
-            <?php if ($p['fornitore_id']): ?>
-              <a href="<?= url('purchases/rfq/create') . '?fornitore_id=' . $p['fornitore_id'] . '&prodotto_id=' . $p['id'] . '&quantita=' . $qtaConsigliata ?>"
+            <?php if ($magazzinoId === 0): ?>
+              <button type="button" class="btn-qk btn-qk-secondary btn-qk-xs" disabled
+                      title="Fabbisogno aggregato su più sedi: scegli un magazzino specifico per generare un ordine">
+                <i class="fa-solid fa-file-invoice-dollar me-1"></i>Genera RFQ
+              </button>
+            <?php elseif ($p['fornitore_id']): ?>
+              <a href="<?= url('purchases/rfq/create') . '?fornitore_id=' . $p['fornitore_id'] . '&prodotto_id=' . $p['id'] . '&quantita=' . $qtaConsigliata . '&magazzino_id=' . $magazzinoId ?>"
                  class="btn-qk btn-qk-primary btn-qk-xs">
                 <i class="fa-solid fa-file-invoice-dollar me-1"></i>Genera RFQ
               </a>
             <?php else: ?>
-              <a href="<?= url('purchases/rfq/create') . '?prodotto_id=' . $p['id'] . '&quantita=' . $qtaConsigliata ?>"
+              <a href="<?= url('purchases/rfq/create') . '?prodotto_id=' . $p['id'] . '&quantita=' . $qtaConsigliata . '&magazzino_id=' . $magazzinoId ?>"
                  class="btn-qk btn-qk-secondary btn-qk-xs">
                 <i class="fa-solid fa-file-invoice-dollar me-1"></i>Genera RFQ
               </a>
@@ -120,9 +148,10 @@ $dir  = $pag['dir'];
 <!-- Paginazione -->
 <?php
 $pagUrl = $base . '?' . http_build_query(array_filter([
-    'q'    => $search,
-    'sort' => $sort !== 'nome' ? $sort : null,
-    'dir'  => $dir  !== 'asc'  ? $dir  : null,
-]));
+    'q'            => $search,
+    'sort'         => $sort !== 'nome' ? $sort : null,
+    'dir'          => $dir  !== 'asc'  ? $dir  : null,
+    'magazzino_id' => $magazzinoId !== 0 ? $magazzinoId : null,
+], static fn($v) => $v !== null && $v !== ''));
 qk_paginate($total, $pag['page'], $pag['limit'], $pagUrl);
 ?>

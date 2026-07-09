@@ -424,15 +424,39 @@ window.QkPF = {
                      il magazzino attivo — la modifica vera si fa nel modulo Magazzino,
                      dove ha senso scegliere per quale sede. Vedi Piano Multi-Magazzino §3.5. -->
                 <div class="qk-form-group">
-                  <label class="qk-form-label">
-                    Scorta minima (magazzino attivo)
-                    <span class="qk-form-hint">Sola lettura: si imposta per magazzino nel modulo Magazzino, non da qui</span>
-                  </label>
-                  <input type="number" class="qk-form-control" value="<?= e($v['scorta_minima'] ?? '0') ?>"
-                         placeholder="0.000" step="0.001" disabled readonly>
+                  <label class="qk-form-label">Scorta minima</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="number" class="qk-form-control" value="<?= e($v['scorta_minima'] ?? '0') ?>"
+                           placeholder="0.000" step="0.001" disabled readonly style="max-width:140px">
+                    <?php if ($isEdit): ?>
+                    <a href="<?= url('warehouse/min-stock?prodotto_id=' . (int) $entity_id) ?>" class="qk-form-hint">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Modifica soglie di riordino per sede →
+                    </a>
+                    <?php endif; ?>
+                  </div>
+                  <span class="qk-form-hint">Valore per il magazzino attivo, mostrato qui a titolo informativo. Si imposta per ciascuna sede nel modulo Magazzino.</span>
                 </div>
-                <!-- Spazio vuoto per allineamento layout -->
-                <div class="qk-form-group"></div>
+                <!-- Giacenza totale: somma su tutte le sedi, contatore cliccabile verso
+                     il dettaglio per magazzino — pattern Odoo ("In Stock" a un click dalla
+                     scheda prodotto), Best Practice UX-UI Multi-Magazzino nei Grandi ERP.md §4/§5.
+                     Riusa la stessa schermata già costruita per le soglie di riordino, invece
+                     di un nuovo drawer/vista separata. -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">Giacenza (tutte le sedi)</label>
+                  <?php if ($isEdit): ?>
+                  <div>
+                    <a href="<?= url('warehouse/min-stock?prodotto_id=' . (int) $entity_id) ?>"
+                       class="btn-qk btn-qk-secondary btn-qk-sm" style="display:inline-flex;align-items:center;gap:.4rem">
+                      <i class="fa-solid fa-warehouse"></i>
+                      <strong><?= e(fmt_qty((float) ($v['quantita_disponibile_totale'] ?? 0))) ?></strong> <?= e($um) ?>
+                      <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem"></i>
+                    </a>
+                  </div>
+                  <span class="qk-form-hint">Somma su tutte le sedi. Click per vedere il dettaglio per magazzino.</span>
+                  <?php else: ?>
+                  <div class="qk-form-control-plaintext qk-text-muted" style="padding-top:.4rem">Disponibile dopo il salvataggio</div>
+                  <?php endif; ?>
+                </div>
               </div>
             </div>
           </div>

@@ -91,6 +91,26 @@ function qk_sottoscorta_where(string $aliasGiacenza = 'g'): string
 }
 
 /**
+ * Frammento HAVING equivalente a qk_sottoscorta_where(), ma per la modalità
+ * aggregata "tutti i magazzini" (Magazzino Attivo - Analisi e Alternative.md,
+ * §8.0-8.1): stessa condizione, riscritta su SUM(...) invece che sulla singola
+ * riga giacenze — in aggregato ogni prodotto ha più righe (una per sede)
+ * raggruppate in una sola con GROUP BY p.id.
+ * Condiviso tra qk_stock_list()/qk_stock_count() (Fix 2, §8.3) e la query di
+ * WarehouseController::reorder() (Fix 3, §8.4), per non duplicare la formula.
+ *
+ * @param string $aliasGiacenza  alias SQL della tabella/riga giacenze nella query chiamante (es. 'g')
+ */
+function qk_sottoscorta_having(string $aliasGiacenza = 'g'): string
+{
+    return sprintf(
+        'SUM(COALESCE(%1$s.scorta_minima,0)) > 0
+         AND (SUM(COALESCE(%1$s.quantita_disponibile,0)) - SUM(COALESCE(%1$s.quantita_riservata,0))) < SUM(COALESCE(%1$s.scorta_minima,0))',
+        $aliasGiacenza
+    );
+}
+
+/**
  * Restituisce la lista prodotti con giacenza corrente NEL MAGAZZINO indicato
  * (default: magazzino attivo).
  *
@@ -121,9 +141,51 @@ function _qk_stock_where(string $search, string $filter): array
     return [$where, $params];
 }
 
+/**
+ * Variante di _qk_stock_where() per gli altri filtri (in_stock/esauriti/
+ * in_arrivo) in modalità aggregata "tutti i magazzini" (§8.1). Usata in
+ * HAVING dopo un GROUP BY p.id, invece che in WHERE sulla riga singola.
+ */
+function _qk_stock_having(string $filter): string
+{
+    return match ($filter) {
+        'in_stock'    => 'SUM(COALESCE(g.quantita_disponibile,0)) > 0',
+        'sottoscorta' => qk_sottoscorta_having('g'),
+        'esauriti'    => 'SUM(COALESCE(g.quantita_disponibile,0)) <= 0',
+        'in_arrivo'   => 'SUM(COALESCE(g.quantita_in_arrivo,0)) > 0',
+        default       => '1=1',
+    };
+}
+
 function qk_stock_count(PDO $pdo, string $search = '', string $filter = 'all', ?int $magazzino_id = null): int
 {
     $magazzino_id ??= qk_magazzino_attivo_id($pdo);
+
+    if ($magazzino_id === 0) {
+        // "Tutti i magazzini" (§8.0): giacenza aggregata via SUM/GROUP BY, non
+        // la riga di una sola sede presa a caso — vedi Magazzino Attivo -
+        // Analisi e Alternative.md, §8.3.
+        $where = ['p.attivo = 1'];
+        $params = [];
+        if ($search !== '') {
+            $where[] = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
+            $like = '%' . $search . '%';
+            $params[] = $like; $params[] = $like;
+        }
+        $st = $pdo->prepare(
+            'SELECT COUNT(*) FROM (
+                SELECT p.id
+                  FROM prodotti p
+                  LEFT JOIN giacenze g ON g.prodotto_id = p.id
+                 WHERE ' . implode(' AND ', $where) . '
+                 GROUP BY p.id
+                HAVING ' . _qk_stock_having($filter) . '
+             ) t'
+        );
+        $st->execute($params);
+        return (int) $st->fetchColumn();
+    }
+
     [$where, $params] = _qk_stock_where($search, $filter);
     array_unshift($params, $magazzino_id);
     $st = $pdo->prepare(
@@ -135,9 +197,105 @@ function qk_stock_count(PDO $pdo, string $search = '', string $filter = 'all', ?
     return (int) $st->fetchColumn();
 }
 
+/**
+ * Ramo aggregato di qk_stock_list() per magazzino_id === 0 ("Tutti i
+ * magazzini", §8.0): stessa forma di ritorno del ramo per singola sede, ma
+ * ogni quantità è la SUM su tutte le sedi. Punto delicato: la disponibilità
+ * dei componenti di un Kit va sommata su tutte le sedi anch'essa (§8.3),
+ * quindi la subquery kit non può più fare un semplice JOIN sul magazzino
+ * indicato — deve sommare a sua volta con una sub-subquery indipendente.
+ *
+ * @internal
+ */
+function _qk_stock_list_aggregato(PDO $pdo, string $search, string $filter, string $sort, string $dir, int $limit, int $offset): array
+{
+    $sortMap = [
+        'nome'       => 'p.nome COLLATE NOCASE',
+        'sku'        => 'p.sku_interno COLLATE NOCASE',
+        'disponibile'=> 'qta_disponibile',
+        'libera'     => 'qta_libera',
+        'riservata'  => 'qta_riservata',
+        'in_arrivo'  => 'qta_in_arrivo',
+        'scorta'     => 'scorta_minima',
+    ];
+    $orderCol = $sortMap[$sort] ?? 'p.nome COLLATE NOCASE';
+    $orderDir = $dir === 'desc' ? 'DESC' : 'ASC';
+
+    $where = ['p.attivo = 1'];
+    $params = [];
+    if ($search !== '') {
+        $where[] = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like; $params[] = $like;
+    }
+    $params[] = $limit;
+    $params[] = $offset;
+
+    $sql = 'SELECT
+                p.id, p.sku_interno, p.nome, p.traccia_lotti,
+                u.codice AS uom,
+                CASE
+                    WHEN p.tipo = \'kit\' THEN (
+                        SELECT MIN(CAST(IFNULL(
+                            (SELECT SUM(g3.quantita_disponibile) FROM giacenze g3 WHERE g3.prodotto_id = ck.componente_id)
+                        , 0) / ck.quantita AS INT))
+                        FROM componenti_kit ck
+                        WHERE ck.kit_id = p.id
+                    )
+                    ELSE SUM(COALESCE(g.quantita_disponibile, 0))
+                END AS qta_disponibile,
+                SUM(COALESCE(g.quantita_riservata, 0))                AS qta_riservata,
+                SUM(COALESCE(g.quantita_in_arrivo, 0))                AS qta_in_arrivo,
+                CASE
+                    WHEN p.tipo = \'kit\' THEN (
+                        SELECT MIN(CAST(IFNULL(
+                            (SELECT SUM(g3.quantita_disponibile) FROM giacenze g3 WHERE g3.prodotto_id = ck.componente_id)
+                        , 0) / ck.quantita AS INT))
+                        FROM componenti_kit ck
+                        WHERE ck.kit_id = p.id
+                    )
+                    ELSE SUM(COALESCE(g.quantita_disponibile, 0))
+                END - SUM(COALESCE(g.quantita_riservata, 0))          AS qta_libera,
+                SUM(COALESCE(g.scorta_minima, 0))                     AS scorta_minima,
+                MAX(g.updated_at) AS giacenza_updated_at
+            FROM prodotti p
+            LEFT JOIN giacenze g ON g.prodotto_id = p.id
+            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+            WHERE ' . implode(' AND ', $where) . '
+            GROUP BY p.id
+            HAVING ' . _qk_stock_having($filter) . '
+            ORDER BY ' . $orderCol . ' ' . $orderDir . '
+            LIMIT ? OFFSET ?';
+
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+
+    return array_map(static function (array $r): array {
+        return [
+            'id'                  => (int)    $r['id'],
+            'sku_interno'         => (string) ($r['sku_interno']         ?? ''),
+            'nome'                => (string) ($r['nome']                ?? ''),
+            'traccia_lotti'       => (bool)   $r['traccia_lotti'],
+            'uom'                 => (string) ($r['uom']                 ?? ''),
+            'qta_disponibile'     => (float)  $r['qta_disponibile'],
+            'qta_riservata'       => (float)  $r['qta_riservata'],
+            'qta_in_arrivo'       => (float)  $r['qta_in_arrivo'],
+            'qta_libera'          => (float)  $r['qta_libera'],
+            'scorta_minima'       => (float)  $r['scorta_minima'],
+            'sottoscorta'         => (float)  $r['qta_libera'] < (float) $r['scorta_minima']
+                                        && (float) $r['scorta_minima'] > 0,
+            'giacenza_updated_at' => (string) ($r['giacenza_updated_at'] ?? ''),
+        ];
+    }, $st->fetchAll(PDO::FETCH_ASSOC));
+}
+
 function qk_stock_list(PDO $pdo, string $search = '', string $filter = 'all', string $sort = 'nome', string $dir = 'asc', int $limit = 50, int $offset = 0, ?int $magazzino_id = null): array
 {
     $magazzino_id ??= qk_magazzino_attivo_id($pdo);
+
+    if ($magazzino_id === 0) {
+        return _qk_stock_list_aggregato($pdo, $search, $filter, $sort, $dir, $limit, $offset);
+    }
 
     $sortMap = [
         'nome'       => 'p.nome COLLATE NOCASE',

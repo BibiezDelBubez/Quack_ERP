@@ -90,7 +90,16 @@
             </a>
           </td>
           <td><?php if ($p['categoria']): ?><span class="qk-badge draft"><?= e($p['categoria']) ?></span><?php else: ?><span class="qk-text-muted">--</span><?php endif; ?></td>
-          <td class="text-center"><?= $p['quantita_disponibile'] !== null ? (int)$p['quantita_disponibile'] : '<span class="qk-text-muted">--</span>' ?></td>
+          <td class="text-center">
+            <?php if ($p['quantita_disponibile'] !== null): ?>
+            <a href="<?= url('warehouse/min-stock?prodotto_id=' . (int) $p['id']) ?>"
+               class="qk-text-accent text-decoration-none" title="Vedi giacenza per magazzino">
+              <?= (int) $p['quantita_disponibile'] ?>
+            </a>
+            <?php else: ?>
+            <span class="qk-text-muted">--</span>
+            <?php endif; ?>
+          </td>
           <td class="text-end"><?php if (!empty($p['prezzo_vendita'])) { echo e(number_format($p['prezzo_vendita'], 2, ',', '.')); } else { echo '--'; } ?></td>
           <td class="col-costo-acquisto text-end" style="display: none; white-space: nowrap;"><?php if (!empty($p['costo_acquisto'])) { echo e(number_format($p['costo_acquisto'], 2, ',', '.')) . ' €'; } else { echo '--'; } ?></td>
           <td class="col-confezione" style="display: none;"><?= e($p['descrizione_confezione'] ?? '--') ?></td>

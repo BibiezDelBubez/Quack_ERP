@@ -6,11 +6,16 @@
 
 declare(strict_types=1);
 
-// Definizione cartelle e file
-define('APP_ROOT_DIR', dirname(__DIR__));
+// Legge la configurazione reale dell'app (DB_DIR, APP_ROOT_DIR, ecc.) invece di
+// ridefinire percorsi propri: altrimenti questo script può creare/aggiornare un
+// file .sqlite diverso da quello che l'app usa davvero a runtime (vedi includes/db.php).
+require_once dirname(__DIR__) . '/includes/config.php';
+
 $sqlFile = APP_ROOT_DIR . '/db/init_sqlite.sql';
 
-$dbname  = $_POST['dbname'] ?? 'quack_erp.sqlite';
+// Stesso nome file usato da includes/db.php, così questo tool inizializza
+// davvero il database che l'app leggerà.
+$dbname  = $_POST['dbname'] ?? 'database.sqlite';
 $error   = null;
 $success = false;
 
@@ -20,8 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("Impossibile leggere il file SQL di inizializzazione in: {$sqlFile}");
         }
 
+        if (!is_dir(DB_DIR) && !@mkdir(DB_DIR, 0775, true)) {
+            throw new Exception("Impossibile creare la cartella del database: " . DB_DIR);
+        }
+
         $safeDbName = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', $dbname);
-        $dbPath = __DIR__ . '/' . $safeDbName;
+        $dbPath = DB_DIR . '/' . $safeDbName;
 
         $dsn = "sqlite:{$dbPath}";
         $pdo = new PDO($dsn, null, null, [
@@ -156,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if ($success): ?>
         <div class="alert alert-success">
             <strong>✅ Database creato con successo!</strong><br>
-            Il database <strong><?= htmlspecialchars($dbname) ?></strong> è stato creato e popolato nella cartella corrente.<br><br>
+            Il database <strong><?= htmlspecialchars($dbname) ?></strong> è stato creato/aggiornato in <code><?= htmlspecialchars(DB_DIR) ?></code>.<br><br>
             <strong>Credenziali di default:</strong><br>
             Username: <code>admin</code><br>
             Password: <code>admin123</code><br>
@@ -167,7 +176,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </p>
     <?php else: ?>
         <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1.5rem;">
-            Questo script creerà il database SQLite specificato ed eseguirà le query presenti in <code>db/init_sqlite.sql</code>.
+            Questo script crea il database SQLite specificato dentro <code><?= htmlspecialchars(DB_DIR) ?></code>
+            (la cartella configurata in <code>DB_DIR</code>) ed esegue le query presenti in <code>db/init_sqlite.sql</code>.
+            Se il file esiste già con le tabelle già presenti, le query <code>CREATE TABLE IF NOT EXISTS</code>
+            non le modificano: per applicare uno schema aggiornato a un database esistente serve una migrazione
+            dedicata, non questo script.
         </p>
         <form method="post">
             <div class="form-group">

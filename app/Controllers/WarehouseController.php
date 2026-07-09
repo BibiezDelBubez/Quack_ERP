@@ -104,12 +104,42 @@ class WarehouseController extends BaseController
             $filter = 'in_stock'; // default
         }
 
+        // Fix 2 (Magazzino Attivo - Analisi e Alternative.md, §8.3): filtro
+        // magazzino sempre esplicito in pagina, mai un'aggregazione silenziosa.
+        // '' → default comodo sul magazzino attivo; '0' → scelta esplicita
+        // "Tutti i magazzini" (aggregato SUM, §8.0); intero → sede specifica,
+        // validata attiva altrimenti si ricade sul default.
+        $magazzinoParam = get_param('magazzino_id', '');
+        if ($magazzinoParam === '') {
+            $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+        } elseif ($magazzinoParam === '0') {
+            $magazzinoId = 0;
+        } else {
+            $candidato = (int) $magazzinoParam;
+            $stChk = $this->pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
+            $stChk->execute([$candidato]);
+            $magazzinoId = $stChk->fetchColumn() ? $candidato : qk_magazzino_attivo_id($this->pdo);
+        }
+        // Opzione A (§9.5): una scelta esplicita di sede su questa pagina
+        // aggiorna la sessione come effetto collaterale, così resta "ricordata"
+        // per precompilare le altre schermate — non esiste più un selettore
+        // dedicato in topbar per farlo in astratto.
+        if ($magazzinoId > 0) {
+            $_SESSION['magazzino_attivo_id'] = $magazzinoId;
+        }
+        $magazzini = qk_magazzini_list($this->pdo, true);
+
         $stock = [];
         $ordini_in_arrivo = [];
 
         $nInArrivo = (int) $this->pdo->query("SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')")->fetchColumn();
 
         if ($filter === 'in_arrivo') {
+            // Decisione presa (§8.3, opzione a): questa query resta volutamente
+            // NON filtrata per sede — mostra sempre tutti gli ordini d'acquisto
+            // pendenti dell'azienda, indipendentemente dal magazzino scelto sopra.
+            // Segnalato esplicitamente in UI (stock.php) per non farlo sembrare
+            // un'incoerenza silenziosa rispetto agli altri filtri.
             $sql = "SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
                            COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
                            (SELECT rt.id FROM ricezioni_testata rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
@@ -125,12 +155,22 @@ class WarehouseController extends BaseController
             $pag   = ['page' => 1, 'limit' => 9999, 'offset' => 0, 'sort' => 'data', 'dir' => 'asc'];
         } else {
             $pag   = qk_pagination_params(['nome','sku','disponibile','libera','riservata','in_arrivo','scorta'], 'nome', 'asc');
-            $total = qk_stock_count($this->pdo, $search, $filter);
-            $stock = qk_stock_list($this->pdo, $search, $filter, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset']);
+            $total = qk_stock_count($this->pdo, $search, $filter, $magazzinoId);
+            $stock = qk_stock_list($this->pdo, $search, $filter, $pag['sort'], $pag['dir'], $pag['limit'], $pag['offset'], $magazzinoId);
+        }
+
+        $nomeMagazzinoScelto = 'tutti i magazzini';
+        if ($magazzinoId !== 0) {
+            foreach ($magazzini as $mg) {
+                if ((int) $mg['id'] === $magazzinoId) {
+                    $nomeMagazzinoScelto = $mg['nome'];
+                    break;
+                }
+            }
         }
 
         $page_title    = 'Giacenze Magazzino';
-        $page_subtitle = 'Situazione disponibilità e giacenze';
+        $page_subtitle = 'Situazione disponibilità e giacenze — ' . $nomeMagazzinoScelto;
         $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Giacenze']];
         $page_actions  = '<a href="' . url('warehouse/movements/create') . '" class="btn-qk btn-qk-primary">
             <i class="fa-solid fa-plus"></i> Nuovo movimento
@@ -139,7 +179,8 @@ class WarehouseController extends BaseController
 
         $this->page(APP_ROOT_DIR . '/app/views/warehouse/stock.php', compact(
             'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions', 'extra_css',
-            'search', 'filter', 'stock', 'ordini_in_arrivo', 'nInArrivo', 'total', 'pag'
+            'search', 'filter', 'stock', 'ordini_in_arrivo', 'nInArrivo', 'total', 'pag',
+            'magazzini', 'magazzinoId'
         ));
     }
 
@@ -474,77 +515,281 @@ class WarehouseController extends BaseController
         $base   = url('warehouse/reorder');
         $search = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
 
-        // Il riordino è per il magazzino attivo: la soglia (giacenze.scorta_minima)
-        // e la giacenza libera sono per coppia (prodotto, magazzino), non più un
-        // valore unico di prodotto — vedi Piano Multi-Magazzino §3.5.
-        $magazzinoAttivoId = qk_magazzino_attivo_id($this->pdo);
-
-        $sortColMap = [
-            'nome'     => 'p.nome',
-            'libera'   => '(COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0))',
-            'minima'   => 'g.scorta_minima',
-            'arrivo'   => 'COALESCE(g.quantita_in_arrivo,0)',
-            'fornitore'=> 'fornitore_nome',
-        ];
-        $pag     = qk_pagination_params(array_keys($sortColMap), 'nome', 'asc');
-        $sort    = $pag['sort'];
-        $dir     = $pag['dir'];
-        $page    = $pag['page'];
-        $limit   = $pag['limit'];
-        $offset  = $pag['offset'];
-        $sortCol = $sortColMap[$sort];
+        // Fix 3 (§8.4): stesso pattern di risoluzione del Fix 2 (§8.3) — filtro
+        // magazzino sempre esplicito in pagina, mai un'aggregazione silenziosa.
+        $magazzinoParam = get_param('magazzino_id', '');
+        if ($magazzinoParam === '') {
+            $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+        } elseif ($magazzinoParam === '0') {
+            $magazzinoId = 0;
+        } else {
+            $candidato = (int) $magazzinoParam;
+            $stChk = $this->pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
+            $stChk->execute([$candidato]);
+            $magazzinoId = $stChk->fetchColumn() ? $candidato : qk_magazzino_attivo_id($this->pdo);
+        }
+        if ($magazzinoId > 0) {
+            $_SESSION['magazzino_attivo_id'] = $magazzinoId; // Opzione A, §9.5
+        }
+        $magazzini = qk_magazzini_list($this->pdo, true);
 
         $whereExtra = '';
-        $params     = [$magazzinoAttivoId];
+        $paramsSenzaMagazzino = [];
         if ($search !== '') {
             $whereExtra = 'AND (p.nome LIKE ? OR p.sku_interno LIKE ?)';
-            $params[]   = "%$search%";
-            $params[]   = "%$search%";
+            $paramsSenzaMagazzino[] = "%$search%";
+            $paramsSenzaMagazzino[] = "%$search%";
         }
 
-        $baseSql =
-            "FROM prodotti p
-             JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-             LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-             LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
-             LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
-             WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
-               " . $whereExtra;
+        if ($magazzinoId === 0) {
+            // Ramo aggregato "tutti i magazzini" (§8.0, §8.4): il fabbisogno è
+            // la somma su tutte le sedi, non la riga di una singola sede.
+            $sortColMapAgg = [
+                'nome'      => 'p.nome',
+                'libera'    => 'qta_libera',
+                'minima'    => 'scorta_minima',
+                'arrivo'    => 'qta_in_arrivo',
+                'fornitore' => 'fornitore_nome',
+            ];
+            $pag     = qk_pagination_params(array_keys($sortColMapAgg), 'nome', 'asc');
+            $sort    = $pag['sort']; $dir = $pag['dir']; $page = $pag['page'];
+            $limit   = $pag['limit']; $offset = $pag['offset'];
+            $sortCol = $sortColMapAgg[$sort];
 
-        $stmtC = $this->pdo->prepare("SELECT COUNT(*) " . $baseSql);
-        $stmtC->execute($params);
-        $total = (int)$stmtC->fetchColumn();
+            $baseSql =
+                "FROM prodotti p
+                 LEFT JOIN giacenze g ON g.prodotto_id = p.id
+                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+                 LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
+                 LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
+                 WHERE p.attivo = 1 $whereExtra
+                 GROUP BY p.id
+                HAVING " . qk_sottoscorta_having('g');
 
-        $stmtQ = $this->pdo->prepare(
-            "SELECT p.id, p.nome, p.sku_interno, u.codice AS uom,
-                    COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
-                    COALESCE(g.quantita_riservata, 0) AS qta_riservata,
-                    COALESCE(g.quantita_in_arrivo, 0) AS qta_in_arrivo,
-                    (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) AS qta_libera,
-                    g.scorta_minima,
-                    pf.fornitore_id,
-                    COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
-                    (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
-                     WHERE pfp.prodotto_fornitore_id = pf.id AND pfp.quantita_minima = 0
-                     ORDER BY pfp.id DESC LIMIT 1) AS ultimo_prezzo
-             " . $baseSql . "
-             ORDER BY " . $sortCol . " COLLATE NOCASE " . $dir . "
-             LIMIT " . $limit . " OFFSET " . $offset
-        );
-        $stmtQ->execute($params);
-        $proposals = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+            $stmtC = $this->pdo->prepare("SELECT COUNT(*) FROM (SELECT p.id " . $baseSql . ") t");
+            $stmtC->execute($paramsSenzaMagazzino);
+            $total = (int) $stmtC->fetchColumn();
 
-        $pag = compact('page', 'limit', 'sort', 'dir');
+            $stmtQ = $this->pdo->prepare(
+                "SELECT p.id, p.nome, p.sku_interno, u.codice AS uom,
+                        SUM(COALESCE(g.quantita_disponibile, 0)) AS qta_disponibile,
+                        SUM(COALESCE(g.quantita_riservata, 0)) AS qta_riservata,
+                        SUM(COALESCE(g.quantita_in_arrivo, 0)) AS qta_in_arrivo,
+                        (SUM(COALESCE(g.quantita_disponibile, 0)) - SUM(COALESCE(g.quantita_riservata, 0))) AS qta_libera,
+                        SUM(COALESCE(g.scorta_minima, 0)) AS scorta_minima,
+                        MAX(pf.fornitore_id) AS fornitore_id,
+                        MAX(COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, ''))) AS fornitore_nome,
+                        MAX((SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
+                             WHERE pfp.prodotto_fornitore_id = pf.id AND pfp.quantita_minima = 0
+                             ORDER BY pfp.id DESC LIMIT 1)) AS ultimo_prezzo
+                 " . $baseSql . "
+                 ORDER BY " . $sortCol . " COLLATE NOCASE " . $dir . "
+                 LIMIT $limit OFFSET $offset"
+            );
+            $stmtQ->execute($paramsSenzaMagazzino);
+            $proposals = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+            $pag = compact('page', 'limit', 'sort', 'dir');
+        } else {
+            $sortColMap = [
+                'nome'     => 'p.nome',
+                'libera'   => '(COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0))',
+                'minima'   => 'g.scorta_minima',
+                'arrivo'   => 'COALESCE(g.quantita_in_arrivo,0)',
+                'fornitore'=> 'fornitore_nome',
+            ];
+            $pag     = qk_pagination_params(array_keys($sortColMap), 'nome', 'asc');
+            $sort    = $pag['sort'];
+            $dir     = $pag['dir'];
+            $page    = $pag['page'];
+            $limit   = $pag['limit'];
+            $offset  = $pag['offset'];
+            $sortCol = $sortColMap[$sort];
+
+            $params = [$magazzinoId, ...$paramsSenzaMagazzino];
+
+            $baseSql =
+                "FROM prodotti p
+                 JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+                 LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
+                 LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
+                 WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
+                   " . $whereExtra;
+
+            $stmtC = $this->pdo->prepare("SELECT COUNT(*) " . $baseSql);
+            $stmtC->execute($params);
+            $total = (int)$stmtC->fetchColumn();
+
+            $stmtQ = $this->pdo->prepare(
+                "SELECT p.id, p.nome, p.sku_interno, u.codice AS uom,
+                        COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                        COALESCE(g.quantita_riservata, 0) AS qta_riservata,
+                        COALESCE(g.quantita_in_arrivo, 0) AS qta_in_arrivo,
+                        (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) AS qta_libera,
+                        g.scorta_minima,
+                        pf.fornitore_id,
+                        COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
+                        (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
+                         WHERE pfp.prodotto_fornitore_id = pf.id AND pfp.quantita_minima = 0
+                         ORDER BY pfp.id DESC LIMIT 1) AS ultimo_prezzo
+                 " . $baseSql . "
+                 ORDER BY " . $sortCol . " COLLATE NOCASE " . $dir . "
+                 LIMIT " . $limit . " OFFSET " . $offset
+            );
+            $stmtQ->execute($params);
+            $proposals = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+
+            $pag = compact('page', 'limit', 'sort', 'dir');
+        }
+
+        $nomeMagazzinoScelto = 'tutti i magazzini';
+        if ($magazzinoId !== 0) {
+            foreach ($magazzini as $mg) {
+                if ((int) $mg['id'] === $magazzinoId) { $nomeMagazzinoScelto = $mg['nome']; break; }
+            }
+        }
 
         $page_title    = 'Proposte di Riordino';
-        $page_subtitle = 'Generazione ordini e RFQ per articoli sottoscorta';
+        $page_subtitle = 'Generazione ordini e RFQ per articoli sottoscorta — ' . $nomeMagazzinoScelto;
         $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Riordino']];
         $extra_css = ['warehouse.css'];
 
         $this->page(APP_ROOT_DIR . '/app/views/warehouse/reorder.php', compact(
             'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
-            'search', 'proposals', 'total', 'base', 'pag'
+            'search', 'proposals', 'total', 'base', 'pag', 'magazzini', 'magazzinoId'
         ));
+    }
+
+    /* ── Soglie di riordino (scorta minima per magazzino) ────────────────────
+     * Piano Multi-Magazzino Parte 5, §5.2: modello Odoo (griglia editabile
+     * inline), unica fonte di verità già su giacenze.scorta_minima. Due
+     * modalità della stessa vista: "un magazzino, tutti i prodotti" (default)
+     * o, con ?prodotto_id=, "un prodotto, tutte le sedi" (pivot, raggiunto dal
+     * link in products/_form.php). Il filtro magazzino non ha mai un default
+     * silenzioso "tutti": qui si scrive un dato per sede, non si legge un
+     * aggregato (a differenza di Giacenze/Riordino, §9 di Magazzino Attivo -
+     * Analisi e Alternative.md), quindi il <select> è sempre obbligatorio e
+     * visibile, precompilato solo per comodità con qk_magazzino_attivo_id(). */
+
+    public function minStock(): void
+    {
+        $prodottoIdFiltro = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT) ?: null;
+        $search = trim((string) get_param('q', ''));
+
+        $magazzini = qk_magazzini_list($this->pdo, true);
+        $magazzinoId = filter_input(INPUT_GET, 'magazzino_id', FILTER_VALIDATE_INT) ?: null;
+        if (!$magazzinoId && !$prodottoIdFiltro) {
+            $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+        }
+
+        $prodottoFiltro = null;
+        if ($prodottoIdFiltro) {
+            $stP = $this->pdo->prepare('SELECT id, nome, sku_interno FROM prodotti WHERE id = ?');
+            $stP->execute([$prodottoIdFiltro]);
+            $prodottoFiltro = $stP->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        if ($prodottoFiltro) {
+            // Pivot: un prodotto, tutte le sedi (radici fisiche + virtuali/conto_terzi/conto_lavoro,
+            // stesso set usato nel form del trasferimento: una soglia ha senso anche per una sede virtuale).
+            $st = $this->pdo->prepare(
+                "SELECT m.id AS magazzino_id, m.nome AS magazzino_nome, m.codice AS magazzino_codice,
+                        p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
+                        u.codice AS uom,
+                        COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                        COALESCE(g.scorta_minima, 0) AS scorta_minima
+                   FROM magazzini m
+                   LEFT JOIN prodotti p ON p.id = ?
+                   LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+                   LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = m.id
+                  WHERE m.attivo = 1
+                  ORDER BY m.predefinito DESC, m.nome COLLATE NOCASE"
+            );
+            $st->execute([$prodottoIdFiltro]);
+            $righe = $st->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            // Vista standard: un magazzino, tutti i prodotti attivi (LEFT JOIN
+            // su giacenze: un prodotto mai movimentato in questa sede compare
+            // comunque, con soglia 0 modificabile da subito).
+            $where = ['p.attivo = 1'];
+            $params = [$magazzinoId];
+            if ($search !== '') {
+                $where[] = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
+                $like = '%' . $search . '%';
+                $params[] = $like;
+                $params[] = $like;
+            }
+            $st = $this->pdo->prepare(
+                "SELECT p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
+                        u.codice AS uom,
+                        COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                        COALESCE(g.scorta_minima, 0) AS scorta_minima
+                   FROM prodotti p
+                   LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+                   LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+                  WHERE " . implode(' AND ', $where) . "
+                  ORDER BY p.nome COLLATE NOCASE"
+            );
+            $st->execute($params);
+            $righe = $st->fetchAll(PDO::FETCH_ASSOC);
+        }
+
+        $page_title    = 'Soglie di riordino';
+        $page_subtitle = $prodottoFiltro
+            ? 'Scorta minima di "' . $prodottoFiltro['nome'] . '" per sede'
+            : 'Scorta minima per prodotto, per magazzino';
+        $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Soglie di riordino']];
+        $extra_css = ['warehouse.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/min_stock.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
+            'magazzini', 'magazzinoId', 'prodottoFiltro', 'search', 'righe'
+        ));
+    }
+
+    public function saveMinStock(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Non autorizzato.']); exit;
+        }
+
+        $prodottoId  = (int) post('prodotto_id');
+        $magazzinoId = (int) post('magazzino_id');
+        $scortaStr   = str_replace(',', '.', (string) post('scorta_minima', '0'));
+
+        if ($prodottoId <= 0 || $magazzinoId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Prodotto o magazzino mancante.']); exit;
+        }
+        if (!is_numeric($scortaStr) || (float) $scortaStr < 0) {
+            echo json_encode(['ok' => false, 'error' => 'Scorta minima non valida.']); exit;
+        }
+        $scortaMinima = (float) $scortaStr;
+
+        try {
+            // Upsert su giacenze: la coppia (prodotto_id, magazzino_id) può non
+            // esistere ancora (prodotto mai movimentato in questa sede) — in tal
+            // caso la crea con giacenza 0, esattamente come già fa il primo
+            // movimento manuale (qk_insert_movimento_manuale).
+            $this->pdo->prepare(
+                "INSERT INTO giacenze (prodotto_id, magazzino_id, scorta_minima, updated_at)
+                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                 ON CONFLICT(prodotto_id, magazzino_id)
+                 DO UPDATE SET scorta_minima = excluded.scorta_minima, updated_at = CURRENT_TIMESTAMP"
+            )->execute([$prodottoId, $magazzinoId, $scortaMinima]);
+
+            $st = $this->pdo->prepare(
+                "SELECT COALESCE(quantita_disponibile,0) AS qta_disponibile, scorta_minima
+                   FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?"
+            );
+            $st->execute([$prodottoId, $magazzinoId]);
+            $row = $st->fetch(PDO::FETCH_ASSOC);
+
+            echo json_encode(['ok' => true, 'row' => $row]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $this->dbMessage($e instanceof PDOException ? $e : new PDOException($e->getMessage()))]);
+        }
+        exit;
     }
 
     /* ── Crea movimento ───────────────────────────────────────────────────── */
@@ -554,6 +799,7 @@ class WarehouseController extends BaseController
         $errors = [];
         $values = [
             'tipo_movimento'               => 'carico',
+            'magazzino_id'                 => '',
             'prodotto_id'                  => '',
             'quantita'                     => '',
             'lotto_mode'                   => 'esistente',
@@ -568,11 +814,20 @@ class WarehouseController extends BaseController
             'documento_id'                 => '',
         ];
 
+        // Fix 1 (§8.2): il campo magazzino è ora esplicito sul form. Il default
+        // comodo si precompila solo al primo caricamento (GET), mai su un
+        // resubmit con errori (altrimenti sovrascriverebbe silenziosamente la
+        // scelta esplicita già fatta dall'utente prima dell'errore).
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $values['magazzino_id'] = (string) qk_magazzino_attivo_id($this->pdo);
+        }
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!csrf_verify()) {
                 $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina e riprova.';
             } else {
                 $values['tipo_movimento']      = post('tipo_movimento', 'carico');
+                $values['magazzino_id']        = post('magazzino_id', $values['magazzino_id']);
                 $values['prodotto_id']         = post('prodotto_id', '');
                 $values['quantita']            = post('quantita', '');
                 $values['lotto_mode']          = post('lotto_mode', 'esistente'); // 'esistente' | 'nuovo'
@@ -593,6 +848,10 @@ class WarehouseController extends BaseController
                 }
                 if ($values['prodotto_id'] === '' || (int) $values['prodotto_id'] <= 0) {
                     $errors['prodotto_id'] = 'Seleziona un prodotto.';
+                }
+                $magazzinoIdInt = (int) $values['magazzino_id'];
+                if ($magazzinoIdInt <= 0) {
+                    $errors['magazzino_id'] = 'Seleziona il magazzino.';
                 }
 
                 $qtaStr = str_replace(',', '.', $values['quantita']);
@@ -630,13 +889,14 @@ class WarehouseController extends BaseController
                         $utente_id = (int) (current_user()['id'] ?? 0);
 
                         // Costruisce il payload per qk_insert_movimento_manuale.
-                        // magazzino_id: finché il form non espone un selettore
-                        // dedicato (§3.10), il movimento manuale si registra sempre
-                        // sul magazzino attivo di sessione/predefinito.
+                        // magazzino_id: ora sempre quello scelto esplicitamente
+                        // sul form (Fix 1, §8.2) — non più risolto silenziosamente
+                        // sul magazzino attivo di sessione (il caso "Maria", §3.2
+                        // di Magazzino Attivo - Analisi e Alternative.md).
                         $movData = [
                             'tipo_movimento'      => $values['tipo_movimento'],
                             'prodotto_id'         => (int) $values['prodotto_id'],
-                            'magazzino_id'        => qk_magazzino_attivo_id($this->pdo),
+                            'magazzino_id'        => $magazzinoIdInt,
                             'quantita'            => (float) $qtaStr,
                             'lotto_id'            => $values['lotto_id'] !== '' ? (int) $values['lotto_id'] : null,
                             'note'                => $values['note'],
@@ -658,6 +918,10 @@ class WarehouseController extends BaseController
 
                         $id = qk_insert_movimento_manuale($this->pdo, $movData, $utente_id);
 
+                        // Opzione A (§9.5): la scelta esplicita di sede su questo
+                        // form aggiorna la sessione come effetto collaterale.
+                        $_SESSION['magazzino_attivo_id'] = $magazzinoIdInt;
+
                         $tipoLabel = [
                             'carico'    => 'Carico',
                             'scarico'   => 'Scarico',
@@ -678,6 +942,8 @@ class WarehouseController extends BaseController
             }
         }
 
+        $magazzini = qk_magazzini_list($this->pdo, true);
+
         $page_title    = 'Nuovo movimento';
         $page_subtitle = 'Registra carico, scarico o rettifica manuale';
         $breadcrumbs   = [
@@ -689,7 +955,7 @@ class WarehouseController extends BaseController
 
         $this->page(APP_ROOT_DIR . '/app/views/warehouse/_movement_form.php', compact(
             'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css',
-            'errors', 'values'
+            'errors', 'values', 'magazzini'
         ));
     }
 
@@ -705,10 +971,17 @@ class WarehouseController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'id mancante']);
             exit;
         }
-        $info  = qk_prodotto_stock_info($this->pdo, $id);
+        // Fix 1 (§8.2): deve rispettare il magazzino scelto esplicitamente nel
+        // form "Nuovo movimento", non sempre quello attivo di sessione —
+        // altrimenti il campo select esisterebbe ma "Giacenza attuale"/lotti
+        // continuerebbero a mostrare la sede sbagliata quando se ne sceglie
+        // una diversa da quella attiva. null → fallback interno invariato
+        // (usato anche dal drawer lotti di stock.php, che non passa magazzino_id).
+        $magazzinoId = filter_input(INPUT_GET, 'magazzino_id', FILTER_VALIDATE_INT) ?: null;
+        $info  = qk_prodotto_stock_info($this->pdo, $id, $magazzinoId);
         // Restituisce TUTTI i lotti (anche esauriti); il JS filtra in base al tipo operazione
         $lotti = $info && $info['traccia_lotti']
-            ? qk_lotti_by_prodotto($this->pdo, $id, false)
+            ? qk_lotti_by_prodotto($this->pdo, $id, false, $magazzinoId)
             : [];
         ob_end_clean();
         echo json_encode(['ok' => true, 'prodotto' => $info, 'lotti' => $lotti]);
@@ -821,6 +1094,8 @@ class WarehouseController extends BaseController
                         'note'                      => $values['note'],
                     ];
                     $id = qk_registra_trasferimento_diretto($this->pdo, $header, $righe, (int) current_user()['id']);
+                    // Opzione A (§9.5): stesso effetto collaterale di createTransfer().
+                    $_SESSION['magazzino_attivo_id'] = $header['magazzino_origine_id'];
                     redirect_with('warehouse/transfers/view?id=' . $id, 'success', 'Trasferimento diretto registrato: giacenza spostata istantaneamente.');
                 } catch (\Throwable $e) {
                     $errors['_global'] = $e->getMessage();
@@ -886,6 +1161,10 @@ class WarehouseController extends BaseController
                         'note'                      => $values['note'],
                     ];
                     $id = qk_insert_trasferimento($this->pdo, $header, $righe, (int) current_user()['id']);
+                    // Opzione A (§9.5): la scelta esplicita dell'origine aggiorna
+                    // la sessione come effetto collaterale — è la sede da cui
+                    // l'operatore sta effettivamente lavorando in questo momento.
+                    $_SESSION['magazzino_attivo_id'] = $header['magazzino_origine_id'];
                     redirect_with('warehouse/transfers/view?id=' . $id, 'success', 'Trasferimento creato in bozza.');
                 } catch (\Throwable $e) {
                     $errors['_global'] = $e->getMessage();

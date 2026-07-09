@@ -449,4 +449,49 @@ Serve almeno **due magazzini attivi** con giacenze diverse per un prodotto di pr
 
 ---
 
+## 9. Iterazione 2 — il selettore va tolto dalla topbar globale?
+
+La conclusione del §5 ("non va tolto, resta comodo") va rivista. È stata scritta guardando solo *dove* il magazzino attivo agisce di nascosto senza dirlo — non si è chiesta se avesse senso che il selettore fosse **sempre visibile su ogni schermata**, comprese quelle che con un magazzino non c'entrano nulla (anagrafica clienti, fatture, catalogo). È esattamente il dubbio con cui è partita questa indagine, e merita una risposta diretta, non una scorciatoia.
+
+### 9.1 Il criterio che distingue azienda da magazzino
+
+L'azienda interna in topbar ha senso perché è **davvero globale**: quasi ogni documento che Quack produce — preventivo, DDT, fattura — porta la sua intestazione legale. Non c'è schermata dove "che azienda sto impersonando" sia irrilevante.
+
+Il magazzino non ha questa proprietà. Riguarda solo un sottoinsieme preciso di operazioni: giacenze, movimenti, lotti, trasferimenti, destinazione di ricezioni/ordini d'acquisto. Sull'anagrafica clienti, sul catalogo prodotti (tranne il campo unità di misura), sulle fatture — il magazzino attivo non tocca nulla. Tenerlo comunque in vista ovunque comunica implicitamente "questo conta sempre", il che è falso, ed è la radice del disagio segnalato all'inizio di questa indagine.
+
+### 9.2 Cosa fanno davvero i quattro sistemi di riferimento, su questo punto preciso
+
+Non un interruttore globale sempre in vista, in nessuno dei quattro:
+
+- **SAP**: nessun widget "plant corrente" nella barra applicativa. Ogni transazione chiede plant/storage location come parte del comando stesso, con un default che arriva da un parametro utente (memory ID) — un valore di comodo, non un banner.
+- **NetSuite**: nessuno switcher di location in vista globale. La sede si sceglie dentro la transazione; il contesto persistente esplicito in topbar riguarda la subsidiary (equivalente della nostra azienda), non la location.
+- **Microsoft Dynamics 365**: stesso principio — sito/magazzino sono campi del documento, non un indicatore permanente nella shell dell'applicazione.
+- **Odoo**: nessun selettore magazzino in vista globale. Ogni documento (ordine, trasferimento) ha il proprio campo sede, precompilato da una preferenza utente/azienda salvata nelle impostazioni, mai mostrata come banner persistente.
+
+Il pattern è unanime: **un default di comodo sì, un widget sempre visibile ovunque no.** È esattamente la distinzione che manca alla conclusione attuale del §5.
+
+### 9.3 Proposta
+
+Due opzioni, la prima raccomandata:
+
+**Opzione A — raccomandata.** Il selettore sparisce dalla topbar globale. Il "magazzino attivo" resta a livello di dato (in sessione, con la stessa cascata di risoluzione già scritta in `qk_magazzino_attivo_id()`: sessione → predefinito → primo attivo), ma **non c'è più un punto dedicato per cambiarlo in astratto**. Si cambia solo facendo qualcosa: ogni volta che un utente sceglie esplicitamente un magazzino diverso su una pagina che lo richiede (il campo del Fix 1 in "Nuovo movimento", il filtro del Fix 2 in "Giacenze", quello del Fix 3 in "Riordino", l'origine/destinazione di un trasferimento), quella scelta aggiorna anche `$_SESSION['magazzino_attivo_id']` come effetto collaterale — così il valore resta "ricordato" per precompilare la schermata successiva, la comodità non si perde, ma non esiste più un interruttore silenzioso separato dall'azione che lo giustifica. Coerente al 100% coi quattro sistemi di riferimento.
+
+**Opzione B — via di mezzo.** Il selettore resta, ma smette di comparire su *ogni* pagina: appare solo nelle sezioni dove il magazzino ha effettivamente un ruolo (Magazzino, Acquisti, Vendite/Spedizioni), sparisce nelle sezioni anagrafiche/CRM/fatturazione. Meno radicale, ma introduce un'incoerenza di layout tra sezioni (a volte la topbar ha tre elementi, a volte due) che nessuno dei quattro sistemi di riferimento ha, perché nessuno usa il "appare/scompare a seconda della sezione" come pattern per un elemento di navigazione globale.
+
+Consiglio l'Opzione A: è quella davvero allineata al mercato, non introduce incoerenze di layout, e — punto sottovalutato — **rende i Fix 1-4 del piano già scritto ancora più necessari, non meno**: senza la rete di sicurezza (falsa) del selettore sempre a vista, l'unico modo per l'utente di sapere/scegliere su quale sede sta operando diventa il campo esplicito sulla pagina stessa. Il piano §8 esistente resta quasi interamente valido così com'è; cambia solo il meccanismo con cui il valore di sessione si aggiorna.
+
+### 9.4 Cosa NON cambia
+
+Il campo `magazzini.predefinito` nel database, la cascata di risoluzione in `qk_magazzino_attivo_id()`, e tutti i Fix 1-4 del §8 restano esattamente come progettati: la funzione continua a dover restituire *un* valore quando nessun contesto più specifico è disponibile (es. primo accesso mai fatto, nessun magazzino ancora scelto esplicitamente in quella sessione). Il `predefinito` resta il fallback di ultima istanza a livello dato, indipendente da come lo si mostra o non mostra in UI.
+
+### 9.5 Conseguenze implementative (non ancora fatte — solo l'elenco)
+
+Se si conferma l'Opzione A: rimuovere il blocco del selettore da `includes/header.php` (il markup dropdown, non la risoluzione dati); rimuovere il gestore `switch_magazzino_id` da `app/bootstrap.php`; far sì che ogni handler POST dei Fix 1-3 (movimento, filtro giacenze, filtro riordino, creazione trasferimento) scriva `$_SESSION['magazzino_attivo_id']` quando riceve un `magazzino_id` esplicito dall'utente — un'unica riga aggiuntiva per handler, stesso punto dove già si legge `post('magazzino_id', ...)`.
+
+### 9.6 Decisione da prendere
+
+Confermi l'Opzione A (rimozione completa dalla topbar, sostituita dall'aggiornamento silenzioso ad ogni scelta esplicita), o preferisci l'Opzione B (visibilità solo nelle sezioni pertinenti)? Non procedo all'implementazione finché non è confermata: è un cambiamento visibile all'utente finale, non un dettaglio interno.
+
+---
+
 *Documento collegato a: [Best Practice UX-UI Multi-Magazzino nei Grandi ERP.md](Best%20Practice%20UX-UI%20Multi-Magazzino%20nei%20Grandi%20ERP.md), Piano di Implementazione Multi-Magazzino §3.3/§3.10. Voce di backlog corrispondente: [Backlog Sviluppi Futuri.md](../Backlog%20Sviluppi%20Futuri.md), punto 3.*

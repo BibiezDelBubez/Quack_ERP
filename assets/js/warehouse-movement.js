@@ -22,6 +22,7 @@
     if (!cfg) return;
 
     /* ── DOM refs ────────────────────────────────────────────────────────── */
+    const selectMagazzino = document.getElementById('selectMagazzino'); // Fix 1, §8.2
     const prodSearch    = document.getElementById('prodottoSearch');
     const prodIdInput   = document.getElementById('prodottoId');
     const prodDropdown  = document.getElementById('prodottoDropdown');
@@ -325,7 +326,9 @@
 
     async function loadProdottoInfo(id) {
       try {
-        const res  = await fetch(cfg.apiProdottoInfo + '?id=' + id, { credentials: 'same-origin' });
+        const magazzinoId = selectMagazzino ? selectMagazzino.value : '';
+        const url = cfg.apiProdottoInfo + '?id=' + id + (magazzinoId ? '&magazzino_id=' + magazzinoId : '');
+        const res  = await fetch(url, { credentials: 'same-origin' });
         const data = await res.json();
         if (!data.ok || !data.prodotto) return;
 
@@ -369,6 +372,15 @@
 
     function esc(s) {
       return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /* ── Cambio magazzino a prodotto già scelto: ricarica giacenza e lotti
+     * (Fix 1, §8.2) — stesso pattern già usato in warehouse-transfer.js per
+     * selectOrigine che ricarica i lotti al cambio origine. ────────────── */
+    if (selectMagazzino) {
+      selectMagazzino.addEventListener('change', function () {
+        if (prodIdInput.value) loadProdottoInfo(prodIdInput.value);
+      });
     }
 
     /* ── Pre-carica prodotto se URL contiene prodotto_id ─────────────────── */

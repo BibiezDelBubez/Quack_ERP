@@ -28,8 +28,15 @@ final class DashboardController extends BaseController
             JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
             WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
         ");
-        $stSottoscorta->execute([qk_magazzino_attivo_id($this->pdo)]);
+        $magazzinoAttivoId = qk_magazzino_attivo_id($this->pdo);
+        $stSottoscorta->execute([$magazzinoAttivoId]);
         $sottoscorta_count = (int) $stSottoscorta->fetchColumn();
+
+        // Fix 4 (§8.5): nome della sede a cui si riferisce il KPI, così non
+        // viene letto per errore come dato aziendale aggregato.
+        $stNomeMag = $this->pdo->prepare('SELECT nome FROM magazzini WHERE id = ?');
+        $stNomeMag->execute([$magazzinoAttivoId]);
+        $magazzinoAttivoNome = (string) ($stNomeMag->fetchColumn() ?: '');
 
         // KPI 4: Active supplier orders (incoming goods)
         $acquisti_in_arrivo = (int) $this->pdo->query(
@@ -66,6 +73,7 @@ final class DashboardController extends BaseController
                 'color' => $sottoscorta_count > 0 ? 'danger' : 'success',
                 'value' => (string) $sottoscorta_count,
                 'label' => 'Prodotti Sottoscorta',
+                'sublabel' => 'Magazzino: ' . $magazzinoAttivoNome,
             ],
             [
                 'icon'  => 'dolly',

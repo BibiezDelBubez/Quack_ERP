@@ -2,7 +2,9 @@
 /**
  * warehouse/_stock.php
  * Panoramica giacenze: lista prodotti con stock corrente o merce in arrivo.
- * Variabili attese: $stock (array), $ordini_in_arrivo (array), $nInArrivo (int), $search (string), $filter (string)
+ * Variabili attese: $stock (array), $ordini_in_arrivo (array), $nInArrivo (int),
+ * $search (string), $filter (string), $magazzini (array), $magazzinoId (int)
+ * — Fix 2, Magazzino Attivo - Analisi e Alternative.md §8.3.
  */
 $filterLabels = [
     'in_stock'    => 'Con giacenza',
@@ -12,22 +14,71 @@ $filterLabels = [
     'in_arrivo'   => 'Merce in arrivo',
 ];
 
-// Contatori calcolati lato DB nel controller (in $total per filter attivo)
-// Per le pill sottoscorta/esauriti usiamo query separate leggere
-$nSottoscorta = (int) $pdo->query("SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id WHERE p.attivo = 1 AND p.scorta_minima > 0 AND (COALESCE(g.quantita_disponibile,0) - COALESCE(g.quantita_riservata,0)) < p.scorta_minima")->fetchColumn();
-$nEsauriti    = (int) $pdo->query("SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id WHERE p.attivo = 1 AND COALESCE(g.quantita_disponibile, 0) <= 0")->fetchColumn();
+// Contatori per le pill sottoscorta/esauriti: rispettano lo stesso magazzino
+// scelto sopra (o l'aggregato se $magazzinoId === 0) — coerenti con qk_stock_*()
+// invece delle query indipendenti scritte a mano che c'erano prima (bug: quella
+// per "sottoscorta" leggeva ancora p.scorta_minima, colonna rimossa da
+// prodotti col multi-magazzino, §3.5 — non era mai stata aggiornata).
+if ($magazzinoId === 0) {
+    $nSottoscorta = (int) $pdo->query(
+        "SELECT COUNT(*) FROM (
+            SELECT p.id FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id
+             WHERE p.attivo = 1 GROUP BY p.id HAVING " . qk_sottoscorta_having('g') . "
+         ) t"
+    )->fetchColumn();
+    $nEsauriti = (int) $pdo->query(
+        "SELECT COUNT(*) FROM (
+            SELECT p.id FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id
+             WHERE p.attivo = 1 GROUP BY p.id HAVING SUM(COALESCE(g.quantita_disponibile,0)) <= 0
+         ) t"
+    )->fetchColumn();
+} else {
+    $stSc = $pdo->prepare(
+        "SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+          WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g')
+    );
+    $stSc->execute([$magazzinoId]);
+    $nSottoscorta = (int) $stSc->fetchColumn();
+
+    $stEs = $pdo->prepare(
+        "SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+          WHERE p.attivo = 1 AND COALESCE(g.quantita_disponibile, 0) <= 0"
+    );
+    $stEs->execute([$magazzinoId]);
+    $nEsauriti = (int) $stEs->fetchColumn();
+}
 $base = url('warehouse/stock');
 ?>
 
 <!-- Sotto-navigazione condivisa -->
 <?php $active_tab = 'stock'; include __DIR__ . '/_subnav.php'; ?>
 
+<!-- Selettore magazzino: sempre esplicito, mai un default silenzioso (§8.3) -->
+<div class="qk-card mb-3">
+  <div class="qk-card-body py-2">
+    <form method="get" action="<?= url('warehouse/stock') ?>" class="d-flex align-items-center gap-2 flex-wrap">
+      <?php if ($filter !== 'in_stock'): ?><input type="hidden" name="filter" value="<?= e($filter) ?>"><?php endif; ?>
+      <?php if ($search !== ''): ?><input type="hidden" name="q" value="<?= e($search) ?>"><?php endif; ?>
+      <label class="qk-form-label mb-0">Magazzino</label>
+      <select name="magazzino_id" class="qk-form-control qk-form-control-sm" style="max-width:280px" onchange="this.form.submit()">
+        <option value="0" <?= $magazzinoId === 0 ? 'selected' : '' ?>>Tutti i magazzini</option>
+        <?php foreach ($magazzini as $mg): ?>
+        <option value="<?= (int) $mg['id'] ?>" <?= $magazzinoId === (int) $mg['id'] ? 'selected' : '' ?>><?= e($mg['nome']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <?php if ($filter === 'in_arrivo'): ?>
+      <span class="qk-form-hint"><i class="fa-solid fa-circle-info"></i> "Merce in arrivo" mostra sempre tutti gli ordini d'acquisto pendenti dell'azienda, non filtrati per sede.</span>
+      <?php endif; ?>
+    </form>
+  </div>
+</div>
+
 <!-- Filtri rapidi + ricerca -->
 <div class="qk-toolbar mb-3">
   <div class="qk-filter-pills">
     <?php foreach ($filterLabels as $k => $lbl): ?>
     <?php
-      $qs = array_filter(['q' => $search, 'filter' => $k]);
+      $qs = array_filter(['q' => $search, 'filter' => $k, 'magazzino_id' => $magazzinoId ?: null], static fn($v) => $v !== null && $v !== '');
       $pillHref = url('warehouse/stock') . ($qs ? '?' . http_build_query($qs) : '');
     ?>
     <a href="<?= $pillHref ?>"
@@ -47,6 +98,9 @@ $base = url('warehouse/stock');
   <form method="get" action="<?= url('warehouse/stock') ?>" class="qk-search-form">
     <?php if ($filter !== 'in_stock'): ?>
     <input type="hidden" name="filter" value="<?= e($filter) ?>">
+    <?php endif; ?>
+    <?php if ($magazzinoId !== 0): ?>
+    <input type="hidden" name="magazzino_id" value="<?= (int) $magazzinoId ?>">
     <?php endif; ?>
     <div class="qk-search-wrap">
       <i class="fa-solid fa-magnifying-glass"></i>
