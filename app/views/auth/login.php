@@ -17,7 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify()) {
         $error = 'Token CSRF non valido. Riprova.';
     } else {
-        if (login_attempt(post('username'), post('password'))) { redirect('dashboard'); }
+        global $pdo;
+        if (login_attempt($pdo, post('username'), post('password'))) { redirect('dashboard'); }
         $error = 'Credenziali non valide.';
     }
 } else {

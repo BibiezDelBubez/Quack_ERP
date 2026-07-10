@@ -92,6 +92,39 @@ class ReceiptsController extends BaseController
     }
 
     /**
+     * POST /purchases/receipts/action
+     * Body: id, azione ('annulla')
+     */
+    public function action(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
+            redirect(url('purchases/receipts'));
+        }
+
+        $id = (int) post('id', '0');
+
+        $st = $this->pdo->prepare('SELECT ordine_id FROM ricezioni_testata WHERE id = ?');
+        $st->execute([$id]);
+        $ordine_id = (int) ($st->fetchColumn() ?: 0);
+
+        try {
+            switch (post('azione', '')) {
+                case 'annulla':
+                    qk_ricezione_annulla($this->pdo, $id);
+                    flash_set('success', 'Ricezione annullata.');
+                    break;
+
+                default:
+                    flash_set('danger', "Azione '" . post('azione', '') . "' non riconosciuta.");
+            }
+        } catch (\Throwable $e) {
+            flash_set('danger', $e->getMessage());
+        }
+
+        redirect($ordine_id > 0 ? url('purchases/orders/edit') . '?id=' . $ordine_id : url('purchases/receipts'));
+    }
+
+    /**
      * POST /purchases/receipts/conferma
      * Conferma la ricezione e aggiorna giacenze/lotti/ordine.
      */

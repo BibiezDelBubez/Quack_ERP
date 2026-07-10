@@ -4,11 +4,11 @@
  * Variabili: $ricezioni_list, $search, $stato, $dal, $al, $pag, $total
  */
 function ricezione_badge(string $stato): string {
-    $map = ['bozza' => ['draft','Bozza'], 'completata' => ['confirmed','Completata']];
+    $map = ['bozza' => ['draft','Bozza'], 'completata' => ['confirmed','Completata'], 'annullata' => ['cancelled','Annullata']];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
 }
-$statiLabels = ['' => 'Tutti', 'bozza' => 'Bozze', 'completata' => 'Completate'];
+$statiLabels = ['' => 'Tutti', 'bozza' => 'Bozze', 'completata' => 'Completate', 'annullata' => 'Annullate'];
 $base = url('purchases/receipts');
 $sort = $pag['sort']; $dir = $pag['dir'];
 $hasFilters = $search !== '' || $dal !== '' || $al !== '';

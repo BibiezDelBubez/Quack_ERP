@@ -23,6 +23,17 @@ $isBozza = $rc['stato'] === 'bozza';
         <i class="fa-solid fa-file-circle-check me-1"></i> Vai all'Ordine
       </a>
     <?php endif; ?>
+    <?php if ($isBozza): ?>
+      <form action="<?= url('purchases/receipts/action') ?>" method="post" class="d-inline"
+            onsubmit="return confirm('Annullare questa ricezione? Non è ancora stata confermata, nessuna giacenza è stata toccata.');">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="annulla">
+        <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm">
+          <i class="fa-solid fa-ban me-1"></i> Annulla
+        </button>
+      </form>
+    <?php endif; ?>
   </div>
 
   <ul class="qk-status-path">

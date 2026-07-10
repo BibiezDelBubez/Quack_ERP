@@ -938,6 +938,12 @@ CREATE TABLE IF NOT EXISTS inventari_righe (
     id               INTEGER       PRIMARY KEY AUTOINCREMENT,
     inventario_id    INTEGER       NOT NULL REFERENCES inventari(id) ON DELETE CASCADE,
     prodotto_id      INTEGER       NOT NULL REFERENCES prodotti(id),
+    -- Lotto contato, per prodotti a traccia_lotti=1 (NULL per gli altri). Usata
+    -- da WarehouseController.php (convalida inventario) ma mancante dallo
+    -- schema fino al 09/07/2026 (audit/Schema-vs-codice-vs-live.md §2): ogni
+    -- convalida di inventario su un prodotto a lotti andava in crash "no such
+    -- column" su un DB creato da questo file.
+    lotto_id         INTEGER       REFERENCES lotti(id),
     giacenza_teorica DECIMAL(10,3) NOT NULL,                  -- giacenza calcolata dal sistema
     quantita_contata DECIMAL(10,3) NOT NULL,                  -- quantità contata fisicamente
     rettifica        DECIMAL(10,3) GENERATED ALWAYS AS (quantita_contata - giacenza_teorica) STORED,
@@ -1801,6 +1807,20 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     listino_acquisto_id     INTEGER      REFERENCES listini_acquisto(id),
     metodo_pagamento_id     INTEGER      REFERENCES metodi_pagamento(id),
     resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
+
+    -- Colonne usate da includes/purchases_rfq.php ma mancanti dallo schema fino
+    -- al 09/07/2026 (audit/Schema-vs-codice-vs-live.md §2): riferimento_rfq_interno
+    -- era presente prima del 29/06/2026, rimossa per errore dal commit
+    -- "studio discrepanze tabelle db e schema"; azienda_interna_id e uom_mode non
+    -- sono mai state aggiunte nonostante fossero segnate come risolte in un
+    -- audit precedente (audit/visto/Discrepanze_Schema_Live_Init.md — voce
+    -- rivelatasi falsa). Qualunque DB creato da questo file, anche pochi minuti
+    -- fa, ne era privo: la creazione di una RFQ va in crash "no such column".
+    riferimento_rfq_interno TEXT,                                  -- codice/riferimento interno alla RFQ, usato in ricerca e ordinamento lista
+    azienda_interna_id      INTEGER      REFERENCES aziende_interne(id), -- azienda interna emittente, propagata all'ordine generato dalla RFQ
+    uom_mode                TEXT         NOT NULL DEFAULT 'commercial'
+                                          CHECK (uom_mode IN ('commercial', 'stock')), -- in quale unità di misura sono espresse le quantità/prezzi delle righe
+
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME
 );
@@ -1955,6 +1975,17 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     listino_acquisto_id     INTEGER      REFERENCES listini_acquisto(id),
     metodo_pagamento_id     INTEGER      REFERENCES metodi_pagamento(id),
     resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
+
+    -- Colonne usate da includes/purchases_orders.php ma mancanti dallo schema
+    -- fino al 09/07/2026 (audit/Schema-vs-codice-vs-live.md §2) — stesso
+    -- disallineamento di rfq_testata sopra. Colpiscono due percorsi reali:
+    -- "conferma offerta fornitore in ordine" (azienda_interna_id,
+    -- riferimento_rfq_interno) e "nuova versione ordine" (versione,
+    -- ordine_padre_id) — entrambi in crash "no such column" su DB fresco.
+    riferimento_rfq_interno TEXT,                                    -- copiato dalla RFQ di origine al momento della conferma in ordine
+    azienda_interna_id      INTEGER      REFERENCES aziende_interne(id), -- azienda interna emittente, ereditata dalla RFQ/offerta di origine
+    versione                INTEGER      NOT NULL DEFAULT 1,           -- incrementata ad ogni "nuova versione" dell'ordine (es. ORD/2026/0001 v2)
+    ordine_padre_id         INTEGER      REFERENCES ordini_testata(id), -- punta alla versione precedente quando questo ordine è una revisione
 
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME

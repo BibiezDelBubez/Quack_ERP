@@ -187,6 +187,7 @@ return [
     '/purchases/receipts/create'             => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'create',   'auth' => true, 'permission' => 'manage_warehouse'],
     '/purchases/receipts/edit'               => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'edit',     'auth' => true, 'permission' => 'manage_warehouse'],
     '/purchases/receipts/conferma'           => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'conferma', 'auth' => true, 'permission' => 'manage_warehouse'],
+    '/purchases/receipts/action'             => ['type' => 'controller', 'controller' => 'ReceiptsController', 'action' => 'action',   'auth' => true, 'permission' => 'manage_warehouse'],
 
     // ─── Acquisti legacy (PDF e listini rimangono su PurchasesController) ──────
 

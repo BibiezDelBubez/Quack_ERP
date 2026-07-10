@@ -253,6 +253,40 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
  *                               ]
  *                           ]]
  */
+/**
+ * Annulla una ricezione ancora in bozza (Full Audit Report §2, "Viste
+ * Mancanti nei Processi Core" — analisi 09/07/2026: a differenza degli
+ * ordini d'acquisto, che hanno già qk_ordine_annulla(), lo stato 'annullata'
+ * era previsto dal CHECK constraint di ricezioni_testata ma nessun percorso
+ * PHP lo raggiungeva mai).
+ *
+ * Solo una ricezione in 'bozza' può essere annullata: qk_ricezione_apri()
+ * non tocca giacenze/lotti/ordine (li tocca solo qk_ricezione_conferma()),
+ * quindi annullare una bozza è una pura transizione di stato, senza alcun
+ * effetto collaterale da disfare — a differenza di qk_ordine_annulla(), che
+ * deve ripristinare quantita_in_arrivo se l'ordine era già inviato.
+ * Una ricezione 'completata' non è annullabile: a quel punto giacenze e
+ * movimenti sono già scritti, stesso principio già seguito per i
+ * trasferimenti (qk_annulla_trasferimento) e per gli ordini — mai riscrivere
+ * lo storico di un'operazione già conclusa.
+ *
+ * @throws \RuntimeException se la ricezione non esiste o non è in bozza
+ */
+function qk_ricezione_annulla(PDO $pdo, int $id): void
+{
+    $st = $pdo->prepare('SELECT stato FROM ricezioni_testata WHERE id = ?');
+    $st->execute([$id]);
+    $stato = $st->fetchColumn();
+    if ($stato === false) {
+        throw new \RuntimeException('Ricezione non trovata.');
+    }
+    if ($stato !== 'bozza') {
+        throw new \RuntimeException("Solo una ricezione in bozza può essere annullata (stato attuale: {$stato}).");
+    }
+
+    $pdo->prepare("UPDATE ricezioni_testata SET stato = 'annullata' WHERE id = ?")->execute([$id]);
+}
+
 function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, int $utente_id): void
 {
     $pdo->beginTransaction();

@@ -169,8 +169,24 @@ switch (DB_DRIVER) {
                     $statements[] = $stmt;
                 }
 
-                foreach ($statements as $stmt) {
-                    $pdo->exec($stmt);
+                // Auto-setup transazionale (scoperte_audit.md, Tappa 0.2, 09/07/2026):
+                // se uno statement a metà lista fallisce fuori da una transazione,
+                // SQLite fa comunque commit di ogni exec() precedente. Siccome
+                // `utenti` è tra le prime tabelle create, un DB rimasto a metà
+                // avrebbe comunque `utenti` — il controllo qui sopra lo troverebbe
+                // "già esistente" e non riproverebbe mai più l'init, lasciando il
+                // DB rotto per sempre. Avvolgendo l'intera esecuzione in una
+                // transazione, un fallimento fa rollback totale (SQLite supporta le
+                // DDL transazionali) e il prossimo caricamento ritenta l'init da zero.
+                $pdo->beginTransaction();
+                try {
+                    foreach ($statements as $stmt) {
+                        $pdo->exec($stmt);
+                    }
+                    $pdo->commit();
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    throw $e;
                 }
             }
 

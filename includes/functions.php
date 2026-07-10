@@ -201,38 +201,34 @@ function is_authenticated(): bool {
  * Accetta sia username che email: se l'input contiene '@' cerca per email,
  * altrimenti per username.
  */
-function login_attempt(string $input, string $password): bool {
-    global $pdo;
+function login_attempt(PDO $pdo, string $input, string $password): bool {
+    try {
+        $input = trim($input);
+        $field = str_contains($input, '@') ? 'u.email' : 'u.username';
 
-    if (isset($pdo)) {
-        try {
-            $input = trim($input);
-            $field = str_contains($input, '@') ? 'u.email' : 'u.username';
+        $stmt = $pdo->prepare(
+            "SELECT u.id, u.username, u.nome, u.cognome, u.email,
+                    u.password_hash, r.codice AS ruolo
+               FROM utenti u
+               JOIN ruoli r ON r.id = u.ruolo_id
+              WHERE {$field} = :input AND u.attivo = 1
+              LIMIT 1"
+        );
+        $stmt->execute([':input' => $input]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            $stmt = $pdo->prepare(
-                "SELECT u.id, u.username, u.nome, u.cognome, u.email,
-                        u.password_hash, r.codice AS ruolo
-                   FROM utenti u
-                   JOIN ruoli r ON r.id = u.ruolo_id
-                  WHERE {$field} = :input AND u.attivo = 1
-                  LIMIT 1"
-            );
-            $stmt->execute([':input' => $input]);
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($user && password_verify($password, $user['password_hash'])) {
-                $_SESSION['qk_user'] = [
-                    'id'           => $user['id'],
-                    'username'     => $user['username'],
-                    'display_name' => trim($user['nome'] . ' ' . $user['cognome']),
-                    'role'         => $user['ruolo'],
-                ];
-                session_regenerate_id(true);
-                return true;
-            }
-        } catch (\PDOException) {
-            /* fallback sotto */
+        if ($user && password_verify($password, $user['password_hash'])) {
+            $_SESSION['qk_user'] = [
+                'id'           => $user['id'],
+                'username'     => $user['username'],
+                'display_name' => trim($user['nome'] . ' ' . $user['cognome']),
+                'role'         => $user['ruolo'],
+            ];
+            session_regenerate_id(true);
+            return true;
         }
+    } catch (\PDOException) {
+        /* fallback sotto */
     }
 
     return false;

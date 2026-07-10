@@ -281,10 +281,14 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
             }
 
             // Insert transaction log
+            // Nome colonna corretto è authorization_id (DDL, inglese come il resto
+            // della tabella): il precedente "autorizzazione_id" italianizzato non
+            // esiste in db/init_sqlite.sql e faceva fallire ogni INSERT con "no
+            // such column" (audit/Schema-vs-codice-vs-live.md §2, 09/07/2026).
             $ins = $pdo->prepare("
-                INSERT INTO compliance_log_transazioni 
-                  (sale_id, autorizzazione_id, restriction_type_id, product_id, quantity, unit_id, transaction_date)
-                VALUES 
+                INSERT INTO compliance_log_transazioni
+                  (sale_id, authorization_id, restriction_type_id, product_id, quantity, unit_id, transaction_date)
+                VALUES
                   (:sale_id, :auth_id, :r_id, :product_id, :qty, :unit_id, :t_date)
             ");
             $ins->execute([
