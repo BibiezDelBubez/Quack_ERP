@@ -237,21 +237,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
             // aggiornerebbe erroneamente TUTTE le sedi invece di una sola.
             if ($prodotto_id) {
                 $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
-                $stRiserva = $pdo->prepare("
-                    UPDATE giacenze
-                       SET quantita_riservata = quantita_riservata + ?
-                     WHERE prodotto_id = ? AND magazzino_id = ?
-                ");
-                $stRiserva->execute([$qtaStock, $prodotto_id, $magazzinoRiservaId]);
-                if ($stRiserva->rowCount() === 0) {
-                    // Non esiste ancora una riga di giacenza per questo prodotto
-                    // in questo magazzino (prodotto mai movimentato qui): la creiamo
-                    // a quantità disponibile 0 e riservata = qtaStock.
-                    $pdo->prepare("
-                        INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                        VALUES (?, ?, 0, ?, 0, 0, CURRENT_TIMESTAMP)
-                    ")->execute([$prodotto_id, $magazzinoRiservaId, $qtaStock]);
-                }
+                qk_riserva_stock_ordine($pdo, $prodotto_id, $qtaStock, $magazzinoRiservaId);
             }
         }
 
@@ -283,20 +269,15 @@ function qk_search_prodotti_orders(PDO $pdo, string $q): array
                pf.rrp_min,
                pf.rrp_max,
                pf.fornitore_id AS rrp_fornitore_id,
+               -- Costo base: da v_costo_acquisto_prodotti (fix "Listino Fantasma",
+               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql §14b.
                CASE WHEN p.tipo = 'kit' THEN (
-                   SELECT SUM(ck.quantita * (
-                       SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                       JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                       WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                       ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
-                   ))
+                   SELECT SUM(ck.quantita * vc.costo_acquisto)
                    FROM componenti_kit ck
+                   LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
                    WHERE ck.kit_id = p.id
                ) ELSE (
-                   SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                   JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                   WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                   ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                   SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = p.id
                ) END AS costo_base
           FROM prodotti p
           LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id

@@ -117,8 +117,12 @@ final class AdrController extends BaseController
                     try {
                         $this->insertCodice($values);
                         redirect_with('adr?tab=codici', 'success', 'Codice ONU ' . $values['codice_onu'] . ' aggiunto correttamente.');
-                    } catch (PDOException $e) {
-                        $errors['_global'] = $this->dbMessage($e);
+                    } catch (\Throwable $e) {
+                        // \Throwable e non solo PDOException: insertCodice() ora può
+                        // propagare anche errori non-SQL (vedi il suo catch interno) —
+                        // vogliamo comunque mostrare un errore leggibile invece di un
+                        // fatal error non gestito.
+                        $errors['_global'] = $e instanceof PDOException ? $this->dbMessage($e) : $e->getMessage();
                     }
                 }
             }
@@ -156,6 +160,9 @@ final class AdrController extends BaseController
         if (!$record) {
             redirect_with('adr?tab=codici', 'danger', 'Record non trovato.');
         }
+        $stmtLabels = $this->pdo->prepare('SELECT etichetta_codice FROM adr_codici_onu_etichette WHERE codice_onu_id = ? ORDER BY ordine ASC');
+        $stmtLabels->execute([$id]);
+        $record['etichette_str'] = implode(', ', $stmtLabels->fetchAll(PDO::FETCH_COLUMN));
 
         $values = array_merge($this->defaultCodiceValues(), $record);
         $errors = [];
@@ -170,8 +177,8 @@ final class AdrController extends BaseController
                     try {
                         $this->updateCodice($id, $values);
                         redirect_with('adr/codici/edit?id=' . $id, 'success', 'Codice ONU aggiornato.');
-                    } catch (PDOException $e) {
-                        $errors['_global'] = $this->dbMessage($e);
+                    } catch (\Throwable $e) {
+                        $errors['_global'] = $e instanceof PDOException ? $this->dbMessage($e) : $e->getMessage();
                     }
                 }
             }
@@ -211,9 +218,17 @@ final class AdrController extends BaseController
         }
 
         try {
-            $this->pdo->prepare('DELETE FROM adr_codici_onu WHERE id = :id')->execute([':id' => $id]);
+            $this->pdo->beginTransaction();
+            // Elimina prima le etichette associate (emula ON DELETE CASCADE)
+            $this->pdo->prepare('DELETE FROM adr_codici_onu_etichette WHERE codice_onu_id = :id')->execute([':id' => $id]);
+            // Poi elimina il codice ONU
+            $this->pdo->prepare('DELETE FROM adr_codici_onu WHERE id=:id')->execute([':id' => $id]);
+            $this->pdo->commit();
             redirect_with('adr?tab=codici', 'success', 'Codice ONU eliminato.');
         } catch (PDOException $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             redirect_with('adr?tab=codici', 'danger', $this->dbMessage($e));
         }
     }
@@ -254,7 +269,10 @@ final class AdrController extends BaseController
                     a.codice_quantita_esente,
                     a.e_merce_alto_rischio, a.e_inquinante_marino,
                     a.inizio_validita, a.fine_validita,
-                    cl.denominazione AS classe_label
+                    cl.denominazione AS classe_label,
+                    (SELECT GROUP_CONCAT(etichetta_codice) 
+                     FROM adr_codici_onu_etichette 
+                     WHERE codice_onu_id = a.id) AS etichette_str
                FROM adr_codici_onu a
           LEFT JOIN adr_classi_pericolo cl ON cl.codice = a.classe_pericolo
               WHERE $where
@@ -308,6 +326,7 @@ final class AdrController extends BaseController
             'e_inquinante_marino'         => '',
             'inizio_validita'             => '',
             'fine_validita'               => '',
+            'etichette_str'               => '',
         ];
     }
 
@@ -328,6 +347,7 @@ final class AdrController extends BaseController
             'e_inquinante_marino'         => $bool('e_inquinante_marino'),
             'inizio_validita'             => post('inizio_validita'),
             'fine_validita'               => post('fine_validita'),
+            'etichette_str'               => post('etichette_str'),
         ];
     }
 
@@ -363,45 +383,162 @@ final class AdrController extends BaseController
         ];
     }
 
-    private function insertCodice(array $v): void
+    private function insertCodice(array $v): int
     {
-        $this->pdo->prepare(
-            'INSERT INTO adr_codici_onu
-                (codice_onu, nome_descrizione, classe_pericolo, codice_classificazione,
-                 gruppo_imballaggio, categoria_trasporto, codice_restrizione_gallerie,
-                 quantita_limitata, codice_quantita_esente,
-                 e_merce_alto_rischio, e_inquinante_marino,
-                 inizio_validita, fine_validita)
-             VALUES
-                (:codice_onu, :nome_descrizione, :classe_pericolo, :codice_classificazione,
-                 :gruppo_imballaggio, :categoria_trasporto, :codice_restrizione_gallerie,
-                 :quantita_limitata, :codice_quantita_esente,
-                 :e_merce_alto_rischio, :e_inquinante_marino,
-                 :inizio_validita, :fine_validita)'
-        )->execute($this->codiceParams($v));
+        // Transazione unica: INSERT del codice ONU + saveEtichette() devono
+        // essere atomici. Prima erano due autocommit separati e saveEtichette()
+        // ingoiava silenziosamente ogni errore sulle etichette (vedi audit
+        // 10/07/2026): un'etichetta di pericolo scritta male spariva senza
+        // nessun avviso, con "salvato correttamente" mostrato comunque —
+        // rischioso su un dato di compliance ADR. Ora, se una singola etichetta
+        // fallisce (FK verso adr_etichette inesistente), l'intero salvataggio
+        // va in rollback e l'errore risale a create()/edit() via dbMessage().
+        //
+        // PDO non supporta transazioni annidate: importCodici()/importClassificazioni()
+        // chiamano già insertCodice() dentro una LORO transazione aperta sull'intero
+        // batch (beginTransaction() qui sopra fallirebbe con "there is already an
+        // active transaction"). Apriamo/chiudiamo la transazione solo se non ce n'è
+        // già una in corso — nel caso annidato ci limitiamo a propagare l'eccezione
+        // e lasciamo che sia il chiamante a fare il rollback dell'intero batch.
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO adr_codici_onu
+                    (codice_onu, nome_descrizione, classe_pericolo, codice_classificazione,
+                     gruppo_imballaggio, categoria_trasporto, codice_restrizione_gallerie,
+                     quantita_limitata, codice_quantita_esente,
+                     e_merce_alto_rischio, e_inquinante_marino,
+                     inizio_validita, fine_validita)
+                 VALUES
+                    (:codice_onu, :nome_descrizione, :classe_pericolo, :codice_classificazione,
+                     :gruppo_imballaggio, :categoria_trasporto, :codice_restrizione_gallerie,
+                     :quantita_limitata, :codice_quantita_esente,
+                     :e_merce_alto_rischio, :e_inquinante_marino,
+                     :inizio_validita, :fine_validita)'
+            )->execute($this->codiceParams($v));
+            $id = (int) $this->pdo->lastInsertId();
+            $this->saveEtichette($id, $v['etichette_str'] ?? '');
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
+            return $id;
+        } catch (\Throwable $e) {
+            // \Throwable e non solo PDOException: un errore non-SQL (es. un
+            // TypeError su un parametro malformato, plausibile con
+            // strict_types=1) lasciava altrimenti la transazione aperta senza
+            // rollback, perché non veniva intercettato dal catch.
+            if ($ownTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Sostituisce le etichette di pericolo associate a un codice ONU.
+     * Deve sempre girare dentro la transazione aperta da insertCodice()/
+     * updateCodice(): nessun try/catch locale che ingoi errori — un
+     * fallimento (duplicato, o codice etichetta inesistente in adr_etichette)
+     * deve propagarsi e far fallire l'intero salvataggio, non sparire in
+     * silenzio lasciando l'utente convinto che sia andato tutto bene.
+     */
+    private function saveEtichette(int $id, string $etichetteStr): void
+    {
+        $this->pdo->prepare('DELETE FROM adr_codici_onu_etichette WHERE codice_onu_id = ?')->execute([$id]);
+
+        // trim + scarta solo le stringhe vuote (non "0", improbabile per un
+        // codice etichetta ma comunque non va perso da un array_filter senza
+        // callback esplicito) + dedup case-insensitive: "8a" e "8A" sono la
+        // stessa etichetta per l'operatore, ma NON forziamo una maiuscola
+        // arbitraria in scrittura — non sappiamo con certezza con che
+        // grafia siano salvati i codici in adr_etichette (nessun seed/CRUD
+        // nel codice per verificarlo). Dedup sul confronto case-insensitive
+        // mantenendo la prima grafia incontrata per ciascun gruppo.
+        $raw = array_values(array_filter(
+            array_map('trim', explode(',', $etichetteStr)),
+            static fn(string $v): bool => $v !== ''
+        ));
+        $etichette = [];
+        $visti = [];
+        foreach ($raw as $v) {
+            $chiave = mb_strtolower($v);
+            if (isset($visti[$chiave])) {
+                continue;
+            }
+            $visti[$chiave] = true;
+            $etichette[] = $v;
+        }
+
+        if (empty($etichette)) {
+            return;
+        }
+
+        // Per ogni etichetta deduplicata, risolviamo la grafia ESATTA già
+        // presente in adr_etichette con un confronto case-insensitive
+        // (LOWER(), portabile SQLite/MySQL) e usiamo quella per l'INSERT —
+        // così il risultato rispetta sempre la FK indipendentemente da come
+        // l'operatore l'ha digitata. Se non troviamo alcuna corrispondenza,
+        // lasciamo il valore originale: l'INSERT fallirà sulla FK esattamente
+        // come prima (nessun cambiamento di comportamento per codici davvero
+        // inesistenti).
+        $stFind = $this->pdo->prepare('SELECT codice FROM adr_etichette WHERE LOWER(codice) = LOWER(?)');
+        $stIns = $this->pdo->prepare(
+            'INSERT INTO adr_codici_onu_etichette (codice_onu_id, etichetta_codice, tipo, ordine) VALUES (?, ?, ?, ?)'
+        );
+        foreach ($etichette as $idx => $et) {
+            $stFind->execute([$et]);
+            $resolved = $stFind->fetchColumn();
+            $etReale = $resolved !== false ? $resolved : $et;
+            $stIns->execute([$id, $etReale, $idx === 0 ? 'primaria' : 'sussidiaria', $idx + 1]);
+        }
     }
 
     private function updateCodice(int $id, array $v): void
     {
-        $p        = $this->codiceParams($v);
-        $p[':id'] = $id;
-        $this->pdo->prepare(
-            'UPDATE adr_codici_onu SET
-                codice_onu=:codice_onu,
-                nome_descrizione=:nome_descrizione,
-                classe_pericolo=:classe_pericolo,
-                codice_classificazione=:codice_classificazione,
-                gruppo_imballaggio=:gruppo_imballaggio,
-                categoria_trasporto=:categoria_trasporto,
-                codice_restrizione_gallerie=:codice_restrizione_gallerie,
-                quantita_limitata=:quantita_limitata,
-                codice_quantita_esente=:codice_quantita_esente,
-                e_merce_alto_rischio=:e_merce_alto_rischio,
-                e_inquinante_marino=:e_inquinante_marino,
-                inizio_validita=:inizio_validita,
-                fine_validita=:fine_validita
-             WHERE id=:id'
-        )->execute($p);
+        // Stessa ragione della transazione unica in insertCodice(): saveEtichette()
+        // qui CANCELLA prima tutte le etichette esistenti, quindi un fallimento
+        // a metà del re-insert senza transazione lascerebbe il record con meno
+        // etichette di quelle salvate in precedenza, senza nessun errore visibile.
+        // Stesso guard anti-nidificazione di insertCodice() (vedi commento lì).
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $p        = $this->codiceParams($v);
+            $p[':id'] = $id;
+            $this->pdo->prepare(
+                'UPDATE adr_codici_onu SET
+                    codice_onu=:codice_onu,
+                    nome_descrizione=:nome_descrizione,
+                    classe_pericolo=:classe_pericolo,
+                    codice_classificazione=:codice_classificazione,
+                    gruppo_imballaggio=:gruppo_imballaggio,
+                    categoria_trasporto=:categoria_trasporto,
+                    codice_restrizione_gallerie=:codice_restrizione_gallerie,
+                    quantita_limitata=:quantita_limitata,
+                    codice_quantita_esente=:codice_quantita_esente,
+                    e_merce_alto_rischio=:e_merce_alto_rischio,
+                    e_inquinante_marino=:e_inquinante_marino,
+                    inizio_validita=:inizio_validita,
+                    fine_validita=:fine_validita
+                 WHERE id=:id'
+            )->execute($p);
+            $this->saveEtichette($id, $v['etichette_str'] ?? '');
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            // \Throwable, stessa ragione di insertCodice(): un errore non-SQL
+            // non deve lasciare la transazione aperta senza rollback.
+            if ($ownTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /** Gestisce POST inline per le tre lookup table; restituisce [ok, errors, tab]. */
@@ -446,9 +583,17 @@ final class AdrController extends BaseController
                 case 'delete_classe':
                     $tab    = 'classi';
                     $codice = trim(post('codice'));
-                    $this->pdo->prepare('DELETE FROM adr_classi_pericolo WHERE codice=:c')
-                        ->execute([':c' => $codice]);
-                    $ok = "Classe $codice eliminata.";
+                    try {
+                        $this->pdo->prepare('DELETE FROM adr_classi_pericolo WHERE codice=:c')
+                            ->execute([':c' => $codice]);
+                        $ok = "Classe $codice eliminata.";
+                    } catch (PDOException $e) {
+                        if ((string)$e->getCode() === '23000') {
+                            $errors['classe'] = "Impossibile eliminare la classe $codice: è attualmente in uso (es. nei Codici ONU).";
+                        } else {
+                            $errors['classe'] = "Errore durante l'eliminazione: " . $e->getMessage();
+                        }
+                    }
                     break;
 
                 /* ── Gruppi imballaggio ───────────────────────────────── */
@@ -773,25 +918,40 @@ final class AdrController extends BaseController
                     }
                 }
 
+                // SAVEPOINT per riga: se insertCodice() fallisce su QUESTA riga
+                // (es. codice_onu duplicato — non pre-validato sopra come le FK)
+                // vogliamo scartare solo questa riga, non l'intero batch già
+                // importato correttamente fin qui. insertCodice() gira con
+                // $ownTransaction=false (siamo già dentro la transazione aperta
+                // sotto) quindi non tenta un rollback proprio: propaga soltanto
+                // l'eccezione, che qui catturiamo per-riga.
                 $bool = fn(string $k): string => ((string)($row[$k] ?? '') === '1') ? '1' : '0';
-                $this->insertCodice([
-                    'codice_onu'                      => $onu,
-                    'nome_descrizione'                => $row['nome_descrizione'] ?? '',
-                    'classe_pericolo'                 => $row['classe_pericolo'] ?? '',
-                    'codice_classificazione'          => $row['codice_classificazione'] ?? '',
-                    'gruppo_imballaggio'              => $row['gruppo_imballaggio'] ?? '',
-                    'categoria_trasporto'             => $row['categoria_trasporto'] ?? '',
-                    'codice_restrizione_gallerie'     => $row['codice_restrizione_gallerie'] ?? '',
-                    'quantita_limitata'               => $row['quantita_limitata'] ?? '',
-                    'codice_quantita_esente'          => $row['codice_quantita_esente'] ?? '',
-                    'id_unita_misura_qta_limitata'    => $row['id_unita_misura_qta_limitata'] ?? '',
-                    'e_merce_alto_rischio'            => $bool('e_merce_alto_rischio'),
-                    'e_inquinante_marino'             => $bool('e_inquinante_marino'),
-                    'e_pericoloso_ambiente_acquatico' => $bool('e_pericoloso_ambiente_acquatico'),
-                    'inizio_validita'                 => $row['inizio_validita'] ?? '',
-                    'fine_validita'                   => $row['fine_validita'] ?? '',
-                ]);
-                $inserted++;
+                $this->pdo->exec('SAVEPOINT sp_import_row');
+                try {
+                    $this->insertCodice([
+                        'codice_onu'                      => $onu,
+                        'nome_descrizione'                => $row['nome_descrizione'] ?? '',
+                        'classe_pericolo'                 => $row['classe_pericolo'] ?? '',
+                        'codice_classificazione'          => $row['codice_classificazione'] ?? '',
+                        'gruppo_imballaggio'              => $row['gruppo_imballaggio'] ?? '',
+                        'categoria_trasporto'             => $row['categoria_trasporto'] ?? '',
+                        'codice_restrizione_gallerie'     => $row['codice_restrizione_gallerie'] ?? '',
+                        'quantita_limitata'               => $row['quantita_limitata'] ?? '',
+                        'codice_quantita_esente'          => $row['codice_quantita_esente'] ?? '',
+                        'id_unita_misura_qta_limitata'    => $row['id_unita_misura_qta_limitata'] ?? '',
+                        'e_merce_alto_rischio'            => $bool('e_merce_alto_rischio'),
+                        'e_inquinante_marino'             => $bool('e_inquinante_marino'),
+                        'e_pericoloso_ambiente_acquatico' => $bool('e_pericoloso_ambiente_acquatico'),
+                        'inizio_validita'                 => $row['inizio_validita'] ?? '',
+                        'fine_validita'                   => $row['fine_validita'] ?? '',
+                    ]);
+                    $this->pdo->exec('RELEASE SAVEPOINT sp_import_row');
+                    $inserted++;
+                } catch (\Throwable $rowEx) {
+                    $this->pdo->exec('ROLLBACK TO SAVEPOINT sp_import_row');
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': ' . ($rowEx instanceof PDOException ? $this->dbMessage($rowEx) : $rowEx->getMessage()) . ' — saltata.';
+                }
             }
             $this->pdo->commit();
             echo json_encode([
@@ -800,9 +960,15 @@ final class AdrController extends BaseController
                 'skipped'  => $skipped,
                 'errors'   => $rowErrors,
             ]);
-        } catch (PDOException $e) {
-            $this->pdo->rollBack();
-            echo json_encode(['ok' => false, 'error' => $this->dbMessage($e)]);
+        } catch (\Throwable $e) {
+            // \Throwable e non solo PDOException: qualcosa fuori dal blocco
+            // per-riga (es. le query di pre-caricamento lookup sopra, o un
+            // errore non-SQL) non deve lasciare la transazione di batch
+            // aperta senza rollback.
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e instanceof PDOException ? $this->dbMessage($e) : $e->getMessage()]);
         }
         exit;
     }
@@ -849,14 +1015,25 @@ final class AdrController extends BaseController
                     $rowErrors[] = 'Riga ' . ($i + 1) . ': classe ADR vuota — saltata.';
                     continue;
                 }
-                $this->insertClassificazione([
-                    'codice'              => $codice,
-                    'codice_classe'       => $classe,
-                    'descrizione'         => $row['descrizione'] ?? '',
-                    'pericolo_primario'  => $row['pericolo_primario'] ?? '',
-                    'pericolo_secondario'=> $row['pericolo_secondario'] ?? '',
-                ]);
-                $inserted++;
+                // SAVEPOINT per riga: stessa ragione di importCodici() — un
+                // fallimento su questa riga (es. UNIQUE su codice+codice_classe)
+                // non deve scartare le righe già importate correttamente prima.
+                $this->pdo->exec('SAVEPOINT sp_import_row');
+                try {
+                    $this->insertClassificazione([
+                        'codice'              => $codice,
+                        'codice_classe'       => $classe,
+                        'descrizione'         => $row['descrizione'] ?? '',
+                        'pericolo_primario'  => $row['pericolo_primario'] ?? '',
+                        'pericolo_secondario'=> $row['pericolo_secondario'] ?? '',
+                    ]);
+                    $this->pdo->exec('RELEASE SAVEPOINT sp_import_row');
+                    $inserted++;
+                } catch (\Throwable $rowEx) {
+                    $this->pdo->exec('ROLLBACK TO SAVEPOINT sp_import_row');
+                    $skipped++;
+                    $rowErrors[] = 'Riga ' . ($i + 1) . ': ' . ($rowEx instanceof PDOException ? $this->dbMessage($rowEx) : $rowEx->getMessage()) . ' — saltata.';
+                }
             }
             $this->pdo->commit();
             echo json_encode([
@@ -865,9 +1042,11 @@ final class AdrController extends BaseController
                 'skipped'  => $skipped,
                 'errors'   => $rowErrors,
             ]);
-        } catch (PDOException $e) {
-            $this->pdo->rollBack();
-            echo json_encode(['ok' => false, 'error' => $this->dbMessage($e)]);
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            echo json_encode(['ok' => false, 'error' => $e instanceof PDOException ? $this->dbMessage($e) : $e->getMessage()]);
         }
         exit;
     }

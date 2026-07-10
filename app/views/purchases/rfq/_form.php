@@ -219,6 +219,11 @@ $savedOk = isset($saved) && $saved;
         <?php if ($isInviata): ?>
           Usa <strong>Crea Nuova Versione</strong> per fare una revisione.
         <?php endif; ?>
+        <?php if ($isChiusa && !empty($values['esito_chiusura'])): ?>
+          <?= $values['esito_chiusura'] === 'offerta_accettata'
+                ? '(Chiusa perché un\'offerta è stata accettata.)'
+                : '(Chiusa manualmente, senza offerta accettata.)' ?>
+        <?php endif; ?>
       </span>
     </div>
     <?php endif; ?>

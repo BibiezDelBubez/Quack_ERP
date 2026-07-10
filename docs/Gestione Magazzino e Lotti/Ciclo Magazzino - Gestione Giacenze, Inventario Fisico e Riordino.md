@@ -46,6 +46,8 @@ Per garantire il tracciamento, la separazione dei compiti e lo storico dei fluss
   * `creato_da` (Utente che ha aperto la sessione d'inventario)  
   * `created_at` (Data e ora di creazione del record)  
   * `stato` (Valori: `bozza` = conteggio in corso, `convalidato` = rettifiche applicate e sigillate)
+  * `magazzino_id` (Chiave Esterna su `magazzini`. L'inventario è sempre riferito a UN magazzino fisico specifico)
+  * `categoria_filtro_id` *(aggiunto 2026-07-10)* (Chiave Esterna su `categorie_prodotto`, opzionale. Se valorizzato, l'inventario copre solo i prodotti di quella categoria — un "conteggio a rotazione"/cycle count. Se `NULL`, l'inventario copre tutti i prodotti del magazzino — conteggio completo, comportamento storico)
 * **inventari_righe**  
   * `id` (Chiave Primaria)  
   * `inventario_id` (Chiave Esterna su `inventari` con cancellazione a cascata)  
@@ -125,6 +127,66 @@ Prendiamo lo scenario in cui il responsabile decide di verificare lo stock del r
 
 ---
 
+## Blocco Movimenti durante l'Inventario Fisico (ispirato a SAP) — aggiunto il 2026-07-10
+
+Questa sezione spiega, in modo discorsivo e senza dare per scontate nozioni tecniche, **perché** questa funzionalità è stata introdotta, **come funziona** oggi e **quali scelte architetturali** sono state fatte e perché.
+
+### Il problema che c'era prima
+
+Prima di questa modifica, l'inventario fisico funzionava così: si apriva una sessione, il sistema fotografava la giacenza teorica di **tutti** i prodotti del magazzino in quel preciso istante, il magazziniere girava con il tablet contando tutto, e solo alla fine (alla "Convalida") le differenze venivano scritte a sistema.
+
+Il problema è che, nel tempo che intercorre tra l'apertura dell'inventario e la sua convalida (che nella pratica può essere ore, se non un giorno intero per un magazzino grande), **il resto dell'azienda continuava a lavorare normalmente**: un ordine cliente veniva spedito, una bolla di un fornitore veniva scaricata, un operatore registrava un movimento manuale di rettifica per un altro motivo. Ognuna di queste operazioni cambia la giacenza reale di un prodotto — ma la "giacenza teorica" fotografata all'apertura dell'inventario restava congelata al valore vecchio.
+
+Risultato pratico: se durante il conteggio del reparto acidi qualcuno spediva per errore (o per necessità operativa legittima) dell'Acido Cloridrico che era sotto conteggio, alla convalida il sistema avrebbe generato una rettifica basata su un confronto ormai falsato — introducendo un errore di giacenza invece di correggerlo. Peggio ancora, non c'era **nessun controllo** che impedisse alla giacenza di scendere sotto zero, né alcuna visibilità sul fatto che il prodotto contato fosse già promesso (riservato) a un cliente in attesa di spedizione.
+
+### La soluzione: bloccare i movimenti, ma solo dove serve
+
+La soluzione implementata si ispira esplicitamente al modo in cui **SAP** (il principale ERP enterprise al mondo, storicamente un riferimento per i processi di magazzino) gestisce l'inventario fisico. SAP, quando un conteggio è in corso, applica un **blocco dei movimenti (posting block)** sulla combinazione **magazzino + materiale**: cioè blocca solo quel prodotto, in quel magazzino, non l'intero magazzino e non l'intera azienda.
+
+Quack ERP replica questo principio con la stessa identica granularità: **(magazzino, prodotto)**. Concretamente, mentre un inventario è in stato `bozza` (conteggio aperto, non ancora convalidato):
+
+* Non è possibile registrare un **movimento manuale** (carico/scarico/rettifica manuale da `/warehouse/movements`) su un prodotto che è sotto conteggio in quel magazzino.
+* Non è possibile **confermare la ricezione di una merce** (bolla fornitore) se contiene un prodotto sotto conteggio in quel magazzino.
+* Non è possibile **spedire un ordine cliente** (creare una spedizione/DDT) se contiene un prodotto sotto conteggio in quel magazzino — e questo vale anche per i **Kit** (prodotti composti da più componenti): se uno qualunque dei componenti del kit è sotto conteggio, la spedizione dell'intero kit viene bloccata, perché spedire il kit movimenterebbe comunque quel componente.
+
+Se un operatore prova a fare una di queste tre operazioni su un prodotto bloccato, il sistema rifiuta l'operazione con un messaggio chiaro (es. *"Impossibile spedire 'Acido Cloridrico 33%': è in corso un inventario fisico su questo prodotto in questo magazzino."*), invitando a completare o annullare prima l'inventario.
+
+Tutti gli **altri** prodotti del magazzino, non coinvolti nel conteggio, restano completamente operativi: si possono spedire, ricevere, movimentare normalmente. Questo è il punto centrale della scelta: **non si blocca mai il magazzino intero**, solo i singoli prodotti effettivamente sotto conteggio in quel momento.
+
+*(Nota di trasparenza: SAP, nella sua versione più completa, arriva a granularità ancora più fine — fino al singolo "storage bin"/ubicazione dentro il magazzino, e distingue tra blocco rigido e semplice "congelamento" della giacenza contabile con possibilità di sblocco autorizzato per eccezioni. Quack ERP adotta una versione semplificata pensata per la scala di una PMI: granularità (magazzino, prodotto), blocco sempre rigido, nessun sistema di autorizzazioni per eccezioni — se serve sbloccare, si annulla o si convalida l'inventario.)*
+
+### Perché il blocco da solo non basta: il "cycle count"
+
+C'è però un problema logico: se ogni inventario, per definizione, contava **tutti** i prodotti del magazzino (come funzionava storicamente in Quack ERP), allora un blocco "per singolo prodotto" sarebbe del tutto equivalente, nella pratica, a un blocco dell'intero magazzino — perché tutti i prodotti sarebbero comunque sotto conteggio contemporaneamente. La granularità fine sarebbe inutile senza anche la possibilità di aprire inventari che coprono **solo una parte** del magazzino.
+
+Per questo motivo, insieme al blocco granulare, è stata introdotta la funzionalità di **"conteggio a rotazione" (cycle counting)**: in fase di apertura di un nuovo inventario, l'operatore può scegliere se contare **tutti i prodotti** (comportamento storico, "inventario completo") oppure **solo i prodotti di una categoria specifica** (es. "solo Solventi", "solo Acidi") tramite un menu a tendina "Ambito conteggio" nel form di creazione. Un inventario aperto in questo modo blocca — coerentemente con quanto spiegato sopra — solo i prodotti di quella categoria, lasciando il resto del magazzino pienamente operativo durante tutto il conteggio.
+
+Questo approccio non è un'invenzione arbitraria: è la **best practice riconosciuta** per la gestione dell'inventario fisico nelle piccole e medie imprese (fonti: guide di settore ISM, RFgen, NetSuite, ERP Software Blog). Il modello raccomandato è **ibrido**: conteggi a rotazione frequenti (settimanali/mensili) su sottoinsiemi di prodotti — così da non fermare mai il flusso operativo dell'intero magazzino — combinati con un conteggio fisico completo periodico (tipicamente annuale, es. a fine anno), utile come verifica generale e per gli adempimenti contabili/fiscali. Quack ERP supporta oggi entrambi gli scenari con lo stesso meccanismo.
+
+### Doppio controllo alla Convalida: niente giacenze negative, avviso su riservato
+
+Quando l'operatore clicca "Convalida e Chiudi Inventario", il sistema oggi esegue un controllo in **due passaggi**, invece di applicare direttamente le rettifiche come accadeva prima:
+
+**Passaggio 1 — verifica preventiva.** Per ogni riga con uno scostamento (quantità contata diversa dalla teorica), il sistema calcola quale sarebbe la nuova giacenza disponibile risultante. Se anche una sola riga porterebbe la giacenza disponibile **sotto zero**, l'intera convalida viene **bloccata** e annullata (nessuna rettifica viene applicata, nemmeno per le altre righe corrette) mostrando l'elenco preciso dei prodotti in errore. Questo è un controllo di sicurezza che prima non esisteva: impediva a un errore di battitura durante il conteggio (es. contare "5" invece di "50") di generare una giacenza negativa, un dato privo di senso fisico che poi si propaga a cascata su disponibilità, riordino e documenti di trasporto.
+
+Se invece la nuova giacenza sarebbe sì minore della quantità **già riservata** per ordini clienti confermati (ma non negativa in assoluto), la convalida **non viene bloccata**: procede normalmente, ma il messaggio di successo finale include un avviso esplicito (es. *"ATTENZIONE — sotto-copertura ordini: Acido Cloridrico 33% (disponibile 40, riservato 55)."*), così che il buyer o il responsabile vendite sappia subito che uno o più ordini promessi ai clienti potrebbero non essere completamente coperti dallo stock reale, e possa intervenire (contattare il cliente, sollecitare un riordino, ecc.) prima che il problema si scopra al momento della spedizione.
+
+**Passaggio 2 — applicazione.** Solo se il Passaggio 1 non ha trovato violazioni negative, il sistema procede come prima: genera i movimenti di tipo `rettifica` per ogni riga con scostamento, aggiorna le giacenze e sigilla l'inventario come `convalidato`.
+
+### La sicurezza di poter annullare: "Annulla bozza"
+
+Poiché ora un inventario aperto blocca dei prodotti (anche se solo quelli effettivamente sotto conteggio), è stata aggiunta una via di uscita che prima non esisteva: il bottone **"Annulla bozza"**, disponibile finché l'inventario è in stato `bozza` (non ancora convalidato). Cliccandolo, la sessione di inventario viene eliminata senza aver toccato alcuna giacenza (la convalida è l'unico momento in cui le rettifiche vengono realmente scritte), e tutti i prodotti coinvolti tornano immediatamente movimentabili. Serve, ad esempio, se un inventario è stato aperto per errore, o se il conteggio va rimandato e nel frattempo serve sbloccare i prodotti per l'operatività quotidiana.
+
+### Protezione da conteggi sovrapposti
+
+Infine, per evitare che due inventari in bozza coprano contemporaneamente lo stesso prodotto nello stesso magazzino (situazione che creerebbe ambiguità su quale dei due debba "vincere" alla convalida), il sistema controlla, al momento dell'apertura di un nuovo inventario, se esiste già un altro inventario in bozza che include uno o più degli stessi prodotti in quel magazzino. In tal caso, l'apertura viene rifiutata con un messaggio che indica quale inventario esistente va prima completato o annullato (es. *"Esiste già un inventario in bozza (#12, categoria 'Acidi') che copre uno o più di questi prodotti in questo magazzino."*).
+
+### Riepilogo per chi non è tecnico
+
+In una frase: **da oggi, contare fisicamente un prodotto "congela" solo quel prodotto in quel magazzino** (non l'intero magazzino), si può scegliere di contare solo una categoria alla volta invece di tutto insieme, il sistema impedisce di generare per errore una giacenza negativa, avvisa se lo stock reale rischia di non coprire gli ordini già promessi ai clienti, e si può sempre annullare un conteggio aperto per errore senza conseguenze. Il modello è lo stesso concetto usato da SAP per i grandi magazzini industriali, semplificato per adattarsi alla scala e alle esigenze di Quack.
+
+---
+
 ### **FASE 3: Flusso di Riordino automatico per prodotti Sottoscorta**
 
 * **Azione dell'utente:** Il buyer apre la scheda **"Riordino"** (`/warehouse/reorder`).
@@ -187,6 +249,8 @@ Le schermate del magazzino seguono criteri di pulizia visiva e immediatezza, evi
 | | note | Text | Annotazioni descrittive | Campo di testo libero per commenti sull'inventario. |
 | | creato_da | FK (int) | Utente creatore | Punta a `utenti.id` dell'operatore loggato. |
 | | stato | Varchar | Stato della sessione | Valori: `bozza` (modificabile), `convalidato` (sigillato). |
+| | magazzino_id | FK (int) | Magazzino di riferimento | Punta a `magazzini.id`. Il blocco movimenti (v. sezione dedicata) si applica per (magazzino, prodotto). |
+| | categoria_filtro_id | FK (int, opz.) | Ambito cycle count | Punta a `categorie_prodotto.id`. NULL = inventario completo; valorizzato = conteggio a rotazione su una sola categoria. |
 | **inventari_righe** | id | PK (int) | Identificativo riga | Generato automaticamente. |
 | | inventario_id | FK (int) | Legame testata | Punta a `inventari.id` con cancellazione a cascata. |
 | | prodotto_id | FK (int) | Articolo conteggiato | Punta a `prodotti.id`. |

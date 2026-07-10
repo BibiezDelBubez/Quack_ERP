@@ -94,7 +94,20 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
         <?php else: foreach ($movements as $m):
           $bd = $tipoBadgeMap[$m['tipo_movimento']] ?? ['label' => $m['tipo_movimento'], 'cls' => 'draft'];
           $positivi = ['carico','reso_fornitore','svincolo'];
-          $segno = in_array($m['tipo_movimento'], $positivi) ? '+' : '-';
+          // La rettifica può essere sia un aumento che una diminuzione: la
+          // direzione non è deducibile dal solo tipo_movimento (a differenza
+          // di carico/scarico/ecc.), quindi usa il segno di quantita_delta
+          // (popolata solo per le rettifiche, vedi migrazione
+          // 2026_07_10_movimenti_quantita_delta) invece della lista statica
+          // $positivi. Per rettifiche storiche precedenti al fix, dove
+          // quantita_delta non è disponibile, non si indovina il segno.
+          if ($m['tipo_movimento'] === 'rettifica' && $m['quantita_delta'] !== null) {
+              $segno    = ((float) $m['quantita_delta']) >= 0 ? '+' : '-';
+              $qtaMostrata = abs((float) $m['quantita_delta']);
+          } else {
+              $segno       = in_array($m['tipo_movimento'], $positivi) ? '+' : '-';
+              $qtaMostrata = (float) $m['quantita'];
+          }
           $qtaClass = $segno === '+' ? 'qk-text-success' : 'qk-text-danger';
         ?>
         <tr>
@@ -110,7 +123,7 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
           </td>
           <td class="qk-text-muted" style="font-size:.82rem"><?= e($m['codice_lotto_interno'] ?? '—') ?></td>
           <td class="qk-text-right fw-semibold <?= $qtaClass ?>">
-            <?= $segno ?><?= number_format((float)$m['quantita'], 3, ',', '.') ?>
+            <?= $segno ?><?= number_format($qtaMostrata, 3, ',', '.') ?>
             <span class="qk-text-muted fw-normal"><?= e($m['uom'] ?? '') ?></span>
           </td>
           <td class="qk-text-muted" style="font-size:.82rem"><?= e($m['canale_origine'] ?? '—') ?></td>

@@ -135,26 +135,14 @@ class RfqController extends BaseController
                 $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
             } else {
                 $values = $this->readPostValues();
-                
-                // Enforce read-only lock for address and contact overrides if the RFQ status is not 'bozza'
-                $currentStatus = $detail['rfq']['stato'];
-                $isTerminalState = in_array($currentStatus, ['chiusa', 'revisionata'], true);
 
-                if ($isTerminalState) {
-                    $errors['_global'] = 'Accesso Negato: Impossibile modificare un documento chiuso e archiviato.';
-                } else if ($currentStatus !== 'bozza') {
-                    $originalValues = $this->mapDetailToValues($detail['rfq']);
-                    foreach ([
-                        'indirizzo_consegna_id', 'consegna_via', 'consegna_civico', 'consegna_cap',
-                        'consegna_citta', 'consegna_provincia', 'consegna_nazione', 'consegna_presso',
-                        'consegna_referente', 'consegna_telefono', 'consegna_note',
-                        'contatto_id', 'contatto_nome', 'contatto_telefono', 'contatto_email',
-                        'fornitore_telefono', 'fornitore_email'
-                    ] as $fld) {
-                        $values[$fld] = $originalValues[$fld];
-                    }
-                }
-
+                // Nota: il blocco modifica per stato != 'bozza' (inviata, revisionata,
+                // chiusa) NON viene più controllato qui — era duplicato rispetto a
+                // qk_rfq_save() e quel controllo veniva silenziosamente vanificato
+                // dalla riga successiva ($errors = $this->validate(...) sovrascriveva
+                // l'errore impostato sopra). Il blocco è ora centralizzato in un unico
+                // punto in qk_rfq_save() (includes/purchases_rfq.php), che lancia una
+                // RuntimeException catturata qui sotto come qualsiasi altro errore.
 
                 $righe  = $this->readPostRighe();
                 $errors = $this->validate($values, $righe);
@@ -1163,6 +1151,7 @@ class RfqController extends BaseController
             'fornitore_id'            => (string)($rfq['fornitore_id'] ?? ''),
             'indirizzo_consegna_id'   => (string)($rfq['indirizzo_consegna_master_id'] ?? $rfq['indirizzo_consegna_id'] ?? ''),
             'stato'                   => $rfq['stato'],
+            'esito_chiusura'          => $rfq['esito_chiusura'] ?? '',
             'data_emissione'          => $rfq['data_emissione'] ?? date('Y-m-d'),
             'data_scadenza'           => $rfq['data_scadenza'] ?? '',
             'condizioni_pagamento'    => $rfq['condizioni_pagamento'] ?? '',
@@ -1299,15 +1288,17 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
 
     if ($fornitore_id > 0) {
         $joinPrezzo   = "LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.fornitore_id = $fornitore_id";
+        // Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md): da
+        // v_prezzo_acquisto_base_fornitore invece di LIMIT 1 senza ORDER BY
+        // (che sceglieva una riga arbitraria tra più candidati, incluse
+        // eventuali righe di listini disattivati).
         $selectPrezzo = "pf.sku_fornitore,
             NULL AS uom_comm,
             NULL AS uom_comm_id,
-            (SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp
-              WHERE pfp.prodotto_fornitore_id = pf.id
-                AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario,
-            (SELECT pfp.unita_misura_id FROM prodotti_fornitori_prezzi pfp
-              WHERE pfp.prodotto_fornitore_id = pf.id
-                AND pfp.quantita_minima = 0 LIMIT 1) AS prezzo_unitario_uom_id";
+            (SELECT vf.prezzo FROM v_prezzo_acquisto_base_fornitore vf
+              WHERE vf.prodotto_fornitore_id = pf.id) AS prezzo_unitario,
+            (SELECT vf.unita_misura_id FROM v_prezzo_acquisto_base_fornitore vf
+              WHERE vf.prodotto_fornitore_id = pf.id) AS prezzo_unitario_uom_id";
     }
 
     $st = $pdo->prepare(

@@ -523,10 +523,37 @@ final class AziendeController extends BaseController
             return null;
         }
 
-        // Verifica tipo e estensione
-        $allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml'];
-        if (!in_array($file['type'], $allowed, true)) {
-            $errors[$inputName] = 'Formato file non supportato (ammessi solo JPEG, PNG, GIF, SVG).';
+        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dichiarato dal client:
+        // $_FILES['type'] è il Content-Type inviato dal browser ed è falsificabile — un file .php
+        // rinominato .jpg lo passerebbe indisturbato). Formati ammessi: intersezione tra quelli
+        // realmente supportati da mpdf (generazione PDF, vedi Image/ImageTypeGuesser.php) e da
+        // PHPWord (generazione DOCX, vedi Element/Image.php::setFunctions()) — entrambi usano
+        // questo stesso logo/header. SVG e WebP sono supportati solo da mpdf e non da PHPWord
+        // (in più l'SVG può contenere script, quindi va escluso anche per sicurezza); TIFF è
+        // supportato solo da PHPWord e non da mpdf.
+        $allowedMimeToExt = [
+            'image/jpeg'    => 'jpg',
+            'image/png'     => 'png',
+            'image/gif'     => 'gif',
+            'image/bmp'     => 'bmp',
+            'image/x-ms-bmp' => 'bmp',
+        ];
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
+        if ($finfo) {
+            finfo_close($finfo);
+        }
+
+        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
+            $errors[$inputName] = 'Formato file non supportato (ammessi solo JPEG, PNG, GIF, BMP).';
+            return null;
+        }
+
+        // Doppio controllo: il file deve essere un'immagine raster valida e decodificabile,
+        // non solo avere i "magic bytes" giusti in testa.
+        if (@getimagesize($file['tmp_name']) === false) {
+            $errors[$inputName] = 'Il file non è un\'immagine valida.';
             return null;
         }
 
@@ -534,7 +561,8 @@ final class AziendeController extends BaseController
         $subdir = ($inputName === 'header_image') ? 'header_aziende' : 'loghi';
         $upload_dir = upload_ensure_dir($subdir);
 
-        $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+        // Estensione derivata dal MIME reale, non dal nome file fornito dall'utente.
+        $ext = $allowedMimeToExt[$realMime];
         $new_name = uniqid('img_', true) . '.' . $ext;
         $dest = $upload_dir . DIRECTORY_SEPARATOR . $new_name;
 

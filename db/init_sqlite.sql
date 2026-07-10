@@ -1,7 +1,13 @@
 -- =============================================================================
 -- Quack ERP — Database Inizializzazione
 -- SQLite 3  |  WAL mode  |  Foreign Keys ON
--- Schema v4.3
+-- =============================================================================
+-- Versione schema: NON più un numero a mano (vedi storia in git per il perché
+-- si è abbandonato "Schema vX.Y" in testa a questo file — restava puntualmente
+-- disallineato dalla costante DB_SCHEMA_VERSION in config.php). La versione
+-- "vera" di uno specifico database è ora il contenuto della tabella
+-- schema_migrations (§0 sotto): quante migrazioni sono state applicate e
+-- quale è l'ultima. Vedi db/migrate.php.
 -- =============================================================================
 -- Convenzioni di naming:
 --   • snake_case per tutti i nomi di tabelle e colonne
@@ -10,6 +16,7 @@
 --   • File path: TEXT (senza limite di lunghezza)
 --
 -- Ordine di creazione:
+--   0.  schema_migrations (tracciamento migrazioni)
 --   1.  unita_misura_categorie
 --   2.  unita_misura
 --   3.  ADR lookup statiche
@@ -32,13 +39,67 @@
 --  18.  Ricevimento merce
 --  19.  Magazzino (giacenze, movimenti, inventari)
 --  20.  Log stati ordini
---  21.  Vendita: preventivi, ordini_clienti, righe lotti
+--  21.  Vendita: preventivi, ordini_clienti
 --  22.  Fatture
 --  23.  Spedizioni + Documenti di trasporto
+--  24.  Acquisto v2: rfq_testata/righe, offerte_testata/righe, ordini_testata/righe,
+--       ordini_righe_pianificazione, ricezioni_testata/righe, prodotti_rrp
+--       (tabelle aggiunte dopo la stesura di questo indice — vedi sezioni
+--       "RICEZIONI E PIANIFICAZIONE" e seguenti più in basso nel file)
+-- =============================================================================
+-- Nota: il tracciamento lotto↔riga sulle vendite NON passa da una tabella
+-- dedicata sull'ordine (non esiste "ordini_clienti_righe_lotti", e non è un
+-- buco): la scelta del lotto avviene solo alla spedizione (spedizioni_righe.
+-- lotto_id), non alla conferma ordine. È il pattern raccomandato da SAP
+-- ("batch determination normalmente a livello di consegna, non di ordine" —
+-- altrimenti si rischia di bloccare un lotto per una consegna lontana nel
+-- tempo) e coerente con FEFO (Odoo lo richiede esplicitamente per prodotti
+-- chimici/deperibili) — utile qui per poter sempre spedire il lotto più
+-- vicino a scadere disponibile al momento della spedizione, non quello
+-- deciso settimane prima all'ordine.
 -- =============================================================================
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+
+-- =============================================================================
+-- 0. SCHEMA_MIGRATIONS — tracciamento migrazioni applicate
+-- =============================================================================
+-- Registro di quali script in db/migrations/ sono già stati eseguiti su
+-- QUESTO specifico database. Il runner (db/migrate.php) confronta i file
+-- presenti in db/migrations/ con questa tabella: esegue solo quelli il cui
+-- nome non è ancora registrato qui, poi li registra.
+--
+-- Perché serve: prima non esisteva nessun elenco central. Sapere "questo
+-- database ha già tutte le modifiche più recenti?" richiedeva ispezionare
+-- lo schema a mano colonna per colonna. Ora basta guardare questa tabella.
+--
+-- Su un'installazione NUOVA (database creato da questo stesso script), tutte
+-- le modifiche delle migrazioni già esistenti in db/migrations/ sono incluse
+-- direttamente nelle CREATE TABLE qui sotto: non c'è bisogno di rieseguirle.
+-- L'INSERT di baseline subito dopo la CREATE TABLE serve esattamente a dirlo
+-- al runner, così non le rilancia inutilmente (sarebbero comunque innocue,
+-- perché ogni migrazione controlla da sé se una colonna esiste già — ma è
+-- più pulito partire con il registro già coerente).
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id         INTEGER      PRIMARY KEY AUTOINCREMENT,
+    migration  VARCHAR(255) NOT NULL UNIQUE,  -- nome file in db/migrations/, senza .php
+    applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Baseline: le migrazioni elencate qui sotto sono già "dentro" allo schema
+-- definito in questo file. Aggiungere qui il nome di ogni nuova migrazione
+-- SOLO quando le sue modifiche vengono anche riportate a mano nelle
+-- CREATE TABLE sopra/sotto (altrimenti un database esistente che non l'ha
+-- ancora applicata non la eseguirà più).
+INSERT OR IGNORE INTO schema_migrations (migration) VALUES
+    ('migrate_ordini_righe_uom'),
+    ('2026_07_10_rfq_esito_chiusura'),
+    ('2026_07_10_lotti_codice_unique_per_prodotto'),
+    ('2026_07_10_inventari_categoria_filtro'),
+    ('2026_07_10_inventario_creazione_lock'),
+    ('2026_07_10_vista_costo_acquisto_base'),
+    ('2026_07_10_movimenti_quantita_delta');
 
 -- =============================================================================
 -- 1. UNITÀ DI MISURA — CATEGORIE
@@ -403,6 +464,7 @@ CREATE TABLE IF NOT EXISTS aziende_interne (
     bic_swift_default   VARCHAR(11),
     
     predefinita         BOOLEAN      NOT NULL DEFAULT 1, -- Identifica l'azienda principale se ne hai più di una
+    attivo              BOOLEAN      NOT NULL DEFAULT 1,
     created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          DATETIME
 );
@@ -663,6 +725,78 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
     UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima)
 );
 
+-- =============================================================================
+-- 14b. VISTE: COSTO DI ACQUISTO BASE (fix "Listino Fantasma", 2026-07-10)
+-- =============================================================================
+-- Problema che risolvono (audit/MASTER_AUDIT_REPORT.md, "Il Listino Fantasma",
+-- Severità ALTA): eliminare un Listino Acquisto da interfaccia fa soft-delete
+-- (listini_acquisto.attivo = 0), quindi il vincolo ON DELETE CASCADE su
+-- prodotti_fornitori_prezzi.listino_acquisto_id non scatta mai — i prezzi del
+-- listino disattivato restano nel database. Le query sparse in 6+ file per
+-- estrarre "il costo di acquisto base" di un prodotto usavano
+-- `ORDER BY pfp.id DESC LIMIT 1` (a volte nemmeno quello): l'ID di
+-- inserimento non ha alcun legame con la validità commerciale del prezzo, e
+-- nessuna di quelle query filtrava sullo stato del listino — un prezzo di un
+-- listino disattivato poteva tornare a essere usato come costo attuale.
+--
+-- Due viste, per i due livelli di granularità richiesti dal codice chiamante:
+--
+--   v_prezzo_acquisto_base_fornitore: UN prezzo per ogni singolo legame
+--   (prodotto, fornitore) — quello valido oggi (listino attivo o nessun
+--   listino, dentro le finestre di validità di prezzo e listino), scelto tra
+--   più candidati per data di validità più recente (non per ID di
+--   inserimento). Usata dove serve il prezzo di UNO specifico fornitore.
+--
+--   v_costo_acquisto_prodotti: UN prezzo per ogni prodotto, tra tutti i suoi
+--   fornitori attivi, scegliendo il fornitore preferito
+--   (ordine_preferenza_fornitore) e, tra prezzi altrettanto preferiti, quello
+--   con l'id di prodotti_fornitori più basso (ordine di inserimento del
+--   legame, stabile e deterministico). Usata dove serve "il" costo di
+--   acquisto di un prodotto senza specificare il fornitore.
+--
+-- Entrambe si appoggiano sempre e solo a prezzi con quantita_minima = 0
+-- (prezzo base, non a scaglione) — stesso criterio già usato dal codice
+-- originale.
+CREATE VIEW IF NOT EXISTS v_prezzo_acquisto_base_fornitore AS
+SELECT prodotto_fornitore_id, prezzo, unita_misura_id
+FROM (
+    SELECT
+        pfp.prodotto_fornitore_id,
+        pfp.prezzo,
+        pfp.unita_misura_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY pfp.prodotto_fornitore_id
+            ORDER BY COALESCE(pfp.valido_dal, la.valido_dal, '0001-01-01') DESC, pfp.id DESC
+        ) AS rn
+    FROM prodotti_fornitori_prezzi pfp
+    LEFT JOIN listini_acquisto la ON la.id = pfp.listino_acquisto_id
+    WHERE pfp.quantita_minima = 0
+      AND (pfp.listino_acquisto_id IS NULL OR la.attivo = 1)
+      AND (pfp.valido_dal IS NULL OR pfp.valido_dal <= DATE('now'))
+      AND (pfp.valido_al  IS NULL OR pfp.valido_al  >= DATE('now'))
+      AND (la.valido_dal  IS NULL OR la.valido_dal  <= DATE('now'))
+      AND (la.valido_al   IS NULL OR la.valido_al   >= DATE('now'))
+) ranked
+WHERE rn = 1;
+
+CREATE VIEW IF NOT EXISTS v_costo_acquisto_prodotti AS
+SELECT prodotto_id, prodotto_fornitore_id, fornitore_id, costo_acquisto, unita_misura_id
+FROM (
+    SELECT
+        pf.prodotto_id,
+        pf.id AS prodotto_fornitore_id,
+        pf.fornitore_id,
+        vf.prezzo AS costo_acquisto,
+        vf.unita_misura_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY pf.prodotto_id
+            ORDER BY pf.ordine_preferenza_fornitore ASC, pf.id ASC
+        ) AS rn
+    FROM prodotti_fornitori pf
+    JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
+    WHERE pf.attivo = 1
+) ranked
+WHERE rn = 1;
 
 -- =============================================================================
 -- 15. LISTINI PREZZI (VENDITA)
@@ -689,8 +823,9 @@ CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto
 -- =============================================================================
 -- Un lotto corrisponde a una partita di merce ricevuta.
 -- La tracciatura lotti per prodotto è opzionale: attivare prodotti.traccia_lotti = 1.
--- Nota: ricevimento_riga_id è un riferimento soft (nessun FK dichiarato per evitare
--- la dipendenza circolare con ricevimento_merce_righe).
+-- Nota: ricezione_riga_id referenzia ricezioni_righe(id) del ciclo acquisti v2 (vedi FK sotto).
+-- codice_lotto_interno è univoco per prodotto (vedi UNIQUE(prodotto_id, codice_lotto_interno) più sotto),
+-- non globalmente: prodotti diversi possono legittimamente condividere lo stesso codice.
 
 CREATE TABLE IF NOT EXISTS lotti (
     id                   INTEGER       PRIMARY KEY AUTOINCREMENT,
@@ -863,6 +998,7 @@ CREATE TABLE IF NOT EXISTS movimenti_magazzino (
                                           'carico','scarico','reso_cliente','reso_fornitore',
                                           'rettifica','riserva','svincolo','trasferimento')),
     quantita            DECIMAL(10,3) NOT NULL,               -- sempre positivo; il tipo_movimento indica la direzione
+    quantita_delta      DECIMAL(10,3),                        -- SOLO per tipo_movimento='rettifica': valore CON segno (positivo=aumento, negativo=diminuzione). NULL per tutti gli altri tipi (dove la direzione è già implicita nel tipo). Usato dalla UI storico movimenti per mostrare il verso corretto senza violare l'invariante "quantita sempre positivo" sopra.
     documento_tipo      VARCHAR(50),                          -- tipo documento sorgente (ordine_acquisto, ordine_cliente, trasferimento…)
     documento_id        INTEGER,                              -- ID del documento sorgente
     canale_origine      VARCHAR(50),                          -- sistema che ha generato il movimento (es. sito, manuale, woocommerce, importazione)
@@ -925,13 +1061,21 @@ CREATE TABLE IF NOT EXISTS trasferimenti_magazzino_righe (
 
 
 CREATE TABLE IF NOT EXISTS inventari (
-    id              INTEGER  PRIMARY KEY AUTOINCREMENT,
-    data_inventario DATE     NOT NULL,
-    magazzino_id    INTEGER  REFERENCES magazzini(id),  -- sede oggetto dell'inventario; nullable per compatibilità con inventari storici pre-multimagazzino
-    note            TEXT,
-    stato           TEXT     NOT NULL DEFAULT 'bozza',  -- 'bozza' | 'convalidato'
-    creato_da       INTEGER  NOT NULL REFERENCES utenti(id),
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                  INTEGER  PRIMARY KEY AUTOINCREMENT,
+    data_inventario     DATE     NOT NULL,
+    magazzino_id        INTEGER  REFERENCES magazzini(id),  -- sede oggetto dell'inventario; nullable per compatibilità con inventari storici pre-multimagazzino
+    -- Cycle counting (Tappa 4.3, 10/07/2026): se valorizzato, l'inventario copre
+    -- SOLO i prodotti di questa categoria (non l'intero magazzino) — vedi
+    -- WarehouseController::createInventario(). NULL = inventario completo
+    -- (comportamento storico, tutti i prodotti attivi del magazzino). Il vero
+    -- scope effettivo dell'inventario è comunque definito da quali prodotto_id
+    -- finiscono in inventari_righe, non da questa colonna: qui è solo un
+    -- riferimento per la UI/audit di "perché" quei prodotti sono stati scelti.
+    categoria_filtro_id INTEGER  REFERENCES categorie_prodotto(id),
+    note                TEXT,
+    stato               TEXT     NOT NULL DEFAULT 'bozza',  -- 'bozza' | 'convalidato'
+    creato_da           INTEGER  NOT NULL REFERENCES utenti(id),
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS inventari_righe (
@@ -948,6 +1092,23 @@ CREATE TABLE IF NOT EXISTS inventari_righe (
     quantita_contata DECIMAL(10,3) NOT NULL,                  -- quantità contata fisicamente
     rettifica        DECIMAL(10,3) GENERATED ALWAYS AS (quantita_contata - giacenza_teorica) STORED,
     movimento_id     INTEGER       REFERENCES movimenti_magazzino(id)  -- movimento di rettifica generato
+);
+
+-- Lock applicativo per serializzare la CREAZIONE di nuovi inventari sullo
+-- stesso magazzino (Tappa 4.3, 2026-07-10). Il controllo "nessun'altra bozza
+-- copre già questi prodotti" (vedi WarehouseController::createInventario())
+-- è un check-then-act: senza un lock reale, due richieste concorrenti
+-- potrebbero superare entrambe il controllo prima che una delle due abbia
+-- scritto a database (race condition — "phantom read": SQLite/MySQL non
+-- impediscono di per sé questo scenario con una semplice transazione).
+-- Un vincolo UNIQUE/PK viene invece sempre controllato in modo atomico dal
+-- motore al momento dell'INSERT, indipendentemente dal livello di isolamento:
+-- la seconda richiesta concorrente sullo stesso magazzino fallisce (o si
+-- accoda) deterministicamente. La riga di lock viene inserita e poi
+-- rimossa nella stessa transazione della creazione dell'inventario — non è
+-- un lock persistente, serve solo a serializzare l'istante della creazione.
+CREATE TABLE IF NOT EXISTS inventario_creazione_lock (
+    magazzino_id INTEGER PRIMARY KEY REFERENCES magazzini(id)
 );
 
 -- =============================================================================
@@ -1288,6 +1449,10 @@ CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_rrp_validita ON prodotti_forni
 CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
 CREATE INDEX IF NOT EXISTS idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
+-- Un codice_lotto_interno deve essere univoco PER PRODOTTO (non globalmente: prodotti
+-- diversi possono legittimamente condividere lo stesso codice, es. numerazione del
+-- fornitore riusata). Vedi db/migrations/2026_07_10_lotti_codice_unique_per_prodotto.php.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lotti_prodotto_codice_unique ON lotti(prodotto_id, codice_lotto_interno);
 CREATE INDEX IF NOT EXISTS idx_lotti_fornitore                ON lotti(fornitore_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_data_arrivo              ON lotti(data_arrivo);
 CREATE INDEX IF NOT EXISTS idx_lotti_data_scadenza            ON lotti(data_scadenza);
@@ -1766,6 +1931,12 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     rfq_padre_id            INTEGER      REFERENCES rfq_testata(id), -- Collegamento alla versione precedente
     stato                   TEXT         NOT NULL DEFAULT 'bozza'
                                           CHECK (stato IN ('bozza','inviata','revisionata','chiusa')),
+    -- Motivo della chiusura, valorizzato solo quando stato = 'chiusa':
+    -- 'offerta_accettata' (chiusa perché un'offerta è stata accettata, esiste
+    -- un ordine collegato) oppure 'annullata' (chiusa manualmente, nessun
+    -- esito). Senza questa colonna lo stato 'chiusa' da solo non permette di
+    -- distinguere le due situazioni (vedi db/migrations/2026_07_10_rfq_esito_chiusura.php).
+    esito_chiusura          VARCHAR(20),
     fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
     indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),    -- ID snapshot indirizzo consegna
     

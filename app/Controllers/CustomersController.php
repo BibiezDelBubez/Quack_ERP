@@ -620,13 +620,14 @@ class CustomersController extends BaseController
         try {
             $this->pdo->beginTransaction();
 
-            // Mark any existing active or in_attesa auth as status 'scaduta' or 'sospesa'
+            // Scarta eventuali tentativi di rinnovo precedenti ancora in sospeso, 
+            // ma LASCIA INTATTA l'autorizzazione 'approvata' corrente (nessun DoS).
             $up = $this->pdo->prepare("
                 UPDATE compliance_autorizzazioni 
                 SET status = 'scaduta' 
                 WHERE customer_id = :customer_id 
                   AND restriction_type_id = :restriction_type_id 
-                  AND status IN ('approvata', 'in_attesa')
+                  AND status = 'in_attesa'
             ");
             $up->execute([
                 ':customer_id' => $customer_id,
@@ -698,6 +699,14 @@ class CustomersController extends BaseController
             $orig_name = basename($file['name']);
             // Clean filename to prevent issues
             $safe_name = preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $orig_name);
+
+            // SECURITY FIX: Blacklist di estensioni pericolose (permettendo zip, rar, pdf, ecc.)
+            $ext = strtolower(pathinfo($safe_name, PATHINFO_EXTENSION));
+            $blacklist = ['php', 'php3', 'php4', 'php5', 'phtml', 'exe', 'bat', 'sh', 'js', 'cgi', 'pl', 'py'];
+            if (in_array($ext, $blacklist)) {
+                throw new Exception("Estensione di file non consentita per motivi di sicurezza.");
+            }
+
             $dest_path = $upload_base . '/' . $safe_name;
 
             if (!move_uploaded_file($file['tmp_name'], $dest_path)) {
@@ -709,6 +718,17 @@ class CustomersController extends BaseController
 
             // Save to DB (delete previous upload for same required_doc if exists)
             $this->pdo->beginTransaction();
+            
+            // FIX: Recupera il vecchio file e cancellalo dal disco prima di eliminare il record
+            $sel = $this->pdo->prepare("SELECT file_path FROM compliance_documenti_caricati WHERE authorization_id = :auth_id AND required_doc_id = :req_id");
+            $sel->execute([':auth_id' => $auth_id, ':req_id' => $required_doc_id]);
+            if ($old_file = $sel->fetchColumn()) {
+                $old_physical_path = rtrim(UPLOAD_DIR, '/\\') . '/' . ltrim($old_file, '/\\');
+                if (file_exists($old_physical_path)) {
+                    unlink($old_physical_path);
+                }
+            }
+
             $del = $this->pdo->prepare("
                 DELETE FROM compliance_documenti_caricati 
                 WHERE authorization_id = :auth_id AND required_doc_id = :req_id

@@ -143,6 +143,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
               <th style="width:90px">UN #</th>
               <th>Nome / Descrizione</th>
               <th style="width:80px">Classe</th>
+              <th style="width:100px">Etichette</th>
               <th style="width:75px">Gr. Imb.</th>
               <th style="width:80px">Cat. Trasp.</th>
               <th style="width:80px">Galleria</th>
@@ -156,7 +157,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
               <td>
                 <a href="<?= url('adr/codici/edit?id=' . (int)$c['id']) ?>"
                    class="fw-semibold font-monospace qk-text-accent text-decoration-none">
-                  UN <?= e((string)$c['codice_onu']) ?>
+                  UN <?= str_pad((string)$c['codice_onu'], 4, '0', STR_PAD_LEFT) ?>
                 </a>
               </td>
               <td>
@@ -171,6 +172,13 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
                   <span class="qk-badge draft" title="<?= e($c['classe_label'] ?? '') ?>">
                     <?= e($c['classe_pericolo']) ?>
                   </span>
+                <?php else: ?>
+                  <span class="qk-text-muted">—</span>
+                <?php endif; ?>
+              </td>
+              <td>
+                <?php if ($c['etichette_str']): ?>
+                  <span class="small fw-semibold"><?= e(str_replace(',', ', ', $c['etichette_str'])) ?></span>
                 <?php else: ?>
                   <span class="qk-text-muted">—</span>
                 <?php endif; ?>
@@ -197,9 +205,8 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
                   <form method="post" action="<?= url('adr/codici/delete') ?>" class="d-inline">
                     <?= csrf_field() ?>
                     <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
-                    <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm"
-                            onclick="return confirm('Eliminare UN <?= (int)$c['codice_onu'] ?>?')" title="Elimina">
-                      <i class="fa-solid fa-trash"></i>
+                    <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm" onclick="return confirm('Eliminare UN <?= str_pad((string)$c['codice_onu'], 4, '0', STR_PAD_LEFT) ?>?')">
+                        <i class="fa-solid fa-trash"></i>
                     </button>
                   </form>
                 </div>

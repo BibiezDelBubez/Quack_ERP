@@ -25,6 +25,99 @@ require_once __DIR__ . '/anagrafiche.php';
 // =============================================================================
 
 /**
+ * True se esiste un inventario fisico in bozza, per QUESTO magazzino, che
+ * include il prodotto indicato tra le sue righe (Tappa 4.3, 10/07/2026).
+ *
+ * Granularità (magazzino, articolo) — non l'intero magazzino: un inventario
+ * "a ciclo" (cycle count) può coprire solo una categoria di prodotti, e in tal
+ * caso il resto del magazzino deve continuare a operare normalmente. Un
+ * inventario "completo" (tutti i prodotti attivi, comportamento di default di
+ * qk_inventario_prodotti_scope()) blocca di fatto l'intero magazzino, ma è
+ * una conseguenza del suo scope, non una regola a parte.
+ *
+ * Da richiamare in ogni punto che crea un movimento di magazzino (ricezione,
+ * spedizione, movimento manuale) PRIMA di applicare la modifica a giacenze:
+ * se true, l'operazione va rifiutata con un errore chiaro invece di lasciare
+ * che sporchi il conteggio in corso (vedi audit/scoperte_audit.md, Tappa 4.3).
+ */
+function qk_inventario_bloccato(PDO $pdo, int $magazzinoId, int $prodottoId): bool
+{
+    if ($magazzinoId <= 0 || $prodottoId <= 0) {
+        return false;
+    }
+    $st = $pdo->prepare("
+        SELECT 1
+          FROM inventari i
+          JOIN inventari_righe ir ON ir.inventario_id = i.id
+         WHERE i.magazzino_id = ?
+           AND i.stato = 'bozza'
+           AND ir.prodotto_id = ?
+         LIMIT 1
+    ");
+    $st->execute([$magazzinoId, $prodottoId]);
+    return (bool) $st->fetchColumn();
+}
+
+/**
+ * Riserva quantità a magazzino per una riga d'ordine, "consapevole" dei Kit.
+ *
+ * Un Kit non ha giacenza fisica propria: è una collezione di prodotti singoli,
+ * e la sua disponibilità è calcolata dal componente più scarso (vedi le query
+ * di lettura in questo stesso file, CASE WHEN p.tipo = 'kit' ...). Per
+ * coerenza, anche la RISERVA deve avvenire sui componenti, non sul Kit —
+ * altrimenti la riserva scritta qui (sul Kit) non viene mai liberata dallo
+ * scarico alla spedizione, che decrementa invece i componenti
+ * (SalesOrdersController::confirmShipment, righe ~748-756): le due operazioni
+ * finirebbero per scrivere su righe di `giacenze` diverse, lasciando la
+ * riserva sul Kit "fantasma" (mai liberata) e i componenti scoperti (la loro
+ * `quantita_riservata` può scendere sotto zero allo scarico).
+ *
+ * Usata sia dalla creazione di un ordine diretto (includes/sales_orders.php)
+ * sia dalla conferma preventivo→ordine (includes/sales_quotes.php), che prima
+ * duplicavano questa logica in due punti separati, entrambi senza gestione Kit.
+ */
+function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId): void
+{
+    if ($prodottoId <= 0 || $qtaStock <= 0) {
+        return;
+    }
+
+    $stTipo = $pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
+    $stTipo->execute([$prodottoId]);
+    $tipo = $stTipo->fetchColumn();
+
+    $righeDaRiservare = [];
+    if ($tipo === 'kit') {
+        $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
+        $stComp->execute([$prodottoId]);
+        foreach ($stComp->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $righeDaRiservare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
+        }
+    } else {
+        $righeDaRiservare[] = [$prodottoId, $qtaStock];
+    }
+
+    $stRiserva = $pdo->prepare("
+        UPDATE giacenze
+           SET quantita_riservata = quantita_riservata + ?
+         WHERE prodotto_id = ? AND magazzino_id = ?
+    ");
+    $stInsert = $pdo->prepare("
+        INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+        VALUES (?, ?, 0, ?, 0, 0, CURRENT_TIMESTAMP)
+    ");
+    foreach ($righeDaRiservare as [$compId, $qta]) {
+        $stRiserva->execute([$qta, $compId, $magazzinoId]);
+        if ($stRiserva->rowCount() === 0) {
+            // Non esiste ancora una riga di giacenza per questo prodotto in
+            // questo magazzino (prodotto/componente mai movimentato qui): la
+            // creiamo a quantità disponibile 0 e riservata = qta.
+            $stInsert->execute([$compId, $magazzinoId, $qta]);
+        }
+    }
+}
+
+/**
  * Risolve l'id del magazzino "attivo" da usare quando non ne viene passato uno
  * esplicito: prima $_SESSION['magazzino_attivo_id'] (impostata dal selettore
  * in topbar, §3.3/§3.10, stesso pattern di azienda_attiva_id in
@@ -435,7 +528,7 @@ function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili
     $cond = $solo_disponibili ? 'AND COALESCE(lg.quantita_disponibile, 0) > 0' : '';
     $st   = $pdo->prepare(
         "SELECT l.id,
-                COALESCE(l.codice_lotto_interno, l.codice_lotto)  AS codice_lotto_interno,
+                l.codice_lotto_interno                            AS codice_lotto_interno,
                 COALESCE(l.codice_lotto_fornitore, '')            AS codice_lotto_fornitore,
                 l.data_scadenza,
                 COALESCE(lg.quantita_disponibile, 0)              AS quantita_disponibile
@@ -461,7 +554,7 @@ function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili
  * Crea un nuovo lotto manualmente (usato nel form movimento quando tipo=carico).
  *
  * Campi obbligatori nel DB (NOT NULL senza default):
- *   codice_lotto, prodotto_id, quantita_ricevuta, creato_da
+ *   codice_lotto_interno, prodotto_id, quantita_ricevuta, creato_da
  *
  * NOTA (Piano Multi-Magazzino §3.9): `lotti.quantita_disponibile` è stata
  * rimossa — la fonte di verità della disponibilità per lotto è ora
@@ -488,12 +581,11 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
 
     $pdo->prepare(
         'INSERT INTO lotti
-             (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
+             (codice_lotto_interno, codice_lotto_fornitore,
               prodotto_id, origine_tipo, data_scadenza, data_arrivo,
               quantita_ricevuta, creato_da)
-         VALUES (?, ?, ?, ?, \'rettifica\', ?, ?, ?, ?)'
+         VALUES (?, ?, ?, \'rettifica\', ?, ?, ?, ?)'
     )->execute([
-        $codiceInterno,      // codice_lotto (campo storico NOT NULL)
         $codiceInterno,      // codice_lotto_interno
         $codiceFornitore,    // codice_lotto_fornitore (nullable)
         $v['prodotto_id'],
@@ -559,6 +651,7 @@ function qk_movements_list(
                 m.id,
                 m.tipo_movimento,
                 m.quantita,
+                m.quantita_delta,
                 m.canale_origine,
                 m.documento_tipo,
                 m.documento_id,
@@ -661,6 +754,11 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
     }
     $magazzino_id = (int) $v['magazzino_id'];
 
+    // Tappa 4.3: blocco movimenti su un prodotto sotto conteggio in questo magazzino.
+    if (qk_inventario_bloccato($pdo, $magazzino_id, (int) $v['prodotto_id'])) {
+        throw new \RuntimeException('È in corso un inventario fisico su questo prodotto in questo magazzino. Completa o annulla l\'inventario prima di registrare movimenti.');
+    }
+
     $pdo->beginTransaction();
     try {
         // 0. Se è un carico con NUOVO lotto, crea prima il lotto (anagrafica) nella stessa transazione
@@ -689,7 +787,40 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
         // 2. Calcola nuova giacenza e quantita da salvare nel movimento
         $tipo = $v['tipo_movimento'];
 
-        if ($tipo === 'carico') {
+        // Per la rettifica su un prodotto a lotti, l'utente seleziona SEMPRE un
+        // lotto specifico (validato in WarehouseController::createMovement()).
+        // Il valore inserito nel form è quindi la nuova giacenza assoluta DEL
+        // LOTTO in questo magazzino, non del prodotto aggregato: un prodotto può
+        // avere più lotti nello stesso magazzino, e sovrascrivere l'aggregato con
+        // il valore di un solo lotto cancellerebbe silenziosamente il contributo
+        // degli altri lotti. Per questo, in rettifica su lotto, calcoliamo prima
+        // il delta a livello di lotto e lo applichiamo come variazione (non come
+        // valore assoluto) alla giacenza di prodotto.
+        $rettificaSuLotto = ($tipo === 'rettifica' && !empty($v['lotto_id']));
+        $deltaLottoRettifica = null;
+
+        if ($rettificaSuLotto) {
+            $stLgPre = $pdo->prepare(
+                'SELECT quantita_disponibile FROM lotti_giacenze WHERE lotto_id = ? AND magazzino_id = ?'
+            );
+            $stLgPre->execute([$v['lotto_id'], $magazzino_id]);
+            $qtaLottoPre = $stLgPre->fetchColumn();
+            $qtaLottoPre = $qtaLottoPre !== false ? (float) $qtaLottoPre : 0.0;
+
+            $deltaLottoRettifica = $v['quantita'] - $qtaLottoPre;
+            $qtaMovimento = abs($deltaLottoRettifica);
+
+            $qtaNuova = $qtaCorrente + $deltaLottoRettifica;
+            if ($qtaNuova < -0.0005) {
+                throw new \RuntimeException(
+                    sprintf(
+                        'La rettifica del lotto porterebbe la giacenza totale del prodotto in questo magazzino sotto zero (attuale %.3f, variazione %.3f). Verifica gli altri lotti dello stesso prodotto.',
+                        $qtaCorrente,
+                        $deltaLottoRettifica
+                    )
+                );
+            }
+        } elseif ($tipo === 'carico') {
             $qtaNuova      = $qtaCorrente + $v['quantita'];
             $qtaMovimento  = $v['quantita'];
 
@@ -707,7 +838,10 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
             }
 
         } else {
-            // rettifica: l'utente ha inserito la nuova giacenza assoluta per questo magazzino
+            // rettifica su prodotto SENZA lotti (traccia_lotti = 0): non esistono
+            // altri "contenitori" di giacenza per questo prodotto in questo
+            // magazzino, quindi il valore inserito è legittimamente la nuova
+            // giacenza assoluta del prodotto.
             $qtaNuova     = $v['quantita'];
             $qtaMovimento = abs($qtaNuova - $qtaCorrente);
             // Se la rettifica non cambia nulla, lo consentiamo comunque (potrebbe servire per logging)
@@ -730,27 +864,28 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
         // 4. Aggiorna la quantità del lotto IN QUESTO MAGAZZINO su lotti_giacenze
         //    (non più sul campo aggregato lotti.quantita_disponibile, legacy).
         if (!empty($v['lotto_id'])) {
-            $stLg = $pdo->prepare(
-                'SELECT quantita_disponibile FROM lotti_giacenze WHERE lotto_id = ? AND magazzino_id = ?'
-            );
-            $stLg->execute([$v['lotto_id'], $magazzino_id]);
-            $qtaLottoCorrente = $stLg->fetchColumn();
-            $qtaLottoCorrente = $qtaLottoCorrente !== false ? (float) $qtaLottoCorrente : 0.0;
-
-            if ($tipo === 'carico') {
-                $qtaLottoNuova = $qtaLottoCorrente + $qtaMovimento;
-            } elseif ($tipo === 'scarico') {
-                $qtaLottoNuova = $qtaLottoCorrente - $qtaMovimento;
-                if ($qtaLottoNuova < 0) {
-                    throw new \RuntimeException('Giacenza del lotto insufficiente in questo magazzino.');
-                }
+            if ($rettificaSuLotto) {
+                // Già letta sopra (qtaLottoPre) per calcolare il delta da applicare
+                // all'aggregato di prodotto: qui il valore inserito è la nuova
+                // giacenza assoluta DEL LOTTO, coerente con quanto già calcolato.
+                $qtaLottoCorrente = $qtaLottoPre;
+                $qtaLottoNuova    = $v['quantita'];
             } else {
-                // rettifica: la nuova giacenza assoluta del lotto in questo magazzino
-                // coincide con la nuova giacenza di prodotto solo se non ci sono altri
-                // lotti dello stesso prodotto in questo magazzino; qui semplicemente
-                // applichiamo la stessa quantita_disponibile passata per il prodotto,
-                // coerente con l'uso attuale del form (rettifica su prodotto senza lotti multipli).
-                $qtaLottoNuova = $v['quantita'];
+                $stLg = $pdo->prepare(
+                    'SELECT quantita_disponibile FROM lotti_giacenze WHERE lotto_id = ? AND magazzino_id = ?'
+                );
+                $stLg->execute([$v['lotto_id'], $magazzino_id]);
+                $qtaLottoCorrente = $stLg->fetchColumn();
+                $qtaLottoCorrente = $qtaLottoCorrente !== false ? (float) $qtaLottoCorrente : 0.0;
+
+                if ($tipo === 'carico') {
+                    $qtaLottoNuova = $qtaLottoCorrente + $qtaMovimento;
+                } else { // scarico
+                    $qtaLottoNuova = $qtaLottoCorrente - $qtaMovimento;
+                    if ($qtaLottoNuova < 0) {
+                        throw new \RuntimeException('Giacenza del lotto insufficiente in questo magazzino.');
+                    }
+                }
             }
 
             $pdo->prepare(
@@ -760,15 +895,36 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
                      quantita_disponibile = excluded.quantita_disponibile,
                      updated_at = excluded.updated_at'
             )->execute([$v['lotto_id'], $magazzino_id, $qtaLottoNuova]);
+
+            // Aggiorna anche il totale storico ricevuto (lotti.quantita_ricevuta) quando si
+            // carica altra merce su un lotto GIÀ ESISTENTE (es. stesso lotto fisico arrivato
+            // in più consegne). Se il lotto è stato appena creato in questa stessa chiamata
+            // (step 0, ramo 'nuovo_lotto'), quantita_ricevuta è già stata impostata alla
+            // creazione: non va incrementata di nuovo, altrimenti si conta due volte.
+            if ($tipo === 'carico' && !isset($v['nuovo_lotto'])) {
+                $pdo->prepare(
+                    'UPDATE lotti SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
+                )->execute([$qtaMovimento, $v['lotto_id']]);
+            }
         }
 
-        // 5. Inserisci il movimento
+        // 5. Inserisci il movimento.
+        // `quantita` resta SEMPRE una magnitudine positiva (invariante
+        // documentato nello schema: "sempre positivo; il tipo_movimento indica
+        // la direzione"). Per carico/scarico la direzione è già implicita nel
+        // tipo. Per la rettifica invece la direzione NON è ricavabile dal tipo
+        // da solo (può essere sia un aumento che una diminuzione): il segno va
+        // quindi in `quantita_delta` (nullable, popolata SOLO per rettifica),
+        // usata dalla UI storico movimenti per mostrare il verso corretto senza
+        // violare l'invariante su `quantita`.
+        $deltaRettificaLog = ($tipo === 'rettifica') ? ($qtaNuova - $qtaCorrente) : null;
+
         $stMov = $pdo->prepare(
             'INSERT INTO movimenti_magazzino
-                (prodotto_id, lotto_id, magazzino_id, tipo_movimento, quantita,
+                (prodotto_id, lotto_id, magazzino_id, tipo_movimento, quantita, quantita_delta,
                  documento_tipo, documento_id, canale_origine, riferimento_esterno, note, creato_da, created_at)
              VALUES
-                (?, ?, ?, ?, ?,
+                (?, ?, ?, ?, ?, ?,
                  ?, ?, \'manuale\', ?, ?, ?, datetime(\'now\'))'
         );
         $stMov->execute([
@@ -777,6 +933,7 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
             $magazzino_id,
             $tipo,
             $qtaMovimento,
+            $deltaRettificaLog,
             $v['documento_tipo'] !== '' ? $v['documento_tipo'] : null,
             !empty($v['documento_id']) ? (int) $v['documento_id'] : null,
             $v['riferimento_esterno'] !== '' ? $v['riferimento_esterno'] : null,

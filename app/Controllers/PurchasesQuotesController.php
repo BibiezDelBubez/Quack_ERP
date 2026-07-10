@@ -436,22 +436,41 @@ class PurchasesQuotesController extends BaseController
             return null;
         }
 
-        // Verifica tipo e estensione
-        $allowedTypes = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'image/jpeg',
-            'image/png'
+        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dichiarato dal client:
+        // $_FILES['type'] è il Content-Type inviato dal browser ed è falsificabile). I DOCX sono
+        // contenitori ZIP: alcune installazioni di fileinfo li riconoscono come
+        // application/vnd.openxmlformats-..., altre solo come application/zip generico — entrambi
+        // ammessi e mappati a .docx.
+        $allowedMimeToExt = [
+            'application/pdf'                                                          => 'pdf',
+            'application/msword'                                                       => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'  => 'docx',
+            'application/zip'                                                          => 'docx',
+            'image/jpeg'                                                                => 'jpg',
+            'image/png'                                                                 => 'png',
         ];
-        
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $allowedExts = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg'];
-        
-        if (!in_array($file['type'], $allowedTypes, true) && !in_array($ext, $allowedExts, true)) {
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
+        if ($finfo) {
+            finfo_close($finfo);
+        }
+
+        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
             $errors[$inputName] = 'Formato file non supportato (ammessi solo PDF, DOC, DOCX, PNG, JPG).';
             return null;
         }
+
+        // application/zip è ambiguo: potrebbe essere un vero DOCX, ma anche
+        // un XLSX/PPTX/JAR/zip generico rilevati genericamente allo stesso
+        // modo. Ispezioniamo il contenuto per confermare che sia davvero un
+        // DOCX prima di salvarlo con quell'estensione.
+        if ($realMime === 'application/zip' && !qk_is_docx_zip($file['tmp_name'])) {
+            $errors[$inputName] = 'Formato file non supportato (ammessi solo PDF, DOC, DOCX, PNG, JPG).';
+            return null;
+        }
+
+        $ext = $allowedMimeToExt[$realMime];
 
         // Directory di upload con sharding per anno/mese
         $subdir = upload_dated_subdir('quotes');

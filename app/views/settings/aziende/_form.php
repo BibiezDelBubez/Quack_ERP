@@ -174,8 +174,8 @@ $v = $values;
                   <img id="logo-preview" src="<?= !empty($v['logo_path']) ? url('uploads?path=' . urlencode($v['logo_path'])) : '#' ?>" alt="Logo anteprima" style="max-height:60px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px">
                   <span class="small text-muted font-monospace" id="logo-status-text"><?= !empty($v['logo_path']) ? '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Logo caricato: ' . e($v['logo_path']) . '</span>' : '' ?></span>
                 </div>
-                <input type="file" name="logo_file" id="logo-input" class="qk-form-control" accept="image/*">
-                <span class="qk-form-hint">Formati supportati: JPEG, PNG, GIF, SVG.</span>
+                <input type="file" name="logo_file" id="logo-input" class="qk-form-control" accept="image/jpeg,image/png,image/gif,image/bmp">
+                <span class="qk-form-hint">Formati supportati: JPEG, PNG, GIF, BMP.</span>
               </div>
 
               <!-- Header stampati upload -->
@@ -185,8 +185,8 @@ $v = $values;
                   <img id="header-preview" src="<?= !empty($v['header_path']) ? url('uploads?path=' . urlencode($v['header_path'])) : '#' ?>" alt="Header anteprima" style="max-height:80px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px;width:auto;max-width:100%;">
                   <span class="small text-muted font-monospace" id="header-status-text"><?= !empty($v['header_path']) ? '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Header caricato: ' . e($v['header_path']) . '</span>' : '' ?></span>
                 </div>
-                <input type="file" name="header_file" id="header-input" class="qk-form-control" accept="image/*">
-                <span class="qk-form-hint">Viene stampato in testa ai preventivi e DDT.</span>
+                <input type="file" name="header_file" id="header-input" class="qk-form-control" accept="image/jpeg,image/png,image/gif,image/bmp">
+                <span class="qk-form-hint">Viene stampato in testa ai preventivi e DDT. Formati supportati: JPEG, PNG, GIF, BMP.</span>
               </div>
 
             </div>

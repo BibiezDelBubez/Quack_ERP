@@ -540,12 +540,19 @@ final class SalesOrdersController extends BaseController
         // aggregato legacy lotti.quantita_disponibile (rimosso, §3.9).
         $magazzinoId = qk_magazzino_attivo_id($this->pdo);
 
+        // Lotti scaduti (Tappa 4.4): esclusi per default — inclusi solo se il
+        // chiamante passa esplicitamente includi_scaduti=1 (toggle lato UI).
+        $includiScaduti = get_param('includi_scaduti', '0') === '1';
+        $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
+
         $st = $this->pdo->prepare("
-            SELECT l.id, COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice,
-                   lg.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at
+            SELECT l.id, l.codice_lotto_interno AS codice,
+                   lg.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at,
+                   CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
             FROM lotti l
             JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
             WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0
+              $condScadenza
             ORDER BY CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END, l.data_scadenza ASC, l.created_at ASC
         ");
         $st->execute([$magazzinoId, $prodottoId]);
@@ -633,8 +640,22 @@ final class SalesOrdersController extends BaseController
                     if ($files['error'][$i] === UPLOAD_ERR_OK) {
                         $tmpName = $files['tmp_name'][$i];
                         $name = basename($files['name'][$i]);
-                        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-                        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+
+                        // Verifica tipo reale del file (MIME sniffato dal contenuto, non
+                        // dall'estensione dichiarata dall'utente).
+                        $allowedMimeToExt = [
+                            'image/jpeg' => 'jpg',
+                            'image/png'  => 'png',
+                            'image/gif'  => 'gif',
+                            'image/webp' => 'webp',
+                        ];
+                        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                        $realMime = $finfo ? finfo_file($finfo, $tmpName) : false;
+                        if ($finfo) {
+                            finfo_close($finfo);
+                        }
+                        $ext = $allowedMimeToExt[$realMime] ?? null;
+                        if ($ext !== null && @getimagesize($tmpName) !== false) {
                             $subdir = upload_dated_subdir('spedizioni');
                             $upload_dir = upload_ensure_dir($subdir);
                             $new_name = uniqid('sped_photo_', true) . '.' . $ext;
@@ -679,7 +700,27 @@ final class SalesOrdersController extends BaseController
                     SET quantita_disponibile = quantita_disponibile - ?,
                         updated_at = CURRENT_TIMESTAMP
             ");
-            $stUpGiac      = $this->pdo->prepare("UPDATE giacenze SET quantita_disponibile = quantita_disponibile - ?, quantita_riservata = quantita_riservata - ? WHERE prodotto_id = ? AND magazzino_id = ?");
+            // quantita_riservata è "clampata" a 0 (CASE WHEN, portabile SQLite/MySQL,
+            // niente GREATEST() che MySQL non ha come scalare né MAX(a,b) che SQLite
+            // supporta ma MySQL no) invece di essere semplicemente decrementata: è un
+            // contatore di prenotazione, non un vincolo fisico, e può risultare
+            // inferiore alla quantità spedita se la prenotazione e la spedizione non
+            // sono mai state garantite perfettamente allineate (spedizioni parziali,
+            // riserve rilasciate altrove). Non blocchiamo mai la spedizione per
+            // questo — è quantita_disponibile, verificata sotto, il vincolo fisico
+            // reale — ma evitiamo di scrivere un valore negativo privo di senso.
+            $stUpGiac      = $this->pdo->prepare("
+                UPDATE giacenze
+                   SET quantita_disponibile = quantita_disponibile - ?,
+                       quantita_riservata   = CASE WHEN quantita_riservata - ? < 0 THEN 0 ELSE quantita_riservata - ? END
+                 WHERE prodotto_id = ? AND magazzino_id = ?
+            ");
+            // Verifica di disponibilità prima dello scarico per i prodotti NON tracciati
+            // a lotto (per i tracciati il controllo equivalente è già fatto sopra su
+            // lotti_giacenze). Senza questo controllo lo scarico procedeva comunque,
+            // portando quantita_disponibile sotto zero in caso di doppia prenotazione
+            // concorrente o di ordine con quantità superiore allo stock reale.
+            $stCheckGiac   = $this->pdo->prepare("SELECT quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
             $stUpOrdRiga   = $this->pdo->prepare("UPDATE ordini_clienti_righe SET quantita_spedita = quantita_spedita + ? WHERE id = ?");
             $stAdr         = $this->pdo->prepare("SELECT co.codice_onu, co.classe_pericolo, COALESCE(pca.gruppo_imballaggio_override, co.gruppo_imballaggio) AS gruppo_imballaggio FROM prodotto_classificazioni_adr pca JOIN adr_codici_onu co ON co.id = pca.codice_onu_id WHERE pca.prodotto_id = ? AND pca.e_corrente = 1 LIMIT 1");
 
@@ -687,7 +728,14 @@ final class SalesOrdersController extends BaseController
 
             foreach ($lines as $line) {
                 $lineId = $line['id']; $prodId = $line['prodotto_id'];
-                
+
+                // Tappa 4.3: blocco scarico su un prodotto sotto conteggio in questo
+                // magazzino. Per i Kit, il blocco si applica ai singoli componenti
+                // (nessuna giacenza fisica propria del Kit), verificati più sotto.
+                if (($line['tipo'] ?? '') !== 'kit' && qk_inventario_bloccato($this->pdo, $magazzinoSpedId, (int)$prodId)) {
+                    throw new \Exception("Impossibile spedire \"{$line['prodotto_nome']}\": è in corso un inventario fisico su questo prodotto in questo magazzino.");
+                }
+
                 /*
                  * =========================================================================
                  * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
@@ -717,7 +765,7 @@ final class SalesOrdersController extends BaseController
                         // (Piano Multi-Magazzino §3.8/§3.9).
                         $stLotInfo = $this->pdo->prepare("
                             SELECT l.id, COALESCE(lg.quantita_disponibile, 0) AS quantita_disponibile,
-                                   COALESCE(l.codice_lotto_interno, l.codice_lotto) AS cl
+                                   l.codice_lotto_interno AS cl
                             FROM lotti l
                             LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
                             WHERE l.id = ?
@@ -733,7 +781,7 @@ final class SalesOrdersController extends BaseController
                         $isAdr = !empty($adr) ? 1 : 0;
                         $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], $lottoId, $lot['cl'], $isAdr, $isAdr ? 'UN '.$adr['codice_onu'] : null, $isAdr ? $adr['classe_pericolo'] : null, $isAdr ? $adr['gruppo_imballaggio'] : null, $pos++]);
                         $stUpLottoGiac->execute([$lottoId, $magazzinoSpedId, $qtaStock, $qtaStock]);
-                        $stUpGiac->execute([$qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
+                        $stUpGiac->execute([$qtaStock, $qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
                         $stUpOrdRiga->execute([$qta, $lineId]);
                         $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $lottoId, $numDdt, $userId]);
                     }
@@ -750,12 +798,40 @@ final class SalesOrdersController extends BaseController
                             $kitSt->execute([$prodId]);
                             $comps = $kitSt->fetchAll(PDO::FETCH_ASSOC);
                             foreach ($comps as $c) {
+                                if (qk_inventario_bloccato($this->pdo, $magazzinoSpedId, (int)$c['componente_id'])) {
+                                    throw new \Exception("Impossibile spedire il Kit \"{$line['prodotto_nome']}\": uno dei suoi componenti è sotto conteggio in un inventario fisico in corso in questo magazzino.");
+                                }
                                 $cQta = $c['quantita'] * $qtaStock;
-                                $stUpGiac->execute([$cQta, $cQta, $c['componente_id'], $magazzinoSpedId]);
+
+                                $stCheckGiac->execute([$c['componente_id'], $magazzinoSpedId]);
+                                $dispComp = $stCheckGiac->fetchColumn();
+                                $dispComp = $dispComp !== false ? (float)$dispComp : 0.0;
+                                if ($dispComp < $cQta) {
+                                    throw new \Exception(sprintf(
+                                        'Giacenza insufficiente nel magazzino di spedizione per un componente del Kit "%s" (disponibile %.3f, richiesto %.3f).',
+                                        $line['prodotto_nome'],
+                                        $dispComp,
+                                        $cQta
+                                    ));
+                                }
+
+                                $stUpGiac->execute([$cQta, $cQta, $cQta, $c['componente_id'], $magazzinoSpedId]);
                                 $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $magazzinoSpedId, $cQta, $numDdt, $userId]);
                             }
                         } else {
-                            $stUpGiac->execute([$qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
+                            $stCheckGiac->execute([$prodId, $magazzinoSpedId]);
+                            $dispProd = $stCheckGiac->fetchColumn();
+                            $dispProd = $dispProd !== false ? (float)$dispProd : 0.0;
+                            if ($dispProd < $qtaStock) {
+                                throw new \Exception(sprintf(
+                                    'Giacenza insufficiente nel magazzino di spedizione per "%s" (disponibile %.3f, richiesto %.3f).',
+                                    $line['prodotto_nome'],
+                                    $dispProd,
+                                    $qtaStock
+                                ));
+                            }
+
+                            $stUpGiac->execute([$qtaStock, $qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
                             $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $numDdt, $userId]);
                         }
                         

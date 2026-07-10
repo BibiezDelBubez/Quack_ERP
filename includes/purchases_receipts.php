@@ -327,6 +327,11 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 throw new \RuntimeException('La quantità accettata o rifiutata non può essere negativa (tentativo di scarico irregolare).');
             }
 
+            // Tappa 4.3: blocco carico su un prodotto sotto conteggio in questo magazzino.
+            if (qk_inventario_bloccato($pdo, $magazzino_id, $prodottoId)) {
+                throw new \RuntimeException('È in corso un inventario fisico su uno dei prodotti di questa ricezione, in questo magazzino. Completa o annulla l\'inventario prima di confermare la ricezione.');
+            }
+
             // Convert to stock UoM using the transaction's conversion factor snapshot
             $quantita_stock = $qtaAccettata;
             $unita_misura_stock_id = null;
@@ -482,14 +487,13 @@ function _ricezione_gestisci_lotto(
         // lotti_giacenze, popolata subito dopo.
         $pdo->prepare(
             "INSERT INTO lotti
-                (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
+                (codice_lotto_interno, codice_lotto_fornitore,
                  prodotto_id, origine_tipo, fornitore_id, ordine_testata_id, ricezione_riga_id,
                  data_scadenza, data_arrivo, numero_ddt_arrivo,
                  quantita_ricevuta,
                  creato_da, created_at)
-             VALUES (?,?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,CURRENT_TIMESTAMP)"
+             VALUES (?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,CURRENT_TIMESTAMP)"
         )->execute([
-            $lottoData['codice_lotto_interno'], // colonna legacy codice_lotto (NOT NULL)
             $lottoData['codice_lotto_interno'],
             $lottoData['codice_lotto_fornitore'] ?? '',
             $prodotto_id,

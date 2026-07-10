@@ -51,10 +51,10 @@ final class SettingsController extends BaseController
                     $normalizedMarkup = number_format((float)str_replace(',', '.', $markup), 2, '.', '');
                     
                     // Upsert per salvataggio sicuro della configurazione in Impostazioni
-                    $stSave = $this->pdo->prepare("
-                        INSERT INTO Impostazioni (chiave, valore) VALUES ('markup_fallback_default', ?)
-                        ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore
-                    ");
+                    $sql = (DB_DRIVER === 'mysql')
+                        ? "INSERT INTO Impostazioni (chiave, valore) VALUES ('markup_fallback_default', ?) ON DUPLICATE KEY UPDATE valore = VALUES(valore)"
+                        : "INSERT INTO Impostazioni (chiave, valore) VALUES ('markup_fallback_default', ?) ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore";
+                    $stSave = $this->pdo->prepare($sql);
                     $stSave->execute([$normalizedMarkup]);
 
                     $values['markup_fallback_default'] = $normalizedMarkup;

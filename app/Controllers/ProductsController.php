@@ -1090,10 +1090,24 @@ final class ProductsController extends BaseController
                 if (empty($errors) && isset($_FILES['immagine_file']) && $_FILES['immagine_file']['error'] === UPLOAD_ERR_OK) {
                     $tmp = $_FILES['immagine_file']['tmp_name'];
                     $name = $_FILES['immagine_file']['name'];
-                    $ext = pathinfo($name, PATHINFO_EXTENSION);
-                    $allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
-                    if (!in_array(strtolower($ext), $allowedExts, true)) {
-                        $errors['immagine_file'] = 'Formato immagine non valido. Consentiti: ' . implode(', ', $allowedExts);
+
+                    // Verifica tipo reale del file (MIME sniffato dal contenuto, non
+                    // dall'estensione dichiarata dall'utente). SVG escluso: può contenere
+                    // script embedded (rischio XSS), coerente con AziendeController.
+                    $allowedMimeToExt = [
+                        'image/jpeg' => 'jpg',
+                        'image/png'  => 'png',
+                        'image/gif'  => 'gif',
+                        'image/webp' => 'webp',
+                    ];
+                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                    $realMime = $finfo ? finfo_file($finfo, $tmp) : false;
+                    if ($finfo) {
+                        finfo_close($finfo);
+                    }
+                    $ext = $allowedMimeToExt[$realMime] ?? null;
+                    if ($ext === null || @getimagesize($tmp) === false) {
+                        $errors['immagine_file'] = 'Formato immagine non valido. Consentiti: ' . implode(', ', $allowedMimeToExt);
                     } else {
                         $subDir = 'categorie';
                         $absDir = upload_ensure_dir($subDir);
@@ -1111,6 +1125,11 @@ final class ProductsController extends BaseController
                 if (empty($errors)) {
                     try {
                         if ($id) {
+                            // FIX: Recupera la vecchia immagine per eliminarla se è stata cambiata
+                            $stmtOld = $this->pdo->prepare('SELECT immagine_path FROM categorie_prodotto WHERE id = :id');
+                            $stmtOld->execute([':id' => $id]);
+                            $oldImg = $stmtOld->fetchColumn();
+
                             $stmt = $this->pdo->prepare(
                                 'UPDATE categorie_prodotto SET nome = :nome, parent_id = :parent_id, posizione_categoria = :pos, immagine_path = :img WHERE id = :id'
                             );
@@ -1121,6 +1140,15 @@ final class ProductsController extends BaseController
                                 ':img'       => $immagine_path,
                                 ':id'        => $id,
                             ]);
+
+                            // Se avevamo un'immagine vecchia ed è diversa dalla nuova (cioè abbiamo fatto upload), la eliminiamo
+                            if ($oldImg && $oldImg !== $immagine_path) {
+                                $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
+                                if (is_file($absPath)) {
+                                    @unlink($absPath);
+                                }
+                            }
+
                             redirect_with('products/categories', 'success', 'Categoria aggiornata con successo.');
                         } else {
                             $stmt = $this->pdo->prepare(
@@ -1188,9 +1216,22 @@ final class ProductsController extends BaseController
                 redirect_with('products/categories', 'danger', 'Impossibile eliminare: questa categoria ha delle sotto-categorie.');
             }
 
+            // FIX: Recupera l'immagine per eliminarla fisicamente dal disco
+            $stmtImg = $this->pdo->prepare('SELECT immagine_path FROM categorie_prodotto WHERE id = :id');
+            $stmtImg->execute([':id' => $id]);
+            $oldImg = $stmtImg->fetchColumn();
+
             // Delete
             $stmt = $this->pdo->prepare('DELETE FROM categorie_prodotto WHERE id = :id');
             $stmt->execute([':id' => $id]);
+
+            if ($oldImg) {
+                $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
+                if (is_file($absPath)) {
+                    @unlink($absPath);
+                }
+            }
+
             redirect_with('products/categories', 'success', 'Categoria eliminata correttamente.');
         } catch (Throwable $e) {
             redirect_with('products/categories', 'danger', 'Impossibile eliminare questa categoria poiché è associata ad uno o più prodotti.');
@@ -1451,6 +1492,13 @@ final class ProductsController extends BaseController
         }
         if ($kit_id === $componente_id) {
             echo json_encode(['ok' => false, 'error' => 'Un kit non può contenere se stesso.']); exit;
+        }
+
+        // FIX Segnalazione #23: Impedisci kit nidificati (Kit dentro Kit) per evitare crash matematici
+        $stmtComp = $this->pdo->prepare('SELECT tipo FROM prodotti WHERE id = :id');
+        $stmtComp->execute([':id' => $componente_id]);
+        if ($stmtComp->fetchColumn() === 'kit') {
+            echo json_encode(['ok' => false, 'error' => 'Impossibile inserire un Kit all\'interno di un altro Kit.']); exit;
         }
         $qty = $quantita !== '' ? (float) $quantita : null;
         if ($qty === null || $qty <= 0) {

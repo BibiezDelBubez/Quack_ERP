@@ -664,8 +664,12 @@ $can_edit = ($stato === 'bozza');
                 <div class="qk-form-group">
                   <label class="qk-form-label">Canale vendita</label>
                   <select name="canale_vendita" class="qk-form-control">
-                    <?php foreach (['email_diretta'=>'Email diretta','dropshipping'=>'Dropshipping','agente'=>'Agente','sito'=>'Sito web'] as $kk => $lbl): ?>
-                    <option value="<?= e($kk) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $kk ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                    <?php 
+                    global $pdo;
+                    $stCv = $pdo->query("SELECT codice, nome FROM canali_vendita WHERE attivo = 1 ORDER BY nome");
+                    $canali_db = $stCv->fetchAll(PDO::FETCH_ASSOC);
+                    foreach ($canali_db as $c): ?>
+                    <option value="<?= e($c['codice']) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $c['codice'] ? 'selected' : '' ?>><?= e($c['nome']) ?></option>
                     <?php endforeach; ?>
                   </select>
                 </div>

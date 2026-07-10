@@ -8,6 +8,7 @@
  *   $righe           array    — righe con qta_residua > 0
  *   $lottiPerProdotto array   — [prodotto_id => [...lotti]]
  *   $orderId         int
+ *   $includiScaduti  bool     — stato corrente del toggle "Includi lotti scaduti" (Tappa 4.4)
  */
 
 // Quante righe hanno lotti sufficienti server-side (per il progress badge iniziale)
@@ -72,6 +73,17 @@ $totRighe = count($righe);
           <div class="qk-pp-progress-fill" id="pp-progress-fill"
                style="width: <?= $totRighe > 0 ? round(($righeConLotti/$totRighe)*100) : 0 ?>%"></div>
         </div>
+
+        <!-- Toggle "Includi lotti scaduti" (Tappa 4.4): default OFF, ricarica la pagina
+             con ?includi_scaduti=1|0 mantenendo l'ordine. Un lotto scaduto non viene mai
+             proposto in automatico: va incluso esplicitamente, e resta segnalato. -->
+        <label class="qk-pp-toggle-scaduti" for="pp-toggle-scaduti" title="Mostra anche i lotti già scaduti (esclusi per default)">
+          <input type="checkbox" id="pp-toggle-scaduti" <?= $includiScaduti ? 'checked' : '' ?>>
+          <span class="qk-pp-toggle-slider"></span>
+          <span class="qk-pp-toggle-label">
+            <i class="fa-solid fa-triangle-exclamation"></i> Includi lotti scaduti
+          </span>
+        </label>
       </div>
 
       <!-- Righe prodotto -->
@@ -176,7 +188,9 @@ $totRighe = count($righe);
                   <div class="qk-pp-lotto-row" data-lotto-id="<?= (int)$lot['id'] ?>">
                     <span class="qk-pp-lotto-codice">
                       <?= e($lot['codice']) ?>
-                      <?php if ($idx === 0 && count($lotti) > 1): ?>
+                      <?php if (!empty($lot['scaduto'])): ?>
+                        <span class="qk-pp-scaduto-tag">SCADUTO</span>
+                      <?php elseif ($idx === 0 && count($lotti) > 1): ?>
                         <span class="qk-pp-fefo-tag">FEFO</span>
                       <?php endif; ?>
                     </span>
@@ -368,8 +382,10 @@ $totRighe = count($righe);
 <!-- Dati lotti per JS (tutti i lotti per prodotto, per aggiunta manuale) -->
 <script>
 window.QkPickPack = {
-  apiLotti:   <?= json_encode(url('sales/orders/api/lotti-disponibili')) ?>,
-  totRighe:   <?= $totRighe ?>,
-  righeOk:    <?= $righeConLotti ?>,
+  apiLotti:        <?= json_encode(url('sales/orders/api/lotti-disponibili')) ?>,
+  totRighe:        <?= $totRighe ?>,
+  righeOk:         <?= $righeConLotti ?>,
+  includiScaduti:  <?= $includiScaduti ? 'true' : 'false' ?>,
+  reloadUrlBase:   <?= json_encode(url('sales/shipments/new') . '?order_id=' . $orderId) ?>,
 };
 </script>

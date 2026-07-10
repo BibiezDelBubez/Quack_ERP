@@ -91,7 +91,6 @@ function qk_compliance_check_sale(PDO $pdo, int $customer_id, array $items): arr
                       JOIN sostanze_chimiche sa ON sa.codice_onu_id = cr.un_code_id
                       JOIN prodotti p ON p.sostanza_chimica_id = sa.id
                      WHERE p.id = :prodotto_id
-                       AND COALESCE(p.is_adr, 0) = 1
                        AND r.active = 1
                        AND (cr.min_concentration IS NULL OR sa.concentrazione_max_pct >= cr.min_concentration)
                        AND (cr.max_concentration IS NULL OR sa.concentrazione_min_pct <= cr.max_concentration)";
@@ -132,11 +131,17 @@ function qk_compliance_check_sale(PDO $pdo, int $customer_id, array $items): arr
 
             // Check client authorization
             $auth_stmt = $pdo->prepare("
-                SELECT id, status, expiry_date 
+                SELECT *, 
+                       CASE 
+                           WHEN status = 'approvata' AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE) THEN 1
+                           WHEN status = 'in_attesa' THEN 2
+                           WHEN status = 'approvata' AND expiry_date < CURRENT_DATE THEN 3
+                           ELSE 4
+                       END as prio
                 FROM compliance_autorizzazioni 
                 WHERE customer_id = :customer_id 
                   AND restriction_type_id = :restriction_type_id 
-                ORDER BY id DESC LIMIT 1
+                ORDER BY prio ASC, expiry_date DESC, id DESC LIMIT 1
             ");
             $auth_stmt->execute([
                 ':customer_id' => $customer_id,
@@ -207,6 +212,13 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
     $customer_id = (int)$sale['cliente_id'];
     $transaction_date = $sale['data_ordine'] ?? date('Y-m-d');
 
+    // FIX: Svuotiamo il log per questo specifico ordine prima di rigenerarlo. 
+    // Così, se l'utente salva l'ordine più volte o ci sono più righe dello stesso prodotto, 
+    // le quantità nel registro governativo saranno sempre un'immagine esatta dell'ordine finale, 
+    // senza duplicazioni (che falserebbero le somme) o omissioni.
+    $del = $pdo->prepare("DELETE FROM compliance_log_transazioni WHERE sale_id = :sale_id");
+    $del->execute([':sale_id' => $sale_id]);
+
     foreach ($items as $item) {
         $p_id = (int) ($item['prodotto_id'] ?? $item['product_id'] ?? 0);
         $qty = (float) ($item['quantita'] ?? $item['quantity'] ?? 0);
@@ -254,7 +266,9 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
                 WHERE customer_id = :customer_id
                   AND restriction_type_id = :restriction_type_id
                   AND status = 'approvata'
-                ORDER BY id DESC LIMIT 1
+                ORDER BY 
+                   CASE WHEN expiry_date IS NULL OR expiry_date >= CURRENT_DATE THEN 1 ELSE 2 END ASC,
+                   expiry_date DESC, id DESC LIMIT 1
             ");
             $auth_stmt->execute([
                 ':customer_id' => $customer_id,
@@ -266,20 +280,7 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
                 $auth_id = null;
             }
 
-            // Check if transaction log already exists to avoid duplicate entries on re-confirmations
-            $check = $pdo->prepare("
-                SELECT id FROM compliance_log_transazioni
-                WHERE sale_id = :sale_id AND product_id = :product_id AND restriction_type_id = :r_id
-            ");
-            $check->execute([
-                ':sale_id' => $sale_id,
-                ':product_id' => $p_id,
-                ':r_id' => $r['id']
-            ]);
-            if ($check->fetchColumn()) {
-                continue; // Already logged
-            }
-
+            // Rimosso controllo duplicati: la legge impone di tracciare le quantità esatte per ogni transazione, anche in caso di aggiornamenti.
             // Insert transaction log
             // Nome colonna corretto è authorization_id (DDL, inglese come il resto
             // della tabella): il precedente "autorizzazione_id" italianizzato non

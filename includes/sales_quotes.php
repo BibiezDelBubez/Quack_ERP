@@ -90,20 +90,15 @@ function qk_search_prodotti_sales(PDO $pdo, string $q): array
                pf.rrp_min,
                pf.rrp_max,
                pf.fornitore_id AS rrp_fornitore_id,
+               -- Costo base: da v_costo_acquisto_prodotti (fix "Listino Fantasma",
+               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql §14b.
                CASE WHEN p.tipo = 'kit' THEN (
-                   SELECT SUM(ck.quantita * (
-                       SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                       JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                       WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                       ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
-                   ))
+                   SELECT SUM(ck.quantita * vc.costo_acquisto)
                    FROM componenti_kit ck
+                   LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
                    WHERE ck.kit_id = p.id
                ) ELSE (
-                   SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                   JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                   WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                   ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                   SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = p.id
                ) END AS costo_base
         FROM prodotti p
         LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
@@ -231,10 +226,15 @@ function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
     // Calcolo costo d'acquisto stimato
     $costo_unitario = 0.0;
     if ($prodotto_id) {
+        // Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md): il costo più
+        // basso tra i fornitori attivi va preso da v_prezzo_acquisto_base_fornitore
+        // (prezzi base validi oggi, listino attivo), non da tutte le righe prezzo
+        // indiscriminatamente — la vecchia query pescava anche prezzi a scaglione
+        // e prezzi di listini disattivati.
         $stCost = $pdo->prepare('
-            SELECT MIN(pfp.prezzo) 
-            FROM prodotti_fornitori_prezzi pfp
-            JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+            SELECT MIN(vf.prezzo)
+            FROM v_prezzo_acquisto_base_fornitore vf
+            JOIN prodotti_fornitori pf ON pf.id = vf.prodotto_fornitore_id
             WHERE pf.prodotto_id = ? AND pf.attivo = 1
         ');
         $stCost->execute([$prodotto_id]);
@@ -1054,11 +1054,6 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         $stLine = $pdo->prepare($sqlLine);
 
         $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
-        $stRes = $pdo->prepare("
-            UPDATE giacenze
-            SET quantita_riservata = COALESCE(quantita_riservata, 0) + ?
-            WHERE prodotto_id = ? AND magazzino_id = ?
-        ");
 
         foreach ($righe as $r) {
             $stLine->execute([
@@ -1081,16 +1076,9 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
                 ':note'               => qk_null_if_empty($r['note_riga'] ?? '')
             ]);
 
-            // Reserve stock
+            // Reserve stock (kit-aware: vedi qk_riserva_stock_ordine in includes/magazzino.php)
             if (!empty($r['prodotto_id']) && (float)$r['quantita_stock'] > 0) {
-                // Ensure giacenze row exists for (prodotto, magazzino attivo)
-                $stCheckGia = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
-                $stCheckGia->execute([$r['prodotto_id'], $magazzinoRiservaId]);
-                if ((int)$stCheckGia->fetchColumn() === 0) {
-                    $pdo->prepare("INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at) VALUES (?, ?, 0, 0, 0, 0, CURRENT_TIMESTAMP)")
-                        ->execute([$r['prodotto_id'], $magazzinoRiservaId]);
-                }
-                $stRes->execute([(float)$r['quantita_stock'], (int)$r['prodotto_id'], $magazzinoRiservaId]);
+                qk_riserva_stock_ordine($pdo, (int)$r['prodotto_id'], (float)$r['quantita_stock'], $magazzinoRiservaId);
             }
         }
 

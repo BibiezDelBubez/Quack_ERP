@@ -44,15 +44,18 @@ final class DashboardController extends BaseController
         )->fetchColumn();
 
         // KPI 5: Current Month Turnover
+        // Nota valute: tutti gli importi vengono sommati indistintamente,
+        // senza conversione/isolamento per valuta. Deliberatamente rimandato
+        // a una futura versione (vedi docs/Backlog Sviluppi Futuri.md).
         $current_month = date('Y-m');
-        $orders_data = $this->pdo->query("SELECT id, data_ordine FROM ordini_clienti WHERE stato != 'annullato'")->fetchAll(PDO::FETCH_ASSOC);
-        $monthly_turnover = 0.0;
-        foreach ($orders_data as $od) {
-            if (str_starts_with($od['data_ordine'], $current_month)) {
-                $tot_order = (float)$this->pdo->query("SELECT SUM(quantita_ordinata * prezzo_unitario) FROM ordini_clienti_righe WHERE ordine_id = " . (int)$od['id'])->fetchColumn();
-                $monthly_turnover += $tot_order;
-            }
-        }
+        $stKpi5 = $this->pdo->prepare("
+            SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario), 0.0)
+            FROM ordini_clienti_righe r
+            JOIN ordini_clienti o ON o.id = r.ordine_id
+            WHERE o.stato != 'annullato' AND o.data_ordine LIKE ?
+        ");
+        $stKpi5->execute([$current_month . '%']);
+        $monthly_turnover = (float) $stKpi5->fetchColumn();
 
         // Combine into KPI array
         $kpi = [

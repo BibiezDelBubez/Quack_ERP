@@ -25,18 +25,56 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
       <div class="qk-form-row">
         <div class="qk-form-group">
           <label class="qk-form-label">Data Rilevamento <span class="required">*</span></label>
-          <input type="date" name="data_inventario" class="qk-form-control" 
-                 value="<?= e($values['data_inventario'] ?? date('Y-m-d')) ?>" 
+          <input type="date" name="data_inventario" class="qk-form-control"
+                 value="<?= e($values['data_inventario'] ?? date('Y-m-d')) ?>"
                  <?= $isConvalidato ? 'disabled' : '' ?>>
         </div>
         <div class="qk-form-group" style="flex: 2;">
           <label class="qk-form-label">Note / Descrizione</label>
-          <input type="text" name="note" class="qk-form-control" 
-                 value="<?= e($values['note'] ?? '') ?>" 
+          <input type="text" name="note" class="qk-form-control"
+                 value="<?= e($values['note'] ?? '') ?>"
                  placeholder="Es. Inventario Straordinario Chimici, Riconciliazione Fine Anno..."
                  <?= $isConvalidato ? 'disabled' : '' ?>>
         </div>
       </div>
+
+      <?php if (!isset($inventario)): ?>
+        <!-- Cycle counting (Tappa 4.3): scope scelto in creazione, non più
+             modificabile dopo (ricarica la pagina per cambiare filtro prima
+             di iniziare il conteggio). L'hidden field è ciò che porta
+             effettivamente la scelta al submit POST (la select cambia solo
+             la query string via reload, non fa parte del form). -->
+        <input type="hidden" name="categoria_id" value="<?= (int)($categoriaFiltroId ?? 0) ?>">
+        <div class="qk-form-row mt-2">
+          <div class="qk-form-group">
+            <label class="qk-form-label">Ambito conteggio</label>
+            <select class="qk-form-control" onchange="window.location.href = this.value">
+              <option value="<?= url('warehouse/inventories/create') ?>" <?= empty($categoriaFiltroId) ? 'selected' : '' ?>>
+                Tutti i prodotti (conteggio completo)
+              </option>
+              <?php foreach ($categorie as $cat): ?>
+                <option value="<?= url('warehouse/inventories/create') . '?categoria_id=' . (int)$cat['id'] ?>"
+                        <?= (int)($categoriaFiltroId ?? 0) === (int)$cat['id'] ? 'selected' : '' ?>>
+                  Solo categoria: <?= e($cat['nome']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <span class="qk-form-hint">Un conteggio a rotazione (cycle count) su una categoria blocca solo quei prodotti, lasciando il resto del magazzino operativo.</span>
+          </div>
+        </div>
+      <?php elseif (!empty($inventario['categoria_filtro_id'])): ?>
+        <?php
+          $categoriaNomeCorrente = '#' . $inventario['categoria_filtro_id'];
+          foreach ($categorie as $cat) {
+              if ((int)$cat['id'] === (int)$inventario['categoria_filtro_id']) { $categoriaNomeCorrente = $cat['nome']; break; }
+          }
+        ?>
+        <div class="qk-form-row mt-2">
+          <span class="qk-badge draft">
+            <i class="fa-solid fa-filter"></i> Cycle count — categoria: <?= e($categoriaNomeCorrente) ?>
+          </span>
+        </div>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -102,11 +140,12 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
                 <?= number_format((float)$p['giacenza_teorica'], 3, ',', '.') ?> <?= e($p['uom']) ?>
               </td>
               <td class="text-end">
-                <input type="number" 
-                       name="righe[<?= e($key) ?>]" 
-                       class="qk-form-control text-end qk-inventario-input" 
-                       value="<?= e($val) ?>" 
-                       step="0.001" 
+                <input type="number"
+                       name="righe[<?= e($key) ?>]"
+                       class="qk-form-control text-end qk-inventario-input"
+                       value="<?= e($val) ?>"
+                       step="0.001"
+                       min="0"
                        style="max-width: 150px; display: inline-block;"
                        <?= $isConvalidato ? 'disabled' : '' ?>>
                 <span class="ms-1 text-muted"><?= e($p['uom']) ?></span>
@@ -129,10 +168,17 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
     
     <?php if (!$isConvalidato): ?>
       <div class="qk-flex-row qk-gap-sm">
+        <?php if (isset($inventario) && $inventario['stato'] === 'bozza'): ?>
+          <button type="submit" name="azione" value="annulla" class="btn-qk btn-qk-danger"
+                  formnovalidate
+                  onclick="return confirm('Annullare questo inventario? Nessuna giacenza è stata ancora toccata (solo la convalida applica le rettifiche): la bozza verrà eliminata e i prodotti coinvolti torneranno subito movimentabili.');">
+            <i class="fa-solid fa-ban me-1"></i> Annulla bozza
+          </button>
+        <?php endif; ?>
         <button type="submit" name="azione" value="salva" class="btn-qk btn-qk-secondary">
           <i class="fa-solid fa-floppy-disk me-1"></i> Salva in Bozza
         </button>
-        <button type="submit" name="azione" value="convalida" class="btn-qk btn-qk-primary" 
+        <button type="submit" name="azione" value="convalida" class="btn-qk btn-qk-primary"
                 onclick="return confirm('Sei sicuro di voler convalidare l\'inventario? Questa azione applicherà le rettifiche di magazzino in modo definitivo e non sarà più modificabile.');">
           <i class="fa-solid fa-check me-1"></i> Convalida e Chiudi
         </button>

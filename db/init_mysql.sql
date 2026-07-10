@@ -1,15 +1,25 @@
 -- =============================================================================
 -- Quack ERP — Database Inizializzazione (MySQL/MariaDB)
--- Schema v4.2
+-- =============================================================================
+-- Versione schema: NON più un numero a mano ("Schema vX.Y" qui in testa è
+-- stato tolto — restava puntualmente disallineato sia dalla costante
+-- DB_SCHEMA_VERSION in config.php sia dalla versione dichiarata nel file
+-- gemello db/init_sqlite.sql). La versione "vera" di un database specifico è
+-- ora il contenuto della tabella schema_migrations (§0 sotto). Vedi
+-- db/migrate.php.
+--
+-- ATTENZIONE — questo file NON è tenuto sincronizzato automaticamente con
+-- db/init_sqlite.sql: sono due DDL scritti a mano separatamente. Il driver
+-- MySQL non è ancora quello usato in sviluppo (vedi DB_DRIVER in config.php),
+-- quindi questo file può essere indietro rispetto allo schema SQLite più
+-- recente. Prima di usarlo per un'installazione reale, confrontare le
+-- tabelle con `db/init_sqlite.sql` (stessa struttura logica, sintassi
+-- MySQL/InnoDB invece di SQLite).
 -- =============================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
 
--- =============================================================================
--- Quack ERP — Database Inizializzazione
--- SQLite 3  |  WAL mode  |  Foreign Keys ON
--- Schema v4.2
 -- =============================================================================
 -- Convenzioni di naming:
 --   • snake_case per tutti i nomi di tabelle e colonne
@@ -18,6 +28,7 @@ SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
 --   • File path: TEXT (senza limite di lunghezza)
 --
 -- Ordine di creazione:
+--   0.  schema_migrations (tracciamento migrazioni)
 --   1.  unita_misura_categorie
 --   2.  unita_misura
 --   3.  ADR lookup statiche
@@ -45,6 +56,29 @@ SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
 
 
 
+
+-- =============================================================================
+-- 0. SCHEMA_MIGRATIONS — tracciamento migrazioni applicate
+-- =============================================================================
+-- Stesso ruolo e stessa struttura logica della tabella gemella in
+-- db/init_sqlite.sql: registro di quali script in db/migrations/ sono già
+-- stati eseguiti su QUESTO database. Vedi il commento esteso nel file
+-- SQLite per il funzionamento completo del runner (db/migrate.php).
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id         INT          AUTO_INCREMENT PRIMARY KEY,
+    migration  VARCHAR(255) NOT NULL UNIQUE,  -- nome file in db/migrations/, senza .php
+    applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Baseline — vedi spiegazione nel file SQLite gemello.
+INSERT IGNORE INTO schema_migrations (migration) VALUES
+    ('migrate_ordini_righe_uom'),
+    ('2026_07_10_rfq_esito_chiusura'),
+    ('2026_07_10_lotti_codice_unique_per_prodotto'),
+    ('2026_07_10_inventari_categoria_filtro'),
+    ('2026_07_10_inventario_creazione_lock'),
+    ('2026_07_10_vista_costo_acquisto_base'),
+    ('2026_07_10_movimenti_quantita_delta');
 
 -- =============================================================================
 -- 1. UNITÀ DI MISURA — CATEGORIE
@@ -419,6 +453,7 @@ CREATE TABLE IF NOT EXISTS aziende_interne (
     bic_swift_default   VARCHAR(11),
     
     predefinita         BOOLEAN      NOT NULL DEFAULT 1, -- Identifica l'azienda principale se ne hai più di una
+    attivo              BOOLEAN      NOT NULL DEFAULT 1,
     created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );
@@ -574,6 +609,51 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
 	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id) -- collegato al listino d'acquisto se esistente
 );
 
+-- =============================================================================
+-- 14b. VISTE: COSTO DI ACQUISTO BASE (fix "Listino Fantasma", 2026-07-10)
+-- =============================================================================
+-- Vedi commento esteso nel file SQLite gemello per la spiegazione completa
+-- del problema che risolvono e della logica di scelta del prezzo.
+CREATE OR REPLACE VIEW v_prezzo_acquisto_base_fornitore AS
+SELECT prodotto_fornitore_id, prezzo, unita_misura_id
+FROM (
+    SELECT
+        pfp.prodotto_fornitore_id,
+        pfp.prezzo,
+        pfp.unita_misura_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY pfp.prodotto_fornitore_id
+            ORDER BY COALESCE(pfp.valido_dal, la.valido_dal, '0001-01-01') DESC, pfp.id DESC
+        ) AS rn
+    FROM prodotti_fornitori_prezzi pfp
+    LEFT JOIN listini_acquisto la ON la.id = pfp.listino_acquisto_id
+    WHERE pfp.quantita_minima = 0
+      AND (pfp.listino_acquisto_id IS NULL OR la.attivo = 1)
+      AND (pfp.valido_dal IS NULL OR pfp.valido_dal <= CURDATE())
+      AND (pfp.valido_al  IS NULL OR pfp.valido_al  >= CURDATE())
+      AND (la.valido_dal  IS NULL OR la.valido_dal  <= CURDATE())
+      AND (la.valido_al   IS NULL OR la.valido_al   >= CURDATE())
+) ranked
+WHERE rn = 1;
+
+CREATE OR REPLACE VIEW v_costo_acquisto_prodotti AS
+SELECT prodotto_id, prodotto_fornitore_id, fornitore_id, costo_acquisto, unita_misura_id
+FROM (
+    SELECT
+        pf.prodotto_id,
+        pf.id AS prodotto_fornitore_id,
+        pf.fornitore_id,
+        vf.prezzo AS costo_acquisto,
+        vf.unita_misura_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY pf.prodotto_id
+            ORDER BY pf.ordine_preferenza_fornitore ASC, pf.id ASC
+        ) AS rn
+    FROM prodotti_fornitori pf
+    JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
+    WHERE pf.attivo = 1
+) ranked
+WHERE rn = 1;
 
 -- =============================================================================
 -- 15. LISTINI PREZZI (VENDITA)
@@ -596,8 +676,9 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
 -- =============================================================================
 -- Un lotto corrisponde a una partita di merce ricevuta.
 -- La tracciatura lotti per prodotto è opzionale: attivare prodotti.traccia_lotti = 1.
--- Nota: ricevimento_riga_id è un riferimento soft (nessun FK dichiarato per evitare
--- la dipendenza circolare con ricevimento_merce_righe).
+-- Nota: ricezione_riga_id referenzia ricezioni_righe(id) del ciclo acquisti v2 (vedi FK sotto).
+-- codice_lotto_interno è univoco per prodotto (vedi UNIQUE su prodotto_id+codice_lotto_interno
+-- più sotto), non globalmente: prodotti diversi possono legittimamente condividere lo stesso codice.
 
 CREATE TABLE IF NOT EXISTS lotti (
     id                   INT AUTO_INCREMENT PRIMARY KEY,
@@ -639,6 +720,7 @@ CREATE TABLE IF NOT EXISTS movimenti_magazzino (
                                           'carico','scarico','reso_cliente','reso_fornitore',
                                           'rettifica','riserva','svincolo')),
     quantita            DECIMAL(10,3) NOT NULL,               -- sempre positivo; il tipo_movimento indica la direzione
+    quantita_delta      DECIMAL(10,3),                        -- SOLO per tipo_movimento='rettifica': valore CON segno (positivo=aumento, negativo=diminuzione). NULL per tutti gli altri tipi (dove la direzione è già implicita nel tipo). Usato dalla UI storico movimenti per mostrare il verso corretto senza violare l'invariante "quantita sempre positivo" sopra.
     documento_tipo      VARCHAR(50),                          -- tipo documento sorgente (ordine_acquisto, ordine_cliente…)
     documento_id        INTEGER,                              -- ID del documento sorgente
     canale_origine      VARCHAR(50),                          -- sistema che ha generato il movimento (es. sito, manuale, woocommerce, importazione)
@@ -649,11 +731,15 @@ CREATE TABLE IF NOT EXISTS movimenti_magazzino (
 );
 
 CREATE TABLE IF NOT EXISTS inventari (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    data_inventario DATE     NOT NULL,
-    note            TEXT,
-    creato_da       INTEGER  NOT NULL REFERENCES utenti(id),
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                  INT      AUTO_INCREMENT PRIMARY KEY,
+    data_inventario     DATE     NOT NULL,
+    magazzino_id        INTEGER  REFERENCES magazzini(id),  -- sede oggetto dell'inventario; vedi file SQLite gemello
+    -- Cycle counting (Tappa 4.3, 10/07/2026): vedi spiegazione nel file SQLite gemello.
+    categoria_filtro_id INTEGER  REFERENCES categorie_prodotto(id),
+    note                TEXT,
+    stato               TEXT     NOT NULL DEFAULT 'bozza',  -- 'bozza' | 'convalidato'
+    creato_da           INTEGER  NOT NULL REFERENCES utenti(id),
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS inventari_righe (
@@ -664,6 +750,15 @@ CREATE TABLE IF NOT EXISTS inventari_righe (
     quantita_contata DECIMAL(10,3) NOT NULL,                  -- quantità contata fisicamente
     rettifica        DECIMAL(10,3) GENERATED ALWAYS AS (quantita_contata - giacenza_teorica) STORED,
     movimento_id     INTEGER       REFERENCES movimenti_magazzino(id)  -- movimento di rettifica generato
+);
+
+-- Lock applicativo per serializzare la CREAZIONE di nuovi inventari sullo
+-- stesso magazzino (Tappa 4.3, 2026-07-10) — vedi commento gemello in
+-- init_sqlite.sql per la spiegazione completa (race check-then-act sul
+-- controllo di sovrapposizione bozze, chiusa con un vincolo PRIMARY KEY
+-- controllato atomicamente dal motore all'INSERT).
+CREATE TABLE IF NOT EXISTS inventario_creazione_lock (
+    magazzino_id INTEGER PRIMARY KEY REFERENCES magazzini(id)
 );
 
 -- =============================================================================
@@ -973,6 +1068,10 @@ CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_fornitore   ON prodotti_fornit
 CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
 CREATE INDEX IF NOT EXISTS idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
+-- Un codice_lotto_interno deve essere univoco PER PRODOTTO (non globalmente: prodotti
+-- diversi possono legittimamente condividere lo stesso codice, es. numerazione del
+-- fornitore riusata). Vedi db/migrations/2026_07_10_lotti_codice_unique_per_prodotto.php.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lotti_prodotto_codice_unique ON lotti(prodotto_id, codice_lotto_interno);
 CREATE INDEX IF NOT EXISTS idx_lotti_fornitore                ON lotti(fornitore_id);
 CREATE INDEX IF NOT EXISTS idx_lotti_data_arrivo              ON lotti(data_arrivo);
 CREATE INDEX IF NOT EXISTS idx_lotti_data_scadenza            ON lotti(data_scadenza);
@@ -1253,6 +1352,9 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     rfq_padre_id            INTEGER      REFERENCES rfq_testata(id), -- Collegamento alla versione precedente
     stato                   TEXT         NOT NULL DEFAULT 'bozza'
                                           CHECK (stato IN ('bozza','inviata','revisionata','chiusa')),
+    -- Motivo della chiusura, valorizzato solo quando stato = 'chiusa': vedi
+    -- spiegazione nel file SQLite gemello.
+    esito_chiusura          VARCHAR(20),
     fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
     indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),    -- ID snapshot indirizzo consegna
     

@@ -54,3 +54,47 @@ Quando una voce viene implementata, va rimossa da qui e il lavoro va tracciato n
 5. (Più ampio, dopo) Campo sede esplicito su spedizioni e riserva stock ordini vendita — richiede prima introdurre il concetto di sede di evasione sugli ordini di vendita.
 
 **Perché è rimandato.** È un intervento di UI/UX trasversale su più schermate, non una singola feature — richiede una sessione dedicata per essere fatto con lo stesso livello di attenzione (test end-to-end per ciascuna vista toccata) riservato al resto del lavoro multi-magazzino. Non richiede modifiche allo schema dati: `magazzino_id` esiste già ovunque serve.
+
+---
+
+## 4. Multi-valuta nel KPI "Fatturato Mese" (dashboard)
+
+**Fonte:** `audit/full_audit_report.md`, sezione "Dashboard KPI".
+
+**Di cosa si tratta.** Il KPI 5 della dashboard (`DashboardController::index()`) somma `quantita_ordinata * prezzo_unitario` di tutti gli ordini cliente del mese corrente in un unico totale, senza isolare o convertire per valuta. Se in futuro esistessero ordini in valute diverse (es. EUR ed USD), verrebbero sommati indistintamente come se fossero nella stessa valuta, producendo un totale privo di significato.
+
+**Stato attuale.** Oggi non è un problema concreto: non esiste ancora un concetto di valuta per riga/ordine nello schema (`ordini_clienti_righe` non ha una colonna valuta), quindi il caso non si presenta. La segnalazione è preventiva, in vista di un'eventuale gestione multi-valuta futura.
+
+**Perché è rimandato.** Richiede prima decisioni di prodotto non ancora prese: se/come introdurre una valuta per ordine o per riga, se convertire tutto a una valuta base per il KPI (e con quale tasso di cambio, a quale data) o mostrare totali separati per valuta. Prematuro da progettare senza un caso d'uso reale multi-valuta. Il fix del rallentamento (query N+1 sostituita con una singola `SUM` via SQL) è stato invece applicato subito, essendo indipendente dalla questione valuta.
+
+---
+
+## 5. Modulo Acquisti: unificare "listini" nel nuovo controller v2 (rimuovere `PurchasesController` legacy)
+
+**Fonte:** `audit/full_audit_report.md`, sezione "Moduli in Transizione (Legacy vs V2)".
+
+**Di cosa si tratta.** Il modulo Acquisti di Quack è stato riscritto in una versione più recente ("v2"): oggi i Preventivi Fornitore (RFQ) e gli Ordini d'Acquisto hanno ciascuno il proprio controller dedicato (`RfqController`, `PurchaseOrdersController`), con URL puliti in inglese (`/purchases/quotes`, `/purchases/orders`). Quella riscrittura non ha però coperto tutto il modulo: la gestione dei **listini prezzi fornitore** (creare/modificare/eliminare un listino, le sue righe, l'import prezzi) è rimasta nel controller vecchio, `PurchasesController` — lo stesso file monolitico che una volta gestiva anche preventivi e ordini, prima che venissero "staccati" nei controller nuovi. Nel codice attuale (`routes.php`, righe 192-201) c'è pure un commento esplicito che lo ammette: "Acquisti legacy (PDF e listini rimangono su PurchasesController)".
+
+C'è anche un residuo minore collegato: prima della riscrittura gli URL erano in italiano (`/purchases/offerte`, `/purchases/ordini`, `/purchases/ricezioni`). Ora che esistono le versioni nuove in inglese (`/purchases/quotes`, `/purchases/orders`, `/purchases/receipts`), i vecchi URL italiani non sono stati cancellati ma **rediretti** a quelli nuovi (`routes.php`, righe 259-267) — probabilmente per non rompere link salvati/bookmark di chi usava già l'app.
+
+**Stato attuale.** Tutto funziona correttamente, nessuna funzionalità è rotta. Il problema è di manutenibilità futura: chi lavora sul codice acquisti deve ricordarsi che "listini" vive in un posto diverso (e con uno stile di codice diverso, probabilmente più vecchio) rispetto a "preventivi" e "ordini", che sono in controller separati e più moderni. Più a lungo resta così, più aumenta il rischio che qualcuno modifichi la logica dei listini nel posto sbagliato, o duplichi codice tra vecchio e nuovo stile.
+
+**Cosa servirebbe per implementarlo.** Estrarre la gestione listini dal `PurchasesController` in un controller dedicato (es. `PriceListsController`), con lo stesso stile di RFQ/Ordini, e a quel punto eliminare `PurchasesController` e i redirect legacy che non servono più.
+
+**Perché è rimandato.** Non è urgente né rischioso lasciarlo così com'è — è un cambiamento di organizzazione del codice, non di comportamento. Da affrontare quando si deciderà di chiudere definitivamente la migrazione v2 del modulo Acquisti.
+
+---
+
+## Voci minoritarie / bassa priorità
+
+Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere solo se emerge un'esigenza concreta.
+
+### 6. Tetto massimo su "quantità accettata" in ricezione merce
+
+**Fonte:** `audit/scoperte_audit.md`, Tappa 2.4 — Quantità accettata: validazione.
+
+**Di cosa si tratta.** Quando si registra la ricezione di una merce, l'utente inserisce `quantita_accettata` per ogni riga. Oggi il sistema valida solo il limite inferiore (`quantita_accettata <= 0` fa saltare la riga), ma non esiste un tetto superiore che confronti `quantita_accettata` con `quantita_ordinata`: si può quindi accettare, per errore o meno, una quantità superiore a quella effettivamente ordinata senza alcun avviso.
+
+**Perché è rimandato.** Scelta esplicita dell'utente ("skippato su decisione utente") — non implementato per ora perché nella pratica capitano consegne in eccesso legittime (es. il fornitore manda un pallet intero anche se ne era stato chiesto uno spezzato), e un blocco rigido rischierebbe di intralciare casi normali più che prevenire errori reali.
+
+**Prima di implementarlo:** andrebbe capito come gestiscono questo esatto caso i grandi ERP best-in-class (SAP, Odoo, NetSuite, Dynamics 365) — se bloccano l'eccesso, lo permettono con una soglia di tolleranza percentuale configurabile, o lo permettono sempre con solo un avviso non bloccante — prima di decidere se e come vincolarlo qui.

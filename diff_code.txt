@@ -1,0 +1,1409 @@
+diff --git a/app/Controllers/AdrController.php b/app/Controllers/AdrController.php
+index d4842d7..4782d83 100644
+--- a/app/Controllers/AdrController.php
++++ b/app/Controllers/AdrController.php
+@@ -156,6 +156,9 @@ final class AdrController extends BaseController
+         if (!$record) {
+             redirect_with('adr?tab=codici', 'danger', 'Record non trovato.');
+         }
++        $stmtLabels = $this->pdo->prepare('SELECT etichetta_codice FROM adr_codici_onu_etichette WHERE codice_onu_id = ? ORDER BY ordine ASC');
++        $stmtLabels->execute([$id]);
++        $record['etichette_str'] = implode(', ', $stmtLabels->fetchAll(PDO::FETCH_COLUMN));
+ 
+         $values = array_merge($this->defaultCodiceValues(), $record);
+         $errors = [];
+@@ -211,9 +214,17 @@ final class AdrController extends BaseController
+         }
+ 
+         try {
+-            $this->pdo->prepare('DELETE FROM adr_codici_onu WHERE id = :id')->execute([':id' => $id]);
++            $this->pdo->beginTransaction();
++            // Elimina prima le etichette associate (emula ON DELETE CASCADE)
++            $this->pdo->prepare('DELETE FROM adr_codici_onu_etichette WHERE codice_onu_id = :id')->execute([':id' => $id]);
++            // Poi elimina il codice ONU
++            $this->pdo->prepare('DELETE FROM adr_codici_onu WHERE id=:id')->execute([':id' => $id]);
++            $this->pdo->commit();
+             redirect_with('adr?tab=codici', 'success', 'Codice ONU eliminato.');
+         } catch (PDOException $e) {
++            if ($this->pdo->inTransaction()) {
++                $this->pdo->rollBack();
++            }
+             redirect_with('adr?tab=codici', 'danger', $this->dbMessage($e));
+         }
+     }
+@@ -254,7 +265,10 @@ final class AdrController extends BaseController
+                     a.codice_quantita_esente,
+                     a.e_merce_alto_rischio, a.e_inquinante_marino,
+                     a.inizio_validita, a.fine_validita,
+-                    cl.denominazione AS classe_label
++                    cl.denominazione AS classe_label,
++                    (SELECT GROUP_CONCAT(etichetta_codice) 
++                     FROM adr_codici_onu_etichette 
++                     WHERE codice_onu_id = a.id) AS etichette_str
+                FROM adr_codici_onu a
+           LEFT JOIN adr_classi_pericolo cl ON cl.codice = a.classe_pericolo
+               WHERE $where
+@@ -308,6 +322,7 @@ final class AdrController extends BaseController
+             'e_inquinante_marino'         => '',
+             'inizio_validita'             => '',
+             'fine_validita'               => '',
++            'etichette_str'               => '',
+         ];
+     }
+ 
+@@ -328,6 +343,7 @@ final class AdrController extends BaseController
+             'e_inquinante_marino'         => $bool('e_inquinante_marino'),
+             'inizio_validita'             => post('inizio_validita'),
+             'fine_validita'               => post('fine_validita'),
++            'etichette_str'               => post('etichette_str'),
+         ];
+     }
+ 
+@@ -363,7 +379,7 @@ final class AdrController extends BaseController
+         ];
+     }
+ 
+-    private function insertCodice(array $v): void
++    private function insertCodice(array $v): int
+     {
+         $this->pdo->prepare(
+             'INSERT INTO adr_codici_onu
+@@ -379,6 +395,24 @@ final class AdrController extends BaseController
+                  :e_merce_alto_rischio, :e_inquinante_marino,
+                  :inizio_validita, :fine_validita)'
+         )->execute($this->codiceParams($v));
++        $id = (int) $this->pdo->lastInsertId();
++        $this->saveEtichette($id, $v['etichette_str'] ?? '');
++        return $id;
++    }
++
++    private function saveEtichette(int $id, string $etichetteStr): void
++    {
++        $this->pdo->prepare('DELETE FROM adr_codici_onu_etichette WHERE codice_onu_id = ?')->execute([$id]);
++        $etichette = array_values(array_filter(array_map('trim', explode(',', $etichetteStr))));
++        if (!empty($etichette)) {
++            foreach ($etichette as $idx => $et) {
++                // Ignore DB dialect mismatch safely via try-catch se l'etichetta non esiste
++                try {
++                    $this->pdo->prepare('INSERT INTO adr_codici_onu_etichette (codice_onu_id, etichetta_codice, tipo, ordine) VALUES (?, ?, ?, ?)')
++                              ->execute([$id, $et, $idx === 0 ? 'primaria' : 'sussidiaria', $idx + 1]);
++                } catch (PDOException $e) { }
++            }
++        }
+     }
+ 
+     private function updateCodice(int $id, array $v): void
+@@ -402,6 +436,7 @@ final class AdrController extends BaseController
+                 fine_validita=:fine_validita
+              WHERE id=:id'
+         )->execute($p);
++        $this->saveEtichette($id, $v['etichette_str'] ?? '');
+     }
+ 
+     /** Gestisce POST inline per le tre lookup table; restituisce [ok, errors, tab]. */
+@@ -446,9 +481,17 @@ final class AdrController extends BaseController
+                 case 'delete_classe':
+                     $tab    = 'classi';
+                     $codice = trim(post('codice'));
+-                    $this->pdo->prepare('DELETE FROM adr_classi_pericolo WHERE codice=:c')
+-                        ->execute([':c' => $codice]);
+-                    $ok = "Classe $codice eliminata.";
++                    try {
++                        $this->pdo->prepare('DELETE FROM adr_classi_pericolo WHERE codice=:c')
++                            ->execute([':c' => $codice]);
++                        $ok = "Classe $codice eliminata.";
++                    } catch (PDOException $e) {
++                        if ((string)$e->getCode() === '23000') {
++                            $errors['classe'] = "Impossibile eliminare la classe $codice: ├¿ attualmente in uso (es. nei Codici ONU).";
++                        } else {
++                            $errors['classe'] = "Errore durante l'eliminazione: " . $e->getMessage();
++                        }
++                    }
+                     break;
+ 
+                 /* ÔöÇÔöÇ Gruppi imballaggio ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+diff --git a/app/Controllers/AziendeController.php b/app/Controllers/AziendeController.php
+index f317b94..e2e1173 100644
+--- a/app/Controllers/AziendeController.php
++++ b/app/Controllers/AziendeController.php
+@@ -523,10 +523,37 @@ final class AziendeController extends BaseController
+             return null;
+         }
+ 
+-        // Verifica tipo e estensione
+-        $allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml'];
+-        if (!in_array($file['type'], $allowed, true)) {
+-            $errors[$inputName] = 'Formato file non supportato (ammessi solo JPEG, PNG, GIF, SVG).';
++        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dichiarato dal client:
++        // $_FILES['type'] ├¿ il Content-Type inviato dal browser ed ├¿ falsificabile ÔÇö un file .php
++        // rinominato .jpg lo passerebbe indisturbato). Formati ammessi: intersezione tra quelli
++        // realmente supportati da mpdf (generazione PDF, vedi Image/ImageTypeGuesser.php) e da
++        // PHPWord (generazione DOCX, vedi Element/Image.php::setFunctions()) ÔÇö entrambi usano
++        // questo stesso logo/header. SVG e WebP sono supportati solo da mpdf e non da PHPWord
++        // (in pi├╣ l'SVG pu├▓ contenere script, quindi va escluso anche per sicurezza); TIFF ├¿
++        // supportato solo da PHPWord e non da mpdf.
++        $allowedMimeToExt = [
++            'image/jpeg'    => 'jpg',
++            'image/png'     => 'png',
++            'image/gif'     => 'gif',
++            'image/bmp'     => 'bmp',
++            'image/x-ms-bmp' => 'bmp',
++        ];
++
++        $finfo = finfo_open(FILEINFO_MIME_TYPE);
++        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
++        if ($finfo) {
++            finfo_close($finfo);
++        }
++
++        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
++            $errors[$inputName] = 'Formato file non supportato (ammessi solo JPEG, PNG, GIF, BMP).';
++            return null;
++        }
++
++        // Doppio controllo: il file deve essere un'immagine raster valida e decodificabile,
++        // non solo avere i "magic bytes" giusti in testa.
++        if (@getimagesize($file['tmp_name']) === false) {
++            $errors[$inputName] = 'Il file non ├¿ un\'immagine valida.';
+             return null;
+         }
+ 
+@@ -534,7 +561,8 @@ final class AziendeController extends BaseController
+         $subdir = ($inputName === 'header_image') ? 'header_aziende' : 'loghi';
+         $upload_dir = upload_ensure_dir($subdir);
+ 
+-        $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
++        // Estensione derivata dal MIME reale, non dal nome file fornito dall'utente.
++        $ext = $allowedMimeToExt[$realMime];
+         $new_name = uniqid('img_', true) . '.' . $ext;
+         $dest = $upload_dir . DIRECTORY_SEPARATOR . $new_name;
+ 
+diff --git a/app/Controllers/CustomersController.php b/app/Controllers/CustomersController.php
+index 810f888..41b72e2 100644
+--- a/app/Controllers/CustomersController.php
++++ b/app/Controllers/CustomersController.php
+@@ -620,13 +620,14 @@ class CustomersController extends BaseController
+         try {
+             $this->pdo->beginTransaction();
+ 
+-            // Mark any existing active or in_attesa auth as status 'scaduta' or 'sospesa'
++            // Scarta eventuali tentativi di rinnovo precedenti ancora in sospeso, 
++            // ma LASCIA INTATTA l'autorizzazione 'approvata' corrente (nessun DoS).
+             $up = $this->pdo->prepare("
+                 UPDATE compliance_autorizzazioni 
+                 SET status = 'scaduta' 
+                 WHERE customer_id = :customer_id 
+                   AND restriction_type_id = :restriction_type_id 
+-                  AND status IN ('approvata', 'in_attesa')
++                  AND status = 'in_attesa'
+             ");
+             $up->execute([
+                 ':customer_id' => $customer_id,
+@@ -698,6 +699,14 @@ class CustomersController extends BaseController
+             $orig_name = basename($file['name']);
+             // Clean filename to prevent issues
+             $safe_name = preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $orig_name);
++
++            // SECURITY FIX: Blacklist di estensioni pericolose (permettendo zip, rar, pdf, ecc.)
++            $ext = strtolower(pathinfo($safe_name, PATHINFO_EXTENSION));
++            $blacklist = ['php', 'php3', 'php4', 'php5', 'phtml', 'exe', 'bat', 'sh', 'js', 'cgi', 'pl', 'py'];
++            if (in_array($ext, $blacklist)) {
++                throw new Exception("Estensione di file non consentita per motivi di sicurezza.");
++            }
++
+             $dest_path = $upload_base . '/' . $safe_name;
+ 
+             if (!move_uploaded_file($file['tmp_name'], $dest_path)) {
+@@ -709,6 +718,17 @@ class CustomersController extends BaseController
+ 
+             // Save to DB (delete previous upload for same required_doc if exists)
+             $this->pdo->beginTransaction();
++            
++            // FIX: Recupera il vecchio file e cancellalo dal disco prima di eliminare il record
++            $sel = $this->pdo->prepare("SELECT file_path FROM compliance_documenti_caricati WHERE authorization_id = :auth_id AND required_doc_id = :req_id");
++            $sel->execute([':auth_id' => $auth_id, ':req_id' => $required_doc_id]);
++            if ($old_file = $sel->fetchColumn()) {
++                $old_physical_path = rtrim(UPLOAD_DIR, '/\\') . '/' . ltrim($old_file, '/\\');
++                if (file_exists($old_physical_path)) {
++                    unlink($old_physical_path);
++                }
++            }
++
+             $del = $this->pdo->prepare("
+                 DELETE FROM compliance_documenti_caricati 
+                 WHERE authorization_id = :auth_id AND required_doc_id = :req_id
+diff --git a/app/Controllers/DashboardController.php b/app/Controllers/DashboardController.php
+index 20d02fb..9aa3412 100644
+--- a/app/Controllers/DashboardController.php
++++ b/app/Controllers/DashboardController.php
+@@ -44,15 +44,18 @@ final class DashboardController extends BaseController
+         )->fetchColumn();
+ 
+         // KPI 5: Current Month Turnover
++        // Nota valute: tutti gli importi vengono sommati indistintamente,
++        // senza conversione/isolamento per valuta. Deliberatamente rimandato
++        // a una futura versione (vedi docs/Backlog Sviluppi Futuri.md).
+         $current_month = date('Y-m');
+-        $orders_data = $this->pdo->query("SELECT id, data_ordine FROM ordini_clienti WHERE stato != 'annullato'")->fetchAll(PDO::FETCH_ASSOC);
+-        $monthly_turnover = 0.0;
+-        foreach ($orders_data as $od) {
+-            if (str_starts_with($od['data_ordine'], $current_month)) {
+-                $tot_order = (float)$this->pdo->query("SELECT SUM(quantita_ordinata * prezzo_unitario) FROM ordini_clienti_righe WHERE ordine_id = " . (int)$od['id'])->fetchColumn();
+-                $monthly_turnover += $tot_order;
+-            }
+-        }
++        $stKpi5 = $this->pdo->prepare("
++            SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario), 0.0)
++            FROM ordini_clienti_righe r
++            JOIN ordini_clienti o ON o.id = r.ordine_id
++            WHERE o.stato != 'annullato' AND o.data_ordine LIKE ?
++        ");
++        $stKpi5->execute([$current_month . '%']);
++        $monthly_turnover = (float) $stKpi5->fetchColumn();
+ 
+         // Combine into KPI array
+         $kpi = [
+diff --git a/app/Controllers/FileController.php b/app/Controllers/FileController.php
+index 99a3c17..8f7e21b 100644
+--- a/app/Controllers/FileController.php
++++ b/app/Controllers/FileController.php
+@@ -15,7 +15,7 @@ declare(strict_types=1);
+ class FileController extends BaseController
+ {
+     /** Cartelle consentite dentro UPLOAD_DIR */
+-    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni'];
++    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni', 'sds'];
+ 
+     public function serve(): void
+     {
+diff --git a/app/Controllers/ProductsController.php b/app/Controllers/ProductsController.php
+index 3c5aac1..eee6f0a 100644
+--- a/app/Controllers/ProductsController.php
++++ b/app/Controllers/ProductsController.php
+@@ -1090,10 +1090,24 @@ final class ProductsController extends BaseController
+                 if (empty($errors) && isset($_FILES['immagine_file']) && $_FILES['immagine_file']['error'] === UPLOAD_ERR_OK) {
+                     $tmp = $_FILES['immagine_file']['tmp_name'];
+                     $name = $_FILES['immagine_file']['name'];
+-                    $ext = pathinfo($name, PATHINFO_EXTENSION);
+-                    $allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
+-                    if (!in_array(strtolower($ext), $allowedExts, true)) {
+-                        $errors['immagine_file'] = 'Formato immagine non valido. Consentiti: ' . implode(', ', $allowedExts);
++
++                    // Verifica tipo reale del file (MIME sniffato dal contenuto, non
++                    // dall'estensione dichiarata dall'utente). SVG escluso: pu├▓ contenere
++                    // script embedded (rischio XSS), coerente con AziendeController.
++                    $allowedMimeToExt = [
++                        'image/jpeg' => 'jpg',
++                        'image/png'  => 'png',
++                        'image/gif'  => 'gif',
++                        'image/webp' => 'webp',
++                    ];
++                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
++                    $realMime = $finfo ? finfo_file($finfo, $tmp) : false;
++                    if ($finfo) {
++                        finfo_close($finfo);
++                    }
++                    $ext = $allowedMimeToExt[$realMime] ?? null;
++                    if ($ext === null || @getimagesize($tmp) === false) {
++                        $errors['immagine_file'] = 'Formato immagine non valido. Consentiti: ' . implode(', ', $allowedMimeToExt);
+                     } else {
+                         $subDir = 'categorie';
+                         $absDir = upload_ensure_dir($subDir);
+diff --git a/app/Controllers/PurchasesQuotesController.php b/app/Controllers/PurchasesQuotesController.php
+index dbb0886..24e329f 100644
+--- a/app/Controllers/PurchasesQuotesController.php
++++ b/app/Controllers/PurchasesQuotesController.php
+@@ -436,23 +436,33 @@ class PurchasesQuotesController extends BaseController
+             return null;
+         }
+ 
+-        // Verifica tipo e estensione
+-        $allowedTypes = [
+-            'application/pdf',
+-            'application/msword',
+-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+-            'image/jpeg',
+-            'image/png'
++        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dichiarato dal client:
++        // $_FILES['type'] ├¿ il Content-Type inviato dal browser ed ├¿ falsificabile). I DOCX sono
++        // contenitori ZIP: alcune installazioni di fileinfo li riconoscono come
++        // application/vnd.openxmlformats-..., altre solo come application/zip generico ÔÇö entrambi
++        // ammessi e mappati a .docx.
++        $allowedMimeToExt = [
++            'application/pdf'                                                          => 'pdf',
++            'application/msword'                                                       => 'doc',
++            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'  => 'docx',
++            'application/zip'                                                          => 'docx',
++            'image/jpeg'                                                                => 'jpg',
++            'image/png'                                                                 => 'png',
+         ];
+-        
+-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-        $allowedExts = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg'];
+-        
+-        if (!in_array($file['type'], $allowedTypes, true) && !in_array($ext, $allowedExts, true)) {
++
++        $finfo = finfo_open(FILEINFO_MIME_TYPE);
++        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
++        if ($finfo) {
++            finfo_close($finfo);
++        }
++
++        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
+             $errors[$inputName] = 'Formato file non supportato (ammessi solo PDF, DOC, DOCX, PNG, JPG).';
+             return null;
+         }
+ 
++        $ext = $allowedMimeToExt[$realMime];
++
+         // Directory di upload con sharding per anno/mese
+         $subdir = upload_dated_subdir('quotes');
+         $upload_dir = upload_ensure_dir($subdir);
+diff --git a/app/Controllers/RfqController.php b/app/Controllers/RfqController.php
+index d5ea601..54bb492 100644
+--- a/app/Controllers/RfqController.php
++++ b/app/Controllers/RfqController.php
+@@ -135,26 +135,14 @@ class RfqController extends BaseController
+                 $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
+             } else {
+                 $values = $this->readPostValues();
+-                
+-                // Enforce read-only lock for address and contact overrides if the RFQ status is not 'bozza'
+-                $currentStatus = $detail['rfq']['stato'];
+-                $isTerminalState = in_array($currentStatus, ['chiusa', 'revisionata'], true);
+-
+-                if ($isTerminalState) {
+-                    $errors['_global'] = 'Accesso Negato: Impossibile modificare un documento chiuso e archiviato.';
+-                } else if ($currentStatus !== 'bozza') {
+-                    $originalValues = $this->mapDetailToValues($detail['rfq']);
+-                    foreach ([
+-                        'indirizzo_consegna_id', 'consegna_via', 'consegna_civico', 'consegna_cap',
+-                        'consegna_citta', 'consegna_provincia', 'consegna_nazione', 'consegna_presso',
+-                        'consegna_referente', 'consegna_telefono', 'consegna_note',
+-                        'contatto_id', 'contatto_nome', 'contatto_telefono', 'contatto_email',
+-                        'fornitore_telefono', 'fornitore_email'
+-                    ] as $fld) {
+-                        $values[$fld] = $originalValues[$fld];
+-                    }
+-                }
+ 
++                // Nota: il blocco modifica per stato != 'bozza' (inviata, revisionata,
++                // chiusa) NON viene pi├╣ controllato qui ÔÇö era duplicato rispetto a
++                // qk_rfq_save() e quel controllo veniva silenziosamente vanificato
++                // dalla riga successiva ($errors = $this->validate(...) sovrascriveva
++                // l'errore impostato sopra). Il blocco ├¿ ora centralizzato in un unico
++                // punto in qk_rfq_save() (includes/purchases_rfq.php), che lancia una
++                // RuntimeException catturata qui sotto come qualsiasi altro errore.
+ 
+                 $righe  = $this->readPostRighe();
+                 $errors = $this->validate($values, $righe);
+@@ -1163,6 +1151,7 @@ class RfqController extends BaseController
+             'fornitore_id'            => (string)($rfq['fornitore_id'] ?? ''),
+             'indirizzo_consegna_id'   => (string)($rfq['indirizzo_consegna_master_id'] ?? $rfq['indirizzo_consegna_id'] ?? ''),
+             'stato'                   => $rfq['stato'],
++            'esito_chiusura'          => $rfq['esito_chiusura'] ?? '',
+             'data_emissione'          => $rfq['data_emissione'] ?? date('Y-m-d'),
+             'data_scadenza'           => $rfq['data_scadenza'] ?? '',
+             'condizioni_pagamento'    => $rfq['condizioni_pagamento'] ?? '',
+diff --git a/app/Controllers/SalesOrdersController.php b/app/Controllers/SalesOrdersController.php
+index 5af1da1..4a21082 100644
+--- a/app/Controllers/SalesOrdersController.php
++++ b/app/Controllers/SalesOrdersController.php
+@@ -540,12 +540,19 @@ final class SalesOrdersController extends BaseController
+         // aggregato legacy lotti.quantita_disponibile (rimosso, ┬º3.9).
+         $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+ 
++        // Lotti scaduti (Tappa 4.4): esclusi per default ÔÇö inclusi solo se il
++        // chiamante passa esplicitamente includi_scaduti=1 (toggle lato UI).
++        $includiScaduti = get_param('includi_scaduti', '0') === '1';
++        $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
++
+         $st = $this->pdo->prepare("
+-            SELECT l.id, COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice,
+-                   lg.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at
++            SELECT l.id, l.codice_lotto_interno AS codice,
++                   lg.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at,
++                   CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
+             FROM lotti l
+             JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+             WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0
++              $condScadenza
+             ORDER BY CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END, l.data_scadenza ASC, l.created_at ASC
+         ");
+         $st->execute([$magazzinoId, $prodottoId]);
+@@ -633,8 +640,22 @@ final class SalesOrdersController extends BaseController
+                     if ($files['error'][$i] === UPLOAD_ERR_OK) {
+                         $tmpName = $files['tmp_name'][$i];
+                         $name = basename($files['name'][$i]);
+-                        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+-                        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
++
++                        // Verifica tipo reale del file (MIME sniffato dal contenuto, non
++                        // dall'estensione dichiarata dall'utente).
++                        $allowedMimeToExt = [
++                            'image/jpeg' => 'jpg',
++                            'image/png'  => 'png',
++                            'image/gif'  => 'gif',
++                            'image/webp' => 'webp',
++                        ];
++                        $finfo = finfo_open(FILEINFO_MIME_TYPE);
++                        $realMime = $finfo ? finfo_file($finfo, $tmpName) : false;
++                        if ($finfo) {
++                            finfo_close($finfo);
++                        }
++                        $ext = $allowedMimeToExt[$realMime] ?? null;
++                        if ($ext !== null && @getimagesize($tmpName) !== false) {
+                             $subdir = upload_dated_subdir('spedizioni');
+                             $upload_dir = upload_ensure_dir($subdir);
+                             $new_name = uniqid('sped_photo_', true) . '.' . $ext;
+@@ -717,7 +738,7 @@ final class SalesOrdersController extends BaseController
+                         // (Piano Multi-Magazzino ┬º3.8/┬º3.9).
+                         $stLotInfo = $this->pdo->prepare("
+                             SELECT l.id, COALESCE(lg.quantita_disponibile, 0) AS quantita_disponibile,
+-                                   COALESCE(l.codice_lotto_interno, l.codice_lotto) AS cl
++                                   l.codice_lotto_interno AS cl
+                             FROM lotti l
+                             LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+                             WHERE l.id = ?
+diff --git a/app/Controllers/SostanzeChimicheController.php b/app/Controllers/SostanzeChimicheController.php
+index 2b3da5e..7400c7b 100644
+--- a/app/Controllers/SostanzeChimicheController.php
++++ b/app/Controllers/SostanzeChimicheController.php
+@@ -217,13 +217,31 @@ final class SostanzeChimicheController extends BaseController
+             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Nessun file selezionato.');
+         }
+ 
+-        $file    = $_FILES['file_sds'];
+-        $ext     = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-        $allowed = ['pdf', 'doc', 'docx'];
+-        if (!in_array($ext, $allowed, true)) {
++        $file = $_FILES['file_sds'];
++
++        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dall'estensione
++        // dichiarata dall'utente). I DOCX sono contenitori ZIP: alcune installazioni di
++        // fileinfo li riconoscono come application/vnd.openxmlformats-..., altre solo come
++        // application/zip generico ÔÇö entrambi ammessi e mappati a .docx.
++        $allowedMimeToExt = [
++            'application/pdf'                                                          => 'pdf',
++            'application/msword'                                                       => 'doc',
++            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'  => 'docx',
++            'application/zip'                                                          => 'docx',
++        ];
++
++        $finfo = finfo_open(FILEINFO_MIME_TYPE);
++        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
++        if ($finfo) {
++            finfo_close($finfo);
++        }
++
++        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
+             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Formato non consentito. Usa PDF, DOC o DOCX.');
+         }
+ 
++        $ext = $allowedMimeToExt[$realMime];
++
+         $sdsDir  = rtrim(UPLOAD_DIR, '/\\') . '/sds/' . $sostanzaId;
+         if (!is_dir($sdsDir) && !mkdir($sdsDir, 0755, true)) {
+             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Impossibile creare cartella upload.');
+diff --git a/app/Controllers/SpedizioniController.php b/app/Controllers/SpedizioniController.php
+index 95e0b81..4f7670d 100644
+--- a/app/Controllers/SpedizioniController.php
++++ b/app/Controllers/SpedizioniController.php
+@@ -134,21 +134,30 @@ final class SpedizioniController extends BaseController
+         // finch├® non esiste un selettore magazzino dedicato per le spedizioni, la spedizione
+         // viene creata dal magazzino attivo (stessa approssimazione usata in
+         // SalesOrdersController::createShipment per lo scarico effettivo).
++        //
++        // Lotti scaduti (Tappa 4.4): esclusi per default dalla pre-allocazione FEFO ÔÇö non
++        // ha senso proporre in automatico un lotto scaduto per una spedizione. L'utente pu├▓
++        // includerli esplicitamente con il toggle "Includi lotti scaduti" (?includi_scaduti=1),
++        // pensato per casi eccezionali (es. smaltimento/reso) ÔÇö mai come default silenzioso.
++        $includiScaduti = get_param('includi_scaduti', '0') === '1';
+         $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
+         $prodIds = array_unique(array_filter(array_column($righe, 'prodotto_id')));
+         $lottiPerProdotto = [];
+         if (!empty($prodIds)) {
+             $in = implode(',', array_map('intval', $prodIds));
++            $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
+             $stLotti = $this->pdo->prepare("
+                 SELECT l.prodotto_id,
+                        l.id,
+-                       COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice,
++                       l.codice_lotto_interno AS codice,
+                        lg.quantita_disponibile,
+-                       l.data_scadenza
++                       l.data_scadenza,
++                       CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
+                 FROM lotti l
+                 JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+                 WHERE l.prodotto_id IN ($in)
+                   AND lg.quantita_disponibile > 0
++                  $condScadenza
+                 ORDER BY l.prodotto_id,
+                          CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END,
+                          l.data_scadenza ASC,
+diff --git a/app/Controllers/WarehouseController.php b/app/Controllers/WarehouseController.php
+index c35b44c..7c681b0 100644
+--- a/app/Controllers/WarehouseController.php
++++ b/app/Controllers/WarehouseController.php
+@@ -140,15 +140,16 @@ class WarehouseController extends BaseController
+             // pendenti dell'azienda, indipendentemente dal magazzino scelto sopra.
+             // Segnalato esplicitamente in UI (stock.php) per non farlo sembrare
+             // un'incoerenza silenziosa rispetto agli altri filtri.
+-            $sql = "SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
+-                           COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
+-                           (SELECT rt.id FROM ricezioni_testata rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
+-                      FROM ordini_testata ot
+-                 LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
+-                     WHERE ot.stato IN ('inviato', 'parzialmente_ricevuto')
+-                       AND (ot.numero LIKE :q OR COALESCE(cf.ragione_sociale, cf.nome) LIKE :q)
+-                  ORDER BY ot.data_consegna_prevista ASC, ot.created_at DESC";
+-            $st = $this->pdo->prepare($sql);
++            $st = $this->pdo->prepare("
++                SELECT ot.id, ot.numero, ot.data_ordine, ot.data_consegna_prevista, ot.stato,
++                       COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
++                       (SELECT rt.id FROM ricezioni_testata rt WHERE rt.ordine_id = ot.id AND rt.stato = 'bozza' LIMIT 1) AS draft_ricezione_id
++                  FROM ordini_testata ot
++             LEFT JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
++                 WHERE ot.stato IN ('inviato', 'parzialmente_ricevuto')
++                   AND (ot.numero LIKE :q OR COALESCE(cf.ragione_sociale, cf.nome) LIKE :q)
++              ORDER BY ot.data_consegna_prevista ASC, ot.created_at DESC
++            ");
+             $st->execute(['q' => '%' . $search . '%']);
+             $ordini_in_arrivo = $st->fetchAll(PDO::FETCH_ASSOC);
+             $total = count($ordini_in_arrivo);
+@@ -339,7 +340,7 @@ class WarehouseController extends BaseController
+             // NEL MAGAZZINO di questo inventario. Se un prodotto gestisce lotti,
+             // splittiamo le giacenze teoriche per lotto (lotti_giacenze, per
+             // sede ÔÇö vedi ┬º3.1), non pi├╣ sul campo aggregato lotti.quantita_disponibile.
+-            $sql = "
++            $stmtInv = $this->pdo->prepare("
+                 SELECT p.id AS prodotto_id, p.nome AS nome_prodotto, p.sku_interno, u.codice AS uom,
+                        l.id AS lotto_id, l.codice_lotto_interno,
+                        CASE WHEN p.traccia_lotti = 1 THEN COALESCE(lg.quantita_disponibile, 0)
+@@ -352,8 +353,7 @@ class WarehouseController extends BaseController
+                 LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+                 WHERE p.attivo = 1 AND p.tipo != 'kit'
+                 ORDER BY p.nome COLLATE NOCASE, l.codice_lotto_interno ASC
+-            ";
+-            $stmtInv = $this->pdo->prepare($sql);
++            ");
+             $stmtInv->execute([$magazzinoInventarioId, $magazzinoInventarioId]);
+             $prodotti_inventario = $stmtInv->fetchAll(PDO::FETCH_ASSOC);
+         }
+diff --git a/app/views/adr/_codice_form.php b/app/views/adr/_codice_form.php
+index 1b1f3bb..3d63324 100644
+--- a/app/views/adr/_codice_form.php
++++ b/app/views/adr/_codice_form.php
+@@ -131,6 +131,15 @@ $lbl = function (string $field, array $list, string $idCol, string $labelCol, st
+               </div>
+             </div>
+ 
++            <!-- Etichette di pericolo -->
++            <div class="qk-form-group">
++              <label class="qk-form-label">Etichette di pericolo <span class="qk-form-hint">(separate da virgola, es. 3, 8, 6.1)</span></label>
++              <input type="text" name="etichette_str"
++                     class="qk-form-control"
++                     value="<?= e($v('etichette_str')) ?>"
++                     placeholder="3, 8, 6.1">
++            </div>
++
+           </div>
+         </div>
+       </div>
+diff --git a/app/views/adr/_index.php b/app/views/adr/_index.php
+index a804bf5..fb6b3f7 100644
+--- a/app/views/adr/_index.php
++++ b/app/views/adr/_index.php
+@@ -143,6 +143,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
+               <th style="width:90px">UN #</th>
+               <th>Nome / Descrizione</th>
+               <th style="width:80px">Classe</th>
++              <th style="width:100px">Etichette</th>
+               <th style="width:75px">Gr. Imb.</th>
+               <th style="width:80px">Cat. Trasp.</th>
+               <th style="width:80px">Galleria</th>
+@@ -156,7 +157,7 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
+               <td>
+                 <a href="<?= url('adr/codici/edit?id=' . (int)$c['id']) ?>"
+                    class="fw-semibold font-monospace qk-text-accent text-decoration-none">
+-                  UN <?= e((string)$c['codice_onu']) ?>
++                  UN <?= str_pad((string)$c['codice_onu'], 4, '0', STR_PAD_LEFT) ?>
+                 </a>
+               </td>
+               <td>
+@@ -175,6 +176,13 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
+                   <span class="qk-text-muted">ÔÇö</span>
+                 <?php endif; ?>
+               </td>
++              <td>
++                <?php if ($c['etichette_str']): ?>
++                  <span class="small fw-semibold"><?= e(str_replace(',', ', ', $c['etichette_str'])) ?></span>
++                <?php else: ?>
++                  <span class="qk-text-muted">ÔÇö</span>
++                <?php endif; ?>
++              </td>
+               <td><?= $c['gruppo_imballaggio'] ? e($c['gruppo_imballaggio']) : '<span class="qk-text-muted">ÔÇö</span>' ?></td>
+               <td><?= $c['categoria_trasporto'] !== null ? e((string)$c['categoria_trasporto']) : '<span class="qk-text-muted">ÔÇö</span>' ?></td>
+               <td>
+@@ -197,9 +205,8 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
+                   <form method="post" action="<?= url('adr/codici/delete') ?>" class="d-inline">
+                     <?= csrf_field() ?>
+                     <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+-                    <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm"
+-                            onclick="return confirm('Eliminare UN <?= (int)$c['codice_onu'] ?>?')" title="Elimina">
+-                      <i class="fa-solid fa-trash"></i>
++                    <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm" onclick="return confirm('Eliminare UN <?= str_pad((string)$c['codice_onu'], 4, '0', STR_PAD_LEFT) ?>?')">
++                        <i class="fa-solid fa-trash"></i>
+                     </button>
+                   </form>
+                 </div>
+diff --git a/app/views/purchases/rfq/_form.php b/app/views/purchases/rfq/_form.php
+index fdbe84f..a3b0d95 100644
+--- a/app/views/purchases/rfq/_form.php
++++ b/app/views/purchases/rfq/_form.php
+@@ -219,6 +219,11 @@ $savedOk = isset($saved) && $saved;
+         <?php if ($isInviata): ?>
+           Usa <strong>Crea Nuova Versione</strong> per fare una revisione.
+         <?php endif; ?>
++        <?php if ($isChiusa && !empty($values['esito_chiusura'])): ?>
++          <?= $values['esito_chiusura'] === 'offerta_accettata'
++                ? '(Chiusa perch├® un\'offerta ├¿ stata accettata.)'
++                : '(Chiusa manualmente, senza offerta accettata.)' ?>
++        <?php endif; ?>
+       </span>
+     </div>
+     <?php endif; ?>
+diff --git a/app/views/purchases/rfq/_list.php b/app/views/purchases/rfq/_list.php
+index 39f82ef..0a4a3c5 100644
+--- a/app/views/purchases/rfq/_list.php
++++ b/app/views/purchases/rfq/_list.php
+@@ -3,10 +3,15 @@
+  * purchases/rfq/_list.php
+  * Variabili: $rfq_list, $search, $stato, $dal, $al, $pag, $total
+  */
+-function rfq_badge(string $stato): string {
++function rfq_badge(string $stato, ?string $esitoChiusura = null): string {
+     $map = ['bozza' => ['draft','Bozza'], 'inviata' => ['confirmed','Inviata'],
+             'revisionata' => ['pending','Revisionata'], 'chiusa' => ['delivered','Chiusa']];
+     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
++    // Lo stato 'chiusa' da solo non dice se la RFQ ha prodotto un ordine o ├¿
++    // stata abbandonata ÔÇö lo specifichiamo con un'etichetta secondaria.
++    if ($stato === 'chiusa' && $esitoChiusura) {
++        $lbl .= $esitoChiusura === 'offerta_accettata' ? ' (offerta accettata)' : ' (annullata)';
++    }
+     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
+ }
+ $statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviata' => 'Inviate',
+@@ -78,7 +83,7 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
+         <tr>
+           <td><a href="<?= url('purchases/rfq/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong"><?= e($r['riferimento_rfq_interno'] ?: 'ÔÇö') ?></a></td>
+           <td><?= e(fmt_date($r['data_emissione'] ?? '')) ?: 'ÔÇö' ?></td>
+-          <td><?= rfq_badge($r['stato']) ?></td>
++          <td><?= rfq_badge($r['stato'], $r['esito_chiusura'] ?? null) ?></td>
+           <td class="qk-text-muted" style="font-size:.85rem"><?= e($r['numero']) ?></td>
+           <td class="qk-text-muted">v<?= (int)$r['versione'] ?></td>
+           <td><?= e($r['fornitore_nome'] ?? 'ÔÇö') ?></td>
+diff --git a/app/views/sales/quotes/_form.php b/app/views/sales/quotes/_form.php
+index 8308011..e56175d 100644
+--- a/app/views/sales/quotes/_form.php
++++ b/app/views/sales/quotes/_form.php
+@@ -664,8 +664,12 @@ $can_edit = ($stato === 'bozza');
+                 <div class="qk-form-group">
+                   <label class="qk-form-label">Canale vendita</label>
+                   <select name="canale_vendita" class="qk-form-control">
+-                    <?php foreach (['email_diretta'=>'Email diretta','dropshipping'=>'Dropshipping','agente'=>'Agente','sito'=>'Sito web'] as $kk => $lbl): ?>
+-                    <option value="<?= e($kk) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $kk ? 'selected' : '' ?>><?= e($lbl) ?></option>
++                    <?php 
++                    global $pdo;
++                    $stCv = $pdo->query("SELECT codice, nome FROM canali_vendita WHERE attivo = 1 ORDER BY nome");
++                    $canali_db = $stCv->fetchAll(PDO::FETCH_ASSOC);
++                    foreach ($canali_db as $c): ?>
++                    <option value="<?= e($c['codice']) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $c['codice'] ? 'selected' : '' ?>><?= e($c['nome']) ?></option>
+                     <?php endforeach; ?>
+                   </select>
+                 </div>
+diff --git a/app/views/settings/aziende/_form.php b/app/views/settings/aziende/_form.php
+index 07dc80d..4101e1d 100644
+--- a/app/views/settings/aziende/_form.php
++++ b/app/views/settings/aziende/_form.php
+@@ -174,8 +174,8 @@ $v = $values;
+                   <img id="logo-preview" src="<?= !empty($v['logo_path']) ? url('uploads?path=' . urlencode($v['logo_path'])) : '#' ?>" alt="Logo anteprima" style="max-height:60px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px">
+                   <span class="small text-muted font-monospace" id="logo-status-text"><?= !empty($v['logo_path']) ? '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Logo caricato: ' . e($v['logo_path']) . '</span>' : '' ?></span>
+                 </div>
+-                <input type="file" name="logo_file" id="logo-input" class="qk-form-control" accept="image/*">
+-                <span class="qk-form-hint">Formati supportati: JPEG, PNG, GIF, SVG.</span>
++                <input type="file" name="logo_file" id="logo-input" class="qk-form-control" accept="image/jpeg,image/png,image/gif,image/bmp">
++                <span class="qk-form-hint">Formati supportati: JPEG, PNG, GIF, BMP.</span>
+               </div>
+ 
+               <!-- Header stampati upload -->
+@@ -185,8 +185,8 @@ $v = $values;
+                   <img id="header-preview" src="<?= !empty($v['header_path']) ? url('uploads?path=' . urlencode($v['header_path'])) : '#' ?>" alt="Header anteprima" style="max-height:80px;border:1px solid var(--qk-card-border);padding:2px;border-radius:4px;width:auto;max-width:100%;">
+                   <span class="small text-muted font-monospace" id="header-status-text"><?= !empty($v['header_path']) ? '<span class="text-success"><i class="fa-solid fa-circle-check"></i> Header caricato: ' . e($v['header_path']) . '</span>' : '' ?></span>
+                 </div>
+-                <input type="file" name="header_file" id="header-input" class="qk-form-control" accept="image/*">
+-                <span class="qk-form-hint">Viene stampato in testa ai preventivi e DDT.</span>
++                <input type="file" name="header_file" id="header-input" class="qk-form-control" accept="image/jpeg,image/png,image/gif,image/bmp">
++                <span class="qk-form-hint">Viene stampato in testa ai preventivi e DDT. Formati supportati: JPEG, PNG, GIF, BMP.</span>
+               </div>
+ 
+             </div>
+diff --git a/db/init_mysql.sql b/db/init_mysql.sql
+index 292e166..1ba02e9 100644
+--- a/db/init_mysql.sql
++++ b/db/init_mysql.sql
+@@ -1,15 +1,25 @@
+ -- =============================================================================
+ -- Quack ERP ÔÇö Database Inizializzazione (MySQL/MariaDB)
+--- Schema v4.2
++-- =============================================================================
++-- Versione schema: NON pi├╣ un numero a mano ("Schema vX.Y" qui in testa ├¿
++-- stato tolto ÔÇö restava puntualmente disallineato sia dalla costante
++-- DB_SCHEMA_VERSION in config.php sia dalla versione dichiarata nel file
++-- gemello db/init_sqlite.sql). La versione "vera" di un database specifico ├¿
++-- ora il contenuto della tabella schema_migrations (┬º0 sotto). Vedi
++-- db/migrate.php.
++--
++-- ATTENZIONE ÔÇö questo file NON ├¿ tenuto sincronizzato automaticamente con
++-- db/init_sqlite.sql: sono due DDL scritti a mano separatamente. Il driver
++-- MySQL non ├¿ ancora quello usato in sviluppo (vedi DB_DRIVER in config.php),
++-- quindi questo file pu├▓ essere indietro rispetto allo schema SQLite pi├╣
++-- recente. Prima di usarlo per un'installazione reale, confrontare le
++-- tabelle con `db/init_sqlite.sql` (stessa struttura logica, sintassi
++-- MySQL/InnoDB invece di SQLite).
+ -- =============================================================================
+ 
+ SET FOREIGN_KEY_CHECKS = 0;
+ SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
+ 
+--- =============================================================================
+--- Quack ERP ÔÇö Database Inizializzazione
+--- SQLite 3  |  WAL mode  |  Foreign Keys ON
+--- Schema v4.2
+ -- =============================================================================
+ -- Convenzioni di naming:
+ --   ÔÇó snake_case per tutti i nomi di tabelle e colonne
+@@ -18,6 +28,7 @@ SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
+ --   ÔÇó File path: TEXT (senza limite di lunghezza)
+ --
+ -- Ordine di creazione:
++--   0.  schema_migrations (tracciamento migrazioni)
+ --   1.  unita_misura_categorie
+ --   2.  unita_misura
+ --   3.  ADR lookup statiche
+@@ -46,6 +57,25 @@ SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
+ 
+ 
+ 
++-- =============================================================================
++-- 0. SCHEMA_MIGRATIONS ÔÇö tracciamento migrazioni applicate
++-- =============================================================================
++-- Stesso ruolo e stessa struttura logica della tabella gemella in
++-- db/init_sqlite.sql: registro di quali script in db/migrations/ sono gi├á
++-- stati eseguiti su QUESTO database. Vedi il commento esteso nel file
++-- SQLite per il funzionamento completo del runner (db/migrate.php).
++CREATE TABLE IF NOT EXISTS schema_migrations (
++    id         INT          AUTO_INCREMENT PRIMARY KEY,
++    migration  VARCHAR(255) NOT NULL UNIQUE,  -- nome file in db/migrations/, senza .php
++    applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
++
++-- Baseline ÔÇö vedi spiegazione nel file SQLite gemello.
++INSERT IGNORE INTO schema_migrations (migration) VALUES
++    ('migrate_ordini_righe_uom'),
++    ('2026_07_10_rfq_esito_chiusura'),
++    ('2026_07_10_lotti_codice_unique_per_prodotto');
++
+ -- =============================================================================
+ -- 1. UNIT├Ç DI MISURA ÔÇö CATEGORIE
+ -- =============================================================================
+@@ -419,6 +449,7 @@ CREATE TABLE IF NOT EXISTS aziende_interne (
+     bic_swift_default   VARCHAR(11),
+     
+     predefinita         BOOLEAN      NOT NULL DEFAULT 1, -- Identifica l'azienda principale se ne hai pi├╣ di una
++    attivo              BOOLEAN      NOT NULL DEFAULT 1,
+     created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
+ );
+@@ -596,8 +627,9 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
+ -- =============================================================================
+ -- Un lotto corrisponde a una partita di merce ricevuta.
+ -- La tracciatura lotti per prodotto ├¿ opzionale: attivare prodotti.traccia_lotti = 1.
+--- Nota: ricevimento_riga_id ├¿ un riferimento soft (nessun FK dichiarato per evitare
+--- la dipendenza circolare con ricevimento_merce_righe).
++-- Nota: ricezione_riga_id referenzia ricezioni_righe(id) del ciclo acquisti v2 (vedi FK sotto).
++-- codice_lotto_interno ├¿ univoco per prodotto (vedi UNIQUE su prodotto_id+codice_lotto_interno
++-- pi├╣ sotto), non globalmente: prodotti diversi possono legittimamente condividere lo stesso codice.
+ 
+ CREATE TABLE IF NOT EXISTS lotti (
+     id                   INT AUTO_INCREMENT PRIMARY KEY,
+@@ -973,6 +1005,10 @@ CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_fornitore   ON prodotti_fornit
+ CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);
+ CREATE INDEX IF NOT EXISTS idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
+ CREATE INDEX IF NOT EXISTS idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
++-- Un codice_lotto_interno deve essere univoco PER PRODOTTO (non globalmente: prodotti
++-- diversi possono legittimamente condividere lo stesso codice, es. numerazione del
++-- fornitore riusata). Vedi db/migrations/2026_07_10_lotti_codice_unique_per_prodotto.php.
++CREATE UNIQUE INDEX IF NOT EXISTS idx_lotti_prodotto_codice_unique ON lotti(prodotto_id, codice_lotto_interno);
+ CREATE INDEX IF NOT EXISTS idx_lotti_fornitore                ON lotti(fornitore_id);
+ CREATE INDEX IF NOT EXISTS idx_lotti_data_arrivo              ON lotti(data_arrivo);
+ CREATE INDEX IF NOT EXISTS idx_lotti_data_scadenza            ON lotti(data_scadenza);
+@@ -1253,6 +1289,9 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
+     rfq_padre_id            INTEGER      REFERENCES rfq_testata(id), -- Collegamento alla versione precedente
+     stato                   TEXT         NOT NULL DEFAULT 'bozza'
+                                           CHECK (stato IN ('bozza','inviata','revisionata','chiusa')),
++    -- Motivo della chiusura, valorizzato solo quando stato = 'chiusa': vedi
++    -- spiegazione nel file SQLite gemello.
++    esito_chiusura          VARCHAR(20),
+     fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
+     indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),    -- ID snapshot indirizzo consegna
+     
+diff --git a/db/init_sqlite.sql b/db/init_sqlite.sql
+index f848af4..2c1aed9 100644
+--- a/db/init_sqlite.sql
++++ b/db/init_sqlite.sql
+@@ -1,7 +1,13 @@
+ -- =============================================================================
+ -- Quack ERP ÔÇö Database Inizializzazione
+ -- SQLite 3  |  WAL mode  |  Foreign Keys ON
+--- Schema v4.3
++-- =============================================================================
++-- Versione schema: NON pi├╣ un numero a mano (vedi storia in git per il perch├®
++-- si ├¿ abbandonato "Schema vX.Y" in testa a questo file ÔÇö restava puntualmente
++-- disallineato dalla costante DB_SCHEMA_VERSION in config.php). La versione
++-- "vera" di uno specifico database ├¿ ora il contenuto della tabella
++-- schema_migrations (┬º0 sotto): quante migrazioni sono state applicate e
++-- quale ├¿ l'ultima. Vedi db/migrate.php.
+ -- =============================================================================
+ -- Convenzioni di naming:
+ --   ÔÇó snake_case per tutti i nomi di tabelle e colonne
+@@ -10,6 +16,7 @@
+ --   ÔÇó File path: TEXT (senza limite di lunghezza)
+ --
+ -- Ordine di creazione:
++--   0.  schema_migrations (tracciamento migrazioni)
+ --   1.  unita_misura_categorie
+ --   2.  unita_misura
+ --   3.  ADR lookup statiche
+@@ -32,14 +39,64 @@
+ --  18.  Ricevimento merce
+ --  19.  Magazzino (giacenze, movimenti, inventari)
+ --  20.  Log stati ordini
+---  21.  Vendita: preventivi, ordini_clienti, righe lotti
++--  21.  Vendita: preventivi, ordini_clienti
+ --  22.  Fatture
+ --  23.  Spedizioni + Documenti di trasporto
++--  24.  Acquisto v2: rfq_testata/righe, offerte_testata/righe, ordini_testata/righe,
++--       ordini_righe_pianificazione, ricezioni_testata/righe, prodotti_rrp
++--       (tabelle aggiunte dopo la stesura di questo indice ÔÇö vedi sezioni
++--       "RICEZIONI E PIANIFICAZIONE" e seguenti pi├╣ in basso nel file)
++-- =============================================================================
++-- Nota: il tracciamento lottoÔåöriga sulle vendite NON passa da una tabella
++-- dedicata sull'ordine (non esiste "ordini_clienti_righe_lotti", e non ├¿ un
++-- buco): la scelta del lotto avviene solo alla spedizione (spedizioni_righe.
++-- lotto_id), non alla conferma ordine. ├ê il pattern raccomandato da SAP
++-- ("batch determination normalmente a livello di consegna, non di ordine" ÔÇö
++-- altrimenti si rischia di bloccare un lotto per una consegna lontana nel
++-- tempo) e coerente con FEFO (Odoo lo richiede esplicitamente per prodotti
++-- chimici/deperibili) ÔÇö utile qui per poter sempre spedire il lotto pi├╣
++-- vicino a scadere disponibile al momento della spedizione, non quello
++-- deciso settimane prima all'ordine.
+ -- =============================================================================
+ 
+ PRAGMA journal_mode = WAL;
+ PRAGMA foreign_keys = ON;
+ 
++-- =============================================================================
++-- 0. SCHEMA_MIGRATIONS ÔÇö tracciamento migrazioni applicate
++-- =============================================================================
++-- Registro di quali script in db/migrations/ sono gi├á stati eseguiti su
++-- QUESTO specifico database. Il runner (db/migrate.php) confronta i file
++-- presenti in db/migrations/ con questa tabella: esegue solo quelli il cui
++-- nome non ├¿ ancora registrato qui, poi li registra.
++--
++-- Perch├® serve: prima non esisteva nessun elenco central. Sapere "questo
++-- database ha gi├á tutte le modifiche pi├╣ recenti?" richiedeva ispezionare
++-- lo schema a mano colonna per colonna. Ora basta guardare questa tabella.
++--
++-- Su un'installazione NUOVA (database creato da questo stesso script), tutte
++-- le modifiche delle migrazioni gi├á esistenti in db/migrations/ sono incluse
++-- direttamente nelle CREATE TABLE qui sotto: non c'├¿ bisogno di rieseguirle.
++-- L'INSERT di baseline subito dopo la CREATE TABLE serve esattamente a dirlo
++-- al runner, cos├¼ non le rilancia inutilmente (sarebbero comunque innocue,
++-- perch├® ogni migrazione controlla da s├® se una colonna esiste gi├á ÔÇö ma ├¿
++-- pi├╣ pulito partire con il registro gi├á coerente).
++CREATE TABLE IF NOT EXISTS schema_migrations (
++    id         INTEGER      PRIMARY KEY AUTOINCREMENT,
++    migration  VARCHAR(255) NOT NULL UNIQUE,  -- nome file in db/migrations/, senza .php
++    applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
++
++-- Baseline: le migrazioni elencate qui sotto sono gi├á "dentro" allo schema
++-- definito in questo file. Aggiungere qui il nome di ogni nuova migrazione
++-- SOLO quando le sue modifiche vengono anche riportate a mano nelle
++-- CREATE TABLE sopra/sotto (altrimenti un database esistente che non l'ha
++-- ancora applicata non la eseguir├á pi├╣).
++INSERT OR IGNORE INTO schema_migrations (migration) VALUES
++    ('migrate_ordini_righe_uom'),
++    ('2026_07_10_rfq_esito_chiusura'),
++    ('2026_07_10_lotti_codice_unique_per_prodotto');
++
+ -- =============================================================================
+ -- 1. UNIT├Ç DI MISURA ÔÇö CATEGORIE
+ -- =============================================================================
+@@ -403,6 +460,7 @@ CREATE TABLE IF NOT EXISTS aziende_interne (
+     bic_swift_default   VARCHAR(11),
+     
+     predefinita         BOOLEAN      NOT NULL DEFAULT 1, -- Identifica l'azienda principale se ne hai pi├╣ di una
++    attivo              BOOLEAN      NOT NULL DEFAULT 1,
+     created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     updated_at          DATETIME
+ );
+@@ -689,8 +747,9 @@ CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto
+ -- =============================================================================
+ -- Un lotto corrisponde a una partita di merce ricevuta.
+ -- La tracciatura lotti per prodotto ├¿ opzionale: attivare prodotti.traccia_lotti = 1.
+--- Nota: ricevimento_riga_id ├¿ un riferimento soft (nessun FK dichiarato per evitare
+--- la dipendenza circolare con ricevimento_merce_righe).
++-- Nota: ricezione_riga_id referenzia ricezioni_righe(id) del ciclo acquisti v2 (vedi FK sotto).
++-- codice_lotto_interno ├¿ univoco per prodotto (vedi UNIQUE(prodotto_id, codice_lotto_interno) pi├╣ sotto),
++-- non globalmente: prodotti diversi possono legittimamente condividere lo stesso codice.
+ 
+ CREATE TABLE IF NOT EXISTS lotti (
+     id                   INTEGER       PRIMARY KEY AUTOINCREMENT,
+@@ -1288,6 +1347,10 @@ CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_rrp_validita ON prodotti_forni
+ CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);
+ CREATE INDEX IF NOT EXISTS idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
+ CREATE INDEX IF NOT EXISTS idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
++-- Un codice_lotto_interno deve essere univoco PER PRODOTTO (non globalmente: prodotti
++-- diversi possono legittimamente condividere lo stesso codice, es. numerazione del
++-- fornitore riusata). Vedi db/migrations/2026_07_10_lotti_codice_unique_per_prodotto.php.
++CREATE UNIQUE INDEX IF NOT EXISTS idx_lotti_prodotto_codice_unique ON lotti(prodotto_id, codice_lotto_interno);
+ CREATE INDEX IF NOT EXISTS idx_lotti_fornitore                ON lotti(fornitore_id);
+ CREATE INDEX IF NOT EXISTS idx_lotti_data_arrivo              ON lotti(data_arrivo);
+ CREATE INDEX IF NOT EXISTS idx_lotti_data_scadenza            ON lotti(data_scadenza);
+@@ -1766,6 +1829,12 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
+     rfq_padre_id            INTEGER      REFERENCES rfq_testata(id), -- Collegamento alla versione precedente
+     stato                   TEXT         NOT NULL DEFAULT 'bozza'
+                                           CHECK (stato IN ('bozza','inviata','revisionata','chiusa')),
++    -- Motivo della chiusura, valorizzato solo quando stato = 'chiusa':
++    -- 'offerta_accettata' (chiusa perch├® un'offerta ├¿ stata accettata, esiste
++    -- un ordine collegato) oppure 'annullata' (chiusa manualmente, nessun
++    -- esito). Senza questa colonna lo stato 'chiusa' da solo non permette di
++    -- distinguere le due situazioni (vedi db/migrations/2026_07_10_rfq_esito_chiusura.php).
++    esito_chiusura          VARCHAR(20),
+     fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
+     indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),    -- ID snapshot indirizzo consegna
+     
+diff --git a/includes/anagrafiche.php b/includes/anagrafiche.php
+index 84f93f1..8cc941f 100644
+--- a/includes/anagrafiche.php
++++ b/includes/anagrafiche.php
+@@ -1335,6 +1335,7 @@ function qk_aziende_list(PDO $pdo): array
+            FROM aziende_interne az
+            JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+            LEFT JOIN indirizzi i ON i.soggetto_id = cf.id AND i.tipo = 'sede_legale' AND i.attivo = 1
++          WHERE az.attivo = 1
+           ORDER BY az.predefinita DESC, cf.ragione_sociale COLLATE NOCASE"
+     );
+     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+@@ -1587,8 +1588,8 @@ function qk_delete_azienda(PDO $pdo, int $id): void
+             return;
+         }
+ 
+-        // Elimina record da aziende_interne
+-        $pdo->prepare("DELETE FROM aziende_interne WHERE id = ?")->execute([$id]);
++        // Elimina/Disattiva record da aziende_interne (SOFT DELETE)
++        $pdo->prepare("UPDATE aziende_interne SET attivo = 0 WHERE id = ?")->execute([$id]);
+ 
+         // Elimina/Disattiva soggetto in clienti_fornitori
+         $pdo->prepare("UPDATE clienti_fornitori SET attivo = 0 WHERE id = ?")->execute([$soggetto_id]);
+diff --git a/includes/compliance.php b/includes/compliance.php
+index 8fd93c5..9f20d85 100644
+--- a/includes/compliance.php
++++ b/includes/compliance.php
+@@ -207,6 +207,13 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
+     $customer_id = (int)$sale['cliente_id'];
+     $transaction_date = $sale['data_ordine'] ?? date('Y-m-d');
+ 
++    // FIX: Svuotiamo il log per questo specifico ordine prima di rigenerarlo. 
++    // Cos├¼, se l'utente salva l'ordine pi├╣ volte o ci sono pi├╣ righe dello stesso prodotto, 
++    // le quantit├á nel registro governativo saranno sempre un'immagine esatta dell'ordine finale, 
++    // senza duplicazioni (che falserebbero le somme) o omissioni.
++    $del = $pdo->prepare("DELETE FROM compliance_log_transazioni WHERE sale_id = :sale_id");
++    $del->execute([':sale_id' => $sale_id]);
++
+     foreach ($items as $item) {
+         $p_id = (int) ($item['prodotto_id'] ?? $item['product_id'] ?? 0);
+         $qty = (float) ($item['quantita'] ?? $item['quantity'] ?? 0);
+@@ -266,20 +273,7 @@ function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): v
+                 $auth_id = null;
+             }
+ 
+-            // Check if transaction log already exists to avoid duplicate entries on re-confirmations
+-            $check = $pdo->prepare("
+-                SELECT id FROM compliance_log_transazioni
+-                WHERE sale_id = :sale_id AND product_id = :product_id AND restriction_type_id = :r_id
+-            ");
+-            $check->execute([
+-                ':sale_id' => $sale_id,
+-                ':product_id' => $p_id,
+-                ':r_id' => $r['id']
+-            ]);
+-            if ($check->fetchColumn()) {
+-                continue; // Already logged
+-            }
+-
++            // Rimosso controllo duplicati: la legge impone di tracciare le quantit├á esatte per ogni transazione, anche in caso di aggiornamenti.
+             // Insert transaction log
+             // Nome colonna corretto ├¿ authorization_id (DDL, inglese come il resto
+             // della tabella): il precedente "autorizzazione_id" italianizzato non
+diff --git a/includes/config.php b/includes/config.php
+index 3b36821..c595545 100644
+--- a/includes/config.php
++++ b/includes/config.php
+@@ -21,7 +21,12 @@ if (session_status() === PHP_SESSION_NONE) {
+ define('APP_NAME',          'Quack ERP');
+ define('APP_VERSION',       '0.1.0');
+ define('APP_ENV',           'development'); // 'production' in prod
+-define('DB_SCHEMA_VERSION', '4.2');         // aggiornare ad ogni migrazione
++
++// Non esiste pi├╣ una costante DB_SCHEMA_VERSION da aggiornare a mano ad ogni
++// migrazione (andava puntualmente fuori sync). La versione dello schema di UN
++// database specifico si legge ora dalla tabella schema_migrations (creata da
++// db/init_sqlite.sql / db/init_mysql.sql, gestita da db/migrate.php) tramite
++// la funzione qk_schema_status($pdo) in includes/functions.php.
+ 
+ /* ÔöÇÔöÇ Path resolution ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+ // includes/config.php ├¿ in <app_root>/includes/
+diff --git a/includes/functions.php b/includes/functions.php
+index 26d685c..278770f 100644
+--- a/includes/functions.php
++++ b/includes/functions.php
+@@ -261,6 +261,29 @@ function csrf_verify(): bool {
+     return !empty($token) && hash_equals(csrf_token(), $token);
+ }
+ 
++/**
++ * Stato dello schema DB letto dalla tabella schema_migrations, al posto della
++ * vecchia costante DB_SCHEMA_VERSION mantenuta a mano (e sempre disallineata).
++ * Ritorna ['count' => n, 'last_migration' => ?string, 'last_applied_at' => ?string].
++ * Se la tabella non esiste ancora (DB creato prima di questa funzionalit├á e
++ * mai passato da db/migrate.php), ritorna dei valori vuoti invece di rompere
++ * la pagina che la chiama.
++ */
++function qk_schema_status(PDO $pdo): array {
++    try {
++        $count = (int) $pdo->query("SELECT COUNT(*) FROM schema_migrations")->fetchColumn();
++        $last  = $pdo->query("SELECT migration, applied_at FROM schema_migrations ORDER BY id DESC LIMIT 1")
++                      ->fetch(PDO::FETCH_ASSOC);
++        return [
++            'count'           => $count,
++            'last_migration'  => $last['migration']   ?? null,
++            'last_applied_at' => $last['applied_at']  ?? null,
++        ];
++    } catch (Throwable $e) {
++        return ['count' => 0, 'last_migration' => null, 'last_applied_at' => null];
++    }
++}
++
+ /* ÔöÇÔöÇ Input helpers ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+ 
+ /** Restituisce un valore POST escaped, o il default */
+diff --git a/includes/magazzino.php b/includes/magazzino.php
+index dac6f0e..4565d88 100644
+--- a/includes/magazzino.php
++++ b/includes/magazzino.php
+@@ -24,6 +24,65 @@ require_once __DIR__ . '/anagrafiche.php';
+ // ma i dati sono gi├á scoping-ati correttamente sotto al cofano.
+ // =============================================================================
+ 
++/**
++ * Riserva quantit├á a magazzino per una riga d'ordine, "consapevole" dei Kit.
++ *
++ * Un Kit non ha giacenza fisica propria: ├¿ una collezione di prodotti singoli,
++ * e la sua disponibilit├á ├¿ calcolata dal componente pi├╣ scarso (vedi le query
++ * di lettura in questo stesso file, CASE WHEN p.tipo = 'kit' ...). Per
++ * coerenza, anche la RISERVA deve avvenire sui componenti, non sul Kit ÔÇö
++ * altrimenti la riserva scritta qui (sul Kit) non viene mai liberata dallo
++ * scarico alla spedizione, che decrementa invece i componenti
++ * (SalesOrdersController::confirmShipment, righe ~748-756): le due operazioni
++ * finirebbero per scrivere su righe di `giacenze` diverse, lasciando la
++ * riserva sul Kit "fantasma" (mai liberata) e i componenti scoperti (la loro
++ * `quantita_riservata` pu├▓ scendere sotto zero allo scarico).
++ *
++ * Usata sia dalla creazione di un ordine diretto (includes/sales_orders.php)
++ * sia dalla conferma preventivoÔåÆordine (includes/sales_quotes.php), che prima
++ * duplicavano questa logica in due punti separati, entrambi senza gestione Kit.
++ */
++function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId): void
++{
++    if ($prodottoId <= 0 || $qtaStock <= 0) {
++        return;
++    }
++
++    $stTipo = $pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
++    $stTipo->execute([$prodottoId]);
++    $tipo = $stTipo->fetchColumn();
++
++    $righeDaRiservare = [];
++    if ($tipo === 'kit') {
++        $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
++        $stComp->execute([$prodottoId]);
++        foreach ($stComp->fetchAll(PDO::FETCH_ASSOC) as $c) {
++            $righeDaRiservare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
++        }
++    } else {
++        $righeDaRiservare[] = [$prodottoId, $qtaStock];
++    }
++
++    $stRiserva = $pdo->prepare("
++        UPDATE giacenze
++           SET quantita_riservata = quantita_riservata + ?
++         WHERE prodotto_id = ? AND magazzino_id = ?
++    ");
++    $stInsert = $pdo->prepare("
++        INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
++        VALUES (?, ?, 0, ?, 0, 0, CURRENT_TIMESTAMP)
++    ");
++    foreach ($righeDaRiservare as [$compId, $qta]) {
++        $stRiserva->execute([$qta, $compId, $magazzinoId]);
++        if ($stRiserva->rowCount() === 0) {
++            // Non esiste ancora una riga di giacenza per questo prodotto in
++            // questo magazzino (prodotto/componente mai movimentato qui): la
++            // creiamo a quantit├á disponibile 0 e riservata = qta.
++            $stInsert->execute([$compId, $magazzinoId, $qta]);
++        }
++    }
++}
++
+ /**
+  * Risolve l'id del magazzino "attivo" da usare quando non ne viene passato uno
+  * esplicito: prima $_SESSION['magazzino_attivo_id'] (impostata dal selettore
+@@ -435,7 +494,7 @@ function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili
+     $cond = $solo_disponibili ? 'AND COALESCE(lg.quantita_disponibile, 0) > 0' : '';
+     $st   = $pdo->prepare(
+         "SELECT l.id,
+-                COALESCE(l.codice_lotto_interno, l.codice_lotto)  AS codice_lotto_interno,
++                l.codice_lotto_interno                            AS codice_lotto_interno,
+                 COALESCE(l.codice_lotto_fornitore, '')            AS codice_lotto_fornitore,
+                 l.data_scadenza,
+                 COALESCE(lg.quantita_disponibile, 0)              AS quantita_disponibile
+@@ -461,7 +520,7 @@ function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili
+  * Crea un nuovo lotto manualmente (usato nel form movimento quando tipo=carico).
+  *
+  * Campi obbligatori nel DB (NOT NULL senza default):
+- *   codice_lotto, prodotto_id, quantita_ricevuta, creato_da
++ *   codice_lotto_interno, prodotto_id, quantita_ricevuta, creato_da
+  *
+  * NOTA (Piano Multi-Magazzino ┬º3.9): `lotti.quantita_disponibile` ├¿ stata
+  * rimossa ÔÇö la fonte di verit├á della disponibilit├á per lotto ├¿ ora
+@@ -488,12 +547,11 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
+ 
+     $pdo->prepare(
+         'INSERT INTO lotti
+-             (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
++             (codice_lotto_interno, codice_lotto_fornitore,
+               prodotto_id, origine_tipo, data_scadenza, data_arrivo,
+               quantita_ricevuta, creato_da)
+-         VALUES (?, ?, ?, ?, \'rettifica\', ?, ?, ?, ?)'
++         VALUES (?, ?, ?, \'rettifica\', ?, ?, ?, ?)'
+     )->execute([
+-        $codiceInterno,      // codice_lotto (campo storico NOT NULL)
+         $codiceInterno,      // codice_lotto_interno
+         $codiceFornitore,    // codice_lotto_fornitore (nullable)
+         $v['prodotto_id'],
+@@ -760,6 +818,17 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
+                      quantita_disponibile = excluded.quantita_disponibile,
+                      updated_at = excluded.updated_at'
+             )->execute([$v['lotto_id'], $magazzino_id, $qtaLottoNuova]);
++
++            // Aggiorna anche il totale storico ricevuto (lotti.quantita_ricevuta) quando si
++            // carica altra merce su un lotto GI├Ç ESISTENTE (es. stesso lotto fisico arrivato
++            // in pi├╣ consegne). Se il lotto ├¿ stato appena creato in questa stessa chiamata
++            // (step 0, ramo 'nuovo_lotto'), quantita_ricevuta ├¿ gi├á stata impostata alla
++            // creazione: non va incrementata di nuovo, altrimenti si conta due volte.
++            if ($tipo === 'carico' && !isset($v['nuovo_lotto'])) {
++                $pdo->prepare(
++                    'UPDATE lotti SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
++                )->execute([$qtaMovimento, $v['lotto_id']]);
++            }
+         }
+ 
+         // 5. Inserisci il movimento
+diff --git a/includes/modals/info.php b/includes/modals/info.php
+index 478cd1d..5235551 100644
+--- a/includes/modals/info.php
++++ b/includes/modals/info.php
+@@ -41,6 +41,12 @@ if (DB_DRIVER === 'mysql') {
+     }
+ }
+ 
++// ÔöÇÔöÇ Stato schema (da schema_migrations, non pi├╣ da una costante a mano) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++$_info_schema = isset($pdo) ? qk_schema_status($pdo) : ['count' => 0, 'last_migration' => null, 'last_applied_at' => null];
++$_info_schema_label = $_info_schema['count'] > 0
++    ? $_info_schema['count'] . ' migrazioni'
++    : 'n/d';
++
+ // ÔöÇÔöÇ Librerie PHP (composer.lock) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+ // Legge solo i package di primo livello (no dipendenze interne delle dipendenze)
+ // confrontando composer.json require con composer.lock packages.
+@@ -120,7 +126,7 @@ unset($_db_file, $_e, $_info_user);
+             <span class="text-muted" style="font-size:.8rem">
+               Versione <?= e(APP_VERSION) ?>
+               &nbsp;┬À&nbsp;
+-              Schema DB <?= e(DB_SCHEMA_VERSION) ?>
++              Schema DB <?= e($_info_schema_label) ?>
+             </span>
+           </div>
+         </div>
+@@ -143,7 +149,12 @@ unset($_db_file, $_e, $_info_user);
+             </tr>
+             <tr>
+               <th>Schema DB</th>
+-              <td><code><?= e(DB_SCHEMA_VERSION) ?></code></td>
++              <td>
++                <code><?= e($_info_schema_label) ?></code>
++                <?php if ($_info_schema['last_migration']): ?>
++                  <br><span class="text-muted" style="font-size:.75rem">ultima: <?= e($_info_schema['last_migration']) ?> (<?= e((string)$_info_schema['last_applied_at']) ?>)</span>
++                <?php endif; ?>
++              </td>
+             </tr>
+             <tr>
+               <th>Ambiente</th>
+diff --git a/includes/purchases_quotes.php b/includes/purchases_quotes.php
+index 112719e..7d0e336 100644
+--- a/includes/purchases_quotes.php
++++ b/includes/purchases_quotes.php
+@@ -341,8 +341,10 @@ function qk_offerta_accetta(PDO $pdo, int $id, int $utente_id): void
+                   WHERE rfq_id = ? AND id != ? AND stato = 'in_valutazione'"
+             )->execute([$utente_id, $offerta['rfq_id'], $id]);
+ 
+-            // Chiude la RFQ
+-            $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa' WHERE id = ?")
++            // Chiude la RFQ con esito "offerta accettata" ÔÇö distinto dalla
++            // chiusura manuale senza esito (vedi qk_rfq_chiudi()), cos├¼ lo
++            // stato 'chiusa' non ├¿ pi├╣ ambiguo su come/perch├® si ├¿ arrivati l├¼.
++            $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'offerta_accettata' WHERE id = ?")
+                ->execute([$offerta['rfq_id']]);
+         }
+ 
+diff --git a/includes/purchases_receipts.php b/includes/purchases_receipts.php
+index 16d73d1..cf7bd49 100644
+--- a/includes/purchases_receipts.php
++++ b/includes/purchases_receipts.php
+@@ -482,14 +482,13 @@ function _ricezione_gestisci_lotto(
+         // lotti_giacenze, popolata subito dopo.
+         $pdo->prepare(
+             "INSERT INTO lotti
+-                (codice_lotto, codice_lotto_interno, codice_lotto_fornitore,
++                (codice_lotto_interno, codice_lotto_fornitore,
+                  prodotto_id, origine_tipo, fornitore_id, ordine_testata_id, ricezione_riga_id,
+                  data_scadenza, data_arrivo, numero_ddt_arrivo,
+                  quantita_ricevuta,
+                  creato_da, created_at)
+-             VALUES (?,?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,CURRENT_TIMESTAMP)"
++             VALUES (?,?,?, 'acquisto', ?,?,?,?,DATE('now'),?,?,?,CURRENT_TIMESTAMP)"
+         )->execute([
+-            $lottoData['codice_lotto_interno'], // colonna legacy codice_lotto (NOT NULL)
+             $lottoData['codice_lotto_interno'],
+             $lottoData['codice_lotto_fornitore'] ?? '',
+             $prodotto_id,
+diff --git a/includes/purchases_rfq.php b/includes/purchases_rfq.php
+index 7721f7a..382b9b7 100644
+--- a/includes/purchases_rfq.php
++++ b/includes/purchases_rfq.php
+@@ -283,8 +283,17 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
+             $stCheck = $pdo->prepare('SELECT stato, indirizzo_consegna_id, contatto_id FROM rfq_testata WHERE id = ?');
+             $stCheck->execute([$id]);
+             $row = $stCheck->fetch(PDO::FETCH_ASSOC);
+-            if ($row && $row['stato'] === 'inviata') {
+-                throw new \RuntimeException('Una RFQ gi├á inviata non ├¿ modificabile. Usa "Crea nuova versione".');
++            // Unico punto di verit├á sul blocco modifica: solo 'bozza' ├¿ liberamente
++            // modificabile. Qualunque altro stato (inviata, revisionata, chiusa) ├¿
++            // bloccato qui, cos├¼ la protezione non dipende da controlli duplicati
++            // nel controller (che in passato potevano essere aggirati/sovrascritti).
++            if ($row && $row['stato'] !== 'bozza') {
++                $msgPerStato = [
++                    'inviata'     => 'Una RFQ gi├á inviata non ├¿ modificabile. Usa "Crea nuova versione".',
++                    'revisionata' => 'Questa RFQ ├¿ stata sostituita da una versione pi├╣ recente e non ├¿ pi├╣ modificabile.',
++                    'chiusa'      => 'Questa RFQ ├¿ chiusa e non ├¿ pi├╣ modificabile.',
++                ];
++                throw new \RuntimeException($msgPerStato[$row['stato']] ?? 'Questa RFQ non ├¿ pi├╣ modificabile nel suo stato attuale.');
+             }
+ 
+             // Aggiorna gli snapshot esistenti
+@@ -419,7 +428,9 @@ function qk_rfq_chiudi(PDO $pdo, int $id): void
+     if (!in_array($row['stato'], ['bozza', 'inviata'], true)) {
+         throw new \RuntimeException('La RFQ non ├¿ in uno stato chiudibile.');
+     }
+-    $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa' WHERE id = ?")->execute([$id]);
++    // Chiusura manuale (nessuna offerta accettata) ÔÇö esito 'annullata', per
++    // distinguerla dalla chiusura automatica di qk_offerta_accetta().
++    $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'annullata' WHERE id = ?")->execute([$id]);
+ }
+ 
+ /**
+diff --git a/includes/sales_orders.php b/includes/sales_orders.php
+index 983d555..cc5fc7c 100644
+--- a/includes/sales_orders.php
++++ b/includes/sales_orders.php
+@@ -237,21 +237,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
+             // aggiornerebbe erroneamente TUTTE le sedi invece di una sola.
+             if ($prodotto_id) {
+                 $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
+-                $stRiserva = $pdo->prepare("
+-                    UPDATE giacenze
+-                       SET quantita_riservata = quantita_riservata + ?
+-                     WHERE prodotto_id = ? AND magazzino_id = ?
+-                ");
+-                $stRiserva->execute([$qtaStock, $prodotto_id, $magazzinoRiservaId]);
+-                if ($stRiserva->rowCount() === 0) {
+-                    // Non esiste ancora una riga di giacenza per questo prodotto
+-                    // in questo magazzino (prodotto mai movimentato qui): la creiamo
+-                    // a quantit├á disponibile 0 e riservata = qtaStock.
+-                    $pdo->prepare("
+-                        INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
+-                        VALUES (?, ?, 0, ?, 0, 0, CURRENT_TIMESTAMP)
+-                    ")->execute([$prodotto_id, $magazzinoRiservaId, $qtaStock]);
+-                }
++                qk_riserva_stock_ordine($pdo, $prodotto_id, $qtaStock, $magazzinoRiservaId);
+             }
+         }
+ 
+diff --git a/includes/sales_quotes.php b/includes/sales_quotes.php
+index 586cd44..5146cf7 100644
+--- a/includes/sales_quotes.php
++++ b/includes/sales_quotes.php
+@@ -1054,11 +1054,6 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
+         $stLine = $pdo->prepare($sqlLine);
+ 
+         $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
+-        $stRes = $pdo->prepare("
+-            UPDATE giacenze
+-            SET quantita_riservata = COALESCE(quantita_riservata, 0) + ?
+-            WHERE prodotto_id = ? AND magazzino_id = ?
+-        ");
+ 
+         foreach ($righe as $r) {
+             $stLine->execute([
+@@ -1081,16 +1076,9 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
+                 ':note'               => qk_null_if_empty($r['note_riga'] ?? '')
+             ]);
+ 
+-            // Reserve stock
++            // Reserve stock (kit-aware: vedi qk_riserva_stock_ordine in includes/magazzino.php)
+             if (!empty($r['prodotto_id']) && (float)$r['quantita_stock'] > 0) {
+-                // Ensure giacenze row exists for (prodotto, magazzino attivo)
+-                $stCheckGia = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
+-                $stCheckGia->execute([$r['prodotto_id'], $magazzinoRiservaId]);
+-                if ((int)$stCheckGia->fetchColumn() === 0) {
+-                    $pdo->prepare("INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at) VALUES (?, ?, 0, 0, 0, 0, CURRENT_TIMESTAMP)")
+-                        ->execute([$r['prodotto_id'], $magazzinoRiservaId]);
+-                }
+-                $stRes->execute([(float)$r['quantita_stock'], (int)$r['prodotto_id'], $magazzinoRiservaId]);
++                qk_riserva_stock_ordine($pdo, (int)$r['prodotto_id'], (float)$r['quantita_stock'], $magazzinoRiservaId);
+             }
+         }
+ 

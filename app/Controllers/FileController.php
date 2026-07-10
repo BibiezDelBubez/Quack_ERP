@@ -15,7 +15,7 @@ declare(strict_types=1);
 class FileController extends BaseController
 {
     /** Cartelle consentite dentro UPLOAD_DIR */
-    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni'];
+    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni', 'sds'];
 
     public function serve(): void
     {

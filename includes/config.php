@@ -21,7 +21,12 @@ if (session_status() === PHP_SESSION_NONE) {
 define('APP_NAME',          'Quack ERP');
 define('APP_VERSION',       '0.1.0');
 define('APP_ENV',           'development'); // 'production' in prod
-define('DB_SCHEMA_VERSION', '4.2');         // aggiornare ad ogni migrazione
+
+// Non esiste più una costante DB_SCHEMA_VERSION da aggiornare a mano ad ogni
+// migrazione (andava puntualmente fuori sync). La versione dello schema di UN
+// database specifico si legge ora dalla tabella schema_migrations (creata da
+// db/init_sqlite.sql / db/init_mysql.sql, gestita da db/migrate.php) tramite
+// la funzione qk_schema_status($pdo) in includes/functions.php.
 
 /* ── Path resolution ──────────────────────────────────────────────────────── */
 // includes/config.php è in <app_root>/includes/

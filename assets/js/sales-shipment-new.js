@@ -4,9 +4,11 @@
  * Logica interattiva per la pagina dedicata Pick & Pack.
  *
  * Dipende da window.QkPickPack iniettato dalla view:
- *   .apiLotti  (string)  — URL GET /sales/orders/api/lotti-disponibili
- *   .totRighe  (int)     — numero totale righe
- *   .righeOk   (int)     — righe già allocate correttamente (da PHP)
+ *   .apiLotti        (string)  — URL GET /sales/orders/api/lotti-disponibili
+ *   .totRighe        (int)     — numero totale righe
+ *   .righeOk         (int)     — righe già allocate correttamente (da PHP)
+ *   .includiScaduti  (bool)    — stato corrente del toggle "Includi lotti scaduti" (Tappa 4.4)
+ *   .reloadUrlBase   (string)  — URL pagina corrente (senza includi_scaduti) per il toggle
  */
 
 /* global QkPickPack, bootstrap */
@@ -110,12 +112,14 @@
 
       // Lotto label / select
       let lottoHtml;
+      const badgeScaduto = ` <span class="qk-pp-scaduto-tag">SCADUTO</span>`;
       if (tuttiLotti && tuttiLotti.length > 1) {
         const opts = tuttiLotti.map(l => {
           const d = parseFloat(l.quantita_disponibile);
           const scad = l.data_scadenza ? ` — scad. ${l.data_scadenza}` : '';
+          const scadutoTxt = l.scaduto ? ' [SCADUTO]' : '';
           return `<option value="${l.id}" data-disp="${d}" ${l.id === lotto.id ? 'selected' : ''}>
-                    ${esc(l.codice)} — disp. ${d}${scad}
+                    ${esc(l.codice)} — disp. ${d}${scad}${scadutoTxt}
                   </option>`;
         }).join('');
         lottoHtml = `<span class="qk-pp-lotto-codice">
@@ -124,9 +128,10 @@
                                style="font-size:.8rem;padding:.2rem .35rem;height:auto">
                          ${opts}
                        </select>
+                       ${lotto.scaduto ? badgeScaduto : ''}
                      </span>`;
       } else {
-        lottoHtml = `<span class="qk-pp-lotto-codice">${esc(lotto.codice)}</span>`;
+        lottoHtml = `<span class="qk-pp-lotto-codice">${esc(lotto.codice)}${lotto.scaduto ? badgeScaduto : ''}</span>`;
       }
 
       const scadStr = lotto.data_scadenza
@@ -158,12 +163,22 @@
     /* ── Fetch lotti disponibili ────────────────────────────────────────── */
     async function fetchLotti(prodId) {
       try {
-        const res  = await fetch(cfg.apiLotti + '?prodotto_id=' + prodId);
+        const includi = cfg.includiScaduti ? '1' : '0';
+        const res  = await fetch(cfg.apiLotti + '?prodotto_id=' + prodId + '&includi_scaduti=' + includi);
         const data = await res.json();
         return data.lotti || [];
       } catch {
         return [];
       }
+    }
+
+    /* ── Toggle "Includi lotti scaduti" — ricarica la pagina con il nuovo stato ── */
+    const toggleScaduti = document.getElementById('pp-toggle-scaduti');
+    if (toggleScaduti && cfg.reloadUrlBase) {
+      toggleScaduti.addEventListener('change', function () {
+        const sep = cfg.reloadUrlBase.includes('?') ? '&' : '?';
+        window.location.href = cfg.reloadUrlBase + sep + 'includi_scaduti=' + (this.checked ? '1' : '0');
+      });
     }
 
     /* ── Event: cambio quantità lotto ───────────────────────────────────── */

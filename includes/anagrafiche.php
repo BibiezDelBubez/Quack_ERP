@@ -277,10 +277,10 @@ function qk_insert_cliente(PDO $pdo, array $values): int
         $s = $prep['soggetto'];
         $sql = 'INSERT INTO clienti_fornitori (
             codice, tipo, tipo_soggetto, ragione_sociale, nome, cognome,
-            partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo, updated_at
+            partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo
         ) VALUES (
             :codice, :tipo, :tipo_soggetto, :ragione_sociale, :nome, :cognome,
-            :partita_iva, :codice_fiscale, :email, :telefono, :cellulare, :pec, :sito_web, :note, :attivo, datetime(\'now\')
+            :partita_iva, :codice_fiscale, :email, :telefono, :cellulare, :pec, :sito_web, :note, :attivo
         )';
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
@@ -390,7 +390,7 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
             'UPDATE clienti_fornitori SET
                 tipo_soggetto = ?, ragione_sociale = ?, nome = ?, cognome = ?,
                 partita_iva = ?, codice_fiscale = ?, email = ?, telefono = ?, cellulare = ?,
-                pec = ?, sito_web = ?, note = ?, attivo = ?, updated_at = datetime(\'now\')
+                pec = ?, sito_web = ?, note = ?, attivo = ?
              WHERE id = ?'
         );
         $upd->execute([
@@ -667,9 +667,9 @@ function qk_insert_fornitore(PDO $pdo, array $values): int
         $stmt = $pdo->prepare(
             'INSERT INTO clienti_fornitori (
                 codice, tipo, tipo_soggetto, ragione_sociale, nome, cognome,
-                partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo, updated_at
+                partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo
             ) VALUES (
-                ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime(\'now\')
+                ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
             )'
         );
         $stmt->execute([
@@ -736,7 +736,7 @@ function qk_update_fornitore(PDO $pdo, int $id, array $values): void
         $pdo->prepare(
             'UPDATE clienti_fornitori SET
                 ragione_sociale = ?, partita_iva = ?, codice_fiscale = ?, email = ?, telefono = ?,
-                pec = ?, sito_web = ?, note = ?, attivo = ?, updated_at = datetime(\'now\')
+                pec = ?, sito_web = ?, note = ?, attivo = ?
              WHERE id = ?'
         )->execute([
             $s['ragione_sociale'],
@@ -1335,6 +1335,7 @@ function qk_aziende_list(PDO $pdo): array
            FROM aziende_interne az
            JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
            LEFT JOIN indirizzi i ON i.soggetto_id = cf.id AND i.tipo = 'sede_legale' AND i.attivo = 1
+          WHERE az.attivo = 1
           ORDER BY az.predefinita DESC, cf.ragione_sociale COLLATE NOCASE"
     );
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1587,8 +1588,8 @@ function qk_delete_azienda(PDO $pdo, int $id): void
             return;
         }
 
-        // Elimina record da aziende_interne
-        $pdo->prepare("DELETE FROM aziende_interne WHERE id = ?")->execute([$id]);
+        // Elimina/Disattiva record da aziende_interne (SOFT DELETE)
+        $pdo->prepare("UPDATE aziende_interne SET attivo = 0 WHERE id = ?")->execute([$id]);
 
         // Elimina/Disattiva soggetto in clienti_fornitori
         $pdo->prepare("UPDATE clienti_fornitori SET attivo = 0 WHERE id = ?")->execute([$soggetto_id]);

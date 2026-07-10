@@ -134,21 +134,30 @@ final class SpedizioniController extends BaseController
         // finché non esiste un selettore magazzino dedicato per le spedizioni, la spedizione
         // viene creata dal magazzino attivo (stessa approssimazione usata in
         // SalesOrdersController::createShipment per lo scarico effettivo).
+        //
+        // Lotti scaduti (Tappa 4.4): esclusi per default dalla pre-allocazione FEFO — non
+        // ha senso proporre in automatico un lotto scaduto per una spedizione. L'utente può
+        // includerli esplicitamente con il toggle "Includi lotti scaduti" (?includi_scaduti=1),
+        // pensato per casi eccezionali (es. smaltimento/reso) — mai come default silenzioso.
+        $includiScaduti = get_param('includi_scaduti', '0') === '1';
         $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
         $prodIds = array_unique(array_filter(array_column($righe, 'prodotto_id')));
         $lottiPerProdotto = [];
         if (!empty($prodIds)) {
             $in = implode(',', array_map('intval', $prodIds));
+            $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
             $stLotti = $this->pdo->prepare("
                 SELECT l.prodotto_id,
                        l.id,
-                       COALESCE(l.codice_lotto_interno, l.codice_lotto) AS codice,
+                       l.codice_lotto_interno AS codice,
                        lg.quantita_disponibile,
-                       l.data_scadenza
+                       l.data_scadenza,
+                       CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
                 FROM lotti l
                 JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
                 WHERE l.prodotto_id IN ($in)
                   AND lg.quantita_disponibile > 0
+                  $condScadenza
                 ORDER BY l.prodotto_id,
                          CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END,
                          l.data_scadenza ASC,

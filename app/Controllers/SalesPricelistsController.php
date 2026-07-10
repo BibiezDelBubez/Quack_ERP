@@ -259,9 +259,11 @@ final class SalesPricelistsController extends BaseController
                     um_comm.codice AS um_comm_code,
                     um_native.codice AS um_native_code,
                     COALESCE(um_native.codice, um_stock.codice) AS unita_misura,
-                    (SELECT MIN(pfp.prezzo) 
-                     FROM prodotti_fornitori_prezzi pfp 
-                     JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
+                    -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md) —
+                    -- vedi commento esteso in db/init_sqlite.sql §14b.
+                    (SELECT MIN(vf.prezzo)
+                     FROM v_prezzo_acquisto_base_fornitore vf
+                     JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
                      WHERE pf2.prodotto_id = lp.prodotto_id AND pf2.attivo = 1) AS costo
              FROM listini_prezzi lp
              JOIN prodotti p ON p.id = lp.prodotto_id
@@ -448,9 +450,10 @@ final class SalesPricelistsController extends BaseController
                         um_stock.codice AS uom_stock_code,
                         p.unita_contenuto_id AS uom_commercial_id,
                         um_comm.codice AS uom_commercial_code,
-                        (SELECT MIN(pfp.prezzo) 
-                         FROM prodotti_fornitori_prezzi pfp 
-                         JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
+                        -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md).
+                        (SELECT MIN(vf.prezzo)
+                         FROM v_prezzo_acquisto_base_fornitore vf
+                         JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
                          WHERE pf2.prodotto_id = lp.prodotto_id AND pf2.attivo = 1) AS costo
                  FROM listini_prezzi lp
                  JOIN prodotti p ON p.id = lp.prodotto_id
@@ -518,9 +521,10 @@ final class SalesPricelistsController extends BaseController
                     p.unita_misura_stock_id, um_c.codice AS unita_misura_commerciale,
                     p.unita_contenuto_id, p.quantita_contenuto,
                     pf.rrp_min, pf.rrp_max,
-                    (SELECT MIN(pfp.prezzo) 
-                     FROM prodotti_fornitori_prezzi pfp 
-                     JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id 
+                    -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md).
+                    (SELECT MIN(vf.prezzo)
+                     FROM v_prezzo_acquisto_base_fornitore vf
+                     JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
                      WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1) AS costo
              FROM prodotti p
              LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
@@ -724,23 +728,18 @@ final class SalesPricelistsController extends BaseController
         $stProdType->execute([$prodottoId]);
         $prodTipo = $stProdType->fetchColumn();
 
+        // Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md) — vedi commento
+        // esteso in db/init_sqlite.sql §14b.
         if ($prodTipo === 'kit') {
             $stCost = $this->pdo->prepare('
-                SELECT SUM(ck.quantita * (
-                    SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                    JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                    WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                    ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
-                ))
+                SELECT SUM(ck.quantita * vc.costo_acquisto)
                 FROM componenti_kit ck
+                LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
                 WHERE ck.kit_id = ?
             ');
         } else {
             $stCost = $this->pdo->prepare('
-                SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                WHERE pf2.prodotto_id = ? AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = ?
             ');
         }
         $stCost->execute([$prodottoId]);
@@ -832,13 +831,12 @@ final class SalesPricelistsController extends BaseController
         $rrp_min = null;
         $rrp_max = null;
 
+        // Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md).
         $stRrp = $this->pdo->prepare('
             SELECT pf.rrp_min, pf.rrp_max, pf.rrp_unita_misura_id,
-                   (SELECT MIN(pfp.prezzo)
-                    FROM prodotti_fornitori_prezzi pfp
-                    WHERE pfp.prodotto_fornitore_id = pf.id
-                      AND pfp.quantita_minima = 0) AS costo_unitario
+                   vf.prezzo AS costo_unitario
             FROM prodotti_fornitori pf
+            LEFT JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
             WHERE pf.prodotto_id = ? AND pf.attivo = 1
             ORDER BY pf.ordine_preferenza_fornitore ASC
             LIMIT 1

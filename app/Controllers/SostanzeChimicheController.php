@@ -217,12 +217,38 @@ final class SostanzeChimicheController extends BaseController
             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Nessun file selezionato.');
         }
 
-        $file    = $_FILES['file_sds'];
-        $ext     = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $allowed = ['pdf', 'doc', 'docx'];
-        if (!in_array($ext, $allowed, true)) {
+        $file = $_FILES['file_sds'];
+
+        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dall'estensione
+        // dichiarata dall'utente). I DOCX sono contenitori ZIP: alcune installazioni di
+        // fileinfo li riconoscono come application/vnd.openxmlformats-..., altre solo come
+        // application/zip generico — entrambi ammessi e mappati a .docx.
+        $allowedMimeToExt = [
+            'application/pdf'                                                          => 'pdf',
+            'application/msword'                                                       => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'  => 'docx',
+            'application/zip'                                                          => 'docx',
+        ];
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
+        if ($finfo) {
+            finfo_close($finfo);
+        }
+
+        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Formato non consentito. Usa PDF, DOC o DOCX.');
         }
+
+        // application/zip è ambiguo: potrebbe essere un vero DOCX, ma anche
+        // un XLSX/PPTX/JAR/zip generico rilevati genericamente allo stesso
+        // modo. Ispezioniamo il contenuto per confermare che sia davvero un
+        // DOCX prima di salvarlo con quell'estensione.
+        if ($realMime === 'application/zip' && !qk_is_docx_zip($file['tmp_name'])) {
+            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Formato non consentito. Usa PDF, DOC o DOCX.');
+        }
+
+        $ext = $allowedMimeToExt[$realMime];
 
         $sdsDir  = rtrim(UPLOAD_DIR, '/\\') . '/sds/' . $sostanzaId;
         if (!is_dir($sdsDir) && !mkdir($sdsDir, 0755, true)) {

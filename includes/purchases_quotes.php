@@ -341,8 +341,10 @@ function qk_offerta_accetta(PDO $pdo, int $id, int $utente_id): void
                   WHERE rfq_id = ? AND id != ? AND stato = 'in_valutazione'"
             )->execute([$utente_id, $offerta['rfq_id'], $id]);
 
-            // Chiude la RFQ
-            $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa' WHERE id = ?")
+            // Chiude la RFQ con esito "offerta accettata" — distinto dalla
+            // chiusura manuale senza esito (vedi qk_rfq_chiudi()), così lo
+            // stato 'chiusa' non è più ambiguo su come/perché si è arrivati lì.
+            $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'offerta_accettata' WHERE id = ?")
                ->execute([$offerta['rfq_id']]);
         }
 

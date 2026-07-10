@@ -63,6 +63,8 @@ Memorizza il referente del fornitore associato al documento.
 | `is_customized`     | BOOLEAN       | `TRUE` se modificato rispetto al contatto master.             |
 | `original_hash`     | VARCHAR(64)   | Hash SHA-256 dei dati del contatto master originale.          |
 
+> ✅ **STATO ATTUALE VERIFICATO (10/07/2026)** — La riga `master_contact_id → contatti_master.id` qui sopra descrive una tabella (`contatti_master`) che **non è mai stata creata**. **In parole semplici, per chi non conosce il database:** l'idea originaria era di avere una tabella dedicata solo ai "referenti/contatti" delle aziende, separata dalla tabella principale di clienti e fornitori. Nella realtà si è scelto un approccio più semplice: un referente aziendale (es. "Mario Rossi, ufficio acquisti di Contoso") **non è un tipo di dato diverso da un cliente o un fornitore** — è semplicemente un'altra riga della stessa tabella `clienti_fornitori`, con un campo `parent_id` che dice "questo record appartiene a Contoso Inc." Verificato nel codice reale (`includes/document_common.php`): la colonna equivalente si chiama `contatto_master_id` e punta a `clienti_fornitori.id`, non a una tabella `contatti_master` mai esistita. Questo è anche più coerente con il resto del sistema, dove lo stesso meccanismo (`parent_id`) è già usato per rappresentare filiali e sotto-contatti in generale (vedi la guida sulla Gestione Indirizzi, sezione "Gerarchia Sub-Contatti").
+
 ### B. Le Tabelle dei Documenti (Le Testate del Ciclo Acquisti)
 
 Come da decisione architetturale, abbiamo tre tabelle separate. Ognuna di esse ha una relazione `1:1` o `N:1` (opzionale) con le tabelle di snapshot tramite Foreign Key.
@@ -80,6 +82,23 @@ Il backend ha tre compiti fondamentali: calcolare l'integrità dei dati (generaz
 ### A. L'Algoritmo di Rilevamento delle Modifiche (Hashing)
 
 Quando l'utente modifica un indirizzo, come fa il backend a capire se è diverso dal master? Usa una funzione di hashing deterministica.
+
+> ✅ **STATO ATTUALE VERIFICATO (10/07/2026)** — Questo pseudocodice (in Python, con nomi di campo generici) era la bozza di partenza. Il codice realmente scritto è in PHP, in `includes/document_common.php::qk_generate_address_hash()`, e **calcola l'hash su un elenco di campi diverso**: non 5 ma **7 campi**. In parole semplici: l'idea di fondo (trasformare i dati dell'indirizzo in un'"impronta digitale" numerica, e considerare l'indirizzo "cambiato" se l'impronta cambia) è identica; sono cambiati solo *quali pezzi dell'indirizzo* entrano nel calcolo dell'impronta. La versione qui sotto usa: ragione sociale, via, città, CAP, nazione (5 campi) — **manca civico e provincia**. La versione reale aggiunge anche il **nome della sede** (l'etichetta tipo "Magazzino Nord"), il **numero civico** e la **provincia**. Questo non è un dettaglio cosmetico: con la versione a 5 campi qui sotto, due indirizzi identici salvo il civico ("Via Roma 1" e "Via Roma 15") risulterebbero con lo stesso hash, cioè l'ERP li considererebbe "lo stesso indirizzo, non modificato" — un errore. La versione reale a 7 campi evita questo problema. Il codice PHP reale, tradotto in pseudocodice equivalente:
+>
+> ```
+> function genera_hash_indirizzo(indirizzo):
+>     campi = [
+>         indirizzo.nome_sede,     # es. "Magazzino Nord" — ASSENTE nella versione sotto
+>         indirizzo.via,
+>         indirizzo.civico,        # ASSENTE nella versione sotto
+>         indirizzo.cap,
+>         indirizzo.citta,
+>         indirizzo.provincia,     # ASSENTE nella versione sotto
+>         indirizzo.nazione (default 'IT')
+>     ]
+>     testo = unisci_con_separatore(campi, "|"), tutto minuscolo, spazi iniziali/finali rimossi
+>     ritorna SHA-256(testo)
+> ```
 
 ```
 import hashlib
@@ -141,9 +160,13 @@ def process_document_address(payload_address):
 
 Vediamo ora esattamente cosa succede lato **DB, Backend, Frontend e UI/UX** in ognuno dei 5 step del ciclo.
 
+> ✅ **CORREZIONE (verificato nel codice reale, 10/07/2026):** il diagramma qui sotto salta la Fase 4 (Preventivi Spontanei) per un errore di copia-incolla — passa direttamente da "Fase 3: Registra Preventivo" a "Fase 5: Ordine (PO)", anche se la Fase 4 è descritta poco più avanti in questo stesso documento. **In parole semplici:** la Fase 4 rappresenta il caso in cui un fornitore invia un'offerta di sua iniziativa, senza che gli sia mai stata chiesta (nessuna RFQ a monte) — è un percorso reale e pienamente funzionante nell'ERP (esiste un pulsante "Registra Preventivo Spontaneo"), semplicemente dimenticato nel disegno del flusso. Il diagramma corretto è:
+
 ```
- [Fase 1: Bozza RFQ]  -->  [Fase 2: RFQ Inviata]  -->  [Fase 3: Registra Preventivo]  -->  [Fase 5: Ordine (PO)]
- (Modificabile)            (Congelato)                 (Eredita e Modifica)               (Blindato)
+ [Fase 1: Bozza RFQ] --> [Fase 2: RFQ Inviata] --> [Fase 3: Registra Preventivo] --> [Fase 5: Ordine (PO)]
+ (Modificabile)          (Congelato)               (Eredita e Modifica)              (Blindato)
+                                                     [Fase 4: Preventivo Spontaneo] --^
+                                                     (nessuna RFQ a monte, stesso punto di ingresso della Fase 5)
 ```
 
 ### Fase 1: Creazione e Modifica Bozze di RFQ
@@ -161,6 +184,12 @@ Qui l'utente sta preparando la richiesta di offerta. È la fase di massima fless
 - Quando l'utente seleziona il fornitore, il backend suggerisce i contatti della tabella `clientefornitore` (dove `parent_id` del contatto è uguale all'ID del fornitore).
 
 - Suggerisce l'indirizzo di consegna proponendo di default l'indirizzo del magazzino aziendale selezionato come destinazione per la merce.
+
+> ✅ **STATO ATTUALE VERIFICATO — nessun suggerimento automatico dell'indirizzo di consegna nella RFQ (10/07/2026):**
+>
+> **Cosa fa oggi l'ERP.** Il punto qui sopra descrive una funzionalità che, verificato nel codice (`includes/purchases_rfq.php` e `app/Controllers/RfqController.php`), **non è implementata**. L'utente sceglie l'indirizzo di consegna manualmente da un menu a tendina che elenca gli indirizzi disponibili in anagrafica per la nostra azienda, senza che nessuno venga preselezionato o evidenziato in base al proprio `tipo`. Non c'è alcuna logica che guardi la colonna `indirizzi.tipo` (i cui 5 valori ammessi — `sede_legale`, `sede_operativa`, `spedizione`, `fatturazione`, `magazzino` — sono definiti dal vincolo CHECK descritto in F2) per proporre in automatico l'indirizzo di tipo `magazzino` o `sede_operativa`. L'utente deve individuarlo da solo ogni volta.
+>
+> **📌 Nota per il futuro:** l'idea descritta sopra resta valida: si potrebbe far sì che l'ERP proponga automaticamente all'utente l'indirizzo giusto, scegliendolo tra quelli con `tipo = 'magazzino'` o `tipo = 'sede_operativa'` — un default intelligente, senza che l'utente debba cercarlo a mano. Non è ancora stato fatto; è un miglioramento da pianificare, non un comportamento già presente nell'ERP.
 
 #### Lato Frontend:
 
@@ -207,6 +236,20 @@ L'utente decide di spedire la RFQ. Il documento viene inviato via email al forni
 - In alto a destra del box compare un badge verde scuro o blu con l'icona di un lucchetto chiuso: **"Dati Cristallizzati (Inviato)"**.
 
 - Se l'utente prova a cliccare sulla card, compare un tooltip: *"Questo documento è stato inviato. Per modificare l'indirizzo, crea una nuova revisione del documento."*
+
+> ✅ **STATO ATTUALE VERIFICATO — la parola "Preventivo" indica due documenti diversi a seconda del contesto (10/07/2026):**
+>
+> **Cosa fa oggi l'ERP.** Nel database esistono due tabelle completamente distinte: `preventivi` (usata lato **vendite**, per l'offerta che facciamo noi a un cliente) e `offerte_testata` (usata lato **acquisti**, per l'offerta che un fornitore fa a noi — quella descritta in questa Fase 3 e nella Fase 4). In italiano, la parola "preventivo" viene però usata per entrambe: sia nella documentazione di questa cartella, sia — verificato leggendo il codice reale — nell'interfaccia stessa dell'applicazione. Ad esempio, in `app/Controllers/PurchasesQuotesController.php` (che lavora sulla tabella `offerte_testata`, cioè le offerte dei fornitori) compare un pulsante con la scritta letterale **"Registra Preventivo Spontaneo"**. Chi legge solo il nome della tabella (`offerte_testata`) e chi legge solo l'interfaccia (che dice "Preventivo") può quindi pensare, a torto, di parlare di due cose diverse o della stessa cosa a seconda del punto di vista.
+>
+> **È un problema?** Non è un bug del software: è una scelta terminologica consapevole e usata in modo coerente in tutta l'applicazione (in italiano corrente, "preventivo" è il termine naturale sia per un'offerta ricevuta da un fornitore sia per una inviata a un cliente). Resta però un rischio concreto di confusione per chi legge la documentazione tecnica o il database senza conoscere già lo schema.
+>
+> **📌 Miglioramento consigliato per il futuro:** rinominare le tabelle del ciclo commerciale con nomi che specificano sempre il verso (vendita/acquisto), ad esempio:
+> - `preventivi` → **`preventivi_vendita`**
+> - `offerte_testata` → **`preventivi_acquisto`**
+> - `ordini_clienti` → **`ordini_vendita`**
+> - `ordini_testata` → **`ordini_acquisto`**
+>
+> Non ancora fatto (i nomi reali nel database restano quelli storici sopra elencati) — è una modifica di schema non banale, da pianificare come intervento a sé.
 
 ### Fase 3: Registrazione Preventivi che Rispondono a una RFQ
 
@@ -273,7 +316,13 @@ Accettiamo il preventivo del fornitore. Il sistema genera automaticamente l'Ordi
 - **Integrità Assoluta:** Il backend copia le FK `delivery_address_id` e `vendor_contact_id` direttamente dal preventivo accettato all'ordine. Non è consentito caricare dati diversi in questa fase di transizione automatica.
 
 - **Meccanismo di Variazione (Order Amendment):** Se l'ordine è in stato `CONFIRMED` (inviato) e il fornitore ci comunica un cambio di indirizzo di consegna dell'ultimo minuto, il backend **non** permette la modifica diretta dei campi. L'utente deve attivare l'azione "Crea Revisione":
-  
+
+> ✅ **STATO ATTUALE VERIFICATO (10/07/2026)** — Questo meccanismo esiste davvero ed è realmente usato (`includes/purchases_orders.php`, funzione di clonazione ordine), ma con due differenze concrete rispetto a come è descritto qui sotto. **In parole semplici, per chi non conosce il database:** quando un ordine già inviato al fornitore deve cambiare (es. un nuovo indirizzo di consegna dell'ultimo minuto), l'ERP non modifica l'ordine originale — ne crea una copia nuova, "collegata" alla vecchia, che rappresenta la versione aggiornata. Le due differenze reali sono:
+> 1. **Il numero di partenza non è 0, è 1.** Il campo reale si chiama `versione` (non `revision_number`) e ogni ordine nuovo parte già da `versione = 1`, non da `0`. Una prima revisione porta quindi l'ordine da versione **1** a versione **2** (non da 0 a 1). Questo è più intuitivo per l'utente: un ordine mostrato per la prima volta come "v1" è più naturale di uno mostrato come "v0".
+> 2. **Non esiste una parola-stato tipo `SUPERSEDED` scritta in inglese**: l'ordine precedente viene semplicemente marcato con lo stato `superato` (in italiano, coerente con tutti gli altri stati del sistema, che sono in italiano: `bozza`, `inviato`, `annullato`, ecc.).
+>
+> Il meccanismo di fondo — clonare l'ordine, bloccare l'originale, permettere la modifica solo sulla nuova versione, poi re-inviarla — funziona esattamente come descritto nei punti 1-4 sotto, solo con questi due dettagli numerici/lessicali diversi.
+
   1. Il backend clona l'ordine incrementando il campo `revision_number` (es. da `0` a `1`).
   
   2. L'ordine originale passa allo stato `SUPERSEDED` (Sostituito).
@@ -293,6 +342,8 @@ Accettiamo il preventivo del fornitore. Il sistema genera automaticamente l'Ordi
 ## 4. UI/UX: Dettaglio dei Componenti "Smart"
 
 La vera forza di questa architettura si esprime nell'interfaccia grafica. Ecco come devono essere realizzati i componenti frontend per garantire la massima semplicità d'uso.
+
+> ✅ **STATO ATTUALE VERIFICATO (10/07/2026)** — L'interfaccia reale (verificata in `assets/js/rfq-form.js` e `assets/js/sales-quotes.js`) usa testi diversi da quelli scritti in questa sezione, e il pulsante "Salva in Anagrafica" esiste solo lato vendite, non lato acquisti. Vedi la nota dettagliata identica nel documento "Versione Integrata ERP" (§4, stessa cartella), sezioni A e B, per la spiegazione punto per punto comprensibile anche a chi non conosce il database — qui di seguito solo la tabella di corrispondenza rapida: badge verde reale = **"✓ Sincronizzato con anagrafica"** (non "Anagrafica Allineata"); badge giallo reale = **"Modificato localmente (override)"** (non "Indirizzo Modificato"); badge blu/grigio reale = **"Recapito manuale / una tantum"** (non "Solo per questo Documento"). Il pulsante "Ripristina" esiste ed è funzionante su entrambi i cicli; il pulsante "Salva in Anagrafica" esiste solo per i preventivi di vendita, come casella di spunta al salvataggio invece che come pulsante con dialog separato, ed è del tutto assente sul ciclo acquisti (RFQ).
 
 ### A. La Card di Visualizzazione dell'Indirizzo
 
@@ -361,6 +412,8 @@ Se l'utente ha inserito una modifica utile (es. ha corretto il numero di telefon
 ## 5. Gestione dei Casi Limite (Edge Cases)
 
 Un ERP solido si riconosce da come gestisce i problemi di sincronizzazione dei dati. Ecco i tre casi più frequenti e le relative soluzioni adottate in questo modello.
+
+> ✅ **STATO ATTUALE VERIFICATO (10/07/2026)** — Di questi tre casi limite, il **Caso 1 e il Caso 3 non sono implementati** (cercati a tappeto nel codice: nessuna traccia, né del banner del Caso 1 né del cron/pulizia del Caso 3). Il **Caso 2 è implementato**, ma solo a metà rispetto a come è descritto qui sotto, e la metà mancante è corretta: lato acquisti (RFQ) il cambio fornitore resetta solo il contatto referente, non l'indirizzo di consegna — perché l'indirizzo di consegna in una RFQ è il *nostro* magazzino, non un dato del fornitore, quindi non ha senso cambiarlo quando si cambia fornitore. Lato vendite (preventivo al cliente) invece il cambio cliente resetta correttamente sia l'indirizzo sia il contatto, come descritto sotto. Dettaglio completo, comprensibile anche a chi non conosce il database, nel documento "Versione Integrata ERP" (stessa cartella), sezione 5.
 
 ### Caso Limite 1: L'anagrafica Master viene modificata *dopo* che la bozza del documento è stata creata
 

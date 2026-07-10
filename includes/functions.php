@@ -261,6 +261,29 @@ function csrf_verify(): bool {
     return !empty($token) && hash_equals(csrf_token(), $token);
 }
 
+/**
+ * Stato dello schema DB letto dalla tabella schema_migrations, al posto della
+ * vecchia costante DB_SCHEMA_VERSION mantenuta a mano (e sempre disallineata).
+ * Ritorna ['count' => n, 'last_migration' => ?string, 'last_applied_at' => ?string].
+ * Se la tabella non esiste ancora (DB creato prima di questa funzionalità e
+ * mai passato da db/migrate.php), ritorna dei valori vuoti invece di rompere
+ * la pagina che la chiama.
+ */
+function qk_schema_status(PDO $pdo): array {
+    try {
+        $count = (int) $pdo->query("SELECT COUNT(*) FROM schema_migrations")->fetchColumn();
+        $last  = $pdo->query("SELECT migration, applied_at FROM schema_migrations ORDER BY id DESC LIMIT 1")
+                      ->fetch(PDO::FETCH_ASSOC);
+        return [
+            'count'           => $count,
+            'last_migration'  => $last['migration']   ?? null,
+            'last_applied_at' => $last['applied_at']  ?? null,
+        ];
+    } catch (Throwable $e) {
+        return ['count' => 0, 'last_migration' => null, 'last_applied_at' => null];
+    }
+}
+
 /* ── Input helpers ────────────────────────────────────────────────────────── */
 
 /** Restituisce un valore POST escaped, o il default */
@@ -414,6 +437,32 @@ function upload_abs(string $relative_path): string {
  */
 function upload_dated_subdir(string $base): string {
     return $base . '/' . date('Y') . '/' . date('m');
+}
+
+/**
+ * Verifica che un file rilevato dal MIME-sniffing come 'application/zip' sia
+ * realmente un contenitore DOCX (Word) e non un altro formato basato su ZIP
+ * (xlsx, pptx, jar, zip generico) — fileinfo non distingue tra questi sulla
+ * sola firma del contenitore ZIP, quindi ispezioniamo il contenuto interno
+ * cercando 'word/document.xml', presente solo nei DOCX.
+ *
+ * Se l'estensione ZIP di PHP non è disponibile sul server, non possiamo
+ * verificare: ritorniamo true per non rompere upload legittimi (il rischio
+ * residuo in quel caso è solo un'estensione salvata non accurata, non di
+ * sicurezza — nessun tipo pericoloso viene ammesso da questo controllo).
+ */
+function qk_is_docx_zip(string $path): bool
+{
+    if (!class_exists('ZipArchive')) {
+        return true;
+    }
+    $zip = new \ZipArchive();
+    if ($zip->open($path) !== true) {
+        return false;
+    }
+    $isDocx = $zip->locateName('word/document.xml') !== false;
+    $zip->close();
+    return $isDocx;
 }
 
 /** Genera il badge HTML per uno stato */

@@ -283,8 +283,17 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
             $stCheck = $pdo->prepare('SELECT stato, indirizzo_consegna_id, contatto_id FROM rfq_testata WHERE id = ?');
             $stCheck->execute([$id]);
             $row = $stCheck->fetch(PDO::FETCH_ASSOC);
-            if ($row && $row['stato'] === 'inviata') {
-                throw new \RuntimeException('Una RFQ già inviata non è modificabile. Usa "Crea nuova versione".');
+            // Unico punto di verità sul blocco modifica: solo 'bozza' è liberamente
+            // modificabile. Qualunque altro stato (inviata, revisionata, chiusa) è
+            // bloccato qui, così la protezione non dipende da controlli duplicati
+            // nel controller (che in passato potevano essere aggirati/sovrascritti).
+            if ($row && $row['stato'] !== 'bozza') {
+                $msgPerStato = [
+                    'inviata'     => 'Una RFQ già inviata non è modificabile. Usa "Crea nuova versione".',
+                    'revisionata' => 'Questa RFQ è stata sostituita da una versione più recente e non è più modificabile.',
+                    'chiusa'      => 'Questa RFQ è chiusa e non è più modificabile.',
+                ];
+                throw new \RuntimeException($msgPerStato[$row['stato']] ?? 'Questa RFQ non è più modificabile nel suo stato attuale.');
             }
 
             // Aggiorna gli snapshot esistenti
@@ -419,7 +428,9 @@ function qk_rfq_chiudi(PDO $pdo, int $id): void
     if (!in_array($row['stato'], ['bozza', 'inviata'], true)) {
         throw new \RuntimeException('La RFQ non è in uno stato chiudibile.');
     }
-    $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa' WHERE id = ?")->execute([$id]);
+    // Chiusura manuale (nessuna offerta accettata) — esito 'annullata', per
+    // distinguerla dalla chiusura automatica di qk_offerta_accetta().
+    $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'annullata' WHERE id = ?")->execute([$id]);
 }
 
 /**

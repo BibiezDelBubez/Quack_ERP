@@ -41,6 +41,12 @@ if (DB_DRIVER === 'mysql') {
     }
 }
 
+// ── Stato schema (da schema_migrations, non più da una costante a mano) ───────
+$_info_schema = isset($pdo) ? qk_schema_status($pdo) : ['count' => 0, 'last_migration' => null, 'last_applied_at' => null];
+$_info_schema_label = $_info_schema['count'] > 0
+    ? $_info_schema['count'] . ' migrazioni'
+    : 'n/d';
+
 // ── Librerie PHP (composer.lock) ─────────────────────────────────────────────
 // Legge solo i package di primo livello (no dipendenze interne delle dipendenze)
 // confrontando composer.json require con composer.lock packages.
@@ -120,7 +126,7 @@ unset($_db_file, $_e, $_info_user);
             <span class="text-muted" style="font-size:.8rem">
               Versione <?= e(APP_VERSION) ?>
               &nbsp;·&nbsp;
-              Schema DB <?= e(DB_SCHEMA_VERSION) ?>
+              Schema DB <?= e($_info_schema_label) ?>
             </span>
           </div>
         </div>
@@ -143,7 +149,12 @@ unset($_db_file, $_e, $_info_user);
             </tr>
             <tr>
               <th>Schema DB</th>
-              <td><code><?= e(DB_SCHEMA_VERSION) ?></code></td>
+              <td>
+                <code><?= e($_info_schema_label) ?></code>
+                <?php if ($_info_schema['last_migration']): ?>
+                  <br><span class="text-muted" style="font-size:.75rem">ultima: <?= e($_info_schema['last_migration']) ?> (<?= e((string)$_info_schema['last_applied_at']) ?>)</span>
+                <?php endif; ?>
+              </td>
             </tr>
             <tr>
               <th>Ambiente</th>

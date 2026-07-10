@@ -37,10 +37,10 @@ final class WoocommerceSettingsController extends BaseController
     /** Upsert di una chiave in Impostazioni */
     private function saveSetting(string $key, string $value): void
     {
-        $this->pdo->prepare(
-            "INSERT INTO Impostazioni (chiave, valore) VALUES (?, ?)
-             ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore"
-        )->execute([$key, $value]);
+        $sql = (DB_DRIVER === 'mysql')
+            ? "INSERT INTO Impostazioni (chiave, valore) VALUES (?, ?) ON DUPLICATE KEY UPDATE valore = VALUES(valore)"
+            : "INSERT INTO Impostazioni (chiave, valore) VALUES (?, ?) ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore";
+        $this->pdo->prepare($sql)->execute([$key, $value]);
     }
 
     /* ── GET / POST /settings/woocommerce ─────────────────────────────────── */

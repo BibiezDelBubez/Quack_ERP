@@ -3,10 +3,15 @@
  * purchases/rfq/_list.php
  * Variabili: $rfq_list, $search, $stato, $dal, $al, $pag, $total
  */
-function rfq_badge(string $stato): string {
+function rfq_badge(string $stato, ?string $esitoChiusura = null): string {
     $map = ['bozza' => ['draft','Bozza'], 'inviata' => ['confirmed','Inviata'],
             'revisionata' => ['pending','Revisionata'], 'chiusa' => ['delivered','Chiusa']];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
+    // Lo stato 'chiusa' da solo non dice se la RFQ ha prodotto un ordine o è
+    // stata abbandonata — lo specifichiamo con un'etichetta secondaria.
+    if ($stato === 'chiusa' && $esitoChiusura) {
+        $lbl .= $esitoChiusura === 'offerta_accettata' ? ' (offerta accettata)' : ' (annullata)';
+    }
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
 }
 $statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviata' => 'Inviate',
@@ -78,7 +83,7 @@ $hasFilters = $search !== '' || $dal !== '' || $al !== '';
         <tr>
           <td><a href="<?= url('purchases/rfq/edit') . '?id=' . $r['id'] ?>" class="qk-link-strong"><?= e($r['riferimento_rfq_interno'] ?: '—') ?></a></td>
           <td><?= e(fmt_date($r['data_emissione'] ?? '')) ?: '—' ?></td>
-          <td><?= rfq_badge($r['stato']) ?></td>
+          <td><?= rfq_badge($r['stato'], $r['esito_chiusura'] ?? null) ?></td>
           <td class="qk-text-muted" style="font-size:.85rem"><?= e($r['numero']) ?></td>
           <td class="qk-text-muted">v<?= (int)$r['versione'] ?></td>
           <td><?= e($r['fornitore_nome'] ?? '—') ?></td>

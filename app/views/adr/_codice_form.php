@@ -131,6 +131,15 @@ $lbl = function (string $field, array $list, string $idCol, string $labelCol, st
               </div>
             </div>
 
+            <!-- Etichette di pericolo -->
+            <div class="qk-form-group">
+              <label class="qk-form-label">Etichette di pericolo <span class="qk-form-hint">(separate da virgola, es. 3, 8, 6.1)</span></label>
+              <input type="text" name="etichette_str"
+                     class="qk-form-control"
+                     value="<?= e($v('etichette_str')) ?>"
+                     placeholder="3, 8, 6.1">
+            </div>
+
           </div>
         </div>
       </div>

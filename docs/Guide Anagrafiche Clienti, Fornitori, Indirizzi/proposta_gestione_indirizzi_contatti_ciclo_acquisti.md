@@ -6,6 +6,30 @@ L'architettura si basa sul modello **"Snapshot & Override con Stato"**, che gara
 
 ---
 
+> ✅ **STATO ATTUALE VERIFICATO (10/07/2026) — Come leggere questo documento oggi**
+>
+> Questo è stato il **primo** dei tre documenti scritti su questo argomento (23/06, ore 17:04), seguito venti minuti dopo dalla "Proposta Architettura Ibrida" e due giorni dopo dalla sua "Versione Integrata ERP" (stessa cartella). L'architettura descritta qui sotto **non è quella che è stata effettivamente costruita**. Di seguito una spiegazione dettagliata, pensata anche per chi non ha mai letto uno schema di database, di cosa è cambiato e perché — punto per punto.
+>
+> **1. L'idea di base del "perché serve tutto questo" è corretta e rimasta identica.** Il problema che questo documento cerca di risolvere è reale e importante: se un documento (una richiesta d'offerta, un ordine) si limitasse a "puntare" all'indirizzo di consegna scritto in anagrafica, e quell'indirizzo venisse corretto in seguito (es. cambia il CAP), tutti i documenti passati che vi puntavano cambierebbero indirizzo *insieme a lui*, silenziosamente — falsificando la storia di cosa è stato realmente scritto/stampato/inviato in quel momento. La soluzione — "fotografare" l'indirizzo al momento del salvataggio, invece di limitarsi a puntare all'anagrafica — è il principio giusto ed è quello davvero implementato. È cambiato solo *come* viene realizzata questa fotografia.
+>
+> **2. Il modello di database qui descritto (punto 1, sotto) NON è quello costruito.** Qui si propone di aggiungere le colonne piatte (`consegna_via`, `consegna_citta`, `contatto_nome`, ecc.) più due colonne "sì/no" (`consegna_is_override`, `contatto_is_override`) direttamente dentro le tabelle dei documenti (`rfq_testata`, `offerte_testata`, `ordini_testata`). **In parole semplici:** l'idea era di scrivere l'indirizzo/contatto per intero, come testo semplice, dentro la stessa riga del documento, con una semplice casella "sì/no" per segnalare se l'utente lo aveva modificato a mano.
+>
+> Quello che è stato realmente costruito è diverso: esistono due tabelle *separate* apposta per questo scopo, chiamate `indirizzi_documenti` e `contatti_documenti`. Ogni volta che un documento ha bisogno di un indirizzo/contatto "fotografato", viene creata una riga in una di queste due tabelle, e il documento la referenzia con un numero (`indirizzo_consegna_id`, `contatto_id`) — un po' come mettere la fotografia in un album separato con un numero di catalogo, invece di incollarla direttamente sulla pagina del documento. Al posto della semplice casella "sì/no" (`is_override`), la tabella-fotografia ha una colonna chiamata `personalizzato` (stesso significato, nome diverso) e — questa è la differenza tecnica più importante — un codice di controllo chiamato "hash" (`hash_originale`): invece di confrontare testo con testo per capire se qualcosa è cambiato, il sistema calcola un codice numerico a partire dai dati e confronta i codici. È un metodo più robusto e più veloce per un computer, con lo stesso risultato finale per l'utente.
+>
+> Le vecchie colonne piatte descritte qui (`consegna_via`, `contatto_nome`, ecc.) **esistono comunque** nelle tabelle reali, ma non come "fonte di verità": sono una copia di comodo mantenuta solo per non dover riscrivere le stampe PDF già esistenti, che continuano a leggere da lì. Il dato vero, quello effettivamente usato e aggiornato, vive nelle due tabelle-fotografia.
+>
+> **3. Le due colonne booleane `consegna_is_override`/`contatto_is_override` descritte in questo documento non esistono da nessuna parte nel database reale.** Cercate a tappeto in tutto il codice sorgente del progetto: zero corrispondenze. Il concetto che rappresentavano (l'utente ha modificato questo dato a mano?) è sopravvissuto, ma sotto la colonna `personalizzato` nelle tabelle-fotografia descritte al punto 2, non come flag diretto sul documento.
+>
+> **4. Una sorpresa positiva: il testo dei badge (le etichette colorate mostrate all'utente) descritto in questo documento è quello REALMENTE usato nell'interfaccia**, anche se l'architettura di database sottostante non è la sua. Verificato in `assets/js/rfq-form.js` e `assets/js/sales-quotes.js`: l'etichetta verde dice davvero **"✓ Sincronizzato con anagrafica"**, quella gialla **"Modificato localmente (override)"**, quella blu **"Recapito manuale / una tantum"** — esattamente come scritto più sotto in questo documento (§FASE A), parola per parola. I documenti successivi (Architettura Ibrida) avevano proposto testi diversi ("Anagrafica Allineata", "Indirizzo Modificato", "Solo per questo Documento") che **non sono quelli realmente usati**. Quindi, curiosamente, per il linguaggio mostrato all'utente questo è il documento più fedele alla realtà, anche se per lo schema del database non lo è.
+>
+> **5. Il meccanismo di rilevamento delle modifiche descritto qui (confronto diretto tra il testo inviato dal browser e il testo salvato in anagrafica) non è quello reale.** Il sistema reale, come spiegato al punto 2, usa un "codice di controllo" (hash) invece del confronto diretto — più efficiente, stesso risultato per chi usa il programma.
+>
+> **6. Il pulsante "Ripristina" esiste e funziona come descritto.** Il pulsante "Salva in Anagrafica"/promozione del dato **non è descritto in questo documento** (compare solo nei due successivi) ma esiste realmente nel software, solo lato vendite (preventivi al cliente), non lato acquisti (RFQ al fornitore) — vedi il documento "Versione Integrata ERP" per il dettaglio completo.
+>
+> **In sintesi:** questo documento resta utile per capire *l'obiettivo* del sistema (perché serve una "fotografia" invece di un semplice collegamento) e per il *linguaggio dell'interfaccia* (i testi dei badge sono quelli veri), ma **non va usato come riferimento per lo schema del database** — per quello, fare riferimento a "Proposta Architettura Ibrida... (Versione Integrata ERP).md", nella stessa cartella, che riflette accuratamente le tabelle e i campi realmente esistenti.
+
+---
+
 ## 1. Filosofia della Soluzione: "Snapshot & Override con Stato"
 
 Per risolvere il problema della deriva dei dati (Master Data Drift), ogni tabella transazionale (`rfq_testata`, `offerte_testata`, `ordini_testata`) deve implementare le seguenti colonne:
@@ -74,6 +98,20 @@ La RFQ viene inviata ufficialmente al fornitore (generazione del PDF/Word e camb
     *   Viene mostrato il badge statico dello stato finale (es. `Sincronizzato` o `Modificato localmente`), ma il pulsante "Ripristina" e i campi di testo non sono interagibili.
 
 ---
+
+> ✅ **STATO ATTUALE VERIFICATO — la parola "Preventivo" indica due documenti diversi a seconda del contesto (10/07/2026):**
+>
+> **Cosa fa oggi l'ERP.** Nel database esistono due tabelle completamente distinte: `preventivi` (usata lato **vendite**, per l'offerta che facciamo noi a un cliente) e `offerte_testata` (usata lato **acquisti**, per l'offerta che un fornitore fa a noi — quella descritta in questa Fase C e nella Fase D). In italiano, la parola "preventivo" viene però usata per entrambe: sia nella documentazione di questa cartella, sia — verificato leggendo il codice reale — nell'interfaccia stessa dell'applicazione. Ad esempio, in `app/Controllers/PurchasesQuotesController.php` (che lavora sulla tabella `offerte_testata`, cioè le offerte dei fornitori) compare un pulsante con la scritta letterale **"Registra Preventivo Spontaneo"**. Chi legge solo il nome della tabella (`offerte_testata`) e chi legge solo l'interfaccia (che dice "Preventivo") può quindi pensare, a torto, di parlare di due cose diverse o della stessa cosa a seconda del punto di vista.
+>
+> **È un problema?** Non è un bug del software: è una scelta terminologica consapevole e usata in modo coerente in tutta l'applicazione. Resta però un rischio concreto di confusione per chi legge la documentazione tecnica o il database senza conoscere già lo schema.
+>
+> **📌 Miglioramento consigliato per il futuro:** rinominare le tabelle del ciclo commerciale con nomi che specificano sempre il verso (vendita/acquisto), ad esempio:
+> - `preventivi` → **`preventivi_vendita`**
+> - `offerte_testata` → **`preventivi_acquisto`**
+> - `ordini_clienti` → **`ordini_vendita`**
+> - `ordini_testata` → **`ordini_acquisto`**
+>
+> Non ancora fatto (i nomi reali nel database restano quelli storici sopra elencati) — è una modifica di schema non banale, da pianificare come intervento a sé.
 
 ### FASE C: Registrazione Preventivi da RFQ
 

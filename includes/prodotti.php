@@ -247,14 +247,11 @@ function qk_load_single_prodotto_fornitore(PDO $pdo, int $pf_id): ?array
                 pf.quantita_minima, pf.ordine_preferenza_fornitore, pf.attivo,
                 pf.rrp_min, pf.rrp_max, pf.lead_time_giorni, pf.note,
                 (pf.ordine_preferenza_fornitore = 1) AS preferenziale,
-                (SELECT pfp.prezzo
-                   FROM prodotti_fornitori_prezzi pfp
-                  WHERE pfp.prodotto_fornitore_id = pf.id
-                    AND pfp.quantita_minima = 0
-                  LIMIT 1) AS prezzo_acquisto
+                vf.prezzo AS prezzo_acquisto
            FROM prodotti_fornitori pf
            JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
       LEFT JOIN unita_misura um ON um.id = pf.unita_misura_acquisto_id
+      LEFT JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
           WHERE pf.id = :id"
     );
     $stmt->execute([':id' => $pf_id]);
@@ -271,14 +268,11 @@ function qk_load_prodotto_fornitori(PDO $pdo, int $prodotto_id): array
                 pf.quantita_minima, pf.ordine_preferenza_fornitore, pf.attivo,
                 pf.lead_time_giorni, pf.note,
                 (pf.ordine_preferenza_fornitore = 1) AS preferenziale,
-                (SELECT pfp.prezzo
-                   FROM prodotti_fornitori_prezzi pfp
-                  WHERE pfp.prodotto_fornitore_id = pf.id
-                    AND pfp.quantita_minima = 0
-                  LIMIT 1) AS prezzo_acquisto
+                vf.prezzo AS prezzo_acquisto
            FROM prodotti_fornitori pf
            JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
       LEFT JOIN unita_misura um ON um.id = pf.unita_misura_acquisto_id
+      LEFT JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
           WHERE pf.prodotto_id = :id
           ORDER BY pf.ordine_preferenza_fornitore, cf.ragione_sociale"
     );
@@ -437,20 +431,18 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
                 COALESCE(p.is_adr, 0) AS is_adr,
                 lp.prezzo_unitario AS prezzo_vendita,
                 p.descrizione_confezione,
+                -- Costo di acquisto base: da v_costo_acquisto_prodotti (fix "Listino
+                -- Fantasma", audit/MASTER_AUDIT_REPORT.md — la vecchia sub-query
+                -- sceglieva il prezzo con ORDER BY pfp.id DESC, cioè l'ultimo
+                -- inserito, senza controllare se il suo listino fosse ancora
+                -- attivo o nella finestra di validità).
                 CASE WHEN p.tipo = 'kit' THEN (
-                    SELECT SUM(ck.quantita * (
-                        SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                        JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                        WHERE pf2.prodotto_id = ck.componente_id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                        ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
-                    ))
+                    SELECT SUM(ck.quantita * vc.costo_acquisto)
                     FROM componenti_kit ck
+                    LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
                     WHERE ck.kit_id = p.id
                 ) ELSE (
-                    SELECT pfp.prezzo FROM prodotti_fornitori_prezzi pfp 
-                    JOIN prodotti_fornitori pf2 ON pf2.id = pfp.prodotto_fornitore_id
-                    WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1 AND pfp.quantita_minima = 0
-                    ORDER BY pf2.ordine_preferenza_fornitore ASC, pfp.id DESC LIMIT 1
+                    SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = p.id
                 ) END AS costo_acquisto
          FROM prodotti p
          LEFT JOIN categorie_prodotto c ON c.id = p.categoria_id
