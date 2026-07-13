@@ -655,7 +655,7 @@ final class SalesOrdersController extends BaseController
                             finfo_close($finfo);
                         }
                         $ext = $allowedMimeToExt[$realMime] ?? null;
-                        if ($ext !== null && @getimagesize($tmpName) !== false) {
+                        if ($ext !== null && getimagesize($tmpName) !== false) {
                             $subdir = upload_dated_subdir('spedizioni');
                             $upload_dir = upload_ensure_dir($subdir);
                             $new_name = uniqid('sped_photo_', true) . '.' . $ext;

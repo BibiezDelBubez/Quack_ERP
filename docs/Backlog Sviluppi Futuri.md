@@ -67,6 +67,8 @@ Quando una voce viene implementata, va rimossa da qui e il lavoro va tracciato n
 
 **Perché è rimandato.** Richiede prima decisioni di prodotto non ancora prese: se/come introdurre una valuta per ordine o per riga, se convertire tutto a una valuta base per il KPI (e con quale tasso di cambio, a quale data) o mostrare totali separati per valuta. Prematuro da progettare senza un caso d'uso reale multi-valuta. Il fix del rallentamento (query N+1 sostituita con una singola `SUM` via SQL) è stato invece applicato subito, essendo indipendente dalla questione valuta.
 
+**Nota collegata (13/07/2026, da [REVISIONE - Ridondanze, Contraddizioni e Piano di Riorganizzazione.md](Unita%20di%20misura%20e%20prezzi/REVISIONE%20-%20Ridondanze%2C%20Contraddizioni%20e%20Piano%20di%20Riorganizzazione.md), §6.14).** Lo stesso tema si ripresenta per il controllo di sottocosto sull'RRP fornitore (`UI_UX_PREZZI.md` §3): `prodotti_fornitori` ha già una colonna `rrp_valuta` (default `EUR`) nello schema **SQLite** (`db/init_sqlite.sql:697`, non ancora presente in `db/init_mysql.sql` — coerente con la priorità di sviluppo attuale su SQLite, vedi nota generale su questo disallineamento in §6.11 della REVISIONE), pensata per il caso in cui un fornitore quoti l'RRP in una valuta diversa (es. USD) da quella di vendita. Oggi l'ERP lavora solo in EUR — confermato con il proprietario del progetto il 13/07/2026 — quindi il caso "RRP in USD da confrontare con un prezzo di vendita in EUR" non si presenta mai in pratica, e la colonna `rrp_valuta` resta sempre `EUR` per ogni fornitore. Se in futuro si introduce la gestione multi-valuta (questa voce di backlog), andranno decise insieme, nello stesso intervento, tutte le domande aperte in quel punto: provenienza del tasso di cambio, frequenza di aggiornamento, e soprattutto **l'ordine di applicazione tra conversione valuta e conversione UoM** — le due conversioni non sono commutative sotto arrotondamento a 2-4 decimali, quindi convertire prima la valuta e poi la UoM può dare un risultato leggermente diverso rispetto all'ordine inverso, e va scelto un ordine unico e documentato.
+
 ---
 
 ## 5. Modulo Acquisti: unificare "listini" nel nuovo controller v2 (rimuovere `PurchasesController` legacy)
@@ -111,6 +113,71 @@ A differenza delle voci sopra — che sono lavoro riconosciuto e **deliberatamen
 
 **Di cosa si tratta.** Oggi Quack converte tra Stock UoM e UoM commerciale con un fattore fisso salvato in anagrafica prodotto (es. `quantita_contenuto = 25`, "1 fusto = 25 kg", applicato sempre e per ogni movimento di quel prodotto). Il "Catch Weight" è un pattern diverso, usato in alcuni ERP enterprise per il settore chimico/alimentare: permette di registrare, per ogni singolo movimento o lotto, un **peso realmente misurato** (es. alla bilancia in fase di carico/scarico) che può differire dal peso teorico calcolato come conteggio × fattore fisso — per variazioni di densità, temperatura, tolleranza di riempimento in produzione. Non è la stessa cosa di "avere due unità di misura per prodotto" (quello Quack lo ha già, correttamente, con l'Approccio 1 a UoM commerciale singola): è una seconda misura fisica indipendente, per singolo movimento, non derivabile moltiplicando un conteggio per un fattore costante.
 
+**Verifica esplicita (13/07/2026): nell'ipotesi che i prodotti non cambino mai peso reale rispetto al teorico, il sistema attuale è già corretto e sufficiente.** Un fattore di conversione fisso per prodotto è esattamente la soluzione giusta quando il rapporto "1 fusto = 25 kg" è sempre vero senza eccezioni — non manca nulla, non c'è alcun rischio di dato errato. Il Catch Weight ha senso solo se e quando esiste un caso reale di scostamento (peso pesato ≠ peso teorico) che l'azienda vuole tracciare o fatturare. Finché quel caso non si presenta, implementarlo sarebbe complessità aggiunta senza beneficio — coerente con l'approccio già seguito altrove nel progetto (non anticipare architettura senza un requisito reale, vedi C8 nel documento di origine).
+
 **Stato attuale.** Non esiste nessuna colonna tipo `peso_reale`/`peso_effettivo` su `movimenti_magazzino` né altrove nello schema. Il sistema oggi assume sempre che il peso di un movimento sia esattamente `conteggio × quantita_contenuto`, senza possibilità di scostamento registrato.
 
-**Perché non è nel backlog vero e proprio.** Non è chiaro se questo scostamento tra peso teorico e peso realmente pesato si presenti davvero nell'operatività di Quack, né se — quando si presenta — debba riflettersi su magazzino/fatturazione (fatturare sul peso pesato invece che su quello teorico) o sia una differenza sempre trascurabile e ignorata nella pratica. È una domanda di processo aziendale da verificare con chi gestisce magazzino/logistica, non una decisione tecnica: finché non è confermato che serve, non ha senso progettare lo schema per supportarlo.
+**Proposta (da attivare solo se emerge un caso reale di peso variabile), con tutte le parti del sistema coinvolte:**
+
+1. **Schema dati** (`db/init_mysql.sql` e `db/init_sqlite.sql`, da mantenere allineati come già fatto per il resto del progetto):
+   - `movimenti_magazzino`: nuova colonna `peso_reale` (nullable — se non compilata, il sistema continua a usare il calcolo teorico attuale, nessuna rottura per i prodotti che non ne hanno bisogno).
+   - `prodotti`: nuovo flag `richiede_peso_reale` (booleano, default 0) per marcare solo i prodotti che effettivamente necessitano la doppia misura — non tutti i prodotti chimici la richiedono.
+   - Su installazioni già esistenti, entrambe le modifiche richiedono una migrazione `ALTER TABLE` separata (stesso pattern già usato per altre estensioni recenti, es. il vincolo `UNIQUE` su `listini_prezzi`).
+
+2. **Anagrafica prodotto**:
+   - `app/Controllers/ProductsController.php` — aggiungere il campo `richiede_peso_reale` alla creazione/modifica prodotto.
+   - `app/views/products/_form.php` — checkbox "Richiede peso reale al carico/scarico" nella scheda prodotto.
+   - `includes/prodotti.php`, `qk_update_prodotto()` — persistere il nuovo flag insieme agli altri campi UoM.
+
+3. **Movimenti di magazzino (carico/scarico)**:
+   - Individuare le funzioni che scrivono su `movimenti_magazzino` (carico manuale, ricezione merce da ordine d'acquisto, scarico per spedizione/ordine cliente) e, quando il prodotto ha `richiede_peso_reale = 1`, rendere obbligatorio l'inserimento di `peso_reale` prima di confermare il movimento.
+   - `app/views/warehouse/_movement_form.php` (già coinvolto anche dalla voce #3 di questo backlog, "Magazzino attivo") — aggiungere il campo peso reale, visibile/obbligatorio solo per prodotti con il flag attivo.
+   - Punto di ricezione merce (ciclo acquisti, es. `PurchaseOrdersController`/funzioni di ricezione) — stesso campo in fase di conferma arrivo.
+
+4. **Giacenze e valorizzazione**:
+   - Decidere e documentare esplicitamente se `giacenze.quantita_disponibile` (e il costo medio ponderato) si aggiornano sul peso teorico o sul peso reale quando quest'ultimo è presente — è la decisione di prodotto più delicata dell'intera proposta, da prendere con chi gestisce magazzino/contabilità prima di scrivere codice.
+
+5. **Fatturazione**:
+   - Se l'azienda fattura a peso realmente pesato (non teorico) per i prodotti col flag attivo, la logica di generazione fattura (`fatture_righe` e relativa funzione di creazione fattura da ordine/DDT) deve leggere `peso_reale` invece di ricalcolare da `quantita_contenuto` — impatto diretto sull'importo fatturato, quindi da trattare con la stessa cautela contabile riservata altrove nel progetto (es. Sezione 8E resi, immutabilità snapshot).
+
+6. **Reportistica**:
+   - Nuovo report di scostamento (teorico vs reale) per lotto/movimento, utile a individuare fornitori sistematicamente sotto o sopra peso — da esporre in una vista magazzino/qualità, non ancora progettata.
+
+**Perché resta fuori dal backlog impegnato.** Confermato che, nell'ipotesi (oggi valida) che i prodotti non varino mai peso, il sistema attuale è pienamente adeguato: non è un gap da colmare, è una funzionalità aggiuntiva per un caso d'uso che potrebbe non presentarsi mai. Va implementata solo se e quando emerge un prodotto/cliente reale con fatturazione a peso variabile — decisione di processo aziendale, non tecnica, da prendere con chi gestisce magazzino/logistica/contabilità.
+
+---
+
+### 8. Rimozione Surrogate Key in `adr_codici_classificazione` (Segnalazione #5 dell'Audit)
+
+**Di cosa si tratta.** La tabella `adr_codici_classificazione` ha una colonna ID numerica (`id_codice_classificazione`) impostata come chiave primaria, ma l'applicazione non la usa MAI. Usa invece una chiave testuale combinata in tutte le altre tabelle. 
+**Perché è rimandato.** È solo debito tecnico e non causa malfunzionamenti. Da sistemare alla prossima manutenzione degli script SQL, eliminando la colonna e promuovendo il vincolo `UNIQUE` a `PRIMARY KEY`.
+
+---
+
+### 9. Piano di Gestione e Prevenzione Esaurimento Spazio Disco (I/O & Storage Management)
+
+**Contesto e Studio su Sistemi Enterprise (SAP, Zucchetti, Odoo):**
+I grandi ERP gestiscono milioni di documenti allegati (fatture, DDT firmati, schede di sicurezza, loghi). Il progressivo esaurimento dello spazio su disco è un evento inevitabile, ma il modo in cui il software reagisce determina la differenza tra un disservizio gestito e un disastro (data loss, corruzione DB o applicativo irraggiungibile).
+Nei sistemi di fascia alta, la gestione dello storage si basa su tre pilastri:
+1. **Monitoraggio Proattivo (Thresholds):** Il sistema non aspetta il fallimento di un'operazione di salvataggio (Errore 500). Controlla periodicamente (es. tramite cron job o all'accesso della dashboard admin) lo spazio libero della partizione e fa scattare un warning giallo (all'80%) e rosso (al 90-95%) inviando email automatiche al reparto IT.
+2. **Graceful Degradation (Degrado Controllato):** Se lo spazio scende sotto il 5% (soglia critica), l'ERP va in protezione. Blocca preventivamente la possibilità di caricare nuovi allegati pesanti (disabilita pulsanti di upload) e mostra un banner bloccante: *"Caricamento sospeso: spazio su disco in esaurimento"*. Tuttavia, *permette* ancora le normali operazioni testuali (salvataggio ordini, variazioni giacenze) se il database è su un server separato, evitando di paralizzare l'azienda.
+3. **Storage Lifecycle Management (Pulizia Automatica):** File temporanei (come la cartella `mpdf_tmp` per la generazione dei PDF o i log di sistema) vengono svuotati automaticamente dopo N giorni. I documenti storici (fatture di 10 anni fa) vengono compressi o archiviati su "cold storage" (come Amazon S3) liberando i dischi veloci SSD principali.
+
+**Piano di Implementazione per Quack ERP:**
+
+1. **Dashboard Widget (Health Check):**
+   - Sviluppare un indicatore visivo nella `DashboardController` per il ruolo Amministratore. Utilizzare in PHP la funzione `disk_free_space()` e `disk_total_space()` sulla root del progetto (`UPLOAD_DIR`).
+   - Mostrare una barra progressiva (Verde < 70%, Gialla > 70%, Rossa > 90%).
+
+2. **Hard Limit e Graceful Degradation (Blocco Upload):**
+   - Nel `bootstrap.php` o nel `BaseController`, definire una costante dinamica `STORAGE_CRITICAL` (es. vera se lo spazio libero è < 200 MB).
+   - In tutti i controller che gestiscono file (`CustomersController`, `ProductsController`, `AziendeController`), avvolgere il `move_uploaded_file` in un blocco che lancia immediatamente un'eccezione *"Impossibile caricare l'allegato: Spazio sul server esaurito"*, prima ancora di caricare il file in memoria.
+   - Disabilitare via frontend (HTML/JS) i bottoni di scelta file e far comparire un banner fisso nell'interfaccia utente.
+
+3. **Routine di Pulizia (Garbage Collection):**
+   - Scrivere uno script CLI (es. `cron/cleanup_storage.php`) da far eseguire al server ogni notte.
+   - Svuotare la cartella `UPLOAD_DIR . '/mpdf_tmp'` dai file più vecchi di 24 ore.
+   - Identificare e rimuovere file "orfani" (immagini o documenti che fisicamente esistono nella cartella `/uploads` ma i cui record associati nel DB sono stati cancellati).
+
+4. **Allarmistica Notifiche:**
+   - Agganciare un task che, se `disk_free_space` < 10%, invia un'email automatica o un messaggio nel sistema di notifiche interno a tutti gli utenti con ruolo SuperAdmin.

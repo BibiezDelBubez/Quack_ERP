@@ -1106,7 +1106,7 @@ final class ProductsController extends BaseController
                         finfo_close($finfo);
                     }
                     $ext = $allowedMimeToExt[$realMime] ?? null;
-                    if ($ext === null || @getimagesize($tmp) === false) {
+                    if ($ext === null || getimagesize($tmp) === false) {
                         $errors['immagine_file'] = 'Formato immagine non valido. Consentiti: ' . implode(', ', $allowedMimeToExt);
                     } else {
                         $subDir = 'categorie';
@@ -1145,7 +1145,9 @@ final class ProductsController extends BaseController
                             if ($oldImg && $oldImg !== $immagine_path) {
                                 $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
                                 if (is_file($absPath)) {
-                                    @unlink($absPath);
+                                    if (!unlink($absPath)) {
+                                        error_log("ProductsController: Impossibile eliminare la vecchia immagine categoria: " . $absPath);
+                                    }
                                 }
                             }
 
@@ -1228,7 +1230,9 @@ final class ProductsController extends BaseController
             if ($oldImg) {
                 $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
                 if (is_file($absPath)) {
-                    @unlink($absPath);
+                    if (!unlink($absPath)) {
+                        error_log("ProductsController: Impossibile eliminare l'immagine categoria in fase di cancellazione: " . $absPath);
+                    }
                 }
             }
 
@@ -1837,12 +1841,23 @@ final class ProductsController extends BaseController
         }
 
         // [Bug 3] Controllo sovrapposizione scaglioni
-        $stmtDup = $this->pdo->prepare("SELECT id FROM prodotti_fornitori_prezzi WHERE listino_acquisto_id = :listino_id AND prodotto_fornitore_id = :pfid AND quantita_minima = :qmin AND id != :riga_id");
+        // Corretto il 13/07/2026 (REVISIONE §6.15): "listino_acquisto_id = :listino_id" non trovava mai un
+        // duplicato quando lo scaglione non è collegato a un listino (:listino_id NULL, il caso normale per
+        // gli "Scaglioni Volume" inseriti nel drawer fornitore) — in SQL "colonna = NULL" non è mai vero,
+        // nemmeno quando la colonna contiene davvero NULL. Aggiunta la gestione esplicita del caso NULL.
+        $stmtDup = $this->pdo->prepare("
+            SELECT id FROM prodotti_fornitori_prezzi
+            WHERE prodotto_fornitore_id = :pfid
+              AND quantita_minima = :qmin
+              AND id != :riga_id
+              AND (listino_acquisto_id = :listino_id OR (:listino_id_null = 1 AND listino_acquisto_id IS NULL))
+        ");
         $stmtDup->execute([
-            ':listino_id' => $listinoId,
-            ':pfid'       => $pfId,
-            ':qmin'       => $qta,
-            ':riga_id'    => $id
+            ':listino_id'      => $listinoId,
+            ':listino_id_null' => $listinoId === null ? 1 : 0,
+            ':pfid'            => $pfId,
+            ':qmin'            => $qta,
+            ':riga_id'         => $id
         ]);
         if ($stmtDup->fetch()) {
             echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità.']);
@@ -1852,6 +1867,8 @@ final class ProductsController extends BaseController
         try {
             if ($id > 0) {
                 // UPDATE — verifica ownership tramite prodotto_fornitore_id
+                // modificato_manualmente_il: aggiornato sempre su un salvataggio manuale da questo drawer,
+                // mai da apiImportPrezzi() — vedi REVISIONE §6.12.
                 $this->pdo->prepare(
                     'UPDATE prodotti_fornitori_prezzi
                         SET listino_acquisto_id = :listino_id,
@@ -1861,7 +1878,8 @@ final class ProductsController extends BaseController
                             valido_dal          = :valido_dal,
                             valido_al           = :valido_al,
                             note                = :note,
-                            unita_misura_id     = :uom_id
+                            unita_misura_id     = :uom_id,
+                            modificato_manualmente_il = CURRENT_TIMESTAMP
                       WHERE id = :id
                         AND prodotto_fornitore_id = :pfid'
                 )->execute([
@@ -1881,9 +1899,9 @@ final class ProductsController extends BaseController
                 $this->pdo->prepare(
                     'INSERT INTO prodotti_fornitori_prezzi
                        (prodotto_fornitore_id, listino_acquisto_id, quantita_minima,
-                        prezzo, sconto_perc, valido_dal, valido_al, note, unita_misura_id)
+                        prezzo, sconto_perc, valido_dal, valido_al, note, unita_misura_id, modificato_manualmente_il)
                      VALUES
-                       (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note, :uom_id)'
+                       (:pfid, :listino_id, :qta, :prezzo, :sconto, :valido_dal, :valido_al, :note, :uom_id, CURRENT_TIMESTAMP)'
                 )->execute([
                     ':pfid'       => $pfId,
                     ':listino_id' => $listinoId,

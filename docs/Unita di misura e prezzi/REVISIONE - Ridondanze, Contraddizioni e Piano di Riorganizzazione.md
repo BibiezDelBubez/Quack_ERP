@@ -169,6 +169,8 @@ Queste due frasi (riga 132 vs riga 138), a sei righe di distanza nello stesso pa
 
 ### C7 — Badge origine prezzo in RFQ: l'affermazione di assenza è probabilmente obsoleta, da riverificare
 
+> ⏸️ **IN PAUSA (13/07/2026)** — non urgente, rimandato a un secondo momento. Richiede comunque una verifica end-to-end nel browser (aprire una RFQ reale) prima di poter essere chiuso.
+
 - **File2** (riga 55): *"RFQ d'acquisto: la tabella non ha badge visivi. Non c'è alcun indicatore di provenienza del costo"*.
 
 **Codice reale**: `app/views/purchases/rfq/_form.php:296` contiene già un elemento `.price-origin-badge` nel markup HTML della vista.
@@ -221,7 +223,7 @@ Nello schema reale, `giacenze` (`db/init_mysql.sql:705-713`, saldo corrente: `qu
 | C4 (pricing acquisti) | File2 obsoleto | Motore a scaglioni già implementato, simmetrico alle vendite | **SÌ** — evita duplicazione di logica che diverge nel tempo | ✅ Applicata nei file sorgente |
 | C5/C9 (markup fallback) | File2 si contraddice internamente (riga 132 statico vs riga 138 dinamico) + livello "categoria" inesistente | Dinamico a 2 livelli (prodotto→globale), nessuna categoria | **SÌ** — evita il bug classico del "default copiato" che va disallineato quando cambia il valore globale | ✅ Applicata nei file sorgente |
 | C6 (codice esempio generico) | Non errato ma non etichettato — verdetto rivisto dopo confronto comportamentale | Diverge da 3 comportamenti reali (arrotondamento, gestione errore, architettura calcolo/persistenza) | **NO, non è utile ai nostri scopi** — il principio che insegna è già scritto altrove in prosa; il codice stesso rischia di essere copiato con comportamenti sbagliati | ✅ Applicata nei file sorgente (cancellato, non spostato) |
-| C7 (badge RFQ) | Probabilmente obsoleto | Elemento UI presente, funzionalità end-to-end da confermare | **Da verificare** (non ancora accertato se il badge sia solo markup vuoto o davvero popolato) | Da verificare, poi correggere il tono in File2 |
+| C7 (badge RFQ) | Probabilmente obsoleto | Elemento UI presente, funzionalità end-to-end da confermare | **Da verificare** (non ancora accertato se il badge sia solo markup vuoto o davvero popolato) | ⏸️ In pausa, non urgente (13/07/2026) |
 | C8 (product_uom_conversions) | Corretti nel contenuto, mal ordinati | Non implementata (Approccio 1) | **SÌ** — evita complessità anticipata senza requisito reale | ✅ Applicata nei file sorgente (nota di anticipazione, non serviva la riorganizzazione completa) |
 | C10 (giacenze vs movimenti) | PARTE2 introduce una condizione (giacenze=0) che PARTE1/PARTE3 non hanno | Blocca solo su `movimenti_magazzino>0`, ignora giacenze | **SÌ** — più conservativo, coerente con SAP: lo storico resta ambiguo anche a saldo zero | ✅ Applicata nei file sorgente |
 
@@ -578,24 +580,90 @@ Oltre alla contraddizione interna già segnalata in C5/C9, manca l'eccezione: co
 
 ### 6.11 File3 §3 "Acquisti" (righe 44-48) — eccezione mancante
 
+> ✅ **RISOLTO (13/07/2026)** — verificato che il "listino di default generato in background" descritto in `listini_architettura.md` §3 non esiste nel codice (è testualmente marcato lì come "Comportamento Idealizzato", mai implementato: un prezzo senza listino resta con `listino_acquisto_id = NULL`, trattato come "prezzo base"). La verifica ha però trovato un problema concreto e diverso da quello originariamente ipotizzato — corretto direttamente nello schema.
+
 Il "listino di default generato in background" per i prezzi d'acquisto presi "al volo" (senza listino esplicito): cosa succede se il fornitore associato viene disattivato o eliminato dopo che gli sono stati associati prezzi in questo modo? Il listino generato in background resta orfano — non trattato.
 
+**Cosa fa davvero il codice (verificato)**: esistono due viste SQL (`v_prezzo_acquisto_base_fornitore`, `v_costo_acquisto_prodotti`, introdotte il 10/07/2026 per correggere un bug precedente, il "Listino Fantasma") che calcolano il costo d'acquisto di riferimento di un prodotto. Sono emersi due problemi distinti:
+
+1. **Bug di schema, bloccante su MySQL**: la vista legge `listini_acquisto.attivo`, colonna presente in `db/init_sqlite.sql` ma **assente da `db/init_mysql.sql`** — la `CREATE VIEW` in MySQL avrebbe fallito alla creazione stessa del database, non solo all'uso.
+2. **Nessun filtro sul fornitore stesso**: né le viste né `PurchasesController::getPurchasePrice()` controllavano mai `clienti_fornitori.attivo`. Disattivare un fornitore (es. "Rossi Chimica" ha chiuso) non lo escludeva dal calcolo del costo di riferimento: se il legame `prodotti_fornitori` restava `attivo = 1`, il suo prezzo continuava a essere proposto come costo preferito, anche a fornitore disattivato.
+
+Controllati anche i documenti in `docs/Ciclo Acquisti/` (guida v2, ciclo SAP-inspired, dubbi RFQ): nessuno tratta questo scenario, confermando che è un vuoto reale della documentazione, non solo di questo file.
+
+**Cosa fanno i grandi ERP**: in SAP, un blocco fornitore ("purchasing block") esclude automaticamente quel fornitore da qualunque calcolo di costo o proposta di approvvigionamento, verificato a runtime nella query — senza richiedere di ripulire manualmente prezzi o listini associati. Il dato storico resta intatto, semplicemente diventa irraggiungibile dai flussi correnti — stesso principio già applicato in questo documento ai punti 6.3/6.4.
+
+**Correzione applicata (13/07/2026)**:
+1. Aggiunta la colonna `attivo BOOLEAN NOT NULL DEFAULT 1` a `listini_acquisto` in `db/init_mysql.sql`, allineandolo a `db/init_sqlite.sql`. **Nota**: per scelta di progetto lo sviluppo procede prima su SQLite, con `init_mysql.sql` aggiornato "a mano" quando ci si ricorda — questo allineamento va quindi anche letto come promemoria che lo schema MySQL è strutturalmente indietro e va tenuto d'occhio ad ogni estensione futura dello schema SQLite.
+2. Aggiunto `JOIN clienti_fornitori cf ... AND cf.attivo = 1` a `v_costo_acquisto_prodotti` in entrambi gli schemi (SQLite e MySQL): un fornitore disattivato smette di essere proposto come fonte di costo di riferimento, senza toccare né cancellare alcun dato storico.
+3. `PurchasesController::getPurchasePrice()` **non modificato deliberatamente**: è invocato solo con un `fornitoreId` già scelto esplicitamente dall'utente (endpoint `apiOttieniPrezzo`, tipicamente da una riga RFQ già legata a quel fornitore) — aggiungere lì un blocco su `cf.attivo` romperebbe il ricalcolo di documenti/bozze esistenti legati a un fornitore nel frattempo disattivato, contro il principio di immutabilità già adottato altrove. Il punto di controllo corretto resta il filtro nelle viste (usate per la proposta di costo "senza fornitore specificato") e — se non già così, da verificare in una sessione dedicata — i menu di selezione fornitore per **nuove** righe RFQ, che dovrebbero già escludere i fornitori disattivati coerentemente con il pattern "non selezionabile per cose nuove, valido per cose esistenti" adottato al punto 6.3.
+
 ### 6.12 File4 `UI_UX_PREZZI.md` §1 "La Regola d'Oro (Sincronizzazione)" (righe 30-31) — eccezioni mancanti
+
+> ✅ **RISOLTO (13/07/2026)** — verificato che il "badge bloccato/non modificabile" descritto in `UI_UX_PREZZI.md` non era mai stato implementato (stesso schema del "listino di default in background" di §6.11: testo aspirazionale, non comportamento reale). Sia il caso della riga eliminabile sia quello dell'asimmetria vendite/acquisti sono ricaduti quindi in un'unica correzione, applicata direttamente al codice.
 
 - Tratta solo il caso "riga sincronizzata da import CSV, bloccata/non modificabile". **Non trattato**: cosa succede se l'utente elimina fisicamente quella riga bloccata (è permesso?) e se un successivo import CSV che non contiene più quel prodotto lascia orfana la riga precedentemente sincronizzata (va disattivata automaticamente o resta visibile indefinitamente?).
 - **Asimmetria non giustificata**: il meccanismo di sincronizzazione/blocco da import massivo è descritto **solo per gli acquisti**; il caso equivalente per import massivo di listini vendita non è mai trattato, pur essendo presumibilmente un flusso analogo nell'ERP.
 
+**Cosa fa davvero il codice (verificato)**: nessuna riga di `prodotti_fornitori_prezzi` o `listini_prezzi` porta alcun indicatore di provenienza. Una riga creata da import è indistinguibile da una manuale: modificabile ed eliminabile liberamente dal drawer prodotto (`ProductsController::savePrezzo/deletePrezzo`) o dalla griglia listino (`PurchasesController`/`SalesPricelistsController`), e un import successivo la sovrascrive per SKU+scaglione senza alcun controllo su chi/quando l'ha toccata l'ultima volta. **Sull'asimmetria**: verificata come superata — esiste già lo stesso identico meccanismo di importazione massiva XLSX anche lato vendite (`app/views/sales/pricelists/_righe.php`, modal "Importazione Massiva Prezzi Vendita"); i due cicli sono simmetrici, la documentazione era solo disallineata su questo punto.
+
+**Cosa fanno i grandi ERP**: SAP e Odoo, per i caricamenti massivi di condizioni prezzo, tipicamente tracciano l'origine di ogni riga e, se una riga importata viene poi modificata a mano, la trattano come un "override" che un import successivo non tocca più automaticamente — segnalando il conflitto invece di risolverlo silenziosamente in un senso o nell'altro. Le righe assenti da un nuovo import restano nello storico marcate come scadute, non cancellate né lasciate a tempo indeterminato senza indicazione.
+
+**Correzione applicata (13/07/2026)**, in tre parti, su entrambi i cicli (acquisti e vendite):
+
+1. **Schema**: aggiunte a `prodotti_fornitori_prezzi` e `listini_prezzi` (in entrambi gli schemi gemelli) le colonne `importato_il` (valorizzata solo dall'import massivo) e `modificato_manualmente_il` (valorizzata solo dai salvataggi manuali — drawer prodotto e griglia listino).
+2. **Non sovrascrivere silenziosamente**: `PurchasesController/SalesPricelistsController::apiImportPrezzi()` ora controllano, per ogni riga già esistente, se `modificato_manualmente_il` è più recente di `importato_il` (o l'unico timestamp presente). In tal caso la riga viene saltata e segnalata esplicitamente nel riepilogo finale dell'importazione ("prezzo modificato manualmente dopo l'ultimo import — non sovrascritto, verificare a mano") invece di essere sovrascritta senza avviso.
+3. **Righe orfane** (presenti in un import passato, assenti dal nuovo file): lato acquisti, dove `prodotti_fornitori_prezzi` ha `valido_dal`/`valido_al` per riga, vengono chiuse impostando `valido_al = oggi` — coerente con la storicizzazione già usata altrove. Lato vendite, dove `listini_prezzi` non ha validità per riga (scelta di progetto già presa e documentata in §6.10/C10), vengono invece **rimosse**: non c'è un campo dove "chiuderle", e tenerle indefinitamente senza indicazione sarebbe peggio che cancellarle. L'asimmetria nel trattamento (chiusura vs rimozione) è quindi intenzionale, non un'incoerenza: riflette una differenza di schema già decisa in precedenza, non introdotta qui.
+
+Nessun badge visivo né blocco assoluto è stato aggiunto: la soluzione scelta (segnalazione esplicita invece di sovrascrittura silenziosa) copre lo stesso rischio senza introdurre un concetto di "riga bloccata" mai richiesto operativamente.
+
+**Bug collaterale trovato e corretto in fase di revisione del codice appena scritto (13/07/2026)**: la query di match di `SalesPricelistsController::apiImportPrezzi()` (preesistente, non introdotta da questa modifica) cercava una riga già esistente solo su `listino_id + prodotto_id + quantita_minima`, ignorando `unita_misura_id` — pur essendo quest'ultimo parte del vincolo `UNIQUE` reale della tabella (`listino_id, prodotto_id, quantita_minima, unita_misura_id`). Con due righe stesso prodotto/scaglione ma UoM diverse (es. prezzo per KG e prezzo per FUSTO entrambi da quantità 0), un import avrebbe potuto aggiornare la riga sbagliata invece di inserirne una nuova, sovrascrivendo silenziosamente il prezzo di una UoM diversa da quella importata. Corretto aggiungendo `unita_misura_id` al confronto (con gestione esplicita del caso NULL). **Non presente lato acquisti**: lì il vincolo `UNIQUE` di `prodotti_fornitori_prezzi` non include `unita_misura_id`, quindi la query di match senza quel filtro è già coerente con l'unicità reale della tabella.
+
 ### 6.13 File4 §2 "Matrice Ibrida" (righe 58-59) — ambiguità semantica non risolta
+
+> ✅ **RISOLTO (13/07/2026)** — verificato che il rischio segnalato non era teorico: le due logiche erano davvero disallineate. Corretto direttamente nel codice.
 
 *"Le celle vuote per un listino che non prevede quello scaglione devono limitarsi a ereditare visivamente il valore dello scaglione precedente (grigio chiaro, disabilitato simulato)"*. Il testo non chiarisce se questa **ereditarietà è solo un fatto visivo di anteprima in UI**, oppure se il motore di pricing backend applica la stessa logica quando cerca un prezzo per uno scaglione non esplicitamente definito in un ordine reale. Se le due logiche (frontend "eredita visivamente" vs backend "cerca lo scaglione più vicino") non sono esplicitamente allineate, un utente potrebbe vedere in anteprima un prezzo che il motore di pricing non applica realmente all'ordine — rischio di disallineamento UI/motore non discusso.
 
+**Cosa fa davvero il codice (verificato)**: il motore di pricing reale (`SalesPricelistsController::getSalePrice()`, righe 634-648) cerca lo scaglione più alto con `quantita_minima <= quantità richiesta`, **sempre e solo all'interno dello stesso `listino_id`** — non guarda mai altri listini. La matrice JS nella scheda prodotto (`app/views/products/_form.php`, funzione `updatePlaceholders()`), per una cella vuota di un listino diverso dallo Standard, faceva invece qualcosa di diverso: se il listino **Standard** aveva un prezzo esplicito per quello stesso scaglione, lo mostrava come "ereditato" al posto del prezzo del listino corrente.
+
+**Esempio concreto del disallineamento**: listino "Ingrosso" con un prezzo a 8€/kg solo per lo scaglione ≥100kg (nessun prezzo per ≥500kg); listino "Standard" con un prezzo specifico di 9€/kg proprio per lo scaglione ≥500kg. Un cliente Ingrosso ordina 600kg: il motore reale applica 8€/kg (unico scaglione del listino Ingrosso, quantità_minima ≤ 600); la matrice mostrava invece "9,00 (Ered.)" nella cella Ingrosso/≥500kg, prendendolo dal listino Standard — un numero che l'ordine non avrebbe mai applicato.
+
+**Cosa fanno i grandi ERP**: in SAP l'anteprima di una condizione di prezzo mancante segue sempre la stessa cascata a scaglioni del motore reale (stesso listino, scaglione immediatamente inferiore) — non esiste il concetto di "prendere in prestito" da un listino diverso per un'anteprima.
+
+**Correzione applicata**: la funzione `updatePlaceholders()` ora implementa una cascata "a scaglioni decrescenti" dentro la stessa riga (stesso listino): parte dal prezzo base del listino (scaglione 0) e, scaglione dopo scaglione in ordine crescente di quantità, usa l'ultimo prezzo esplicito incontrato in quella riga come riferimento per le celle vuote successive — esattamente la stessa logica SQL del motore reale. Si scende al listino Standard solo se il listino corrente non ha nemmeno un prezzo base proprio, coerente con la cascata di fallback reale (Dedicato/Listino → Standard) e non più con un confronto scaglione-per-scaglione tra listini diversi.
+
 ### 6.14 File4 §3 "RRP e Sottocosto" (riga 84) — eccezione sotto-specificata
+
+> ⏸️ **RIMANDATO AL BACKLOG (13/07/2026)** — confermato con il proprietario del progetto: l'ERP oggi lavora solo in EUR, la gestione multi-valuta è uno sviluppo futuro non ancora pianificato nel dettaglio. Il caso "RRP in USD da confrontare con un prezzo di vendita in EUR" quindi non si presenta mai in pratica allo stato attuale — non c'è nulla da correggere nel codice adesso. Il problema (e tutte le domande aperte sotto) è stato spostato in [Backlog Sviluppi Futuri.md](../Backlog%20Sviluppi%20Futuri.md), voce 4 "Multi-valuta nel KPI 'Fatturato Mese' (dashboard)", che va estesa a comprendere anche questo caso quando la gestione multi-valuta verrà davvero progettata.
 
 Il cambio valuta USD→EUR per il controllo di sottocosto è menzionato **una sola volta**, senza specificare: provenienza del tasso di cambio, frequenza di aggiornamento, e soprattutto **l'ordine di applicazione** rispetto alla conversione UoM (se si converte prima la valuta e poi la UoM, o viceversa, il risultato numerico può differire per via del doppio arrotondamento — non essendo le due conversioni commutative sotto arrotondamento a 2-4 decimali).
 
 ### 6.15 File4 §1 "Scaglioni Volume" (drawer fornitore) — eccezione mancante
 
+> ✅ **RISOLTO (13/07/2026)** — non era solo una lacuna di documentazione: il controllo applicativo pensato apposta per questo caso esisteva già ma era rotto per un bug SQL concreto. Corretto direttamente nel codice.
+
 Non è specificata alcuna regola di unicità: cosa succede se due scaglioni vengono inseriti con la **stessa `quantita_minima`** ma prezzi diversi per lo stesso fornitore/prodotto (dato ambiguo/malformato)? Nessuna validazione descritta né trovata lato codice per questo caso specifico.
+
+**Cosa fa davvero il codice (verificato)**: `ProductsController::savePrezzo()` ha già un controllo dedicato ("[Bug 3] Controllo sovrapposizione scaglioni") che dovrebbe impedire due righe con la stessa `quantita_minima` per lo stesso fornitore. Il bug: la query filtrava con `listino_acquisto_id = :listino_id`, e quando lo scaglione non è collegato a un listino (`listino_acquisto_id = NULL` — il caso normale per gli "Scaglioni Volume" inseriti nel drawer, dove il prezzo è legato solo al fornitore) la condizione `colonna = NULL` **non è mai vera in SQL**, nemmeno per righe che contengono davvero NULL — quindi il controllo restituiva sempre "nessun duplicato" e lasciava passare l'inserimento. Anche il vincolo `UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima)` a livello di database (solo su SQLite, assente su MySQL) non aiutava: un vincolo UNIQUE tratta ogni valore NULL come diverso da ogni altro NULL, quindi due righe con `listino_acquisto_id = NULL` e stessa quantità minima non lo violano. Le due protezioni esistevano ma fallivano entrambe per lo stesso motivo tecnico.
+
+**Cosa fanno i grandi ERP**: SAP normalizza sempre il caso "nessun contratto quadro collegato" a un valore concreto e confrontabile nella chiave di unicità delle condizioni di prezzo, invece di lasciare che la semantica di NULL apra un buco nel controllo.
+
+**Correzione applicata**: riscritta la query di controllo duplicati sia in `ProductsController::savePrezzo()` (drawer prodotto, dove il bug si manifestava concretamente) sia in `PurchasesController::apiSaveRiga()` (griglia listino, blindata per coerenza anche se lì `listino_acquisto_id` è sempre obbligatorio e il bug non si presenta oggi), aggiungendo la gestione esplicita del caso NULL: `(listino_acquisto_id = :listino_id OR (:listino_id_null = 1 AND listino_acquisto_id IS NULL))`. Nessuna riga duplicata preesistente nel database da ripulire (confermato: solo dati di prova).
+
+### 6.15bis Cancellazione distruttiva dell'assegnazione clienti-listino (segnalazione esterna, verificata)
+
+> ✅ **RISOLTO (13/07/2026)** — segnalazione ricevuta da uno strumento di analisi esterno ("antigravity"), verificata riga per riga contro il codice reale e confermata **fondata**: bug concreto, non ipotetico. Corretto direttamente nel codice.
+
+**Il problema**: `clienti_listini` non collega solo cliente e listino, porta anche `priorita` (usata dalla cascata di pricing, vedi §3/C-vari) e una finestra di validità per-cliente (`data_inizio`/`data_fine`). Questi campi sono scritti dalla scheda del singolo cliente (`includes/anagrafiche.php:325-334` in creazione, `:452-465` in modifica — entrambi scoperti correttamente per singolo `cliente_id`). La schermata "assegna clienti" aperta dal listino (`SalesPricelistsController::apiAssegnaClienti()`, riga 952 prima della correzione) faceva invece `DELETE FROM clienti_listini WHERE listino_id = ?` seguito da un reinserimento di tutti i clienti selezionati con `priorita` fissa a 10 e senza `data_inizio`/`data_fine` — cancellando quei valori per **ogni** cliente del listino a ogni salvataggio di quella schermata, non solo per i clienti effettivamente rimossi.
+
+**Esempio pratico**: un cliente ha uno sconto listino valido solo a dicembre (`data_inizio`/`data_fine` impostate dalla sua scheda) e priorità 20 (per prevalere su un altro listino). Un operatore apre la schermata di assegnazione del listino solo per aggiungere un nuovo cliente, senza toccare quello esistente. Al salvataggio, il cliente esistente resta assegnato ma perde silenziosamente sia la finestra di validità di dicembre sia la priorità 20 (torna a 10) — un effetto collaterale invisibile rispetto all'azione compiuta.
+
+**Cosa fanno i grandi ERP**: sincronizzazione differenziale (diff-sync) su ogni relazione molti-a-molti con attributi propri sulla riga di collegamento — si toccano solo le righe che cambiano davvero (nuove associazioni aggiunte, associazioni rimosse), mai quelle che restano invariate.
+
+**Correzione applicata**: `apiAssegnaClienti()` ora confronta l'elenco clienti esistente con quello inviato dal form, calcola la differenza (`array_diff`) nei due sensi, e tocca solo le righe che cambiano — `DELETE` mirato sui soli `cliente_id` rimossi, `INSERT` solo per quelli nuovi. I clienti che restano assegnati non vengono più toccati in alcun modo, preservando `priorita`/`data_inizio`/`data_fine` impostati altrove.
+
+---
 
 ### 6.16 Trasversale — Comparabilità di scaglioni in UoM diverse
 

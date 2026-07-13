@@ -403,6 +403,10 @@ final class SalesPricelistsController extends BaseController
         try {
             if ($rigaId) {
                 // UPDATE
+                // modificato_manualmente_il: aggiornato sempre su un salvataggio manuale (questo endpoint,
+                // usato sia dalla griglia listino sia dal drawer prodotto), mai da apiImportPrezzi() —
+                // vedi REVISIONE §6.12: evita che un import massivo sovrascriva silenziosamente un prezzo
+                // corretto/negoziato a mano dopo l'ultimo import.
                 $this->pdo->prepare(
                     "UPDATE listini_prezzi SET
                         prodotto_id     = :prodotto_id,
@@ -410,7 +414,8 @@ final class SalesPricelistsController extends BaseController
                         prezzo_unitario = :prezzo,
                         sconto_perc     = :sconto,
                         unita_misura_id = :unita_misura_id,
-                        note            = :note
+                        note            = :note,
+                        modificato_manualmente_il = CURRENT_TIMESTAMP
                      WHERE id = :id AND listino_id = :listino_id"
                 )->execute([
                     ':prodotto_id' => $prodottoId,
@@ -426,8 +431,8 @@ final class SalesPricelistsController extends BaseController
             } else {
                 // INSERT
                 $this->pdo->prepare(
-                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note)
-                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :unita_misura_id, :note)"
+                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, modificato_manualmente_il)
+                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :unita_misura_id, :note, CURRENT_TIMESTAMP)"
                 )->execute([
                     ':listino_id'  => $listinoId,
                     ':prodotto_id' => $prodottoId,
@@ -933,7 +938,7 @@ final class SalesPricelistsController extends BaseController
         }
 
         $listinoId = filter_input(INPUT_POST, 'listino_id', FILTER_VALIDATE_INT);
-        $clienteIds = $_POST['cliente_ids'] ?? [];
+        $clienteIds = array_values(array_unique(array_map('intval', $_POST['cliente_ids'] ?? [])));
 
         if (!$listinoId) {
             echo json_encode(['ok' => false, 'error' => 'Listino ID mancante.']);
@@ -943,18 +948,34 @@ final class SalesPricelistsController extends BaseController
         try {
             $this->pdo->beginTransaction();
 
-            // Rimuovi assegnazioni esistenti nel pivot
-            $stmtDel = $this->pdo->prepare("DELETE FROM clienti_listini WHERE listino_id = ?");
-            $stmtDel->execute([$listinoId]);
+            // Sincronizzazione differenziale (Diff-Sync) — corretto il 13/07/2026 (segnalazione #17
+            // / REVISIONE, "Cancellazione distruttiva con perdita di scadenze Listini"). La versione
+            // precedente cancellava e reinseriva TUTTE le righe di clienti_listini per questo listino
+            // a ogni salvataggio, azzerando priorita/data_inizio/data_fine anche per i clienti che
+            // restavano assegnati — quei campi sono scritti altrove (scheda del singolo cliente,
+            // includes/anagrafiche.php) e qui venivano silenziosamente persi. Ora si toccano solo le
+            // righe che cambiano davvero: si inseriscono solo i clienti nuovi e si rimuovono solo
+            // quelli deselezionati, senza mai toccare chi era già assegnato e resta tale.
+            $stmtEsistenti = $this->pdo->prepare("SELECT cliente_id FROM clienti_listini WHERE listino_id = ?");
+            $stmtEsistenti->execute([$listinoId]);
+            $esistenti = array_map('intval', $stmtEsistenti->fetchAll(PDO::FETCH_COLUMN));
 
-            // Inserisci le nuove
-            if (!empty($clienteIds)) {
+            $daRimuovere = array_diff($esistenti, $clienteIds);
+            $daAggiungere = array_diff($clienteIds, $esistenti);
+
+            if (!empty($daRimuovere)) {
+                $placeholders = implode(',', array_fill(0, count($daRimuovere), '?'));
+                $stmtDel = $this->pdo->prepare("DELETE FROM clienti_listini WHERE listino_id = ? AND cliente_id IN ($placeholders)");
+                $stmtDel->execute(array_merge([$listinoId], array_values($daRimuovere)));
+            }
+
+            if (!empty($daAggiungere)) {
                 $stmtIns = $this->pdo->prepare("
                     INSERT INTO clienti_listini (cliente_id, listino_id, priorita)
                     VALUES (?, ?, 10)
                 ");
-                foreach ($clienteIds as $cid) {
-                    $stmtIns->execute([(int)$cid, $listinoId]);
+                foreach ($daAggiungere as $cid) {
+                    $stmtIns->execute([$cid, $listinoId]);
                 }
             }
 
@@ -1012,9 +1033,10 @@ final class SalesPricelistsController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'Listino non trovato.']); exit;
         }
 
-        $inserted  = 0;
-        $skipped   = 0;
-        $rowErrors = [];
+        $inserted   = 0;
+        $skipped    = 0;
+        $rowErrors  = [];
+        $touchedIds = []; // id di listini_prezzi scritte/confermate in questo import — vedi REVISIONE §6.12
 
         $this->pdo->beginTransaction();
         try {
@@ -1057,25 +1079,49 @@ final class SalesPricelistsController extends BaseController
                 $sconto = $toFloat($row['sconto_perc'] ?? '0');
                 $note   = !empty($row['note']) ? trim((string)$row['note']) : null;
 
-                // Cerca se esiste già un prezzo per questo listino, prodotto e quantita_minima
+                // Cerca se esiste già un prezzo per questo listino, prodotto, quantita_minima E unita_misura_id.
+                // Bug corretto il 13/07/2026: la query precedente non filtrava su unita_misura_id, pur essendo
+                // parte del vincolo UNIQUE reale della tabella (listino_id, prodotto_id, quantita_minima,
+                // unita_misura_id) — con due righe stesso prodotto/scaglione ma UoM diverse (es. prezzo per KG
+                // e prezzo per FUSTO), l'import avrebbe potuto aggiornare la riga sbagliata invece di inserirne
+                // una nuova, sovrascrivendo silenziosamente il prezzo di una UoM diversa da quella importata.
                 $stmtCheck = $this->pdo->prepare("
-                    SELECT id FROM listini_prezzi 
+                    SELECT id, importato_il, modificato_manualmente_il FROM listini_prezzi
                     WHERE listino_id = :lid AND prodotto_id = :pid AND quantita_minima = :qmin
+                      AND (unita_misura_id = :umid OR (unita_misura_id IS NULL AND :umid_null = 1))
                 ");
                 $stmtCheck->execute([
-                    ':lid'  => $listinoId,
-                    ':pid'  => $prodottoId,
-                    ':qmin' => $qMin
+                    ':lid'      => $listinoId,
+                    ':pid'      => $prodottoId,
+                    ':qmin'     => $qMin,
+                    ':umid'     => $uomId ?: null,
+                    ':umid_null' => $uomId ? 0 : 1,
                 ]);
-                $existingId = $stmtCheck->fetchColumn();
+                $existingRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
-                if ($existingId) {
+                if ($existingRow) {
+                    $existingId = (int)$existingRow['id'];
+
+                    // REVISIONE §6.12 — "Regola d'Oro": non sovrascrivere silenziosamente una riga
+                    // modificata a mano dopo l'ultimo import. Resta comunque "vista" (touchedIds),
+                    // quindi non verrà mai chiusa come orfana solo perché non aggiornata.
+                    $modificataAMano = !empty($existingRow['modificato_manualmente_il'])
+                        && (empty($existingRow['importato_il']) || $existingRow['modificato_manualmente_il'] > $existingRow['importato_il']);
+
+                    if ($modificataAMano) {
+                        $skipped++;
+                        $touchedIds[] = $existingId;
+                        $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): prezzo modificato manualmente dopo l\'ultimo import — non sovrascritto, verificare a mano.';
+                        continue;
+                    }
+
                     // UPDATE
                     $this->pdo->prepare("
                         UPDATE listini_prezzi SET
                             prezzo_unitario = :prezzo,
                             sconto_perc = :sconto,
-                            note = :note
+                            note = :note,
+                            importato_il = CURRENT_TIMESTAMP
                         WHERE id = :id
                     ")->execute([
                         ':prezzo' => $prezzo,
@@ -1083,11 +1129,12 @@ final class SalesPricelistsController extends BaseController
                         ':note'   => $note,
                         ':id'     => $existingId
                     ]);
+                    $touchedIds[] = $existingId;
                 } else {
                     // INSERT
                     $this->pdo->prepare("
-                        INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note)
-                        VALUES (:lid, :pid, :qmin, :prezzo, :sconto, :umid, :note)
+                        INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, importato_il)
+                        VALUES (:lid, :pid, :qmin, :prezzo, :sconto, :umid, :note, CURRENT_TIMESTAMP)
                     ")->execute([
                         ':lid'    => $listinoId,
                         ':pid'    => $prodottoId,
@@ -1097,8 +1144,26 @@ final class SalesPricelistsController extends BaseController
                         ':umid'   => $uomId ?: null,
                         ':note'   => $note
                     ]);
+                    $touchedIds[] = (int)$this->pdo->lastInsertId();
                 }
                 $inserted++;
+            }
+
+            // REVISIONE §6.12 — righe che in passato provenivano da un import per QUESTO listino ma non
+            // sono più presenti nel file appena caricato. A differenza degli acquisti, `listini_prezzi`
+            // non ha validità per riga (scelta di progetto, vedi §6.10/C10: la validità vive solo sulla
+            // testata del listino) — quindi qui, coerentemente, le righe orfane vengono rimosse invece
+            // di essere "chiuse" con una data, non essendoci alcun campo dove farlo. Le righe modificate
+            // manualmente restano comunque escluse, perché sono sempre in touchedIds.
+            $removed = 0;
+            $stmtOrphanSel = $this->pdo->prepare("SELECT id FROM listini_prezzi WHERE listino_id = :lid AND importato_il IS NOT NULL");
+            $stmtOrphanSel->execute([':lid' => $listinoId]);
+            $orphanIds = array_diff(array_map('intval', $stmtOrphanSel->fetchAll(PDO::FETCH_COLUMN)), $touchedIds);
+            if (!empty($orphanIds)) {
+                $placeholders = implode(',', array_fill(0, count($orphanIds), '?'));
+                $stmtRemove = $this->pdo->prepare("DELETE FROM listini_prezzi WHERE id IN ($placeholders)");
+                $stmtRemove->execute(array_values($orphanIds));
+                $removed = count($orphanIds);
             }
 
             $this->pdo->commit();
@@ -1106,6 +1171,7 @@ final class SalesPricelistsController extends BaseController
                 'ok' => true,
                 'inserted' => $inserted,
                 'skipped' => $skipped,
+                'removed' => $removed,
                 'errors' => $rowErrors
             ]);
         } catch (Throwable $e) {

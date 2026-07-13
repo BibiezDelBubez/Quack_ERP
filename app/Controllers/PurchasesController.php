@@ -600,12 +600,22 @@ final class PurchasesController extends BaseController
             }
 
             // [Bug 3] Controllo sovrapposizione scaglioni
-            $stmtDup = $this->pdo->prepare("SELECT id FROM prodotti_fornitori_prezzi WHERE listino_acquisto_id = :listino_id AND prodotto_fornitore_id = :pfid AND quantita_minima = :qmin AND id != :riga_id");
+            // Query blindata anche qui il 13/07/2026 (REVISIONE §6.15) per coerenza con ProductsController::savePrezzo():
+            // in questo endpoint $listinoId è sempre valorizzato (validato più sopra), quindi il bug "colonna = NULL"
+            // non si presenta oggi — ma la query resta corretta anche se in futuro questo vincolo dovesse cambiare.
+            $stmtDup = $this->pdo->prepare("
+                SELECT id FROM prodotti_fornitori_prezzi
+                WHERE prodotto_fornitore_id = :pfid
+                  AND quantita_minima = :qmin
+                  AND id != :riga_id
+                  AND (listino_acquisto_id = :listino_id OR (:listino_id_null = 1 AND listino_acquisto_id IS NULL))
+            ");
             $stmtDup->execute([
-                ':listino_id' => $listinoId,
-                ':pfid'       => $pfId,
-                ':qmin'       => $qMin,
-                ':riga_id'    => $rigaId ?: 0
+                ':listino_id'      => $listinoId,
+                ':listino_id_null' => $listinoId === null ? 1 : 0,
+                ':pfid'            => $pfId,
+                ':qmin'            => $qMin,
+                ':riga_id'         => $rigaId ?: 0
             ]);
             if ($stmtDup->fetch()) {
                 $this->pdo->rollBack();
@@ -615,6 +625,9 @@ final class PurchasesController extends BaseController
 
             if ($rigaId) {
                 // Aggiorna riga
+                // modificato_manualmente_il: aggiornato sempre su un salvataggio manuale (questo endpoint),
+                // mai da apiImportPrezzi() — vedi REVISIONE §6.12: serve a evitare che un import massivo
+                // sovrascriva silenziosamente un prezzo negoziato/corretto a mano dopo l'ultimo import.
                 $this->pdo->prepare(
                     "UPDATE prodotti_fornitori_prezzi SET
                         prodotto_fornitore_id = :pfid,
@@ -623,7 +636,8 @@ final class PurchasesController extends BaseController
                         sconto_perc           = :sconto,
                         valido_dal            = :valido_dal,
                         valido_al             = :valido_al,
-                        note                  = :note
+                        note                  = :note,
+                        modificato_manualmente_il = CURRENT_TIMESTAMP
                      WHERE id = :id AND listino_acquisto_id = :listino_id"
                 )->execute([
                     ':pfid'       => $pfId,
@@ -640,8 +654,8 @@ final class PurchasesController extends BaseController
             } else {
                 // Inserisci riga
                 $this->pdo->prepare(
-                    "INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
-                     VALUES (:pfid, :listino_id, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note)"
+                    "INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note, modificato_manualmente_il)
+                     VALUES (:pfid, :listino_id, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note, CURRENT_TIMESTAMP)"
                 )->execute([
                     ':pfid'       => $pfId,
                     ':listino_id' => $listinoId,
@@ -732,9 +746,10 @@ final class PurchasesController extends BaseController
         }
         $fornitoreId = (int)$listino['fornitore_id'];
 
-        $inserted  = 0;
-        $skipped   = 0;
-        $rowErrors = [];
+        $inserted   = 0;
+        $skipped    = 0;
+        $rowErrors  = [];
+        $touchedIds = []; // id di prodotti_fornitori_prezzi scritte/confermate in questo import — usato per (a) non toccare due volte la stessa riga, (b) individuare a fine ciclo le righe importate in passato ma assenti da questo file (REVISIONE §6.12)
 
         $this->pdo->beginTransaction();
         try {
@@ -816,9 +831,9 @@ final class PurchasesController extends BaseController
 
                 // Cerca se esiste già un prezzo per questo listino, prodotto_fornitore e quantita_minima
                 $stmtCheck = $this->pdo->prepare("
-                    SELECT id FROM prodotti_fornitori_prezzi 
-                    WHERE prodotto_fornitore_id = :pfid 
-                      AND listino_acquisto_id = :lid 
+                    SELECT id, importato_il, modificato_manualmente_il FROM prodotti_fornitori_prezzi
+                    WHERE prodotto_fornitore_id = :pfid
+                      AND listino_acquisto_id = :lid
                       AND quantita_minima = :qmin
                 ");
                 $stmtCheck->execute([
@@ -829,6 +844,22 @@ final class PurchasesController extends BaseController
                 $priceRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
                 if ($priceRow) {
+                    $rigaId = (int)$priceRow['id'];
+
+                    // REVISIONE §6.12 — "Regola d'Oro": se qualcuno ha modificato questa riga a mano
+                    // dopo l'ultimo import (o non è mai stata toccata da un import), non sovrascriverla
+                    // silenziosamente. La riga resta comunque "vista" da questo import (touchedIds), quindi
+                    // non verrà mai considerata orfana solo perché non aggiornata.
+                    $modificataAMano = !empty($priceRow['modificato_manualmente_il'])
+                        && (empty($priceRow['importato_il']) || $priceRow['modificato_manualmente_il'] > $priceRow['importato_il']);
+
+                    if ($modificataAMano) {
+                        $skipped++;
+                        $touchedIds[] = $rigaId;
+                        $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): prezzo modificato manualmente dopo l\'ultimo import — non sovrascritto, verificare a mano.';
+                        continue;
+                    }
+
                     // Update
                     $this->pdo->prepare("
                         UPDATE prodotti_fornitori_prezzi SET
@@ -836,7 +867,8 @@ final class PurchasesController extends BaseController
                             sconto_perc = :sconto,
                             valido_dal = :valido_dal,
                             valido_al = :valido_al,
-                            note = :note
+                            note = :note,
+                            importato_il = CURRENT_TIMESTAMP
                         WHERE id = :id
                     ")->execute([
                         ':prezzo'     => $prezzo,
@@ -844,13 +876,14 @@ final class PurchasesController extends BaseController
                         ':valido_dal' => $validoDal,
                         ':valido_al'  => $validoAl,
                         ':note'       => $note,
-                        ':id'         => (int)$priceRow['id']
+                        ':id'         => $rigaId
                     ]);
+                    $touchedIds[] = $rigaId;
                 } else {
                     // Insert
                     $this->pdo->prepare("
-                        INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note)
-                        VALUES (:pfid, :lid, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note)
+                        INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note, importato_il)
+                        VALUES (:pfid, :lid, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note, CURRENT_TIMESTAMP)
                     ")->execute([
                         ':pfid'       => $pfId,
                         ':lid'        => $listinoId,
@@ -861,14 +894,38 @@ final class PurchasesController extends BaseController
                         ':valido_al'   => $validoAl,
                         ':note'        => $note
                     ]);
+                    $touchedIds[] = (int)$this->pdo->lastInsertId();
                 }
                 $inserted++;
             }
+
+            // REVISIONE §6.12 — righe che in passato provenivano da un import per QUESTO listino
+            // ma non sono più presenti nel file appena caricato: il fornitore le ha tolte dal suo
+            // listino. Non le cancelliamo (perderemmo lo storico prezzi); le chiudiamo impostando
+            // valido_al = oggi, stesso principio di storicizzazione già usato altrove nel progetto.
+            // Le righe modificate manualmente (mai toccate da importato_il, o già chiuse) non rientrano.
+            $expired = 0;
+            $stmtOrphanSel = $this->pdo->prepare("
+                SELECT id FROM prodotti_fornitori_prezzi
+                WHERE listino_acquisto_id = :lid
+                  AND importato_il IS NOT NULL
+                  AND (valido_al IS NULL OR valido_al >= CURRENT_DATE)
+            ");
+            $stmtOrphanSel->execute([':lid' => $listinoId]);
+            $orphanIds = array_diff(array_map('intval', $stmtOrphanSel->fetchAll(PDO::FETCH_COLUMN)), $touchedIds);
+            if (!empty($orphanIds)) {
+                $placeholders = implode(',', array_fill(0, count($orphanIds), '?'));
+                $stmtExpire = $this->pdo->prepare("UPDATE prodotti_fornitori_prezzi SET valido_al = CURRENT_DATE WHERE id IN ($placeholders)");
+                $stmtExpire->execute(array_values($orphanIds));
+                $expired = count($orphanIds);
+            }
+
             $this->pdo->commit();
             echo json_encode([
                 'ok'       => true,
                 'inserted' => $inserted,
                 'skipped'  => $skipped,
+                'expired'  => $expired,
                 'errors'   => $rowErrors
             ]);
         } catch (Throwable $e) {

@@ -1420,7 +1420,8 @@ document.addEventListener('DOMContentLoaded', function () {
         var html = '<div class="alert alert-success py-2 mb-2">'
                  + '<i class="fa-solid fa-circle-check me-1"></i>'
                  + '<strong>'+result.inserted+'</strong> tariffe importate/aggiornate'
-                 + (result.skipped>0 ? ', <strong>'+result.skipped+'</strong> saltate' : '') + '.'
+                 + (result.skipped>0 ? ', <strong>'+result.skipped+'</strong> saltate' : '')
+                 + (result.expired>0 ? ', <strong>'+result.expired+'</strong> chiuse perché non più presenti nel file (assenti dal nuovo listino fornitore)' : '') + '.'
                  + '</div>';
         if (result.errors && result.errors.length) {
           html += '<details style="font-size:.8rem"><summary style="cursor:pointer" class="qk-text-muted">Dettaglio righe saltate ('+result.errors.length+')</summary>'

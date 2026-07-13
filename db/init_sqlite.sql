@@ -722,6 +722,8 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
     valido_al             DATE,                               -- NULL = senza scadenza
     note                  TEXT,
 	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id) ON DELETE CASCADE,
+	importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
+	modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
     UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima)
 );
 
@@ -794,7 +796,9 @@ FROM (
         ) AS rn
     FROM prodotti_fornitori pf
     JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
+    JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
     WHERE pf.attivo = 1
+      AND cf.attivo = 1  -- aggiunto 13/07/2026 (REVISIONE §6.11): un fornitore disattivato non deve più proporsi come costo di riferimento
 ) ranked
 WHERE rn = 1;
 
@@ -812,10 +816,12 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
     sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
     note            TEXT,
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
+    modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
     UNIQUE (listino_id, prodotto_id, quantita_minima, unita_misura_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto 
+CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto
     ON listini_prezzi(listino_id, prodotto_id);
 
 -- =============================================================================

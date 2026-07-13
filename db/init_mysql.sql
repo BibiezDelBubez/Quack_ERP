@@ -592,7 +592,8 @@ CREATE TABLE IF NOT EXISTS listini_acquisto (
 	valido_dal   DATE,
 	valido_al   DATE,
 	note TEXT,
-	file_path TEXT   -- salvo i pdf dei listini
+	file_path TEXT,   -- salvo i pdf dei listini
+	attivo BOOLEAN NOT NULL DEFAULT 1  -- allineato a init_sqlite.sql il 13/07/2026: la vista v_prezzo_acquisto_base_fornitore sotto referenzia già la.attivo, mancava la colonna
 );
 
 -- Prezzi di acquisto a scaglione per coppia prodotto-fornitore
@@ -606,7 +607,9 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
     valido_dal            DATE,                               -- NULL = sempre valido
     valido_al             DATE,                               -- NULL = senza scadenza
     note                  TEXT,
-	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id) -- collegato al listino d'acquisto se esistente
+	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id), -- collegato al listino d'acquisto se esistente
+	importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
+	modificato_manualmente_il  DATETIME DEFAULT NULL  -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
 );
 
 -- =============================================================================
@@ -651,7 +654,9 @@ FROM (
         ) AS rn
     FROM prodotti_fornitori pf
     JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
+    JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
     WHERE pf.attivo = 1
+      AND cf.attivo = 1  -- aggiunto 13/07/2026 (REVISIONE §6.11): un fornitore disattivato non deve più proporsi come costo di riferimento
 ) ranked
 WHERE rn = 1;
 
@@ -669,6 +674,8 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
     sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
     note            TEXT,
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
+    modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
     UNIQUE (listino_id, prodotto_id, quantita_minima, unita_misura_id) -- allineato allo schema SQLite gemello: impedisce due righe prezzo contraddittorie per la stessa chiave
 );
 

@@ -1339,6 +1339,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (d.ok) {
         html += 'Caricate/Aggiornate ' + d.inserted + ' righe. ';
         if (d.skipped > 0) html += 'Saltate ' + d.skipped + ' righe con errori.<br>';
+        if (d.removed > 0) html += 'Rimosse ' + d.removed + ' righe non più presenti nel file (assenti dal nuovo listino).<br>';
       } else {
         html += d.error || '';
       }

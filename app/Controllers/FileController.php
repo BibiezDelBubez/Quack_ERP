@@ -24,21 +24,24 @@ class FileController extends BaseController
         // Anti path-traversal
         if ($rel === '' || str_contains($rel, '..') || str_contains($rel, "\0")) {
             http_response_code(400);
-            exit('Richiesta non valida.');
+            require APP_ROOT_DIR . '/404.php';
+            exit;
         }
 
         // Whitelist: solo cartelle consentite
         $topDir = explode('/', str_replace('\\', '/', $rel))[0];
         if (!in_array($topDir, self::ALLOWED_DIRS, true)) {
             http_response_code(403);
-            exit('Accesso negato.');
+            require APP_ROOT_DIR . '/404.php';
+            exit;
         }
 
         $abs = upload_abs($rel);
 
         if (!is_file($abs)) {
             http_response_code(404);
-            exit('File non trovato.');
+            require APP_ROOT_DIR . '/404.php';
+            exit;
         }
 
         $mime = mime_content_type($abs) ?: 'application/octet-stream';

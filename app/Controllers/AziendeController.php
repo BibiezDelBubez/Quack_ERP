@@ -123,13 +123,33 @@ final class AziendeController extends BaseController
                         if (!empty($upload_errors)) {
                             $errors = array_merge($errors, $upload_errors);
                         } else {
+                            $oldLogo = $loaded['logo_path'] ?? '';
+                            $oldHeader = $loaded['header_path'] ?? '';
+
                             if ($logo) {
                                 $values['logo_path'] = $logo;
+                                if ($oldLogo && $oldLogo !== $logo) {
+                                    $abs = APP_ROOT_DIR . '/public/' . ltrim($oldLogo, '/\\');
+                                    if (is_file($abs)) {
+                                        if (!unlink($abs)) {
+                                            error_log("AziendeController: Impossibile eliminare il vecchio logo: " . $abs);
+                                        }
+                                    }
+                                }
                             } else {
                                 $values['logo_path'] = post('existing_logo_path');
                             }
+                            
                             if ($header) {
                                 $values['header_path'] = $header;
+                                if ($oldHeader && $oldHeader !== $header) {
+                                    $abs = APP_ROOT_DIR . '/public/' . ltrim($oldHeader, '/\\');
+                                    if (is_file($abs)) {
+                                        if (!unlink($abs)) {
+                                            error_log("AziendeController: Impossibile eliminare il vecchio header: " . $abs);
+                                        }
+                                    }
+                                }
                             } else {
                                 $values['header_path'] = post('existing_header_path');
                             }
@@ -552,13 +572,13 @@ final class AziendeController extends BaseController
 
         // Doppio controllo: il file deve essere un'immagine raster valida e decodificabile,
         // non solo avere i "magic bytes" giusti in testa.
-        if (@getimagesize($file['tmp_name']) === false) {
+        if (getimagesize($file['tmp_name']) === false) {
             $errors[$inputName] = 'Il file non è un\'immagine valida.';
             return null;
         }
 
         // Directory di upload (loghi e header aziende — senza sharding, pochi file fissi)
-        $subdir = ($inputName === 'header_image') ? 'header_aziende' : 'loghi';
+        $subdir = ($inputName === 'header_file') ? 'header_aziende' : 'loghi';
         $upload_dir = upload_ensure_dir($subdir);
 
         // Estensione derivata dal MIME reale, non dal nome file fornito dall'utente.

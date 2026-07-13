@@ -562,22 +562,11 @@ final class AdrController extends BaseController
                         $errors['classe'] = 'Codice e denominazione sono obbligatori.';
                         break;
                     }
-                    $ex = $this->pdo->prepare('SELECT 1 FROM adr_classi_pericolo WHERE codice=:c');
-                    $ex->execute([':c' => $codice]);
-                    if ($ex->fetchColumn()) {
-                        $this->pdo->prepare(
-                            'UPDATE adr_classi_pericolo
-                                SET denominazione=:d, ha_divisioni=:hd
-                              WHERE codice=:c'
-                        )->execute([':c'=>$codice,':d'=>$denom,':hd'=>$div]);
-                        $ok = "Classe $codice aggiornata.";
-                    } else {
-                        $this->pdo->prepare(
-                            'INSERT INTO adr_classi_pericolo (codice, denominazione, ha_divisioni)
-                             VALUES (:c, :d, :hd)'
-                        )->execute([':c'=>$codice,':d'=>$denom,':hd'=>$div]);
-                        $ok = "Classe $codice aggiunta.";
-                    }
+                    $sql = (DB_DRIVER === 'mysql')
+                        ? "INSERT INTO adr_classi_pericolo (codice, denominazione, ha_divisioni) VALUES (:c, :d, :hd) ON DUPLICATE KEY UPDATE denominazione=VALUES(denominazione), ha_divisioni=VALUES(ha_divisioni)"
+                        : "INSERT INTO adr_classi_pericolo (codice, denominazione, ha_divisioni) VALUES (:c, :d, :hd) ON CONFLICT(codice) DO UPDATE SET denominazione=excluded.denominazione, ha_divisioni=excluded.ha_divisioni";
+                    $this->pdo->prepare($sql)->execute([':c' => $codice, ':d' => $denom, ':hd' => $div]);
+                    $ok = "Classe $codice salvata correttamente.";
                     break;
 
                 case 'delete_classe':
@@ -605,17 +594,11 @@ final class AdrController extends BaseController
                         $errors['imb'] = 'Codice e descrizione sono obbligatori.';
                         break;
                     }
-                    $ex = $this->pdo->prepare('SELECT 1 FROM adr_gruppi_imballaggio WHERE codice=:c');
-                    $ex->execute([':c' => $codice]);
-                    if ($ex->fetchColumn()) {
-                        $this->pdo->prepare('UPDATE adr_gruppi_imballaggio SET descrizione=:d WHERE codice=:c')
-                            ->execute([':c'=>$codice,':d'=>$desc]);
-                        $ok = "Gruppo $codice aggiornato.";
-                    } else {
-                        $this->pdo->prepare('INSERT INTO adr_gruppi_imballaggio (codice,descrizione) VALUES (:c,:d)')
-                            ->execute([':c'=>$codice,':d'=>$desc]);
-                        $ok = "Gruppo $codice aggiunto.";
-                    }
+                    $sql = (DB_DRIVER === 'mysql')
+                        ? "INSERT INTO adr_gruppi_imballaggio (codice, descrizione) VALUES (:c, :d) ON DUPLICATE KEY UPDATE descrizione=VALUES(descrizione)"
+                        : "INSERT INTO adr_gruppi_imballaggio (codice, descrizione) VALUES (:c, :d) ON CONFLICT(codice) DO UPDATE SET descrizione=excluded.descrizione";
+                    $this->pdo->prepare($sql)->execute([':c' => $codice, ':d' => $desc]);
+                    $ok = "Gruppo $codice salvato correttamente.";
                     break;
 
                 case 'delete_imb':
@@ -636,22 +619,11 @@ final class AdrController extends BaseController
                         $errors['galleria'] = 'Il codice è obbligatorio.';
                         break;
                     }
-                    $ex = $this->pdo->prepare('SELECT 1 FROM adr_codici_restrizione_gallerie WHERE codice=:c');
-                    $ex->execute([':c' => $codice]);
-                    if ($ex->fetchColumn()) {
-                        $this->pdo->prepare(
-                            'UPDATE adr_codici_restrizione_gallerie
-                                SET descrizione=:d, si_applica_a_cisterna=:cs
-                              WHERE codice=:c'
-                        )->execute([':c'=>$codice,':d'=>$desc,':cs'=>($cisterna===''?null:$cisterna)]);
-                        $ok = "Codice galleria «$codice» aggiornato.";
-                    } else {
-                        $this->pdo->prepare(
-                            'INSERT INTO adr_codici_restrizione_gallerie (codice,si_applica_a_cisterna,descrizione)
-                             VALUES (:c,:cs,:d)'
-                        )->execute([':c'=>$codice,':cs'=>($cisterna===''?null:$cisterna),':d'=>$desc]);
-                        $ok = "Codice galleria «$codice» aggiunto.";
-                    }
+                    $sql = (DB_DRIVER === 'mysql')
+                        ? "INSERT INTO adr_codici_restrizione_gallerie (codice, si_applica_a_cisterna, descrizione) VALUES (:c, :cs, :d) ON DUPLICATE KEY UPDATE si_applica_a_cisterna=VALUES(si_applica_a_cisterna), descrizione=VALUES(descrizione)"
+                        : "INSERT INTO adr_codici_restrizione_gallerie (codice, si_applica_a_cisterna, descrizione) VALUES (:c, :cs, :d) ON CONFLICT(codice) DO UPDATE SET si_applica_a_cisterna=excluded.si_applica_a_cisterna, descrizione=excluded.descrizione";
+                    $this->pdo->prepare($sql)->execute([':c' => $codice, ':cs' => ($cisterna === '' ? null : $cisterna), ':d' => $desc]);
+                    $ok = "Codice galleria «$codice» salvato correttamente.";
                     break;
 
                 case 'delete_galleria':
@@ -674,32 +646,16 @@ final class AdrController extends BaseController
                         $errors['categoria'] = 'Categoria non valida (deve essere un intero tra 0 e 4).';
                         break;
                     }
-                    $ex = $this->pdo->prepare('SELECT 1 FROM adr_categorie_trasporto WHERE categoria=:c');
-                    $ex->execute([':c' => (int)$cat]);
-                    if ($ex->fetchColumn()) {
-                        $this->pdo->prepare(
-                            'UPDATE adr_categorie_trasporto
-                                SET moltiplicatore_punti=:m, soglia_esenzione_kg_l=:s, descrizione=:d
-                              WHERE categoria=:c'
-                        )->execute([
-                            ':c' => (int)$cat,
-                            ':m' => ($molt !== '' ? (int)$molt : 0),
-                            ':s' => ($soglia !== '' ? (int)$soglia : null),
-                            ':d' => ($desc !== '' ? $desc : null),
-                        ]);
-                        $ok = "Categoria $cat aggiornata.";
-                    } else {
-                        $this->pdo->prepare(
-                            'INSERT INTO adr_categorie_trasporto (categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione)
-                             VALUES (:c, :m, :s, :d)'
-                        )->execute([
-                            ':c' => (int)$cat,
-                            ':m' => ($molt !== '' ? (int)$molt : 0),
-                            ':s' => ($soglia !== '' ? (int)$soglia : null),
-                            ':d' => ($desc !== '' ? $desc : null),
-                        ]);
-                        $ok = "Categoria $cat aggiunta.";
-                    }
+                    $sql = (DB_DRIVER === 'mysql')
+                        ? "INSERT INTO adr_categorie_trasporto (categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione) VALUES (:c, :m, :s, :d) ON DUPLICATE KEY UPDATE moltiplicatore_punti=VALUES(moltiplicatore_punti), soglia_esenzione_kg_l=VALUES(soglia_esenzione_kg_l), descrizione=VALUES(descrizione)"
+                        : "INSERT INTO adr_categorie_trasporto (categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione) VALUES (:c, :m, :s, :d) ON CONFLICT(categoria) DO UPDATE SET moltiplicatore_punti=excluded.moltiplicatore_punti, soglia_esenzione_kg_l=excluded.soglia_esenzione_kg_l, descrizione=excluded.descrizione";
+                    $this->pdo->prepare($sql)->execute([
+                        ':c' => (int)$cat,
+                        ':m' => ($molt !== '' ? (int)$molt : 0),
+                        ':s' => ($soglia !== '' ? (int)$soglia : null),
+                        ':d' => ($desc !== '' ? $desc : null),
+                    ]);
+                    $ok = "Categoria $cat salvata correttamente.";
                     break;
 
                 case 'delete_categoria':

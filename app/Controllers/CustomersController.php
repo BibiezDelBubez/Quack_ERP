@@ -697,8 +697,8 @@ class CustomersController extends BaseController
             }
 
             $orig_name = basename($file['name']);
-            // Clean filename to prevent issues
-            $safe_name = preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $orig_name);
+            // Clean filename and prepend uniqid to prevent overwriting/data loss
+            $safe_name = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $orig_name);
 
             // SECURITY FIX: Blacklist di estensioni pericolose (permettendo zip, rar, pdf, ecc.)
             $ext = strtolower(pathinfo($safe_name, PATHINFO_EXTENSION));

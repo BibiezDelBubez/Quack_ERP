@@ -1106,30 +1106,35 @@ window.QkPF = {
                   }
                 }
 
-                // Scaglioni successivi (Qty > 0)
-                const cells = row.querySelectorAll('.matrix-cell-wrapper[data-qty]:not([data-qty="0"])');
+                // Scaglioni successivi (Qty > 0): ereditarietà "a cascata" DENTRO LO STESSO LISTINO,
+                // esattamente come fa il motore di pricing reale (getSalePrice(): quantita_minima <= qty
+                // ORDER BY quantita_minima DESC LIMIT 1, sempre e solo nello stesso listino_id — mai
+                // pescando da un altro listino). Corretto il 13/07/2026 (REVISIONE §6.13): la versione
+                // precedente, per una cella vuota, prendeva in prestito il prezzo del listino Standard
+                // allo STESSO scaglione — mostrando in anteprima un numero diverso da quello che un
+                // ordine reale con questo listino avrebbe applicato.
+                const cells = Array.from(row.querySelectorAll('.matrix-cell-wrapper[data-qty]:not([data-qty="0"])'))
+                  .sort((a, b) => parseFloat(a.dataset.qty) - parseFloat(b.dataset.qty));
+
+                // Valore di partenza della cascata: il prezzo base di QUESTO listino, se esiste;
+                // solo se questo listino non ha nemmeno un prezzo base proprio si scende al listino
+                // Standard — coerente con la cascata di fallback reale (Dedicato/Listino -> Standard).
+                let lastVal = listinoBaseVal !== null ? listinoBaseVal : standardBaseVal;
+
                 cells.forEach(cell => {
-                  const qty = cell.dataset.qty;
                   const priceInput = cell.querySelector('.cell-price-input');
                   const cellValStr = cell.dataset.stockPrice || '';
 
-                  let fallbackVal = listinoBaseVal !== null ? listinoBaseVal : standardBaseVal;
-                  
-                  // Se il Listino 1 (Standard) ha uno specifico prezzo inserito per questo scaglione, prendilo come ereditarietà
-                  const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
-                  if (standardRow) {
-                    const standardTierCell = standardRow.querySelector(`.matrix-cell-wrapper[data-qty="${qty}"]`);
-                    const standardTierValStr = standardTierCell ? (standardTierCell.dataset.stockPrice || '') : '';
-                    if (standardTierValStr !== '') {
-                      fallbackVal = parseFloat(standardTierValStr);
-                    }
-                  }
-
-                  let dispVal = fallbackVal;
+                  let dispVal = lastVal;
                   if (currentSalesUomMode === 'commercial' && hasComm) {
-                    dispVal = fallbackVal / qFactor;
+                    dispVal = lastVal / qFactor;
                   }
                   priceInput.placeholder = dispVal.toFixed(4) + ' (Ered.)';
+
+                  if (cellValStr !== '') {
+                    // Scaglione con prezzo esplicito: diventa il riferimento per i successivi ancora vuoti.
+                    lastVal = parseFloat(cellValStr);
+                  }
                 });
               });
             }

@@ -37,7 +37,9 @@ if (!is_dir(UPLOAD_DIR)) {
     // Crea le sottocartelle fisse necessarie (non sharded)
     foreach (['loghi', 'header_aziende', 'mpdf_tmp', 'prodotti', 'offerte'] as $_qk_dir) {
         if (!is_dir(UPLOAD_DIR . '/' . $_qk_dir)) {
-            @mkdir(UPLOAD_DIR . '/' . $_qk_dir, 0755, true);
+            if (!mkdir(UPLOAD_DIR . '/' . $_qk_dir, 0755, true)) {
+                error_log('[Quack] Impossibile creare la sottocartella upload: ' . $_qk_dir);
+            }
         }
     }
     unset($_qk_dir);
