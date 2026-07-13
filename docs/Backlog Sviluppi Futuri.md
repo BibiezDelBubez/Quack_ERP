@@ -107,11 +107,32 @@ Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere s
 
 A differenza delle voci sopra — che sono lavoro riconosciuto e **deliberatamente rimandato** (si farà, ma non ora) — le voci qui sotto sono osservazioni emerse durante il lavoro di analisi/documentazione: possibili miglioramenti segnalati per completezza, su cui **non è stata presa alcuna decisione**, nemmeno quella di farli in futuro. Non è nemmeno stabilito se abbiano senso per l'operatività reale di Quack. Vanno lette come spunti da verificare con chi conosce il processo aziendale, non come backlog impegnato.
 
+### 6bis. Disattivazione di un'unità di misura (`unita_misura.attivo`)
+
+**Fonte:** [REVISIONE - Ridondanze, Contraddizioni e Piano di Riorganizzazione.md](Unita%20di%20misura%20e%20prezzi/REVISIONE%20-%20Ridondanze%2C%20Contraddizioni%20e%20Piano%20di%20Riorganizzazione.md), §6.3 Problema 1.
+
+**Di cosa si tratta.** Oggi non esiste alcun modo di "ritirare" un'unità di misura (es. FUSTO) dai menu di scelta per prodotti nuovi, pur lasciandola funzionante per i prodotti che la usano già. La tabella `unita_misura` non ha nemmeno la colonna per marcarla attiva/disattivata, e non esiste alcuna vista/controller per gestirne l'anagrafica.
+
+**Stato attuale.** Verificato: `unita_misura` ha solo `id, codice, descrizione, categoria_id, fattore_base, e_riferimento` — nessuna colonna `attivo`. Nessun file `app/views/*unita*` o `*misura*`, nessuna azione di disattivazione in nessun controller.
+
+**Specifica già pronta, non implementata** (dettaglio completo in REVISIONE §6.3 Problema 1):
+1. `ALTER TABLE unita_misura ADD COLUMN attivo TINYINT(1) NOT NULL DEFAULT 1` (su entrambi gli schemi gemelli).
+2. Dropdown di creazione prodotto filtrato su `attivo = 1`; dropdown di modifica prodotto che include sempre anche la UoM stock/commerciale correnti, pure se disattivate (etichettate "(disattivata)").
+3. **Nessuna guardia bloccante** alla disattivazione stessa — coerente con SAP: si lascia che accada, il riferimento diventato incongruente smette semplicemente di essere selezionabile per cose nuove.
+4. Report di pulizia opzionale (non un blocco) per trovare prodotti che referenziano ancora una UoM disattivata.
+5. Nuova UI in una pagina Impostazioni per gestire l'elenco UoM (oggi assente).
+
+**Perché è rimandato.** Nessun caso d'uso reale lo richiede ancora oggi (nessuna UoM è mai stata "ritirata" nel catalogo attuale) — costruire la funzionalità in anticipo sarebbe complessità aggiunta senza beneficio immediato. Da riprendere quando emerge davvero la necessità di disattivare una UoM esistente.
+
+---
+
 ### 7. Catch Weight (doppia misura) per prodotti chimici a peso variabile
 
 **Fonte:** [REVISIONE - Ridondanze, Contraddizioni e Piano di Riorganizzazione.md](Unita%20di%20misura%20e%20prezzi/REVISIONE%20-%20Ridondanze%2C%20Contraddizioni%20e%20Piano%20di%20Riorganizzazione.md), §6.1.
 
 **Di cosa si tratta.** Oggi Quack converte tra Stock UoM e UoM commerciale con un fattore fisso salvato in anagrafica prodotto (es. `quantita_contenuto = 25`, "1 fusto = 25 kg", applicato sempre e per ogni movimento di quel prodotto). Il "Catch Weight" è un pattern diverso, usato in alcuni ERP enterprise per il settore chimico/alimentare: permette di registrare, per ogni singolo movimento o lotto, un **peso realmente misurato** (es. alla bilancia in fase di carico/scarico) che può differire dal peso teorico calcolato come conteggio × fattore fisso — per variazioni di densità, temperatura, tolleranza di riempimento in produzione. Non è la stessa cosa di "avere due unità di misura per prodotto" (quello Quack lo ha già, correttamente, con l'Approccio 1 a UoM commerciale singola): è una seconda misura fisica indipendente, per singolo movimento, non derivabile moltiplicando un conteggio per un fattore costante.
+
+**Decisione di progetto (confermata col proprietario, 13/07/2026): per ora consideriamo i prodotti gestiti da Quack come non deperibili e a peso/composizione stabile nel tempo.** Sotto questa ipotesi, il fattore di conversione fisso già esistente (`quantita_contenuto`) è sufficiente e corretto per ogni caso reale attuale: le unità di misura di cui il sistema dispone oggi bastano e avanzano, non manca nulla da implementare adesso. Questa voce resta quindi puramente come promemoria per il futuro, nel caso in cui l'assortimento prodotti cambi (es. ingresso di prodotti a peso variabile lotto per lotto) e la necessità diventi reale.
 
 **Verifica esplicita (13/07/2026): nell'ipotesi che i prodotti non cambino mai peso reale rispetto al teorico, il sistema attuale è già corretto e sufficiente.** Un fattore di conversione fisso per prodotto è esattamente la soluzione giusta quando il rapporto "1 fusto = 25 kg" è sempre vero senza eccezioni — non manca nulla, non c'è alcun rischio di dato errato. Il Catch Weight ha senso solo se e quando esiste un caso reale di scostamento (peso pesato ≠ peso teorico) che l'azienda vuole tracciare o fatturare. Finché quel caso non si presenta, implementarlo sarebbe complessità aggiunta senza beneficio — coerente con l'approccio già seguito altrove nel progetto (non anticipare architettura senza un requisito reale, vedi C8 nel documento di origine).
 
@@ -181,3 +202,11 @@ Nei sistemi di fascia alta, la gestione dello storage si basa su tre pilastri:
 
 4. **Allarmistica Notifiche:**
    - Agganciare un task che, se `disk_free_space` < 10%, invia un'email automatica o un messaggio nel sistema di notifiche interno a tutti gli utenti con ruolo SuperAdmin.
+
+---
+
+### 10. Sanitizzazione Globale Input contro XSS (Cross-Site Scripting)
+
+**Di cosa si tratta.** Attualmente, in vari punti del gestionale (come ad esempio in `ProfileController.php` per l'aggiornamento di Nome e Cognome), i dati inseriti dall'utente vengono salvati nel database senza un'adeguata sanitizzazione (viene eseguito solo un `trim()`). Se un utente malintenzionato inserisce codice HTML o JavaScript malevolo (es. `<script>...</script>`), questo potrebbe essere eseguito nel browser di altri utenti (come l'Amministratore) quando visualizzano quei dati. Questa � una vulnerabilit� nota come Stored XSS.
+**Stato attuale.** Il framework proprietario non ha un middleware o una funzione di sanitizzazione automatica per tutti gli input di testo.
+**Perch� � rimandato.** Non trattandosi di un ERP esposto al pubblico ma di un software ad uso interno, il rischio di un attacco XSS interno � mitigato, sebbene non nullo. L'implementazione corretta richiede l'introduzione di una funzione globale di sanitizzazione (es. `strip_tags()` o librerie specifiche per l'escape dell'HTML) che avvolga automaticamente tutti gli input testuali prima di passarli a PDO, operazione che richiede un refactoring moderato del `BaseController` o delle funzioni helper di input.

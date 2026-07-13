@@ -609,7 +609,15 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
     note                  TEXT,
 	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id), -- collegato al listino d'acquisto se esistente
 	importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
-	modificato_manualmente_il  DATETIME DEFAULT NULL  -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
+	modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
+	-- D1.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1): vedi commento esteso nello schema SQLite gemello.
+	quantita_minima_intento    DECIMAL(10,3) DEFAULT NULL,
+	unita_misura_soglia_id     INTEGER       DEFAULT NULL REFERENCES unita_misura(id),
+	quantita_minima_stock      DECIMAL(10,3) DEFAULT NULL,
+	-- D1.2 (PIANO Motore di Pricing Multi-UoM §5.7/§7.4/§8): questa tabella non aveva MAI avuto
+	-- un vincolo UNIQUE su MySQL (gap noto, REVISIONE §6.10/§5.7 del piano) — aggiunto qui
+	-- direttamente sul valore canonico, allineato allo schema SQLite gemello fin dall'inizio.
+	UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima_stock)
 );
 
 -- =============================================================================
@@ -676,7 +684,12 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
     modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
-    UNIQUE (listino_id, prodotto_id, quantita_minima, unita_misura_id) -- allineato allo schema SQLite gemello: impedisce due righe prezzo contraddittorie per la stessa chiave
+    -- D1.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1): vedi commento esteso nello schema SQLite gemello.
+    quantita_minima_intento    DECIMAL(10,3) DEFAULT NULL,
+    unita_misura_soglia_id     INTEGER       DEFAULT NULL REFERENCES unita_misura(id),
+    quantita_minima_stock      DECIMAL(10,3) DEFAULT NULL,
+    -- D1.2: vincolo spostato sul valore canonico (sempre Stock UoM), non più su valore grezzo+unità.
+    UNIQUE (listino_id, prodotto_id, quantita_minima_stock)
 );
 
 -- =============================================================================
@@ -1113,9 +1126,19 @@ CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prezzi_pf         ON prodotti_
 -- Indice composito per query di vendita (ricerca prezzo per listino + prodotto)
 CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto      ON listini_prezzi(listino_id, prodotto_id);
 
--- Unicità UoM di riferimento per categoria (un solo e_riferimento = 1 per categoria)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_um_categoria_riferimento
-    ON unita_misura(categoria_id) WHERE e_riferimento = 1;
+-- Unicità UoM di riferimento per categoria (un solo e_riferimento = 1 per categoria).
+-- BUG CORRETTO (14/07/2026, audit a tappeto multi-UoM): MySQL/MariaDB non supportano
+-- indici parziali (CREATE UNIQUE INDEX ... WHERE) — questa istruzione produceva un
+-- errore di sintassi su un vero server MySQL, interrompendo l'esecuzione dell'intero
+-- script. Sostituita con una colonna generata STORED: vale categoria_id solo quando
+-- e_riferimento=1 (altrimenti NULL, e MySQL considera NULL sempre distinto da un altro
+-- NULL in un indice UNIQUE, coerente con la semantica dell'indice parziale originale).
+ALTER TABLE unita_misura
+    ADD COLUMN categoria_riferimento_check INT
+    GENERATED ALWAYS AS (CASE WHEN e_riferimento = 1 THEN categoria_id ELSE NULL END) STORED;
+
+CREATE UNIQUE INDEX uq_um_categoria_riferimento
+    ON unita_misura(categoria_riferimento_check);
 
 -- =============================================================================
 -- TRIGGERS — AGGIORNAMENTO AUTOMATICO TIMESTAMP (updated_at)

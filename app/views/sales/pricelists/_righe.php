@@ -314,12 +314,17 @@ document.addEventListener('DOMContentLoaded', function () {
         let displayUom = nativeUom;
 
         if (viewMode === 'stock' && nativeUom === commUom && commUom !== stockUom) {
-          displayPrice = nativePrice / factor;
-          displayQmin = nativeQmin * factor;
-          displayUom = stockUom;
-        } else if (viewMode === 'comm' && nativeUom === stockUom && commUom !== stockUom) {
+          // nativo in commerciale -> stock: qta si divide per il fattore
+          // (contenuto->stock), prezzo si moltiplica (coerente con
+          // qk_uom_converti_riga()/qkConvertUom() in assets/js/app.js).
           displayPrice = nativePrice * factor;
           displayQmin = nativeQmin / factor;
+          displayUom = stockUom;
+        } else if (viewMode === 'comm' && nativeUom === stockUom && commUom !== stockUom) {
+          // nativo in stock -> commerciale: qta si moltiplica per il fattore,
+          // prezzo si divide.
+          displayPrice = nativePrice / factor;
+          displayQmin = nativeQmin * factor;
           displayUom = commUom;
         } else if (viewMode === 'stock' && nativeUom !== commUom && nativeUom !== stockUom) {
           // generic fallback
@@ -933,15 +938,32 @@ document.addEventListener('DOMContentLoaded', function () {
     const rows = Array.from(tbody.querySelectorAll('tr.pl-riga'));
     
     // 1. Duplicate Check
+    // D4.5 (PIANO Motore di Pricing Multi-UoM §5.8/§7.4/§8 Fase 4): prima di questa modifica, la
+    // chiave usava il numero grezzo di quantita_minima, senza considerare l'unità — due scaglioni
+    // legittimi con lo stesso numero ma unità diverse (es. "5" in KG e "5" in FUSTO) venivano
+    // segnalati come falsi duplicati, mentre i veri "doppioni mascherati" (es. 100 KG e 4 FUSTI con
+    // fattore 25 = stesso valore canonico 100) restavano invisibili. Qui si stima lato client lo
+    // stesso valore canonico che il server calcola con qk_uom_converti_riga() (Fase 3): se l'unità
+    // selezionata sulla riga è la UoM commerciale, si divide per il fattore di conversione.
     const countMap = {};
     rows.forEach(tr => {
       const pid = tr.querySelector('.r-prodotto-id')?.value || tr.dataset.prodottoId;
       const qminInput = tr.querySelector('.r-qmin');
       const qminVal = qminInput ? qminInput.value : tr.dataset.qmin;
-      const qmin = parseFloat(qminVal || 0).toFixed(3);
-      
+      let qmin = parseFloat(qminVal || 0);
+
+      const umSelect = tr.querySelector('.r-unita-misura-id');
+      const umSelectedId = umSelect ? umSelect.value : tr.dataset.uomSelectedId;
+      const uomCommercialId = tr.dataset.uomCommercialId;
+      const factor = parseFloat(tr.dataset.factor) || 1;
+
+      if (qmin > 0 && uomCommercialId && String(umSelectedId) === String(uomCommercialId) && factor > 0 && factor !== 1) {
+        qmin = qmin / factor; // stima del valore canonico in Stock UoM
+      }
+      const qminCanonico = qmin.toFixed(3);
+
       if (pid && pid !== '0') {
-        const key = `${pid}_${qmin}`;
+        const key = `${pid}_${qminCanonico}`;
         if (!countMap[key]) countMap[key] = [];
         countMap[key].push(tr);
       }

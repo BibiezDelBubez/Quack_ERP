@@ -337,4 +337,3 @@ $base = url('warehouse/stock');
   backdrop.addEventListener('click', closeLotsDrawer);
 })();
 </script>
-                                                                                                  

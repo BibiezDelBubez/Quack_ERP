@@ -445,8 +445,9 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
     try {
         $rfq = _rfq_check_stato($pdo, $id, 'inviata', 'Puoi creare una nuova versione solo da una RFQ inviata.');
 
-        $nuovoNumero   = qk_next_numero_acquisto($pdo, 'rfq');
         $nuovaVersione = (int)$rfq['versione'] + 1;
+        $baseNumero    = preg_replace('/ v\d+$/', '', $rfq['numero']);
+        $nuovoNumero   = $baseNumero . ' v' . $nuovaVersione;
 
         // Duplica gli snapshot di indirizzo e contatto per isolare la nuova versione
         $nuovoIndirizzoId = null;

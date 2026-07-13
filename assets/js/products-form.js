@@ -675,6 +675,41 @@ if (QkPF.isEdit) {
       });
 
     }
+
+    /* ── UoM: azzera "quantità per confezione" al cambio di Stock UoM ─────
+     * (REVISIONE §6.3 Problema 2, punto 3): se il prodotto ha già una UoM
+     * commerciale configurata, il vecchio fattore di conversione non è valido
+     * per la nuova Stock UoM. Costringiamo l'utente a re-inserirlo
+     * consapevolmente invece di lasciare per sbaglio il vecchio numero — che
+     * il server rifiuterebbe comunque (vedi guardia in qk_update_prodotto()).
+     */
+    (function () {
+      const selUm = document.getElementById('sel-um');
+      const qtaContenutoInput = document.querySelector('input[name="quantita_contenuto"]');
+      if (!selUm || !qtaContenutoInput) return;
+
+      const stockUomOriginale = QkPF.uomStock;
+      let avvisoUomEl = null;
+
+      selUm.addEventListener('change', function () {
+        const cambiata = selUm.value !== stockUomOriginale;
+        const haUnitaCommerciale = !!QkPF.uomCommercialId;
+
+        if (cambiata && haUnitaCommerciale) {
+          qtaContenutoInput.value = '';
+          if (!avvisoUomEl) {
+            avvisoUomEl = document.createElement('div');
+            avvisoUomEl.className = 'qk-form-hint text-danger';
+            avvisoUomEl.style.marginTop = '4px';
+            avvisoUomEl.textContent = "Hai cambiato l'unità di stock: inserisci di nuovo quanta unità commerciale corrisponde a 1 unità della nuova unità di stock.";
+            qtaContenutoInput.insertAdjacentElement('afterend', avvisoUomEl);
+          }
+          avvisoUomEl.style.display = '';
+        } else if (avvisoUomEl) {
+          avvisoUomEl.style.display = 'none';
+        }
+      });
+    })();
   });
 
 })();

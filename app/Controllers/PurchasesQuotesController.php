@@ -170,14 +170,32 @@ class PurchasesQuotesController extends BaseController
                 
                 $righe  = $this->readPostRighe();
                 
+                $oldAllegato = $detail['offerta']['allegato_path'] ?? '';
+                
                 if (post('rimuovi_allegato', '') === '1') {
                     $values['allegato_path'] = '';
+                    if ($oldAllegato) {
+                        $abs = upload_abs($oldAllegato);
+                        if (is_file($abs)) {
+                            if (!unlink($abs)) {
+                                error_log("PurchasesQuotesController: Impossibile eliminare allegato: " . $abs);
+                            }
+                        }
+                    }
                 }
                 
                 if (isset($_FILES['allegato_preventivo']) && $_FILES['allegato_preventivo']['error'] === UPLOAD_ERR_OK) {
                     $file_path = $this->handleUpload('allegato_preventivo', $errors);
                     if ($file_path !== null) {
                         $values['allegato_path'] = $file_path;
+                        if ($oldAllegato && $oldAllegato !== $file_path) {
+                            $abs = upload_abs($oldAllegato);
+                            if (is_file($abs)) {
+                                if (!unlink($abs)) {
+                                    error_log("PurchasesQuotesController: Impossibile eliminare vecchio allegato: " . $abs);
+                                }
+                            }
+                        }
                     }
                 }
                 

@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+// D3.2 (PIANO Motore di Pricing Multi-UoM §8 Fase 3): serve qk_uom_converti_riga() per
+// convertire la quantità richiesta in Stock UoM prima di interrogare il motore di prezzo,
+// e per calcolare/salvare il valore canonico delle soglie a ogni scrittura.
+require_once __DIR__ . '/../../includes/prodotti.php';
+require_once __DIR__ . '/../../includes/pricing.php';
+
 final class PurchasesController extends BaseController
 {
     public function dashboard(): void
@@ -332,115 +338,20 @@ final class PurchasesController extends BaseController
      * Trova il prezzo di acquisto corretto per un prodotto, un fornitore e una quantità.
      * Restituisce un array con i dettagli del prezzo e la descrizione della sorgente.
      */
+    /**
+     * CONTRATTO (D3.2, PIANO Motore di Pricing Multi-UoM §8 Fase 3): $quantita deve essere
+     * SEMPRE già espressa in Stock UoM da chi chiama questa funzione — viene confrontata con
+     * quantita_minima_stock (valore canonico), non più col valore grezzo. L'unico chiamante
+     * attuale, apiOttieniPrezzo(), converte la quantità ricevuta dal client prima di invocarla.
+     */
     public function getPurchasePrice(int $prodottoId, int $fornitoreId, float $quantita = 1.0, ?string $dataRiferimento = null): ?array
     {
-        if (!$dataRiferimento) {
-            $dataRiferimento = date('Y-m-d');
-        }
-
-        // 1. Controlla se il fornitore ha un listino attivo alla dataRiferimento in listini_acquisto
-        $stmtListini = $this->pdo->prepare("
-            SELECT id, nome_listino
-            FROM listini_acquisto
-            WHERE fornitore_id = :fid
-              AND attivo = 1
-              AND (valido_dal IS NULL OR valido_dal <= :data_rif)
-              AND (valido_al IS NULL OR valido_al >= :data_rif)
-            ORDER BY id DESC
-            LIMIT 1
-        ");
-        $stmtListini->execute([
-            ':fid'      => $fornitoreId,
-            ':data_rif' => $dataRiferimento
-        ]);
-        $listinoAttivo = $stmtListini->fetch(PDO::FETCH_ASSOC);
-
-        $listinoId   = $listinoAttivo ? (int)$listinoAttivo['id'] : null;
-        $listinoNome = $listinoAttivo ? $listinoAttivo['nome_listino'] : '';
-
-        // Troviamo la riga prodotti_fornitori per recuperare lo SKU del fornitore e l'id di pivot
-        $stmtPf = $this->pdo->prepare("
-            SELECT id, sku_fornitore
-            FROM prodotti_fornitori
-            WHERE prodotto_id = :pid AND fornitore_id = :fid
-            LIMIT 1
-        ");
-        $stmtPf->execute([
-            ':pid' => $prodottoId,
-            ':fid' => $fornitoreId
-        ]);
-        $pf = $stmtPf->fetch(PDO::FETCH_ASSOC);
-        if (!$pf) {
-            return null; // Il prodotto non è venduto da questo fornitore
-        }
-        $prodottoFornitoreId = (int)$pf['id'];
-        $skuFornitore        = $pf['sku_fornitore'] ?: '';
-
-        // Prepariamo la query per i prezzi
-        $sqlPrezzi = "
-            SELECT prezzo, sconto_perc, note, quantita_minima, listino_acquisto_id
-            FROM prodotti_fornitori_prezzi
-            WHERE prodotto_fornitore_id = :pfid
-              AND (valido_dal IS NULL OR valido_dal <= :data_rif)
-              AND (valido_al IS NULL OR valido_al >= :data_rif)
-              AND quantita_minima <= :qty
-        ";
-
-        $params = [
-            ':pfid'     => $prodottoFornitoreId,
-            ':data_rif' => $dataRiferimento,
-            ':qty'      => $quantita
-        ];
-
-        if ($listinoId !== null) {
-            // Cerchiamo prima all'interno del listino attivo
-            $sqlListino = $sqlPrezzi . " AND listino_acquisto_id = :listino_id ORDER BY quantita_minima DESC LIMIT 1";
-            $listinoParams = $params;
-            $listinoParams[':listino_id'] = $listinoId;
-
-            $stmtPrezzo = $this->pdo->prepare($sqlListino);
-            $stmtPrezzo->execute($listinoParams);
-            $prezzoRecord = $stmtPrezzo->fetch(PDO::FETCH_ASSOC);
-
-            if ($prezzoRecord) {
-                $qMin = (float)$prezzoRecord['quantita_minima'];
-                $sorgente = "Listino: " . $listinoNome;
-                if ($qMin > 0) {
-                    $sorgente .= " (Scaglione >= " . number_format($qMin, 0, ',', '.') . ")";
-                }
-                return [
-                    'prezzo'              => (float)$prezzoRecord['prezzo'],
-                    'sconto_perc'         => (float)$prezzoRecord['sconto_perc'],
-                    'sku_fornitore'       => $skuFornitore,
-                    'listino_acquisto_id' => (int)$prezzoRecord['listino_acquisto_id'],
-                    'prezzo_sorgente'     => $sorgente
-                ];
-            }
-        }
-
-        // Se non c'è listino attivo, o se c'è ma non abbiamo trovato prezzi per il prodotto in quel listino,
-        // cerchiamo nei prezzi base (listino_acquisto_id IS NULL)
-        $sqlBase = $sqlPrezzi . " AND listino_acquisto_id IS NULL ORDER BY quantita_minima DESC LIMIT 1";
-        $stmtBase = $this->pdo->prepare($sqlBase);
-        $stmtBase->execute($params);
-        $prezzoRecord = $stmtBase->fetch(PDO::FETCH_ASSOC);
-
-        if ($prezzoRecord) {
-            $qMin = (float)$prezzoRecord['quantita_minima'];
-            $sorgente = "Prezzo base";
-            if ($qMin > 0) {
-                $sorgente .= " (Scaglione >= " . number_format($qMin, 0, ',', '.') . ")";
-            }
-            return [
-                'prezzo'              => (float)$prezzoRecord['prezzo'],
-                'sconto_perc'         => (float)$prezzoRecord['sconto_perc'],
-                'sku_fornitore'       => $skuFornitore,
-                'listino_acquisto_id' => null,
-                'prezzo_sorgente'     => $sorgente
-            ];
-        }
-
-        return null;
+        // Refactoring 14/07/2026: logica estratta in includes/pricing.php (qk_get_purchase_price()),
+        // pura (PDO + parametri, nessun riferimento a HTTP), così riutilizzabile da script CLI,
+        // cron, o altri moduli senza passare da questo controller. Nessuna modifica di
+        // comportamento (a parte l'unità nella label "Scaglione >=", già introdotta oggi anche
+        // sul ramo "Prezzo base", coerente col ramo "Listino" già corretto sopra).
+        return qk_get_purchase_price($this->pdo, $prodottoId, $fornitoreId, $quantita, $dataRiferimento);
     }
 
     /**
@@ -453,6 +364,10 @@ final class PurchasesController extends BaseController
         $prodottoId  = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
         $fornitoreId = filter_input(INPUT_GET, 'fornitore_id', FILTER_VALIDATE_INT);
         $quantita    = filter_input(INPUT_GET, 'quantita', FILTER_VALIDATE_FLOAT);
+        // D3.2 (PIANO Motore di Pricing Multi-UoM §5.1/§8 Fase 3): nuovo parametro opzionale,
+        // stesso principio di SalesPricelistsController::apiOttieniPrezzo() — l'unità in cui il
+        // chiamante esprime `quantita`. Assente = retrocompatibile, assume già Stock UoM.
+        $unitaRichiestaId = filter_input(INPUT_GET, 'unita_misura_id', FILTER_VALIDATE_INT) ?: null;
         $data        = get_param('data') ?: null;
 
         if ($quantita === false || $quantita === null) {
@@ -464,7 +379,11 @@ final class PurchasesController extends BaseController
             exit;
         }
 
-        $priceInfo = $this->getPurchasePrice($prodottoId, $fornitoreId, $quantita, $data);
+        $quantitaStock = $unitaRichiestaId
+            ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $unitaRichiestaId, $quantita, 0.0)['quantita_stock']
+            : $quantita;
+
+        $priceInfo = $this->getPurchasePrice($prodottoId, $fornitoreId, $quantitaStock, $data);
 
         if ($priceInfo) {
             echo json_encode([
@@ -599,14 +518,63 @@ final class PurchasesController extends BaseController
                 $pfId = (int)$this->pdo->lastInsertId();
             }
 
+            // D0.2 (PIANO Motore di Pricing Multi-UoM §5.4/§8): questo endpoint non valorizzava mai
+            // unita_misura_id, a differenza di ProductsController::savePrezzo() che lo fa sempre.
+            // Stesso principio di ereditarietà: se non esplicitamente inviato dal client, si eredita
+            // l'unità di acquisto nativa definita sul legame prodotto-fornitore (prodotti_fornitori.unita_misura_acquisto_id).
+            $umIdPost = filter_input(INPUT_POST, 'unita_misura_id', FILTER_VALIDATE_INT);
+            if ($umIdPost) {
+                $unitaMisuraId = $umIdPost;
+            } else {
+                $stmtUmForn = $this->pdo->prepare("SELECT unita_misura_acquisto_id FROM prodotti_fornitori WHERE id = :id");
+                $stmtUmForn->execute([':id' => $pfId]);
+                $unitaMisuraId = (int)$stmtUmForn->fetchColumn();
+                if (!$unitaMisuraId) {
+                    // Fallback finale: Stock UoM del prodotto, se il legame fornitore non ha ancora un'unità di acquisto propria.
+                    $stmtUmProd = $this->pdo->prepare("SELECT unita_misura_stock_id FROM prodotti WHERE id = :pid");
+                    $stmtUmProd->execute([':pid' => $prodottoId]);
+                    $unitaMisuraId = (int)$stmtUmProd->fetchColumn();
+                }
+            }
+
+            // Validazione "terza unità" (14/07/2026, audit a tappeto): stesso principio già applicato
+            // in ProductsController::saveForn() (D0.4, PIANO §5.6/§7.5) — unita_misura_id sulla riga di
+            // prezzo deve essere sempre o l'unità di stock o l'unità commerciale del prodotto, mai un
+            // valore arbitrario. Qui il gap era solo latente (nessun chiamante JS invia oggi un valore
+            // diverso), ma un chiamante futuro non veniva bloccato dal server.
+            if ($umIdPost) {
+                $stmtUmProdCheck = $this->pdo->prepare("SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = :pid");
+                $stmtUmProdCheck->execute([':pid' => $prodottoId]);
+                $prodUmCheck = $stmtUmProdCheck->fetch(PDO::FETCH_ASSOC);
+                $stockIdCheck = $prodUmCheck ? (int)$prodUmCheck['unita_misura_stock_id'] : 0;
+                $commIdCheck  = ($prodUmCheck && $prodUmCheck['unita_contenuto_id'] !== null) ? (int)$prodUmCheck['unita_contenuto_id'] : null;
+                if ($umIdPost !== $stockIdCheck && $umIdPost !== $commIdCheck) {
+                    $this->pdo->rollBack();
+                    echo json_encode(['ok' => false, 'error' => 'Unità di misura non valida: deve essere l\'unità di stock o l\'unità commerciale del prodotto.']);
+                    exit;
+                }
+            }
+
+            // D3.2 (PIANO Motore di Pricing Multi-UoM §8 Fase 1/3): a ogni scrittura, calcolare e
+            // salvare il valore canonico della soglia (sempre Stock UoM) insieme all'intento originale.
+            $qMinIntento = $qMin;
+            $unitaSogliaId = $unitaMisuraId ?: null;
+            $qMinStock = $qMin > 0
+                ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $unitaSogliaId, $qMin, 0.0)['quantita_stock']
+                : 0.0;
+
             // [Bug 3] Controllo sovrapposizione scaglioni
             // Query blindata anche qui il 13/07/2026 (REVISIONE §6.15) per coerenza con ProductsController::savePrezzo():
             // in questo endpoint $listinoId è sempre valorizzato (validato più sopra), quindi il bug "colonna = NULL"
             // non si presenta oggi — ma la query resta corretta anche se in futuro questo vincolo dovesse cambiare.
+            // Corretto ULTERIORMENTE il 14/07/2026 (PIANO Motore di Pricing Multi-UoM §7.4/§8): confronta ora
+            // il valore canonico (quantita_minima_stock), non più il valore grezzo — vedi nota gemella in
+            // ProductsController::savePrezzo() per il motivo (doppioni mascherati altrimenti rilevati solo
+            // dal vincolo UNIQUE del database, con un errore SQL grezzo invece di questo messaggio).
             $stmtDup = $this->pdo->prepare("
                 SELECT id FROM prodotti_fornitori_prezzi
                 WHERE prodotto_fornitore_id = :pfid
-                  AND quantita_minima = :qmin
+                  AND quantita_minima_stock = :qmin_stock
                   AND id != :riga_id
                   AND (listino_acquisto_id = :listino_id OR (:listino_id_null = 1 AND listino_acquisto_id IS NULL))
             ");
@@ -614,12 +582,12 @@ final class PurchasesController extends BaseController
                 ':listino_id'      => $listinoId,
                 ':listino_id_null' => $listinoId === null ? 1 : 0,
                 ':pfid'            => $pfId,
-                ':qmin'            => $qMin,
+                ':qmin_stock'      => $qMinStock,
                 ':riga_id'         => $rigaId ?: 0
             ]);
             if ($stmtDup->fetch()) {
                 $this->pdo->rollBack();
-                echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità.']);
+                echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità (anche se espresso in un\'altra unità di misura, equivale alla stessa soglia).']);
                 exit;
             }
 
@@ -632,21 +600,29 @@ final class PurchasesController extends BaseController
                     "UPDATE prodotti_fornitori_prezzi SET
                         prodotto_fornitore_id = :pfid,
                         quantita_minima       = :qmin,
+                        unita_misura_id       = :umid,
                         prezzo                = :prezzo,
                         sconto_perc           = :sconto,
                         valido_dal            = :valido_dal,
                         valido_al             = :valido_al,
                         note                  = :note,
+                        quantita_minima_intento = :qmin_intento,
+                        unita_misura_soglia_id  = :um_soglia_id,
+                        quantita_minima_stock   = :qmin_stock,
                         modificato_manualmente_il = CURRENT_TIMESTAMP
                      WHERE id = :id AND listino_acquisto_id = :listino_id"
                 )->execute([
                     ':pfid'       => $pfId,
                     ':qmin'        => $qMin,
+                    ':umid'        => $unitaMisuraId ?: null,
                     ':prezzo'      => $prezzo,
                     ':sconto'      => $sconto,
                     ':valido_dal'  => $validoDal,
                     ':valido_al'   => $validoAl,
                     ':note'        => $note ?: null,
+                    ':qmin_intento' => $qMinIntento,
+                    ':um_soglia_id' => $unitaSogliaId,
+                    ':qmin_stock'   => $qMinStock,
                     ':id'          => $rigaId,
                     ':listino_id'  => $listinoId,
                 ]);
@@ -654,17 +630,21 @@ final class PurchasesController extends BaseController
             } else {
                 // Inserisci riga
                 $this->pdo->prepare(
-                    "INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note, modificato_manualmente_il)
-                     VALUES (:pfid, :listino_id, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note, CURRENT_TIMESTAMP)"
+                    "INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, unita_misura_id, prezzo, sconto_perc, valido_dal, valido_al, note, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock, modificato_manualmente_il)
+                     VALUES (:pfid, :listino_id, :qmin, :umid, :prezzo, :sconto, :valido_dal, :valido_al, :note, :qmin_intento, :um_soglia_id, :qmin_stock, CURRENT_TIMESTAMP)"
                 )->execute([
                     ':pfid'       => $pfId,
                     ':listino_id' => $listinoId,
                     ':qmin'        => $qMin,
+                    ':umid'        => $unitaMisuraId ?: null,
                     ':prezzo'      => $prezzo,
                     ':sconto'      => $sconto,
                     ':valido_dal'  => $validoDal,
                     ':valido_al'   => $validoAl,
                     ':note'        => $note ?: null,
+                    ':qmin_intento' => $qMinIntento,
+                    ':um_soglia_id' => $unitaSogliaId,
+                    ':qmin_stock'   => $qMinStock,
                 ]);
                 $newId = (int)$this->pdo->lastInsertId();
             }
@@ -764,7 +744,11 @@ final class PurchasesController extends BaseController
                 }
 
                 // Cerca il prodotto
-                $stmtProd = $this->pdo->prepare('SELECT id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
+                // BUG CORRETTO (14/07/2026, secondo audit a tappeto): mancava unita_contenuto_id,
+                // quindi $uomCommercialId sotto era sempre null e la validazione "unità soglia deve
+                // essere stock o commerciale" (poco più sotto) rifiutava sempre un import CSV che
+                // dichiarasse legittimamente l'unità commerciale (es. "FUSTO") in unita_misura_soglia.
+                $stmtProd = $this->pdo->prepare('SELECT id, unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
                 $stmtProd->execute([':s' => $sku]);
                 $prodRow = $stmtProd->fetch(PDO::FETCH_ASSOC);
                 if (!$prodRow) {
@@ -773,6 +757,28 @@ final class PurchasesController extends BaseController
                     continue;
                 }
                 $prodottoId = (int)$prodRow['id'];
+                $uomStockId = (int)$prodRow['unita_misura_stock_id'];
+                $uomCommercialId = $prodRow['unita_contenuto_id'] !== null ? (int)$prodRow['unita_contenuto_id'] : null;
+                $uomId = $uomStockId; // default retrocompatibile: assume Stock UoM se la colonna non è valorizzata
+
+                // D4.6 (PIANO Motore di Pricing Multi-UoM §7.7/§8 Fase 4): colonna facoltativa —
+                // se valorizzata, dichiara l'unità di quotazione/soglia di QUESTA riga (stesso
+                // principio applicato lato vendite in SalesPricelistsController::apiImportPrezzi()).
+                $umSogliaCodice = trim((string)($row['unita_misura_soglia'] ?? ''));
+                if ($umSogliaCodice !== '') {
+                    // Confronto case-insensitive (14/07/2026, audit a tappeto): un import CSV è
+                    // compilato a mano da persone diverse, "fusto"/"Fusto"/"FUSTO" devono risolvere
+                    // tutti allo stesso codice invece di essere rifiutati come "unità non valida".
+                    $stmtUmSoglia = $this->pdo->prepare('SELECT id FROM unita_misura WHERE UPPER(codice) = UPPER(:c)');
+                    $stmtUmSoglia->execute([':c' => $umSogliaCodice]);
+                    $umSogliaId = $stmtUmSoglia->fetchColumn();
+                    if (!$umSogliaId || ((int)$umSogliaId !== $uomStockId && (int)$umSogliaId !== $uomCommercialId)) {
+                        $skipped++;
+                        $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): unità soglia "' . htmlspecialchars($umSogliaCodice) . '" non valida per questo prodotto (deve essere l\'unità di stock o l\'unità commerciale) — saltata.';
+                        continue;
+                    }
+                    $uomId = (int)$umSogliaId;
+                }
 
                 // Risolvi i campi numerici e date
                 $toFloat = function(?string $v): float {
@@ -812,6 +818,10 @@ final class PurchasesController extends BaseController
                     continue;
                 }
 
+                $qMinCanonico = $qMin > 0
+                    ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $uomId, $qMin, 0.0)['quantita_stock']
+                    : 0.0;
+
                 // Cerca o crea il record in prodotti_fornitori
                 $stmtPf = $this->pdo->prepare("SELECT id, sku_fornitore FROM prodotti_fornitori WHERE prodotto_id = :pid AND fornitore_id = :fid LIMIT 1");
                 $stmtPf->execute([':pid' => $prodottoId, ':fid' => $fornitoreId]);
@@ -829,17 +839,24 @@ final class PurchasesController extends BaseController
                     $pfId = (int)$this->pdo->lastInsertId();
                 }
 
-                // Cerca se esiste già un prezzo per questo listino, prodotto_fornitore e quantita_minima
+                // Cerca se esiste già un prezzo per questo listino, prodotto_fornitore e scaglione.
+                // Corretto il 14/07/2026 (audit a tappeto):
+                //  1) confronto ora su quantita_minima_stock (canonico), non sul valore grezzo —
+                //     stesso gap già noto e ora chiuso anche lato vendite (SalesPricelistsController).
+                //  2) confronto NULL-safe su listino_acquisto_id (prezzo base, nessun listino): prima
+                //     "listino_acquisto_id = :lid" con :lid NULL non trova mai nulla in SQL standard,
+                //     stesso pattern già corretto in apiSaveRiga() di questo stesso controller.
                 $stmtCheck = $this->pdo->prepare("
                     SELECT id, importato_il, modificato_manualmente_il FROM prodotti_fornitori_prezzi
                     WHERE prodotto_fornitore_id = :pfid
-                      AND listino_acquisto_id = :lid
-                      AND quantita_minima = :qmin
+                      AND (listino_acquisto_id = :lid OR (:lid_null = 1 AND listino_acquisto_id IS NULL))
+                      AND quantita_minima_stock = :qmin_stock
                 ");
                 $stmtCheck->execute([
-                    ':pfid' => $pfId,
-                    ':lid'  => $listinoId,
-                    ':qmin' => $qMin
+                    ':pfid'       => $pfId,
+                    ':lid'        => $listinoId,
+                    ':lid_null'   => $listinoId === null ? 1 : 0,
+                    ':qmin_stock' => $qMinCanonico,
                 ]);
                 $priceRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
@@ -861,6 +878,8 @@ final class PurchasesController extends BaseController
                     }
 
                     // Update
+                    // D4.6: unita_misura_id (unità di quotazione del prezzo) mancava del tutto in
+                    // questo import — aggiunta qui insieme alle colonne canoniche.
                     $this->pdo->prepare("
                         UPDATE prodotti_fornitori_prezzi SET
                             prezzo = :prezzo,
@@ -868,6 +887,10 @@ final class PurchasesController extends BaseController
                             valido_dal = :valido_dal,
                             valido_al = :valido_al,
                             note = :note,
+                            unita_misura_id = :umid,
+                            quantita_minima_intento = :qmin_intento,
+                            unita_misura_soglia_id  = :um_soglia_id,
+                            quantita_minima_stock   = :qmin_stock,
                             importato_il = CURRENT_TIMESTAMP
                         WHERE id = :id
                     ")->execute([
@@ -876,15 +899,23 @@ final class PurchasesController extends BaseController
                         ':valido_dal' => $validoDal,
                         ':valido_al'  => $validoAl,
                         ':note'       => $note,
+                        ':umid'        => $uomId ?: null,
+                        ':qmin_intento' => $qMin,
+                        ':um_soglia_id' => $uomId ?: null,
+                        ':qmin_stock'   => $qMinCanonico,
                         ':id'         => $rigaId
                     ]);
                     $touchedIds[] = $rigaId;
                 } else {
                     // Insert
                     $this->pdo->prepare("
-                        INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, prezzo, sconto_perc, valido_dal, valido_al, note, importato_il)
-                        VALUES (:pfid, :lid, :qmin, :prezzo, :sconto, :valido_dal, :valido_al, :note, CURRENT_TIMESTAMP)
+                        INSERT INTO prodotti_fornitori_prezzi (prodotto_fornitore_id, listino_acquisto_id, quantita_minima, unita_misura_id, prezzo, sconto_perc, valido_dal, valido_al, note, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock, importato_il)
+                        VALUES (:pfid, :lid, :qmin, :umid, :prezzo, :sconto, :valido_dal, :valido_al, :note, :qmin_intento, :um_soglia_id, :qmin_stock, CURRENT_TIMESTAMP)
                     ")->execute([
+                        ':umid'        => $uomId ?: null,
+                        ':qmin_intento' => $qMin,
+                        ':um_soglia_id' => $uomId ?: null,
+                        ':qmin_stock'   => $qMinCanonico,
                         ':pfid'       => $pfId,
                         ':lid'        => $listinoId,
                         ':qmin'        => $qMin,

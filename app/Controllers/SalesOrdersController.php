@@ -751,14 +751,21 @@ final class SalesOrdersController extends BaseController
                  */
                 $numSnap = isset($line['num_factor_snapshot']) ? (int)$line['num_factor_snapshot'] : 1;
                 $denSnap = isset($line['den_factor_snapshot']) ? (int)$line['den_factor_snapshot'] : 1;
-                $snap    = $denSnap > 0 ? (float)($numSnap / $denSnap) : 1.0;
+                // Corretto il 13/07/2026 (PIANO Motore di Pricing Multi-UoM §5.3): la riga precedente
+                // faceva "(float)($numSnap / $denSnap)", una divisione float diretta che violava il
+                // principio scritto poche righe sopra ("Do NOT use approximate decimal division...").
+                // bcmul/bcdiv sulla frazione esatta, come già fa qk_uom_converti_riga() in includes/prodotti.php.
+                $convertiInStock = function (float $q) use ($numSnap, $denSnap): float {
+                    if ($denSnap <= 0) return $q;
+                    return (float) bcdiv(bcmul((string)$q, (string)$numSnap, 6), (string)$denSnap, 3);
+                };
 
                 if ((int)$line['traccia_lotti'] === 1) {
                     foreach ($lottiPost[$lineId] ?? [] as $lottoId => $qtaStr) {
                         $qta = (float)$qtaStr;
                         if ($qta <= 0) continue;
                         $anyShipped = true;
-                        $qtaStock   = $qta * $snap;
+                        $qtaStock   = $convertiInStock($qta);
 
                         // Disponibilità per QUESTO magazzino di spedizione, non l'aggregato
                         // legacy: lo stesso lotto può avere quantità diverse in sedi diverse
@@ -789,7 +796,7 @@ final class SalesOrdersController extends BaseController
                     $qta = (float)($quantitaNoLottoPost[$lineId] ?? 0.0);
                     if ($qta > 0) {
                         $anyShipped = true;
-                        $qtaStock   = $qta * $snap;
+                        $qtaStock   = $convertiInStock($qta);
                         $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, null, $qta]);
                         $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], null, null, 0, null, null, null, $pos++]);
                         

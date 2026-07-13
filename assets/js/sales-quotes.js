@@ -1317,9 +1317,18 @@ document.addEventListener('DOMContentLoaded', function () {
     if (tr.dataset.priceMode === 'manual') return;
 
     const qty = parseFloat(qtyInput.value) || 1.0;
-    
+
+    // D4.1 (PIANO Motore di Pricing Multi-UoM §5.1/§8 Fase 4): prima di questa modifica, `qty`
+    // veniva inviato al server senza mai dichiarare in quale unità era espresso (Stock o
+    // Commerciale) — il server ora lo richiede per convertirlo in Stock UoM prima di cercare il
+    // prezzo (D3.1). L'unità corrente della riga è quella di `currentUomMode` (variabile globale
+    // della griglia, non per-riga): Stock UoM o UoM commerciale a seconda del toggle attivo.
+    const unitaMisuraRichiestaId = currentUomMode === 'stock'
+      ? (tr.dataset.uomStockId || '')
+      : (tr.dataset.uomCommercialId || tr.dataset.uomStockId || '');
+
     try {
-      const res = await fetch(`${BASE}/sales/pricelists/api/ottieni-prezzo?prodotto_id=${prodottoId}&listino_id=${listinoId || ''}&cliente_id=${clienteId}&quantita=${qty}`);
+      const res = await fetch(`${BASE}/sales/pricelists/api/ottieni-prezzo?prodotto_id=${prodottoId}&listino_id=${listinoId || ''}&cliente_id=${clienteId}&quantita=${qty}&unita_misura_id=${unitaMisuraRichiestaId}`);
       const data = await res.json();
       
       if (data.ok) {

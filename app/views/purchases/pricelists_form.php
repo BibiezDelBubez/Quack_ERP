@@ -486,12 +486,17 @@ document.addEventListener('DOMContentLoaded', function () {
           let displayUom = nativeUom;
 
           if (viewMode === 'stock' && nativeUom === commUom && commUom !== stockUom) {
-            displayPrice = nativePrice / factor;
-            displayQmin = nativeQmin * factor;
-            displayUom = stockUom;
-          } else if (viewMode === 'comm' && nativeUom === stockUom && commUom !== stockUom) {
+            // nativo in commerciale -> stock: qta si divide per il fattore
+            // (contenuto->stock), prezzo si moltiplica (coerente con
+            // qk_uom_converti_riga()/qkConvertUom() in assets/js/app.js).
             displayPrice = nativePrice * factor;
             displayQmin = nativeQmin / factor;
+            displayUom = stockUom;
+          } else if (viewMode === 'comm' && nativeUom === stockUom && commUom !== stockUom) {
+            // nativo in stock -> commerciale: qta si moltiplica per il fattore,
+            // prezzo si divide.
+            displayPrice = nativePrice / factor;
+            displayQmin = nativeQmin * factor;
             displayUom = commUom;
           } else if (viewMode === 'stock' && nativeUom !== commUom && nativeUom !== stockUom) {
             // generic fallback
@@ -1012,15 +1017,34 @@ document.addEventListener('DOMContentLoaded', function () {
     function runBusinessValidations() {
       const rows = Array.from(tbody.querySelectorAll('tr.pl-riga'));
       
+      // D4.5 (PIANO Motore di Pricing Multi-UoM §5.8/§7.4/§8 Fase 4): stessa correzione di
+      // app/views/sales/pricelists/_righe.php — la chiave usava il numero grezzo, senza
+      // considerare l'unità nativa della riga. Qui non c'è un select per-riga (questa griglia
+      // ha un solo "toggle" globale di visualizzazione), quindi si stima il valore canonico
+      // usando i dataset già presenti (data-um-native/-um-stock/-um-comm/-factor) impostati
+      // dal PHP lato server.
       const countMap = {};
       rows.forEach(tr => {
         const pid = tr.querySelector('.r-prodotto-id')?.value || tr.dataset.prodottoId;
         const qminInput = tr.querySelector('.r-qmin');
         const qminVal = qminInput ? qminInput.value : tr.dataset.qmin;
-        const qmin = parseFloat(qminVal || 0).toFixed(3);
-        
+        let qmin = parseFloat(qminVal || 0);
+
+        const umNative = tr.dataset.umNative;
+        const umStock = tr.dataset.umStock;
+        const umComm = tr.dataset.umComm;
+        const factor = parseFloat(tr.dataset.factor) || 1;
+
+        if (qmin > 0 && umNative && umComm && umNative === umComm && umComm !== umStock && factor > 0 && factor !== 1) {
+          // Contenuto/commerciale -> stock: la quantità si DIVIDE per il fattore
+          // (qk_uom_converti_riga(): quantita_stock = qta / quantita_contenuto).
+          // Era invertito (qmin * factor), vanificando il rilevamento duplicati.
+          qmin = qmin / factor; // stima del valore canonico in Stock UoM
+        }
+        const qminCanonico = qmin.toFixed(3);
+
         if (pid && pid !== '0') {
-          const key = `${pid}_${qmin}`;
+          const key = `${pid}_${qminCanonico}`;
           if (!countMap[key]) countMap[key] = [];
           countMap[key].push(tr);
         }

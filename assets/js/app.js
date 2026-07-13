@@ -365,6 +365,13 @@
   /* ────────────────────────────────────────────────────────────────────────
      UTILITY GLOBAL
   ──────────────────────────────────────────────────────────────────────── */
+  // D0.5 (PIANO Motore di Pricing Multi-UoM §5.2/§8): questa funzione è SOLO ANTEPRIMA UI.
+  // Usa un singolo fattore float (qFactor) con aritmetica nativa JS, non la frazione esatta
+  // num_factor/den_factor a precisione arbitraria (BCMath) usata da qk_uom_converti_riga()
+  // in includes/prodotti.php — l'unica funzione autorevole, sempre server-side.
+  // NON usare mai il valore restituito da questa funzione come dato definitivo da salvare:
+  // ogni valore che finisce nel database deve sempre passare da un ricalcolo server-side
+  // (qk_uom_converti_riga()) prima di essere scritto, indipendentemente da cosa mostra l'anteprima.
   window.qkConvertUom = function ({ value, price, qFactor, targetMode }) {
     qFactor = parseFloat(qFactor) || 1;
     const hasValue = (value !== undefined && value !== null && value !== '');

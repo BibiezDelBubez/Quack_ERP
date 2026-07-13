@@ -569,34 +569,47 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
         $umStmt->execute([':c' => $v['unita_misura'] ?? 'pz']);
         $um_id = $umStmt->fetchColumn() ?: null;
 
-        // Calcolo numeratore e denominatore deterministici per potenze di 10
+        // Calcolo numeratore e denominatore deterministici (frazione esatta ridotta ai minimi
+        // termini). BUG CORRETTO (14/07/2026, audit a tappeto multi-UoM): il ramo "$fVal >= 1.0"
+        // faceva `$denFactor = (int)$fVal`, troncando silenziosamente la parte decimale per
+        // qualunque quantita_contenuto non intero >= 1 (es. 12.5 diventava 12).
+        //
+        // BUG PIÙ GRAVE CORRETTO SUBITO DOPO (14/07/2026, verifica numerica con interprete PHP
+        // reale): il fix sopra, unificando i due rami, aveva invertito la CONVENZIONE del
+        // rapporto num_factor/den_factor per qualunque valore, non solo per i decimali —
+        // rompendo il prezzo convertito (system_unit_price_stock) per la stragrande
+        // maggioranza dei prodotti reali (qualunque quantita_contenuto intero, es. 25).
+        // qk_uom_converti_riga() usa `inverseRate = den_factor/num_factor` come moltiplicatore
+        // del prezzo, e questo DEVE essere uguale a quantita_contenuto stesso (qc) — quindi
+        // num_factor/den_factor deve rappresentare 1/qc, non qc. Calcoliamo qc come frazione
+        // esatta aVal/bVal (via stringa+GCD, gestisce sia interi che decimali in un colpo solo),
+        // poi INVERTIAMO (num_factor=bVal, den_factor=aVal) per ottenere 1/qc.
+        // Verificato con un interprete PHP reale (bcmath) su 9 casi (interi, decimali, <1, >1).
         $rawQty = qk_prodotti_decimal($v['quantita_contenuto']);
         $numFactor = 1;
         $denFactor = 1;
         if ($rawQty !== null && (float)$rawQty > 0.0) {
             $fVal = (float)$rawQty;
-            if ($fVal >= 1.0) {
-                $numFactor = 1;
-                $denFactor = (int)$fVal;
-            } else {
-                $strVal = (string)$fVal;
-                $decimals = 0;
-                if (strpos($strVal, '.') !== false) {
-                    $decimals = strlen(substr($strVal, strpos($strVal, '.') + 1));
-                }
-                $multiplier = 10 ** $decimals;
-                $numFactor = (int)round($fVal * $multiplier);
-                $denFactor = $multiplier;
-                
-                $gcd = function($a, $b) use (&$gcd) {
-                    return $b ? $gcd($b, $a % $b) : $a;
-                };
-                $g = (int)$gcd($numFactor, $denFactor);
-                if ($g > 0) {
-                    $numFactor = (int)($numFactor / $g);
-                    $denFactor = (int)($denFactor / $g);
-                }
+            $strVal = (string)$fVal;
+            $decimals = 0;
+            if (strpos($strVal, '.') !== false) {
+                $decimals = strlen(substr($strVal, strpos($strVal, '.') + 1));
             }
+            $multiplier = 10 ** $decimals;
+            $aVal = (int)round($fVal * $multiplier); // fVal = aVal/bVal
+            $bVal = $multiplier;
+
+            $gcd = function($a, $b) use (&$gcd) {
+                return $b ? $gcd($b, $a % $b) : $a;
+            };
+            $g = (int)$gcd($aVal, $bVal);
+            if ($g > 0) {
+                $aVal = (int)($aVal / $g);
+                $bVal = (int)($bVal / $g);
+            }
+            // Inversione: num_factor/den_factor deve essere 1/fVal, non fVal.
+            $numFactor = $bVal;
+            $denFactor = $aVal;
         }
 
         $stmt = $pdo->prepare(
@@ -658,8 +671,10 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?)')
-                ->execute([$id, $prezzo_base, $um_id]);
+            // D3.2 (PIANO Motore di Pricing Multi-UoM §8): quantita_minima_stock deve essere
+            // sempre valorizzato (0 = prezzo base) — altrimenti invisibile a getSalePrice().
+            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?, 0, ?, 0)')
+                ->execute([$id, $prezzo_base, $um_id, $um_id]);
         }
 
         $pdo->commit();
@@ -684,18 +699,29 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
       deterministicamente per potenze di 10 (es. 0.468 -> 468/1000) per preservare l'esatto input utente.
 ============================================================================= */
 
-function qk_update_prodotto(PDO $pdo, int $id, array $v): void
+/**
+ * @return array{preventivi: int, rfq: int, ordini_acquisto: int, prezzi_vendita: int, prezzi_acquisto: int}
+ *         Conteggio righe ricalcolate per cambio Stock UoM (tutti 0 se la Stock
+ *         UoM non è cambiata in questo salvataggio).
+ */
+function qk_update_prodotto(PDO $pdo, int $id, array $v): array
 {
     $umStmt = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = :c');
     $umStmt->execute([':c' => $v['unita_misura'] ?? 'pz']);
     $um_id = $umStmt->fetchColumn() ?: null;
 
-    // Recupera la Stock UoM attuale per verificare se l'utente la sta cambiando
-    $stCurrent = $pdo->prepare('SELECT unita_misura_stock_id FROM prodotti WHERE id = ?');
+    // Recupera la Stock UoM e la UoM commerciale attuali per verificare se
+    // l'utente sta davvero cambiando la Stock UoM (REVISIONE §6.3 Problema 2).
+    $stCurrent = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
     $stCurrent->execute([$id]);
-    $currentUmId = $stCurrent->fetchColumn();
+    $currentRow = $stCurrent->fetch(PDO::FETCH_ASSOC) ?: [];
+    $currentUmId = $currentRow['unita_misura_stock_id'] ?? null;
+    $currentContenutoId = $currentRow['unita_contenuto_id'] ?? null;
+    $stockUomCambiata = false;
 
     if ($currentUmId && (int)$currentUmId !== (int)$um_id) {
+        $stockUomCambiata = true;
+
         // Verifica se ci sono già stati movimenti fisici a magazzino per questo prodotto
         $stMov = $pdo->prepare('SELECT COUNT(*) FROM movimenti_magazzino WHERE prodotto_id = ?');
         $stMov->execute([$id]);
@@ -706,36 +732,61 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
                 "Impossibile modificare l'unità di misura di stock: sono già presenti movimenti fisici di magazzino per questo prodotto nel sistema logistico."
             );
         }
+
+        // Guardia (REVISIONE §6.3 Problema 2, decisione 10/07/2026): se il prodotto
+        // ha già una UoM commerciale, il nuovo fattore di conversione è obbligatorio
+        // quando cambia la Stock UoM — senza un fattore valido non si potrebbero
+        // ricalcolare correttamente le bozze collegate (vedi ricalcolo sotto).
+        if ($currentContenutoId) {
+            $nuovaQuantitaContenuto = qk_prodotti_decimal($v['quantita_contenuto'] ?? null);
+            if ($nuovaQuantitaContenuto === null || (float)$nuovaQuantitaContenuto <= 0.0) {
+                throw new \RuntimeException(
+                    "Devi specificare il nuovo fattore di conversione (\"Quantità per unità di stock\") " .
+                    "perché stai cambiando l'unità di misura di stock di un prodotto che ha già " .
+                    "un'unità commerciale configurata. Il vecchio fattore non è valido per la nuova unità di stock."
+                );
+            }
+        }
     }
 
-    // Calcolo numeratore e denominatore deterministici per potenze di 10
+    // Calcolo numeratore e denominatore deterministici (frazione esatta ridotta ai minimi
+    // termini). BUG CORRETTO (14/07/2026, secondo audit a tappeto): questo secondo punto
+    // duplicato del calcolo (qk_update_prodotto) era sfuggito al primo fix — il ramo
+    // "$fVal >= 1.0" troncava ancora silenziosamente la parte decimale (es. 12.5 -> 12).
+    //
+    // BUG PIÙ GRAVE CORRETTO SUBITO DOPO (14/07/2026, verifica numerica con interprete PHP
+    // reale): unificare i due rami aveva invertito la CONVENZIONE del rapporto
+    // num_factor/den_factor per qualunque valore (non solo i decimali), rompendo il prezzo
+    // convertito per la maggioranza dei prodotti reali. num_factor/den_factor deve
+    // rappresentare 1/quantita_contenuto (non quantita_contenuto stesso), perché
+    // qk_uom_converti_riga() usa den_factor/num_factor come moltiplicatore del prezzo.
+    // Calcoliamo qc come frazione esatta aVal/bVal, poi INVERTIAMO. Verificato con un
+    // interprete PHP reale (bcmath) su 9 casi (interi, decimali, <1, >1).
     $rawQty = qk_prodotti_decimal($v['quantita_contenuto']);
     $numFactor = 1;
     $denFactor = 1;
     if ($rawQty !== null && (float)$rawQty > 0.0) {
         $fVal = (float)$rawQty;
-        if ($fVal >= 1.0) {
-            $numFactor = 1;
-            $denFactor = (int)$fVal;
-        } else {
-            $strVal = (string)$fVal;
-            $decimals = 0;
-            if (strpos($strVal, '.') !== false) {
-                $decimals = strlen(substr($strVal, strpos($strVal, '.') + 1));
-            }
-            $multiplier = 10 ** $decimals;
-            $numFactor = (int)round($fVal * $multiplier);
-            $denFactor = $multiplier;
-            
-            $gcd = function($a, $b) use (&$gcd) {
-                return $b ? $gcd($b, $a % $b) : $a;
-            };
-            $g = (int)$gcd($numFactor, $denFactor);
-            if ($g > 0) {
-                $numFactor = (int)($numFactor / $g);
-                $denFactor = (int)($denFactor / $g);
-            }
+        $strVal = (string)$fVal;
+        $decimals = 0;
+        if (strpos($strVal, '.') !== false) {
+            $decimals = strlen(substr($strVal, strpos($strVal, '.') + 1));
         }
+        $multiplier = 10 ** $decimals;
+        $aVal = (int)round($fVal * $multiplier); // fVal = aVal/bVal
+        $bVal = $multiplier;
+
+        $gcd = function($a, $b) use (&$gcd) {
+            return $b ? $gcd($b, $a % $b) : $a;
+        };
+        $g = (int)$gcd($aVal, $bVal);
+        if ($g > 0) {
+            $aVal = (int)($aVal / $g);
+            $bVal = (int)($bVal / $g);
+        }
+        // Inversione: num_factor/den_factor deve essere 1/fVal, non fVal.
+        $numFactor = $bVal;
+        $denFactor = $aVal;
     }
 
     $pdo->beginTransaction();
@@ -802,12 +853,25 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
             $stmtCheckRule->execute([$id]);
             $ruleId = $stmtCheckRule->fetchColumn();
             if ($ruleId) {
-                $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ? WHERE id = ?')
-                    ->execute([$prezzo_base, $um_id, $ruleId]);
+                // D3.2: valorizza/ripara anche quantita_minima_stock qui, così eventuali righe
+                // create prima di questo fix (con quantita_minima_stock NULL) vengono corrette
+                // al primo salvataggio successivo del prodotto.
+                $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ?, unita_misura_soglia_id = ?, quantita_minima_stock = 0 WHERE id = ?')
+                    ->execute([$prezzo_base, $um_id, $um_id, $ruleId]);
             } else {
-                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?)')
-                    ->execute([$id, $prezzo_base, $um_id]);
+                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?, 0, ?, 0)')
+                    ->execute([$id, $prezzo_base, $um_id, $um_id]);
             }
+        }
+
+        // REVISIONE §6.3 Problema 2 / §6.16 (14/07/2026): se la Stock UoM è
+        // davvero cambiata (permesso solo se non ci sono movimenti, verificato
+        // sopra), ricalcola tutte le bozze collegate e il valore canonico
+        // quantita_minima_stock sui prezzi — nella stessa transazione, così il
+        // prodotto non risulta mai aggiornato con le bozze rimaste stale.
+        $ricalcoloBozze = ['preventivi' => 0, 'rfq' => 0, 'ordini_acquisto' => 0, 'prezzi_vendita' => 0, 'prezzi_acquisto' => 0];
+        if ($stockUomCambiata) {
+            $ricalcoloBozze = qk_ricalcola_bozze_per_cambio_stock_uom($pdo, $id);
         }
 
         $pdo->commit();
@@ -815,6 +879,154 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): void
         $pdo->rollBack();
         throw $e;
     }
+
+    return $ricalcoloBozze;
+}
+
+/**
+ * Ricalcola lo snapshot UoM/prezzo di tutte le righe in stato "bozza" che
+ * referenziano $prodotto_id, dopo un cambio di Stock UoM (o del fattore di
+ * conversione) sul prodotto. Va chiamata DOPO che il nuovo
+ * unita_misura_stock_id/quantita_contenuto/num_factor/den_factor sono già
+ * stati scritti su `prodotti`, nella stessa transazione (vedi qk_update_prodotto()).
+ *
+ * Copre: preventivi in bozza, RFQ in bozza, ordini d'acquisto in bozza (mai gli
+ * ordini cliente, che non hanno un editor di riga in bozza — vedi REVISIONE §6.2),
+ * e il valore canonico quantita_minima_stock sui prezzi di vendita/acquisto
+ * (PIANO Motore di Pricing Multi-UoM §7.1/§7.2/§8, dipendenza aggiunta il 14/07/2026).
+ *
+ * @return array{preventivi: int, rfq: int, ordini_acquisto: int, prezzi_vendita: int, prezzi_acquisto: int}
+ */
+function qk_ricalcola_bozze_per_cambio_stock_uom(PDO $pdo, int $prodotto_id): array
+{
+    $risultato = ['preventivi' => 0, 'rfq' => 0, 'ordini_acquisto' => 0, 'prezzi_vendita' => 0, 'prezzi_acquisto' => 0];
+
+    // --- Preventivi in bozza ---
+    if (!function_exists('qk_calcola_riga_offerta')) {
+        require_once __DIR__ . '/sales_quotes.php';
+    }
+    $st = $pdo->prepare("
+        SELECT pr.* FROM preventivi_righe pr
+        JOIN preventivi p ON p.id = pr.preventivo_id
+        WHERE pr.prodotto_id = ? AND p.stato = 'bozza'
+    ");
+    $st->execute([$prodotto_id]);
+    $umCodiceStmt = $pdo->prepare('SELECT codice FROM unita_misura WHERE id = ?');
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $riga) {
+        // Risolvere il codice UoM dalla riga (serve a qk_calcola_riga_offerta come 'unita_misura')
+        $umCodiceStmt->execute([$riga['unita_misura_id']]);
+        $riga['unita_misura'] = $umCodiceStmt->fetchColumn() ?: 'pz';
+
+        $ricalcolata = qk_calcola_riga_offerta($pdo, $riga, (int)$riga['posizione_riga']);
+
+        $pdo->prepare("
+            UPDATE preventivi_righe SET
+                quantita_stock = ?, system_unit_price_stock = ?, unita_misura_stock_id = ?,
+                quantita_contenuto_snapshot = ?, num_factor_snapshot = ?, den_factor_snapshot = ?,
+                totale_costo_riga = ?, margine_riga = ?
+            WHERE id = ?
+        ")->execute([
+            $ricalcolata['quantita_stock'], $ricalcolata['system_unit_price_stock'], $ricalcolata['unita_misura_stock_id'],
+            $ricalcolata['quantita_contenuto_snapshot'], $ricalcolata['num_factor_snapshot'], $ricalcolata['den_factor_snapshot'],
+            $ricalcolata['totale_costo_riga'], $ricalcolata['margine_riga'],
+            $riga['id'],
+        ]);
+        $risultato['preventivi']++;
+    }
+
+    // --- RFQ in bozza (riusa qk_uom_converti_riga(), stessa funzione autorevole) ---
+    $st = $pdo->prepare("
+        SELECT rr.* FROM rfq_righe rr
+        JOIN rfq_testata rt ON rt.id = rr.rfq_id
+        WHERE rr.prodotto_id = ? AND rt.stato = 'bozza'
+    ");
+    $st->execute([$prodotto_id]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $riga) {
+        $qty   = (float)$riga['quantita_richiesta'];
+        $price = (float)($riga['prezzo_indicativo'] ?? 0.0);
+        $umId  = $riga['unita_misura_id'] ? (int)$riga['unita_misura_id'] : null;
+
+        $uomResult = qk_uom_converti_riga($pdo, $prodotto_id, $umId, $qty, $price);
+
+        $pdo->prepare("
+            UPDATE rfq_righe SET
+                quantita_stock = ?, system_unit_price_stock = ?, unita_misura_stock_id = ?,
+                quantita_contenuto_snapshot = ?, num_factor_snapshot = ?, den_factor_snapshot = ?
+            WHERE id = ?
+        ")->execute([
+            $uomResult['quantita_stock'], $uomResult['system_unit_price_stock'], $uomResult['unita_misura_stock_id'],
+            $uomResult['quantita_contenuto_snapshot'], $uomResult['num_factor_snapshot'], $uomResult['den_factor_snapshot'],
+            $riga['id'],
+        ]);
+        $risultato['rfq']++;
+    }
+
+    // --- Ordini d'acquisto in bozza (stessa logica; MAI su ordini già inviati:
+    //     quelli si toccano solo tramite "nuova revisione", che preserva lo
+    //     snapshot originale per principio di immutabilità — vedi REVISIONE §6.2) ---
+    $st = $pdo->prepare("
+        SELECT orr.* FROM ordini_righe orr
+        JOIN ordini_testata ot ON ot.id = orr.ordine_id
+        WHERE orr.prodotto_id = ? AND ot.stato = 'bozza'
+    ");
+    $st->execute([$prodotto_id]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $riga) {
+        $qty   = (float)$riga['quantita_ordinata'];
+        $price = (float)($riga['prezzo_unitario'] ?? 0.0);
+        $umId  = $riga['unita_misura_id'] ? (int)$riga['unita_misura_id'] : null;
+
+        $uomResult = qk_uom_converti_riga($pdo, $prodotto_id, $umId, $qty, $price);
+
+        $pdo->prepare("
+            UPDATE ordini_righe SET
+                quantita_stock = ?, system_unit_price_stock = ?, unita_misura_stock_id = ?,
+                quantita_contenuto_snapshot = ?, num_factor_snapshot = ?, den_factor_snapshot = ?
+            WHERE id = ?
+        ")->execute([
+            $uomResult['quantita_stock'], $uomResult['system_unit_price_stock'], $uomResult['unita_misura_stock_id'],
+            $uomResult['quantita_contenuto_snapshot'], $uomResult['num_factor_snapshot'], $uomResult['den_factor_snapshot'],
+            $riga['id'],
+        ]);
+        $risultato['ordini_acquisto']++;
+    }
+
+    // --- quantita_minima_stock su listini_prezzi (vendita) ---
+    // (nota: uso 0.0 come prezzo, qui non ci interessa il prezzo ricalcolato,
+    // solo la quantita canonica -- stesso pattern gia usato in
+    // ProductsController::savePrezzo() per il calcolo iniziale)
+    $st = $pdo->prepare('SELECT id, quantita_minima_intento, unita_misura_soglia_id FROM listini_prezzi WHERE prodotto_id = ?');
+    $st->execute([$prodotto_id]);
+    $updLp = $pdo->prepare('UPDATE listini_prezzi SET quantita_minima_stock = ? WHERE id = ?');
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $riga) {
+        $qtaIntento = (float)($riga['quantita_minima_intento'] ?? 0.0);
+        $umSogliaId = $riga['unita_misura_soglia_id'] ? (int)$riga['unita_misura_soglia_id'] : null;
+        $qtaStock = $qtaIntento > 0
+            ? (float) qk_uom_converti_riga($pdo, $prodotto_id, $umSogliaId, $qtaIntento, 0.0)['quantita_stock']
+            : 0.0;
+        $updLp->execute([$qtaStock, $riga['id']]);
+        $risultato['prezzi_vendita']++;
+    }
+
+    // --- quantita_minima_stock su prodotti_fornitori_prezzi (acquisto) ---
+    $st = $pdo->prepare('
+        SELECT pfp.id, pfp.quantita_minima_intento, pfp.unita_misura_soglia_id
+        FROM prodotti_fornitori_prezzi pfp
+        JOIN prodotti_fornitori pf ON pf.id = pfp.prodotto_fornitore_id
+        WHERE pf.prodotto_id = ?
+    ');
+    $st->execute([$prodotto_id]);
+    $updPfp = $pdo->prepare('UPDATE prodotti_fornitori_prezzi SET quantita_minima_stock = ? WHERE id = ?');
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $riga) {
+        $qtaIntento = (float)($riga['quantita_minima_intento'] ?? 0.0);
+        $umSogliaId = $riga['unita_misura_soglia_id'] ? (int)$riga['unita_misura_soglia_id'] : null;
+        $qtaStock = $qtaIntento > 0
+            ? (float) qk_uom_converti_riga($pdo, $prodotto_id, $umSogliaId, $qtaIntento, 0.0)['quantita_stock']
+            : 0.0;
+        $updPfp->execute([$qtaStock, $riga['id']]);
+        $risultato['prezzi_acquisto']++;
+    }
+
+    return $risultato;
 }
 
 /* =============================================================================

@@ -264,9 +264,11 @@ Schema reale verificato, funzione `qk_uom_converti_riga()` come riferimento auto
 
 Per ogni sotto-argomento trattato nei 4 file, verifica se la copertura delle eccezioni/casi limite è completa. Elenco organizzato per file e paragrafo di origine.
 
-### 6.1 File1 PARTE1 §2 "Catch Weight (Doppia Misura)" (riga 57) — eccezione strutturale non risolta altrove
+### 6.1 File1 PARTE1 §2 "Catch Weight (Doppia Misura)" (riga 57) — eccezione strutturale, chiusa con decisione di progetto
 
-Il documento stesso segnala che nel settore chimico (il business reale di Quack, prodotti ADR) è "estremamente comune" tracciare **contemporaneamente** una quantità a pezzi (es. 5 fusti) e il peso reale effettivo rilevato al carico/scarico (es. 1023 kg, che può differire dal teorico 5×25=125 kg per variazioni di densità/riempimento lotto per lotto). Questo è citato come pratica enterprise ma **non viene mai ripreso** né in PARTE2, né in PARTE3, né nella Sezione 8 delle decisioni Quack: l'Approccio 1 deciso (un solo fattore fisso `quantita_contenuto` per prodotto) **non supporta** una doppia misura variabile per singolo movimento/lotto. Verificato anche a livello DB: nessuna colonna `peso_reale`/`peso_effettivo` su `movimenti_magazzino`. **Questa è l'eccezione più rilevante lasciata completamente aperta**, perché riguarda proprio il caso d'uso citato esplicitamente come tipico del dominio applicativo di Quack (chimica/ADR) — va quantomeno annotata come limitazione nota, o va deciso esplicitamente se e quando affrontarla.
+> ✅ **RISOLTO (13/07/2026)** — decisione presa col proprietario del progetto: Quack considera per ora i prodotti gestiti come **non deperibili e a peso/composizione stabile nel tempo**. Sotto questa ipotesi il fattore di conversione fisso già esistente (`quantita_contenuto`) è sufficiente per ogni caso reale attuale — le unità di misura di cui il sistema dispone oggi bastano e avanzano, nessuna implementazione necessaria adesso. La necessità futura è annotata come promemoria in [Backlog Sviluppi Futuri.md](../Backlog%20Sviluppi%20Futuri.md), voce 7, da riprendere solo se e quando l'assortimento prodotti dovesse includere casi a peso realmente variabile lotto per lotto. Il testo sotto resta come traccia del problema originale.
+
+Il documento stesso segnala che nel settore chimico (il business reale di Quack, prodotti ADR) è "estremamente comune" tracciare **contemporaneamente** una quantità a pezzi (es. 5 fusti) e il peso reale effettivo rilevato al carico/scarico (es. 1023 kg, che può differire dal teorico 5×25=125 kg per variazioni di densità/riempimento lotto per lotto). Questo è citato come pratica enterprise ma **non viene mai ripreso** né in PARTE2, né in PARTE3, né nella Sezione 8 delle decisioni Quack: l'Approccio 1 deciso (un solo fattore fisso `quantita_contenuto` per prodotto) **non supporta** una doppia misura variabile per singolo movimento/lotto. Verificato anche a livello DB: nessuna colonna `peso_reale`/`peso_effettivo` su `movimenti_magazzino`. Era l'eccezione più rilevante lasciata completamente aperta, perché riguarda proprio il caso d'uso citato esplicitamente come tipico del dominio applicativo di Quack (chimica/ADR) — chiusa con l'ipotesi di non-deperibilità sopra.
 
 ### 6.2 File1 PARTE1 §1A "Immutabilità Transazionale" (righe 27-31) — eccezioni mancanti
 
@@ -291,6 +293,8 @@ Il documento stesso segnala che nel settore chimico (il business reale di Quack,
 ### 6.3 Base UoM — due eccezioni mancanti, con soluzione proposta
 
 *(Un solo file coinvolto: `Versione Definitiva.md`. Da qui in poi "il documento" significa sempre e solo quello.)*
+
+> ✅ **RISOLTO (13/07/2026)** — analisi e specifica confermate corrette (nessun cambiamento nel merito), ma implementazione **rimandata deliberatamente**: nessun caso d'uso reale la richiede oggi (nessuna UoM è mai stata "ritirata" nel catalogo attuale). Spostata come voce di backlog impegnato in [Backlog Sviluppi Futuri.md](../Backlog%20Sviluppi%20Futuri.md), voce 6bis, da riprendere quando emerge la necessità concreta. Il testo sotto resta come specifica di riferimento per quando verrà implementata.
 
 **Problema 1: si disattiva una UoM mentre un prodotto la sta ancora usando.**
 
@@ -351,6 +355,8 @@ WHERE um.attivo = 0 AND p.attivo = 1
 ```
 
 **6. UI per l'azione di disattivazione**: dato che oggi non esiste alcuna vista per gestire l'anagrafica UoM, va creata (o aggiunta a una vista Impostazioni esistente, es. `app/Controllers/SettingsController.php`, già usato per altre configurazioni globali come il markup di fallback) una tabella con elenco UoM, un pulsante "Disattiva" (nessuna guardia, punto 4) e la sezione di report del punto 5.
+
+> ✅ **IMPLEMENTATO (14/07/2026)** — vedi banner di dettaglio più sotto, dopo la specifica di implementazione: guardia fattore obbligatorio, ricalcolo bozze (preventivi/RFQ/ordini d'acquisto) e ricalcolo `quantita_minima_stock`, tutto scritto e verificato con esecuzione reale.
 
 **Problema 2: si cambia la Stock UoM di un prodotto, ma esistono già preventivi in bozza scritti nella sua unità commerciale.**
 
@@ -456,6 +462,8 @@ Le sezioni RFQ e ordini d'acquisto sono lasciate come "stessa struttura" nello s
 
 **4. Punto di invocazione**: `qk_ricalcola_bozze_per_cambio_stock_uom()` va chiamata da `qk_update_prodotto()` subito dopo l'`UPDATE` su `prodotti` che scrive il nuovo `unita_misura_stock_id`, nella stessa transazione database (se il salvataggio prodotto già usa una transazione; altrimenti va aggiunta una transazione che avvolga entrambe le operazioni, per evitare che il prodotto risulti aggiornato ma le bozze no in caso di errore a metà). Il conteggio righe restituito va mostrato all'utente in un messaggio di conferma, es. *"Prodotto aggiornato. 3 preventivi in bozza sono stati ricalcolati con la nuova unità di stock."*
 
+> ✅ **IMPLEMENTATO (14/07/2026)**: `qk_ricalcola_bozze_per_cambio_stock_uom()` scritta in `includes/prodotti.php`, invocata da `qk_update_prodotto()` nella stessa transazione subito dopo l'`UPDATE` su `prodotti`. Copre, come da specifica: preventivi in bozza (riusa `qk_calcola_riga_offerta()`), RFQ in bozza e ordini d'acquisto in bozza (entrambi riusano `qk_uom_converti_riga()`), **più** — dipendenza aggiunta il 14/07/2026 col piano di pricing multi-UoM — il ricalcolo di `quantita_minima_stock` su `listini_prezzi` e `prodotti_fornitori_prezzi` per il prodotto interessato. Aggiunta anche la guardia (punto 1) che rende obbligatorio il nuovo fattore di conversione quando il prodotto ha già una UoM commerciale, e il comportamento frontend (punto 3) che azzera il campo "quantità per confezione" con messaggio inline in `assets/js/products-form.js`. Il conteggio righe ricalcolate viene mostrato in un messaggio di conferma da `ProductsController::save()`. Verificato con esecuzione reale: query SQL identiche a quelle del codice eseguite contro lo schema `init_sqlite.sql` reale (via `node:sqlite`), risultati numerici del ricalcolo verificati (es. 100 kg / 25 kg-per-fusto = 4, ricalcolato a 100 kg / 20 kg-per-tanica = 5 dopo il cambio fattore).
+
 ### 6.4 File1 PARTE2 edge case C / PARTE3 edge case 3 "UoM Commerciale non definita" — eccezione mancante
 
 > ✅ **RISOLTO** — soluzione proposta e concordata il 10/07/2026, aggiunta direttamente in `Versione Definitiva.md`, nuova Sezione 8G.
@@ -513,6 +521,8 @@ Ben coperto per le righe documento (snapshot). **Non coperto**: l'impatto sui **
 **Decisione**: coerente con questo, **un valore convertito (es. "= 250 €/fusto") va mostrato solo per i listini ancora validi** (`valido_al` nullo o nel futuro), calcolato col fattore di conversione attuale — corretto, perché rappresenta la realtà di oggi. **Per un listino chiuso (`valido_al` nel passato), non va mai mostrato alcun valore convertito**: solo il prezzo nativo così come fu salvato. Nessuna colonna aggiuntiva da introdurre su `listini_prezzi` — il criterio si basa unicamente sul confronto tra `valido_al` e la data odierna, già disponibile.
 
 **Specifica di implementazione**: ovunque nel frontend (es. `assets/js/sales-quotes.js`, funzioni che mostrano un prezzo convertito accanto a quello nativo) o nel backend (`SalesPricelistsController.php`) venga calcolato un valore "equivalente in stock" per una riga di `listini_prezzi`, va aggiunta la condizione: calcolare/mostrare il valore convertito solo se `valido_al IS NULL OR valido_al >= CURRENT_DATE`; per righe con `valido_al` nel passato, mostrare unicamente `prezzo_unitario` e la sua `unita_misura_id` nativa, senza alcuna conversione.
+
+> ⚠️ **Chiarimento (14/07/2026)**: questa decisione riguarda solo il **prezzo** (mai un "prezzo equivalente in stock" persistito). Il PIANO Motore di Pricing Multi-UoM ha introdotto, per un problema distinto, una colonna persistita `quantita_minima_stock` — ma quella è il valore canonico della **soglia di quantità** (usato dal motore di ricerca prezzo per confrontare scaglioni in unità diverse, non un dato mostrato all'utente), non un prezzo derivato. Le due cose non sono in contraddizione: qui si decide di non persistere un prezzo derivato per la visualizzazione; il piano persiste un valore di quantità per il confronto interno. Quella colonna **va però ricalcolata** quando cambia il fattore di conversione — vedi la nuova dipendenza aggiunta in §6.3 Problema 2 sopra — cosa che oggi non succede ancora, perché la funzione di ricalcolo non esiste.
 
 ### 6.6 File2 — Fallback Pricing Hierarchy Vendite (righe 111-118) — eccezioni mancanti
 
@@ -651,6 +661,8 @@ Non è specificata alcuna regola di unicità: cosa succede se due scaglioni veng
 
 **Correzione applicata**: riscritta la query di controllo duplicati sia in `ProductsController::savePrezzo()` (drawer prodotto, dove il bug si manifestava concretamente) sia in `PurchasesController::apiSaveRiga()` (griglia listino, blindata per coerenza anche se lì `listino_acquisto_id` è sempre obbligatorio e il bug non si presenta oggi), aggiungendo la gestione esplicita del caso NULL: `(listino_acquisto_id = :listino_id OR (:listino_id_null = 1 AND listino_acquisto_id IS NULL))`. Nessuna riga duplicata preesistente nel database da ripulire (confermato: solo dati di prova).
 
+> ⚠️ **Aggiornamento (14/07/2026, PIANO Motore di Pricing Multi-UoM §7.4/§8)**: con l'introduzione del valore canonico `quantita_minima_stock` e del nuovo vincolo `UNIQUE` basato su di esso (D1.2), questi tre controlli applicativi (i due qui sopra + uno nuovo aggiunto in `SalesPricelistsController::apiSaveRiga()`, che prima non ne aveva alcuno) sono stati **aggiornati per confrontare `quantita_minima_stock` invece del valore grezzo** — altrimenti un "doppione mascherato" (es. 100 KG e 4 FUSTI con fattore 25) avrebbe superato questo controllo applicativo per poi far fallire l'INSERT/UPDATE contro il vincolo `UNIQUE` del database con un errore SQL grezzo, invece del messaggio comprensibile già esistente. Il calcolo del valore canonico è stato spostato prima del controllo duplicati in tutti e tre i punti.
+
 ### 6.15bis Cancellazione distruttiva dell'assegnazione clienti-listino (segnalazione esterna, verificata)
 
 > ✅ **RISOLTO (13/07/2026)** — segnalazione ricevuta da uno strumento di analisi esterno ("antigravity"), verificata riga per riga contro il codice reale e confermata **fondata**: bug concreto, non ipotetico. Corretto direttamente nel codice.
@@ -667,7 +679,11 @@ Non è specificata alcuna regola di unicità: cosa succede se due scaglioni veng
 
 ### 6.16 Trasversale — Comparabilità di scaglioni in UoM diverse
 
+> ✅ **RISOLTO (14/07/2026)** — questo era il punto che ha fatto scattare la progettazione strutturale dedicata: [PIANO - Motore di Pricing Multi-UoM.md](PIANO%20-%20Motore%20di%20Pricing%20Multi-UoM.md). Il piano è stato progettato, poi implementato in questa stessa sessione (schema, backend, frontend — vedi sezione 12 del piano per il dettaglio deliverable-per-deliverable). Il testo sotto resta come traccia del problema originale.
+
 Nessuno dei 4 documenti specifica come il motore di pricing normalizza per il confronto due scaglioni (`quantita_minima`) espressi in **UoM diverse** sullo stesso prodotto/listino (es. uno scaglione a "100 KG" e un altro a "5 FUSTI" sullo stesso listino) — quale criterio stabilisce quale dei due si applica a una quantità data, dato che confrontare `100` con `5` senza convertirli preventivamente nella stessa unità produrrebbe un ordinamento privo di senso.
+
+**Riepilogo della soluzione implementata**: introdotta una soglia canonica sempre in Stock UoM (`quantita_minima_stock`, calcolata con la stessa funzione autorevole `qk_uom_converti_riga()`), affiancata all'intento originale dell'utente (`quantita_minima_intento` + `unita_misura_soglia_id`) per poterla ricalcolare in futuro. Il motore di ricerca (`getSalePrice()`/`getPurchasePrice()`) confronta ora sempre il valore canonico, non più il numero grezzo. Il ricalcolo automatico di questo valore canonico quando cambia il fattore di conversione o la Stock UoM del prodotto è stato scritto lo stesso giorno (14/07/2026) — vedi `qk_ricalcola_bozze_per_cambio_stock_uom()` in §6.3 Problema 2 sopra, ora anch'esso ✅ implementato.
 
 ### 6.17 Trasversale — Resi e note di credito
 

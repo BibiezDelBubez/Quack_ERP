@@ -724,7 +724,16 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
 	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id) ON DELETE CASCADE,
 	importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
 	modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
-    UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima)
+	-- D1.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1): la soglia scritta dall'utente ("intento")
+	-- e il suo equivalente canonico sempre in Stock UoM (usato dal motore di ricerca prezzo dalla Fase 3
+	-- in poi). NULL in unita_misura_soglia_id = intento già in Stock UoM, nessuna doppia rappresentazione.
+	quantita_minima_intento    DECIMAL(10,3) DEFAULT NULL,
+	unita_misura_soglia_id     INTEGER       DEFAULT NULL REFERENCES unita_misura(id),
+	quantita_minima_stock      DECIMAL(10,3) DEFAULT NULL,
+    -- D1.2 (PIANO Motore di Pricing Multi-UoM §7.4/§8 Fase 1): il vincolo di unicità è sul
+    -- valore CANONICO (sempre Stock UoM), non sul valore grezzo — "100 KG" e "4 FUSTI" con
+    -- fattore 25kg/fusto sono la stessa soglia fisica, non due prezzi legittimi diversi.
+    UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima_stock)
 );
 
 -- =============================================================================
@@ -818,7 +827,15 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
     modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
-    UNIQUE (listino_id, prodotto_id, quantita_minima, unita_misura_id)
+    -- D1.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1): vedi commento equivalente su prodotti_fornitori_prezzi.
+    quantita_minima_intento    DECIMAL(10,3) DEFAULT NULL,
+    unita_misura_soglia_id     INTEGER       DEFAULT NULL REFERENCES unita_misura(id),
+    quantita_minima_stock      DECIMAL(10,3) DEFAULT NULL,
+    -- D1.2 (PIANO Motore di Pricing Multi-UoM §7.4/§8 Fase 1): vincolo spostato dal valore
+    -- grezzo+unità al valore canonico (sempre Stock UoM) — vedi commento gemello su
+    -- prodotti_fornitori_prezzi. unita_misura_id resta libero (riguarda solo come il prezzo
+    -- è quotato, non più la soglia).
+    UNIQUE (listino_id, prodotto_id, quantita_minima_stock)
 );
 
 CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto
@@ -1599,15 +1616,22 @@ END;
 INSERT OR IGNORE INTO magazzini (codice, nome, tipo, predefinito, attivo) VALUES
     ('MAG-01', 'Magazzino Principale', 'fisico', 1, 1);
 
+-- BUG CORRETTO (14/07/2026, audit a tappeto multi-UoM): e_riferimento è un flag
+-- GLOBALE (al più una sola riga in tutta la tabella, vedi uq_um_riferimento sopra),
+-- non "una per categoria fisica". Il seed originale marcava 4 righe (kg, l, pz, m)
+-- con e_riferimento=1: con INSERT OR IGNORE, solo la prima (kg) veniva scritta,
+-- le altre 3 violavano il vincolo UNIQUE parziale e venivano scartate INTERE riga
+-- per riga — su un'installazione fresca, i codici 'l', 'pz', 'm' non venivano mai
+-- creati. Corretto lasciando kg come unica riga di riferimento globale.
 INSERT OR IGNORE INTO unita_misura (codice, descrizione, fattore_base, e_riferimento) VALUES
     ('kg',  'Chilogrammo',  1.0,         1),
     ('g',   'Grammo',       0.001,       0),
     ('mg',  'Milligrammo',  0.000001,    0),
     ('t',   'Tonnellata',   1000.0,      0),
-    ('l',   'Litro',        1.0,         1),
+    ('l',   'Litro',        1.0,         0),
     ('ml',  'Millilitro',   0.001,       0),
-    ('pz',  'Pezzo',        1.0,         1),
-    ('m',   'Metro',        1.0,         1),
+    ('pz',  'Pezzo',        1.0,         0),
+    ('m',   'Metro',        1.0,         0),
     ('cm',  'Centimetro',   0.01,        0);
 
 INSERT OR IGNORE INTO adr_classi_pericolo (codice, denominazione, ha_divisioni) VALUES

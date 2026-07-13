@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+// D3.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 3): serve qk_uom_converti_riga() per
+// convertire la quantità richiesta in Stock UoM prima di interrogare il motore di prezzo.
+require_once __DIR__ . '/../../includes/prodotti.php';
+require_once __DIR__ . '/../../includes/pricing.php';
+
 /**
  * SalesPricelistsController — Gestione Listini Vendita.
  *
@@ -400,6 +405,41 @@ final class SalesPricelistsController extends BaseController
             exit;
         }
 
+        // D3.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1/3): a ogni scrittura, calcolare e
+        // salvare il valore canonico della soglia (sempre Stock UoM), insieme all'intento originale
+        // (valore + unità così come scritti dall'utente) — unita_misura_id qui rappresenta sia
+        // l'unità di quotazione del prezzo sia l'unità in cui l'utente ha scritto la soglia
+        // (unico campo nell'interfaccia attuale: coerente col modello di input odierno).
+        $qMinIntento = $qMin;
+        $unitaSogliaId = $unitaMisuraId ?: null;
+        $qMinStock = $qMin > 0
+            ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $unitaSogliaId, $qMin, 0.0)['quantita_stock']
+            : 0.0;
+
+        // Controllo duplicati esplicito (14/07/2026, PIANO Motore di Pricing Multi-UoM §7.4/§8):
+        // questo endpoint non ne aveva mai avuto uno (a differenza degli equivalenti acquisti,
+        // REVISIONE §6.15) — si affidava solo al vincolo UNIQUE del database, che ora è su
+        // quantita_minima_stock (D1.2): senza questo controllo, un doppione mascherato (es. stesso
+        // prodotto/listino con soglie in unità diverse ma stesso valore canonico) produrrebbe un
+        // errore SQL grezzo invece di un messaggio comprensibile.
+        $stmtDup = $this->pdo->prepare("
+            SELECT id FROM listini_prezzi
+            WHERE listino_id = :listino_id
+              AND prodotto_id = :prodotto_id
+              AND quantita_minima_stock = :qmin_stock
+              AND id != :riga_id
+        ");
+        $stmtDup->execute([
+            ':listino_id'  => $listinoId,
+            ':prodotto_id' => $prodottoId,
+            ':qmin_stock'  => $qMinStock,
+            ':riga_id'     => $rigaId ?: 0,
+        ]);
+        if ($stmtDup->fetch()) {
+            echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità (anche se espresso in un\'altra unità di misura, equivale alla stessa soglia).']);
+            exit;
+        }
+
         try {
             if ($rigaId) {
                 // UPDATE
@@ -415,6 +455,9 @@ final class SalesPricelistsController extends BaseController
                         sconto_perc     = :sconto,
                         unita_misura_id = :unita_misura_id,
                         note            = :note,
+                        quantita_minima_intento = :qmin_intento,
+                        unita_misura_soglia_id  = :um_soglia_id,
+                        quantita_minima_stock   = :qmin_stock,
                         modificato_manualmente_il = CURRENT_TIMESTAMP
                      WHERE id = :id AND listino_id = :listino_id"
                 )->execute([
@@ -424,6 +467,9 @@ final class SalesPricelistsController extends BaseController
                     ':sconto'      => $sconto,
                     ':unita_misura_id' => $unitaMisuraId ?: null,
                     ':note'        => $note ?: null,
+                    ':qmin_intento' => $qMinIntento,
+                    ':um_soglia_id' => $unitaSogliaId,
+                    ':qmin_stock'   => $qMinStock,
                     ':id'          => $rigaId,
                     ':listino_id'  => $listinoId,
                 ]);
@@ -431,8 +477,8 @@ final class SalesPricelistsController extends BaseController
             } else {
                 // INSERT
                 $this->pdo->prepare(
-                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, modificato_manualmente_il)
-                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :unita_misura_id, :note, CURRENT_TIMESTAMP)"
+                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock, modificato_manualmente_il)
+                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :unita_misura_id, :note, :qmin_intento, :um_soglia_id, :qmin_stock, CURRENT_TIMESTAMP)"
                 )->execute([
                     ':listino_id'  => $listinoId,
                     ':prodotto_id' => $prodottoId,
@@ -441,6 +487,9 @@ final class SalesPricelistsController extends BaseController
                     ':sconto'      => $sconto,
                     ':unita_misura_id' => $unitaMisuraId ?: null,
                     ':note'        => $note ?: null,
+                    ':qmin_intento' => $qMinIntento,
+                    ':um_soglia_id' => $unitaSogliaId,
+                    ':qmin_stock'   => $qMinStock,
                 ]);
                 $newId = (int)$this->pdo->lastInsertId();
             }
@@ -556,249 +605,19 @@ final class SalesPricelistsController extends BaseController
      * Strategia (analoga a getPurchasePrice):
      *  1. Cerca nei listini associati del cliente (in ordine di priorità) o nel listino specificato
      *  2. Se non trova, cade sul listino standard o ricarico su costo
+     *
+     * CONTRATTO (D3.1, PIANO Motore di Pricing Multi-UoM §8 Fase 3): $quantita deve essere
+     * SEMPRE già espressa in Stock UoM da chi chiama questa funzione — viene confrontata con
+     * quantita_minima_stock (valore canonico), non più col valore grezzo. L'unico chiamante
+     * attuale, apiOttieniPrezzo(), converte la quantità ricevuta dal client prima di invocarla.
      */
     public function getSalePrice(int $prodottoId, int $listinoId, float $quantita = 1.0, ?string $dataRiferimento = null, ?int $clienteId = null): ?array
     {
-        if (!$dataRiferimento) {
-            $dataRiferimento = date('Y-m-d');
-        }
-
-        // --- LEVEL 1: DEDICATO (Client pricelists or requested listinoId) ---
-        
-        // Se c'è un cliente specificato, scorriamo i suoi listini attivi in ordine di priorità decrescente
-        if ($clienteId && $clienteId > 0) {
-            $stmtClientiListini = $this->pdo->prepare("
-                SELECT cl.listino_id, l.nome, l.valuta
-                FROM clienti_listini cl
-                JOIN listini l ON l.id = cl.listino_id
-                WHERE cl.cliente_id = :cliente_id AND l.attivo = 1
-                  AND (l.valido_dal IS NULL OR l.valido_dal <= :data)
-                  AND (l.valido_al  IS NULL OR l.valido_al  >= :data)
-                  AND (cl.data_inizio IS NULL OR cl.data_inizio <= :data)
-                  AND (cl.data_fine IS NULL OR cl.data_fine >= :data)
-                ORDER BY cl.priorita DESC, l.nome ASC
-            ");
-            $stmtClientiListini->execute([':cliente_id' => $clienteId, ':data' => $dataRiferimento]);
-            $clientPricelists = $stmtClientiListini->fetchAll(PDO::FETCH_ASSOC);
-
-            foreach ($clientPricelists as $clientListino) {
-                $stmtP = $this->pdo->prepare(
-                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
-                     FROM listini_prezzi
-                     WHERE listino_id = :lid
-                       AND prodotto_id = :pid
-                       AND quantita_minima <= :qty
-                     ORDER BY quantita_minima DESC
-                     LIMIT 1"
-                );
-                $stmtP->execute([
-                    ':lid'  => $clientListino['listino_id'],
-                    ':pid'  => $prodottoId,
-                    ':qty'  => $quantita,
-                ]);
-                $row = $stmtP->fetch(PDO::FETCH_ASSOC);
-
-                if ($row) {
-                    $qMin    = (float)$row['quantita_minima'];
-                    $sorgente = 'Listino Cliente: ' . $clientListino['nome'];
-                    if ($qMin > 0) {
-                        $sorgente .= ' (Scaglione >= ' . number_format($qMin, 0, ',', '.') . ')';
-                    }
-
-                    return [
-                        'prezzo_unitario' => (float)$row['prezzo_unitario'],
-                        'sconto_perc'     => (float)$row['sconto_perc'],
-                        'valuta'          => $clientListino['valuta'],
-                        'listino_id'      => $clientListino['listino_id'],
-                        'listino_nome'    => $clientListino['nome'],
-                        'prezzo_sorgente' => $sorgente,
-                        'origine'         => 'dedicato',
-                        'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
-                    ];
-                }
-            }
-        }
-
-        // Se non abbiamo trovato nulla o non è definito un cliente, controlliamo il listinoId esplicito fornito
-        if ($listinoId > 0) {
-            $stmtL = $this->pdo->prepare(
-                "SELECT id, nome, valuta FROM listini
-                 WHERE id = :id AND attivo = 1
-                   AND (valido_dal IS NULL OR valido_dal <= :data)
-                   AND (valido_al  IS NULL OR valido_al  >= :data)"
-            );
-            $stmtL->execute([':id' => $listinoId, ':data' => $dataRiferimento]);
-            $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
-
-            if ($listino) {
-                $stmtP = $this->pdo->prepare(
-                    "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
-                     FROM listini_prezzi
-                     WHERE listino_id = :lid
-                       AND prodotto_id = :pid
-                       AND quantita_minima <= :qty
-                     ORDER BY quantita_minima DESC
-                     LIMIT 1"
-                );
-                $stmtP->execute([
-                    ':lid'  => $listinoId,
-                    ':pid'  => $prodottoId,
-                    ':qty'  => $quantita,
-                ]);
-                $row = $stmtP->fetch(PDO::FETCH_ASSOC);
-
-                if ($row) {
-                    $qMin    = (float)$row['quantita_minima'];
-                    $sorgente = 'Listino: ' . $listino['nome'];
-                    if ($qMin > 0) {
-                        $sorgente .= ' (Scaglione >= ' . number_format($qMin, 0, ',', '.') . ')';
-                    }
-
-                    return [
-                        'prezzo_unitario' => (float)$row['prezzo_unitario'],
-                        'sconto_perc'     => (float)$row['sconto_perc'],
-                        'valuta'          => $listino['valuta'],
-                        'listino_id'      => $listinoId,
-                        'listino_nome'    => $listino['nome'],
-                        'prezzo_sorgente' => $sorgente,
-                        'origine'         => 'dedicato',
-                        'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
-                    ];
-                }
-            }
-        }
-
-        // --- LEVEL 2: STANDARD / PUBBLICO (IS_DEFAULT = 1) ---
-        $stmtL = $this->pdo->prepare(
-            "SELECT id, nome, valuta FROM listini
-             WHERE is_default = 1 AND attivo = 1
-               AND (valido_dal IS NULL OR valido_dal <= :data)
-               AND (valido_al  IS NULL OR valido_al  >= :data)"
-        );
-        $stmtL->execute([':data' => $dataRiferimento]);
-        $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
-
-        if ($listino) {
-            $fallbackListinoId = (int)$listino['id'];
-            
-            $stmtP = $this->pdo->prepare(
-                "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
-                 FROM listini_prezzi
-                 WHERE listino_id = :lid
-                   AND prodotto_id = :pid
-                   AND quantita_minima <= :qty
-                 ORDER BY quantita_minima DESC
-                 LIMIT 1"
-            );
-                $stmtP->execute([
-                    ':lid'  => $fallbackListinoId,
-                    ':pid'  => $prodottoId,
-                    ':qty'  => $quantita,
-                ]);
-                $row = $stmtP->fetch(PDO::FETCH_ASSOC);
-
-                if ($row) {
-                    $qMin    = (float)$row['quantita_minima'];
-                    $sorgente = 'Listino Standard: ' . $listino['nome'];
-                    if ($qMin > 0) {
-                        $sorgente .= ' (Scaglione >= ' . number_format($qMin, 0, ',', '.') . ')';
-                    }
-
-                    return [
-                        'prezzo_unitario' => (float)$row['prezzo_unitario'],
-                        'sconto_perc'     => (float)$row['sconto_perc'],
-                        'valuta'          => $listino['valuta'],
-                        'listino_id'      => $fallbackListinoId,
-                        'listino_nome'    => $listino['nome'],
-                        'prezzo_sorgente' => $sorgente,
-                        'origine'         => 'standard',
-                        'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
-                    ];
-                }
-            }
-
-        // --- LEVEL 3: DYNAMIC FALLBACK MARKUP ON COST ---
-        $costo_unitario = 0.0;
-        
-        $stProdType = $this->pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
-        $stProdType->execute([$prodottoId]);
-        $prodTipo = $stProdType->fetchColumn();
-
-        // Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md) — vedi commento
-        // esteso in db/init_sqlite.sql §14b.
-        if ($prodTipo === 'kit') {
-            $stCost = $this->pdo->prepare('
-                SELECT SUM(ck.quantita * vc.costo_acquisto)
-                FROM componenti_kit ck
-                LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
-                WHERE ck.kit_id = ?
-            ');
-        } else {
-            $stCost = $this->pdo->prepare('
-                SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = ?
-            ');
-        }
-        $stCost->execute([$prodottoId]);
-        $costo_unitario_col = $stCost->fetchColumn();
-
-        if ($costo_unitario_col !== false && $costo_unitario_col !== null) {
-            $costPrice = (float)$costo_unitario_col;
-            
-            // Carica l'override del markup del prodotto e la UoM di stock
-            $stProd = $this->pdo->prepare('SELECT markup_fallback_perc, unita_misura_stock_id FROM prodotti WHERE id = ?');
-            $stProd->execute([$prodottoId]);
-            $prodRow = $stProd->fetch(PDO::FETCH_ASSOC);
-            
-            $markup = null;
-            $sorgenteMarkup = '';
-            
-            if ($prodRow) {
-                if ($prodRow['markup_fallback_perc'] !== null && $prodRow['markup_fallback_perc'] !== '') {
-                    $markup = (float)$prodRow['markup_fallback_perc'];
-                    $sorgenteMarkup = "ricarico specifico scheda prodotto (+" . number_format($markup, 2, ',', '.') . "%)";
-                }
-                $umStockId = $prodRow['unita_misura_stock_id'] !== null ? (int)$prodRow['unita_misura_stock_id'] : null;
-            } else {
-                $umStockId = null;
-            }
-            
-            // Se non c'è ricarico specifico, usa il fallback globale di sistema
-            if ($markup === null) {
-                $stGlobal = $this->pdo->query("SELECT valore FROM Impostazioni WHERE chiave = 'markup_fallback_default'");
-                $globalVal = $stGlobal->fetchColumn();
-                if ($globalVal !== false && $globalVal !== null && $globalVal !== '') {
-                    $markup = (float)$globalVal;
-                    $sorgenteMarkup = "ricarico di default di sistema (+" . number_format($markup, 2, ',', '.') . "%)";
-                } else {
-                    $markup = 20.0;
-                    $sorgenteMarkup = "ricarico standard di emergenza (+20,00%)";
-                }
-            }
-            
-            $computedPrice = round($costPrice * (1 + $markup / 100), 2);
-            return [
-                'prezzo_unitario' => $computedPrice,
-                'sconto_perc'     => 0.0,
-                'valuta'          => 'EUR',
-                'listino_id'      => 0,
-                'listino_nome'    => 'Ricarico automatico su costo',
-                'prezzo_sorgente' => "Costo d'acquisto minimo (" . number_format($costPrice, 2, ',', '.') . " €) + " . $sorgenteMarkup,
-                'origine'         => 'costo',
-                'unita_misura_id' => $umStockId,
-            ];
-        }
-
-        // --- LEVEL 4: MANUALE (prezzo 0.00) ---
-        return [
-            'prezzo_unitario' => 0.0,
-            'sconto_perc'     => 0.0,
-            'valuta'          => 'EUR',
-            'listino_id'      => 0,
-            'listino_nome'    => 'Manuale',
-            'prezzo_sorgente' => 'Nessun prezzo configurato',
-            'origine'         => 'manuale',
-            'unita_misura_id' => null,
-        ];
+        // Refactoring 14/07/2026: logica estratta in includes/pricing.php (qk_get_sale_price()),
+        // pura (PDO + parametri, nessun riferimento a HTTP), così riutilizzabile da script CLI,
+        // cron, o altri moduli senza passare da questo controller. Nessuna modifica di
+        // comportamento: stessa logica, stessi parametri, stesso valore di ritorno.
+        return qk_get_sale_price($this->pdo, $prodottoId, $listinoId, $quantita, $dataRiferimento, $clienteId);
     }
 
     /* ── API endpoint: ottieni prezzo vendita ───────────────────────────────── */
@@ -811,6 +630,11 @@ final class SalesPricelistsController extends BaseController
         $listinoId  = filter_input(INPUT_GET, 'listino_id',  FILTER_VALIDATE_INT);
         $clienteId  = filter_input(INPUT_GET, 'cliente_id',  FILTER_VALIDATE_INT);
         $quantita   = filter_input(INPUT_GET, 'quantita',    FILTER_VALIDATE_FLOAT);
+        // D3.1 (PIANO Motore di Pricing Multi-UoM §5.1/§8 Fase 3): prima di questa modifica, `quantita`
+        // arrivava come numero grezzo senza mai dichiarare in quale unità era espresso. Nuovo parametro
+        // opzionale `unita_misura_id`: l'unità in cui il chiamante esprime `quantita` (Stock o UoM
+        // commerciale del prodotto). Se assente, retrocompatibile: si assume già Stock UoM.
+        $unitaRichiestaId = filter_input(INPUT_GET, 'unita_misura_id', FILTER_VALIDATE_INT) ?: null;
         $data       = get_param('data') ?: null;
 
         if (!$prodottoId) {
@@ -821,7 +645,14 @@ final class SalesPricelistsController extends BaseController
         $listinoId = $listinoId ?: 0;
         $quantita = ($quantita === false || $quantita === null) ? 1.0 : $quantita;
 
-        $priceInfo = $this->getSalePrice($prodottoId, $listinoId, $quantita, $data, $clienteId);
+        // Conversione autorevole (server-side, BCMath) in Stock UoM PRIMA di interrogare il motore
+        // di prezzo: da qui in poi getSalePrice() riceve sempre e solo una quantità in Stock UoM,
+        // comparabile con quantita_minima_stock indipendentemente da come l'utente l'ha scritta.
+        $quantitaStock = $unitaRichiestaId
+            ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $unitaRichiestaId, $quantita, 0.0)['quantita_stock']
+            : $quantita;
+
+        $priceInfo = $this->getSalePrice($prodottoId, $listinoId, $quantitaStock, $data, $clienteId);
 
         $costo_unitario = 0.0;
         $rrp_min = null;
@@ -1051,7 +882,7 @@ final class SalesPricelistsController extends BaseController
                 }
 
                 // Cerca il prodotto
-                $stmtProd = $this->pdo->prepare('SELECT id, unita_misura_stock_id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
+                $stmtProd = $this->pdo->prepare('SELECT id, unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
                 $stmtProd->execute([':s' => $sku]);
                 $prodRow = $stmtProd->fetch(PDO::FETCH_ASSOC);
                 if (!$prodRow) {
@@ -1060,7 +891,27 @@ final class SalesPricelistsController extends BaseController
                     continue;
                 }
                 $prodottoId = (int)$prodRow['id'];
-                $uomId = (int)$prodRow['unita_misura_stock_id'];
+                $uomStockId = (int)$prodRow['unita_misura_stock_id'];
+                $uomCommercialId = $prodRow['unita_contenuto_id'] !== null ? (int)$prodRow['unita_contenuto_id'] : null;
+                $uomId = $uomStockId; // default retrocompatibile: assume Stock UoM se la colonna non è valorizzata
+
+                // D4.6 (PIANO Motore di Pricing Multi-UoM §7.7/§8 Fase 4): colonna facoltativa nel
+                // tracciato Excel — se valorizzata, dichiara in quale unità è scritta la soglia
+                // (quantita_minima) per QUESTA riga, invece di assumere sempre Stock UoM. Se il
+                // codice non corrisponde né a Stock né a UoM commerciale del prodotto, si rifiuta
+                // la riga (stesso principio di §7.5: mai salvare un dato in un'unità non convertibile).
+                $umSogliaCodice = trim((string)($row['unita_misura_soglia'] ?? ''));
+                if ($umSogliaCodice !== '') {
+                    $stmtUmSoglia = $this->pdo->prepare('SELECT id FROM unita_misura WHERE codice = :c');
+                    $stmtUmSoglia->execute([':c' => $umSogliaCodice]);
+                    $umSogliaId = $stmtUmSoglia->fetchColumn();
+                    if (!$umSogliaId || ((int)$umSogliaId !== $uomStockId && (int)$umSogliaId !== $uomCommercialId)) {
+                        $skipped++;
+                        $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): unità soglia "' . htmlspecialchars($umSogliaCodice) . '" non valida per questo prodotto (deve essere l\'unità di stock o l\'unità commerciale) — saltata.';
+                        continue;
+                    }
+                    $uomId = (int)$umSogliaId;
+                }
 
                 $toFloat = function(?string $v): float {
                     if ($v === null || trim($v) === '') return 0.0;
@@ -1079,23 +930,31 @@ final class SalesPricelistsController extends BaseController
                 $sconto = $toFloat($row['sconto_perc'] ?? '0');
                 $note   = !empty($row['note']) ? trim((string)$row['note']) : null;
 
-                // Cerca se esiste già un prezzo per questo listino, prodotto, quantita_minima E unita_misura_id.
-                // Bug corretto il 13/07/2026: la query precedente non filtrava su unita_misura_id, pur essendo
-                // parte del vincolo UNIQUE reale della tabella (listino_id, prodotto_id, quantita_minima,
-                // unita_misura_id) — con due righe stesso prodotto/scaglione ma UoM diverse (es. prezzo per KG
-                // e prezzo per FUSTO), l'import avrebbe potuto aggiornare la riga sbagliata invece di inserirne
-                // una nuova, sovrascrivendo silenziosamente il prezzo di una UoM diversa da quella importata.
+                // D4.6 (PIANO Motore di Pricing Multi-UoM §7.7): $uomId qui è o la Stock UoM
+                // (default retrocompatibile) o l'unità dichiarata dalla colonna facoltativa
+                // "unita_misura_soglia" — stesso campo usato sia come unità di quotazione del
+                // prezzo sia come unità della soglia, coerente col modello a singola unità per
+                // riga già in uso nel resto del sistema (vedi nota in apiSaveRiga).
+                $qMinCanonico = $qMin > 0
+                    ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $uomId, $qMin, 0.0)['quantita_stock']
+                    : 0.0;
+
+                // Cerca se esiste già un prezzo per questo listino/prodotto allo stesso scaglione.
+                // Bug corretto il 13/07/2026: la query precedente non filtrava su unita_misura_id.
+                // Bug corretto il 14/07/2026 (audit a tappeto, gap simmetrico a quello già noto lato
+                // acquisti in apiImportPrezzi di PurchasesController): il confronto restava sul valore
+                // grezzo (quantita_minima + unita_misura_id), non sul valore canonico quantita_minima_stock
+                // — un import che creasse un doppione mascherato (es. "100 KG" quando esiste già "4 FUSTI"
+                // con fattore 25) avrebbe fallito con un errore SQL grezzo sul vincolo UNIQUE invece di
+                // essere riconosciuto come lo stesso scaglione e gestito correttamente (update o skip).
                 $stmtCheck = $this->pdo->prepare("
                     SELECT id, importato_il, modificato_manualmente_il FROM listini_prezzi
-                    WHERE listino_id = :lid AND prodotto_id = :pid AND quantita_minima = :qmin
-                      AND (unita_misura_id = :umid OR (unita_misura_id IS NULL AND :umid_null = 1))
+                    WHERE listino_id = :lid AND prodotto_id = :pid AND quantita_minima_stock = :qmin_stock
                 ");
                 $stmtCheck->execute([
-                    ':lid'      => $listinoId,
-                    ':pid'      => $prodottoId,
-                    ':qmin'     => $qMin,
-                    ':umid'     => $uomId ?: null,
-                    ':umid_null' => $uomId ? 0 : 1,
+                    ':lid'        => $listinoId,
+                    ':pid'        => $prodottoId,
+                    ':qmin_stock' => $qMinCanonico,
                 ]);
                 $existingRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
@@ -1121,20 +980,26 @@ final class SalesPricelistsController extends BaseController
                             prezzo_unitario = :prezzo,
                             sconto_perc = :sconto,
                             note = :note,
+                            quantita_minima_intento = :qmin_intento,
+                            unita_misura_soglia_id  = :um_soglia_id,
+                            quantita_minima_stock   = :qmin_stock,
                             importato_il = CURRENT_TIMESTAMP
                         WHERE id = :id
                     ")->execute([
                         ':prezzo' => $prezzo,
                         ':sconto' => $sconto,
                         ':note'   => $note,
+                        ':qmin_intento' => $qMin,
+                        ':um_soglia_id' => $uomId ?: null,
+                        ':qmin_stock'   => $qMinCanonico,
                         ':id'     => $existingId
                     ]);
                     $touchedIds[] = $existingId;
                 } else {
                     // INSERT
                     $this->pdo->prepare("
-                        INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, importato_il)
-                        VALUES (:lid, :pid, :qmin, :prezzo, :sconto, :umid, :note, CURRENT_TIMESTAMP)
+                        INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock, importato_il)
+                        VALUES (:lid, :pid, :qmin, :prezzo, :sconto, :umid, :note, :qmin_intento, :um_soglia_id, :qmin_stock, CURRENT_TIMESTAMP)
                     ")->execute([
                         ':lid'    => $listinoId,
                         ':pid'    => $prodottoId,
@@ -1142,7 +1007,10 @@ final class SalesPricelistsController extends BaseController
                         ':prezzo' => $prezzo,
                         ':sconto' => $sconto,
                         ':umid'   => $uomId ?: null,
-                        ':note'   => $note
+                        ':note'   => $note,
+                        ':qmin_intento' => $qMin,
+                        ':um_soglia_id' => $uomId ?: null,
+                        ':qmin_stock'   => $qMinCanonico,
                     ]);
                     $touchedIds[] = (int)$this->pdo->lastInsertId();
                 }
