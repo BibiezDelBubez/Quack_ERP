@@ -71,7 +71,9 @@ Di seguito sono elencati tutti gli scenari critici indicati e le relative soluzi
 
 ## 4. Architettura Database Proposta (MySQL/PostgreSQL)
 
-Ecco lo schema relazionale ottimizzato per la tua applicazione in XAMPP. Nota come le tabelle transazionali (righe d'ordine) isolino completamente i dati storici.
+> ⚠️ **Decisione da conoscere PRIMA di leggere lo schema qui sotto (anticipata dalla Sezione 8D, spostata qui il 10/07/2026 per evitare fraintendimenti)**: lo schema di questo paragrafo è materiale di ricerca generico, ispirato a come SAP/Oracle/Dynamics affrontano il problema in astratto — **non è, e non è mai stato, lo schema realmente implementato in Quack**. In particolare, la tabella `product_uom_conversions` mostrata subito sotto rappresenta un'architettura chiamata "Approccio 2" (un prodotto con **più** UoM commerciali alternative contemporaneamente), che per Quack è **solo un'ipotesi di roadmap futura, mai implementata**. L'architettura realmente scelta e costruita per Quack è invece l'"Approccio 1": **ogni prodotto ha al massimo una sola UoM commerciale oltre alla UoM di stock** (campi `unita_contenuto_id` e `quantita_contenuto`/`num_factor`/`den_factor` direttamente sulla tabella `prodotti`, nessuna tabella separata di conversioni multiple). Il dettaglio completo di questa decisione, con la motivazione, è nella Sezione 8D più avanti in questo documento. Chi cerca lo schema reale di Quack deve fare riferimento a quello, non a quello sotto.
+
+Ecco lo schema relazionale generico di ispirazione (non lo schema reale di Quack — vedi avviso sopra). Nota come le tabelle transazionali (righe d'ordine) isolino completamente i dati storici, principio che invece **è** stato adottato realmente da Quack, pur con nomi di tabella diversi (vedi PARTE 2 e PARTE 3 più avanti per lo schema reale).
 
 ```sql
 -- 1. REGISTRO DELLE UNITÀ DI MISURA GLOBALE
@@ -93,7 +95,7 @@ CREATE TABLE products (
     FOREIGN KEY (stock_uom_code) REFERENCES uom_registry(uom_code)
 );
 
--- 3. FATTORI DI CONVERSIONE SPECIFICI PER PRODOTTO
+-- 3. FATTORI DI CONVERSIONE SPECIFICI PER PRODOTTO (schema per l'Approccio 2, ROADMAP FUTURA — vedi avviso sopra: NON è l'implementazione attuale di Quack)
 -- Formula: 1 Unità Alternativa (alt_uom_code) = (num_factor / den_factor) * Unità di Stock
 -- Esempio: 1 KG (alt) di Prodotto X = (1 / 25) * FUSTO (stock). Quindi 1 KG = 0.04 Fusti.
 CREATE TABLE product_uom_conversions (
@@ -189,138 +191,11 @@ $$\text{Prezzo Stock} = 15.00 \times \left(\frac{25}{1}\right) = 375.00 \text{ �
 
 ## 6. Implementazione Software (Backend PHP & Frontend JS)
 
-Per garantire un'esperienza utente (UX) eccellente ed evitare bug di calcolo tra client e server, la conversione deve avvenire sia in JS (reattività UI) che in PHP (validazione e scrittura DB).
+Per garantire un'esperienza utente (UX) eccellente ed evitare bug di calcolo tra client e server, la conversione deve avvenire sia in JS (reattività UI) che in PHP (validazione e scrittura DB): il frontend converte per mostrare subito un'anteprima reattiva a video, il backend ricalcola sempre da capo con precisione decimale (BCMath) prima di scrivere qualunque valore nel database, senza mai fidarsi ciecamente di ciò che ha inviato il browser.
 
-### A. Frontend: Logica JavaScript (`uom-converter.js`)
-
-In JavaScript utilizziamo la libreria nativa `BigInt` o una precisione decimale accurata per evitare le fluttuazioni dei numeri a virgola mobile di JS (es. `0.1 + 0.2 = 0.30000000000000004`).
-
-```javascript
-class UomConverter {
-    /**
-     * Converte la quantità commerciale in quantità di stock
-     * @param {number|string} commercialQty 
-     * @param {number|string} num 
-     * @param {number|string} den 
-     * @returns {number}
-     */
-    static toStockQty(commercialQty, num, den) {
-        const q = parseFloat(commercialQty);
-        const n = parseFloat(num);
-        const d = parseFloat(den);
-        if (isNaN(q) || isNaN(n) || isNaN(d) || d === 0) return 0;
-
-        // Calcolo ad alta precisione arrotondato a 4 decimali
-        return parseFloat((q * (n / d)).toFixed(4));
-    }
-
-    /**
-     * Converte il prezzo commerciale in prezzo riferito all'unità di stock
-     * @param {number|string} commercialPrice 
-     * @param {number|string} num 
-     * @param {number|string} den 
-     * @returns {number}
-     */
-    static toStockPrice(commercialPrice, num, den) {
-        const p = parseFloat(commercialPrice);
-        const n = parseFloat(num);
-        const d = parseFloat(den);
-        if (isNaN(p) || isNaN(n) || isNaN(d) || n === 0) return 0;
-
-        return parseFloat((p * (d / n)).toFixed(4));
-    }
-}
-```
-
-### B. Backend: Validazione e Salvataggio PHP (`OrderProcessor.php`)
-
-Il backend non si fida mai dei calcoli inviati dal frontend. Ricalcola tutto lato server e popola la tabella transazionale con i valori corretti e congelati.
-
-```php
-<?php
-
-class OrderProcessor {
-    private $db;
-
-    public function __construct(PDO $dbConnection) {
-        $this->db = $dbConnection;
-    }
-
-    public function saveOrderLine($orderId, $productId, $orderedQty, $orderedUom, $inputPrice) {
-        // 1. Recupera i dati anagrafici correnti del prodotto e le conversioni
-        $stmt = $this->db->prepare("
-            SELECT p.stock_uom_code, c.num_factor, c.den_factor
-            FROM products p
-            LEFT JOIN product_uom_conversions c 
-              ON p.product_id = c.product_id AND c.alt_uom_code = :ordered_uom
-            WHERE p.product_id = :product_id
-        ");
-        $stmt->execute([
-            ':product_id' => $productId,
-            ':ordered_uom' => $orderedUom
-        ]);
-        $product = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$product) {
-            throw new Exception("Prodotto non trovato o UoM non configurata.");
-        }
-
-        // Se l'utente ordina direttamente in unità di stock, i fattori sono 1/1
-        if ($orderedUom === $product['stock_uom_code']) {
-            $numFactor = 1.000000000;
-            $denFactor = 1.000000000;
-        } else {
-            if (!$product['num_factor'] || !$product['den_factor']) {
-                throw new Exception("Fattore di conversione mancante per la UoM selezionata.");
-            }
-            $numFactor = (float)$product['num_factor'];
-            $denFactor = (float)$product['den_factor'];
-        }
-
-        // 2. Esegui i calcoli di conversione (Usando BCMath in PHP per evitare imprecisioni float)
-        // Quantità Stock = Qty Ordinata * (Num / Den)
-        $conversionRate = bcdiv($numFactor, $denFactor, 9);
-        $stockQty = bcmul($orderedQty, $conversionRate, 4);
-
-        // Prezzo Stock = Prezzo Ordinato * (Den / Num)
-        $inverseRate = bcdiv($denFactor, $numFactor, 9);
-        $stockPrice = bcmul($inputPrice, $inverseRate, 4);
-
-        // Calcolo totale riga
-        $rowTotal = bcmul($orderedQty, $inputPrice, 4);
-
-        // 3. Persisti nel DB congelando lo snapshot
-        $insertQuery = "
-            INSERT INTO sales_order_lines (
-                order_id, product_id, ordered_qty, ordered_uom_code, input_unit_price,
-                num_factor_snapshot, den_factor_snapshot,
-                stock_qty, stock_uom_code_snapshot, system_unit_price_stock, row_total
-            ) VALUES (
-                :order_id, :product_id, :ordered_qty, :ordered_uom, :input_price,
-                :num_factor, :den_factor,
-                :stock_qty, :stock_uom, :stock_price, :row_total
-            )
-        ";
-
-        $insertStmt = $this->db->prepare($insertQuery);
-        $insertStmt->execute([
-            ':order_id'    => $orderId,
-            ':product_id'  => $productId,
-            ':ordered_qty' => $orderedQty,
-            ':ordered_uom' => $orderedUom,
-            ':input_price' => $inputPrice,
-            ':num_factor'  => $numFactor,
-            ':den_factor'  => $denFactor,
-            ':stock_qty'   => $stockQty,
-            ':stock_uom'   => $product['stock_uom_code'],
-            ':stock_price' => $stockPrice,
-            ':row_total'   => $rowTotal
-        ]);
-
-        return $this->db->lastInsertId();
-    }
-}
-```
+> ⚠️ **Nota di correzione (10/07/2026)**: questo paragrafo conteneva in precedenza due lunghi esempi di codice generico (una classe JS `UomConverter` e una classe PHP `OrderProcessor`) presentati come implementazione di riferimento. Sono stati **rimossi**, non solo rietichettati, perché un confronto riga per riga col codice reale di Quack ha mostrato che non erano semplicemente "scritti con nomi diversi": si comportavano davvero in modo diverso su tre punti concreti — arrotondavano la quantità a 4 decimali invece dei 3 usati realmente da Quack, bloccavano l'operazione con un errore quando mancava un fattore di conversione invece di procedere con un valore di default sicuro come fa il codice reale, e mescolavano nella stessa funzione il calcolo e il salvataggio a database invece di tenerli separati (separazione che nel codice reale permette alla stessa funzione di essere riusata per preventivi, ordini di vendita, RFQ e ordini d'acquisto). Tenere quel codice, anche etichettato come "solo esempio", rischiava di essere copiato per sbaglio da chi (persona o intelligenza artificiale) lo avesse letto come riferimento. Il principio generale che quel codice voleva illustrare — validare e ricalcolare sempre lato server, mai fidarsi del client — resta valido ed è spiegato qui sopra in una riga, senza bisogno di codice.
+>
+> **Per vedere la conversione realmente implementata in Quack**: lato backend, la funzione `qk_uom_converti_riga()` in `includes/prodotti.php` (usata da tutti i cicli documentali: preventivi, ordini di vendita, RFQ, ordini d'acquisto); lato frontend, la funzione `qkConvertUom()` in `assets/js/app.js` (usata dalle viste di preventivi/ordini per la conversione di anteprima a video).
 
 ## 7. Flusso di Lavoro Esemplificato (Esempio Pratico)
 
@@ -423,6 +298,8 @@ Tutti i calcoli a database usano questa coppia intera, evitando la deriva tipica
 
 ### D. Modello di Conversione UoM: Approccio Selezionato e Roadmap
 
+> Questa è la sezione di dettaglio della decisione già **anticipata in apertura della Sezione 4** (per chi la legge in ordine lineare, quella nota evita di scambiare lo schema `product_uom_conversions` mostrato lì per l'architettura reale, prima ancora di arrivare qui).
+
 Esistono due architetture possibili per gestire le conversioni di unità di misura per prodotto:
 
 **Approccio 1 — Singola UoM Commerciale per Prodotto (IMPLEMENTAZIONE ATTUALE)**
@@ -430,9 +307,13 @@ Esistono due architetture possibili per gestire le conversioni di unità di misu
 Ogni prodotto ha al massimo un "alter ego commerciale" oltre alla UoM di stock:
 *   `unita_misura_stock_id`: l'unità fisica di magazzino (es. Fusto) — obbligatoria
 *   `unita_contenuto_id`: l'unità commerciale (es. Kg) — facoltativa
-*   `num_factor` / `den_factor`: il rapporto esatto tra le due (es. 1 fusto = 25 kg → num=25, den=1)
+*   `num_factor` / `den_factor`: il rapporto esatto tra le due. **Attenzione al verso della frazione**: `num_factor`/`den_factor` esprimono quante unità di stock corrispondono a 1 unità commerciale, cioè `1 unità commerciale = (num_factor / den_factor) × 1 unità di stock`. Per "1 fusto (stock) = 25 kg (commerciale)" il valore corretto è quindi `num_factor=1, den_factor=25` (perché 1 kg = 1/25 di fusto), **non** `num=25, den=1`. Questa è esattamente la stessa convenzione già spiegata alla Sezione 8A qui sopra, dove per un contenuto di 25 si ottiene `num=1, den=25` — i due paragrafi devono restare coerenti fra loro.
+
+> ⚠️ *Nota di correzione (verificata contro il codice reale il 10/07/2026)*: una versione precedente di questo paragrafo riportava per errore l'esempio invertito ("1 fusto = 25 kg → num=25, den=1"). Il codice effettivamente in produzione (`includes/prodotti.php`, funzione di calcolo del fattore alla riga ~574 e funzione `qk_uom_converti_riga()` alla riga ~956) usa **sempre** la convenzione `num=1, den=quantità di contenuto` — cioè esattamente quella descritta in questo paragrafo dopo la correzione. Chi implementa nuovo codice basandosi su questo documento deve usare `num=1, den=25`, non l'inverso.
 
 Se un prodotto non ha `unita_contenuto_id`, tutte le transazioni avvengono solo in unità di stock. Se ce l'ha, l'utente può inserire e visualizzare quantità e prezzi in entrambe le unità. Il backend converte automaticamente. È la scelta corretta e sufficiente per Quack nella fase attuale.
+
+**Nota sulla notazione equivalente usata altrove in questo documento (PARTE 3, Sezione "Modello Matematico ad Alta Precisione")**: lì la stessa conversione è descritta con un fattore singolo `F_conv` (es. `F_conv = 25`) invece della coppia `num_factor`/`den_factor`. Le due notazioni sono **matematicamente equivalenti**, non due sistemi diversi: `F_conv` corrisponde sempre a `den_factor / num_factor`. Nell'esempio sopra, `F_conv = 25/1 = 25`, che è lo stesso identico valore di `quantita_contenuto` salvato in anagrafica prodotto. La coppia num/den è solo la rappresentazione a database (interi, per evitare errori di arrotondamento); `F_conv` è la stessa informazione espressa come singolo numero decimale, comoda per le formule "in chiaro".
 
 **Approccio 2 — N Conversioni per Prodotto (ROADMAP FUTURA, non implementato)**
 
@@ -440,12 +321,91 @@ Ogni prodotto può avere più unità alternative contemporaneamente, gestite in 
 
 ```
 Prodotto: Cloro (stock UoM: Fusto)
-  └─ Conversione A: 1 Fusto = 25 Kg    (num=25, den=1)
-  └─ Conversione B: 1 Fusto = 22 Litri (num=22, den=1)
-  └─ Conversione C: 1 Pallet = 50 Fusti (num=50, den=1)
+  └─ Conversione A: 1 Fusto = 25 Kg    (num=1, den=25)
+  └─ Conversione B: 1 Fusto = 22 Litri (num=1, den=22)
+  └─ Conversione C: 1 Pallet = 50 Fusti (num=1, den=50)
 ```
 
 Questo approccio va implementato solo se emergerà la necessità concreta di vendere lo stesso prodotto in più unità alternative sullo stesso documento. Qualunque riferimento in questo documento a una tabella `product_uom_conversions` descrive questo scenario futuro, non l'implementazione attuale.
+
+### E. Gestione Resi e Note di Credito: Ereditarietà dello Snapshot (aggiunta 10/07/2026)
+
+**Il problema**: quando un cliente restituisce parte di una fornitura già evasa (es. reso di 10 kg su un ordine originario di 100 kg = 4 fusti, con fattore di conversione 25 kg/fusto), quale fattore di conversione e quale prezzo unitario si applicano al reso? Quello salvato sulla riga d'ordine originale (`quantita_contenuto_snapshot`, `num_factor_snapshot`, `den_factor_snapshot`, `system_unit_price_stock`) oppure quello ricalcolato sui dati prodotto correnti (tramite `qk_uom_converti_riga()`, come si fa per una riga nuova)?
+
+**Decisione**: il reso/nota di credito **eredita sempre lo snapshot della riga d'ordine originale** a cui si riferisce. Non deve mai essere ricalcolato con `qk_uom_converti_riga()` sui dati prodotto correnti, perché quella funzione è pensata per righe *nuove*, non per operazioni che si riferiscono a una vendita già avvenuta.
+
+**Perché**:
+1. **Coerenza con il principio di immutabilità già adottato ovunque in questo documento**: un reso non è una transazione indipendente, è un'operazione che si riferisce esplicitamente a una vendita passata. Se ricalcolasse con i valori correnti, romperebbe lo stesso principio di congelamento dello snapshot che il resto dell'architettura rispetta rigorosamente.
+2. **Coerenza fisica**: il fattore di conversione descrive un fatto fisico del prodotto al momento della vendita (es. "un fusto conteneva 25 kg" all'epoca). Se nel frattempo il fornitore ha cambiato confezionamento (es. ora 1 fusto = 20 kg), il cliente sta comunque restituendo merce prelevata da un fusto da 25 kg — usare il fattore attuale produrrebbe un numero che non corrisponde a nessuna realtà fisica, né a quella di allora né a quella di oggi.
+3. **Coerenza contabile**: la nota di credito deve accreditare esattamente l'importo realmente fatturato al cliente. Se ricalcolasse il prezzo unitario sul listino/fattore attuali, accrediterebbe un importo diverso da quello effettivamente pagato — un errore contabile, non solo logico.
+4. **Coerente con la prassi dei grandi ERP**: in SAP, un reso o una nota di credito si crea sempre "con riferimento a" (`with reference to`) il documento di vendita originale, e per default eredita da lì le condizioni di prezzo e conversione, non da un nuovo calcolo.
+
+**Stato implementativo**: lo schema di Quack ha già l'aggancio necessario — `fatture_righe.ordine_riga_id` referenzia `ordini_clienti_righe(id)`, ed esiste un tipo di movimento dedicato `reso_cliente` su `movimenti_magazzino`. Manca però un flusso applicativo guidato che, alla registrazione di un reso, legga esplicitamente lo snapshot dalla riga d'ordine referenziata invece di ricalcolarlo — questa decisione va rispettata quando quel flusso verrà implementato.
+
+### F. Cosa succede allo Snapshot quando un documento genera una "nuova versione" di sé stesso (verificato 10/07/2026)
+
+**Il problema**: la Sezione 1A descrive l'immutabilità transazionale come "congelamento al momento della conferma", ma non dice cosa succede quando un documento già confermato/bloccato viene esplicitamente **duplicato in una nuova versione** (es. per rinegoziare con un fornitore, o per correggere un ordine già inviato). La nuova versione eredita lo snapshot della precedente, o lo ricalcola sui dati prodotto correnti?
+
+**Come si comporta oggi il codice reale** (nessuna decisione era mai stata presa esplicitamente su questo — quanto segue descrive il comportamento di fatto, verificato riga per riga):
+
+*   **Preventivi di vendita**: nessuna "nuova versione" esiste. Un preventivo non più in bozza è bloccato in modo definitivo (`SalesQuotesController.php`) — la domanda non si pone.
+*   **Ordini cliente**: l'azione "riapri" (`SalesOrdersController::action()`, caso `riapri`) tocca solo lo stato di testata; non esiste alcun editor di riga per un ordine già creato — la domanda non si pone.
+*   **RFQ d'acquisto**: l'azione "Nuova Versione" (`qk_rfq_nuova_versione()` in `includes/purchases_rfq.php`) duplica l'RFQ (la vecchia passa a stato `revisionata`) e copia le righe tramite `_rfq_insert_righe()`. Questa funzione, per **ogni** riga copiata, richiama `qk_uom_converti_riga()` sui dati prodotto **correnti** — lo snapshot della versione precedente viene letto dal database ma **ignorato**, e ricalcolato da zero.
+*   **Ordini d'acquisto**: l'azione "Nuova Revisione" / *Order Amendment* (`qk_ordine_crea_revisione()` in `includes/purchases_orders.php`) duplica l'ordine (il vecchio passa a stato `superato`) e copia le righe **senza mai richiamare `qk_uom_converti_riga()`**: `quantita_stock`, `quantita_contenuto_snapshot`, `num_factor_snapshot`, `den_factor_snapshot` vengono trascritti identici dalla vecchia riga alla nuova. Se poi l'utente modifica manualmente una riga specifica nella nuova bozza, quel salvataggio (percorso diverso, riga ~338 di `includes/purchases_orders.php`) ricalcola normalmente.
+
+**Perché questa differenza tra RFQ e Ordine d'acquisto è corretta e va mantenuta come principio esplicito**: una RFQ è una richiesta di offerta, non vincolante — non è mai stato preso alcun impegno con il fornitore, quindi ha senso che una nuova versione rifletta i dati *di oggi* (es. se il fornitore ha cambiato confezionamento tra una versione e l'altra). Un ordine d'acquisto inviato è invece un **impegno contrattuale già preso**: una sua revisione deve partire esattamente dalle stesse condizioni concordate, non da una loro reinterpretazione coi dati correnti — coerente con la stessa logica della Sezione 8E sui resi, e con la prassi SAP (una RFQ si rinegozia liberamente; un Purchase Order già inviato richiede un *Change Management* esplicito che preserva di default le condizioni originarie).
+
+**Decisione**: questo comportamento — RFQ ricalcola, Ordine d'acquisto preserva — è dichiarato **corretto e normativo**, non un'incongruenza da correggere. Va mantenuto tale quale in eventuali refactoring futuri di `_rfq_insert_righe()` o `qk_ordine_crea_revisione()`.
+
+### G. Rimozione o cambio della UoM Commerciale con prezzi già esistenti in quella unità (decisione 10/07/2026)
+
+**Il problema**: l'edge case "UoM Commerciale non definita" (Sezione 3/PARTE1, PARTE2, PARTE3) copre solo il caso in cui un prodotto **non ha mai avuto** una UoM commerciale — in quel caso l'interfaccia blocca correttamente i listini/RRP in unità diverse dallo stock. Non è mai trattato il caso in cui un prodotto **aveva** una UoM commerciale, sono già stati creati listini/prezzi/RRP nativi in quella unità, e successivamente l'anagrafica viene modificata rimuovendo o cambiando `unita_contenuto_id`.
+
+**Esempio**: "Acido X" ha Stock UoM = FUSTO e UoM commerciale = KG ("1 fusto = 25 kg"). Esistono già listini vendita espressi in KG (es. "Listino Grossisti: 10 €/KG"). Se qualcuno azzera `unita_contenuto_id` su Acido X, quei listini restano nel database con `unita_misura_id` che punta ancora a KG, ma il prodotto non ha più alcuna relazione con i KG — diventano prezzi "orfani".
+
+**Decisione (rivista il 10/07/2026 dopo verifica su cosa fanno davvero i grandi ERP)**: rimuovere o cambiare `unita_contenuto_id` **non è bloccato**. Verificato che SAP non impedisce mai un cambiamento di anagrafica per via di prezzi che diventerebbero "non più applicabili" altrove: lascia che accada, e il prezzo diventato incongruente diventa semplicemente irraggiungibile dalle ricerche normali — nessun dato è danneggiato, la riga di listino resta intatta, semplicemente nessuno potrà più selezionare quella combinazione. La sicurezza non viene da un blocco preventivo, ma dal fatto che il motore di pricing di Quack (`SalesPricelistsController.php`, cascata Dedicato → Standard → Costo → Manuale, già verificata altrove in questo documento) non trova più un match per quella combinazione e scende semplicemente al livello successivo, senza errori.
+
+Al posto del blocco, è previsto solo uno **strumento di reportistica** (facoltativo, in stile SAP) che elenca i prezzi di listino/acquisto/RRP la cui UoM non è più né la Stock UoM né la UoM commerciale del prodotto a cui appartengono — utile per una pulizia amministrativa manuale periodica, non per impedire l'operazione.
+
+**Stato implementativo**: nessuna modifica necessaria a `qk_update_prodotto()`. Lo strumento di reportistica (query e collocazione UI) non è ancora implementato — la specifica dettagliata è nel file di revisione di questa cartella, punto 6.4.
+
+### H. Prezzo "equivalente in stock" sui listini: solo per listini ancora validi, mai per listini chiusi (decisione 10/07/2026)
+
+**Il problema**: quando il fattore di conversione di un prodotto cambia (es. "1 fusto = 25 kg" diventa "1 fusto = 20 kg"), le righe di documenti già salvate restano correttamente congelate (vedi Sezioni precedenti). Ma un **listino prezzi** non è un documento — non ha mai avuto una colonna che fotografa il fattore di conversione al momento in cui il prezzo è stato inserito. Se il sistema mostra un "prezzo equivalente in stock" calcolato al volo per un listino ormai **chiuso** (`valido_al` nel passato), userebbe il fattore *di oggi* invece di quello realmente in vigore quando il listino era attivo, producendo un numero storicamente sbagliato ma presentato come se fosse un fatto del passato.
+
+**Cosa fanno i grandi ERP (verificato: SAP)**: le condizioni di prezzo memorizzano solo il prezzo nativo e la validità — mai un prezzo equivalente derivato. Un listino chiuso mostra solo "10 €/KG, valido fino al [data]", senza alcuna conversione accanto. La risposta storicamente corretta a "quanto valeva in FUSTI a quel tempo" si trova nei documenti realmente emessi in quel periodo, non nel listino.
+
+**Decisione**: un valore convertito ("= 250 €/fusto") va mostrato **solo** per i listini ancora validi (`valido_al` nullo o nel futuro), calcolato col fattore attuale — corretto, perché riflette la realtà di oggi. Per un listino chiuso, **non va mai mostrato alcun valore convertito**: solo il prezzo nativo. Nessuna colonna aggiuntiva su `listini_prezzi`; il criterio è basato solo sul confronto tra `valido_al` e la data odierna.
+
+**Stato implementativo**: non ancora applicato — ovunque nel codice (frontend o backend) venga calcolato un prezzo "equivalente in stock" per una riga di `listini_prezzi`, va aggiunta la condizione descritta. Dettaglio nel file di revisione di questa cartella, punto 6.5.
+
+### I. Conversione di un preventivo scaduto in ordine: avviso, non blocco (decisione 10/07/2026)
+
+**Il problema**: un preventivo con un prezzo da un listino promozionale (es. "-20%, valido fino al 30/6") può restare in sospeso oltre la propria data di scadenza (`preventivi.data_scadenza`) e venire comunque trasformato in ordine, ereditando uno sconto che l'azienda non intende più praticare a nessuno.
+
+**Verificato**: la funzione di conversione `qk_preventivo_conferma_ordine()` (`includes/sales_quotes.php:925`) copia `prezzo_unitario`/`sconto_perc` dalle righe del preventivo senza mai controllare `data_scadenza`, né la validità del listino di origine. La conversione è sempre silenziosa.
+
+**Decisione**: la logica di ereditarietà del prezzo **resta invariata** — congelare il prezzo del preventivo accettato è corretto (è un impegno commerciale formale verso il cliente, coerente con la prassi SAP). Va aggiunto solo un **avviso non bloccante** quando `data_scadenza` è nel passato al momento della conversione: l'utente deve confermare esplicitamente di voler procedere comunque, invece che essere bloccato o lasciato all'oscuro.
+
+**Stato implementativo**: non ancora applicato. Specifica dettagliata (punto di aggancio in `SalesQuotesController.php`, azione `conferma_ordine`) nel file di revisione di questa cartella, punto 6.6.
+
+### J. Priorità tra più listini assegnati allo stesso cliente: già implementata, solo da documentare (verificato 10/07/2026)
+
+**Il problema apparente**: `listini_architettura.md` descriveva "listino promozionale" e "listino specifico assegnato" come due regole distinte, senza mai chiarire cosa succede se più di un listino è valido contemporaneamente per lo stesso cliente.
+
+**Verificato**: non è un problema. La tabella `clienti_listini` collega un cliente a più listini contemporaneamente con una colonna `priorita` (default 10); la query di ricerca prezzo (`SalesPricelistsController::getSalePrice()`) ordina già `ORDER BY cl.priorita DESC, l.nome ASC`, scegliendo sempre il listino con priorità più alta tra quelli validi in quel momento. Un "listino promozionale temporaneo" non è un meccanismo diverso: è semplicemente un'assegnazione con priorità più alta e/o date più strette.
+
+**Decisione**: nessuna modifica al codice. Corretto direttamente `listini_architettura.md` per descrivere il meccanismo reale invece delle due regole artificiosamente separate.
+
+### K. `listini_prezzi` non ha validità per singola riga: bug corretto, vincolo di unicità allineato tra schemi (corretto 10/07/2026)
+
+**Decisione di progetto confermata**: le date di validità per il ciclo Vendite vivono **solo sulla testata del listino** (`listini.valido_dal`/`valido_al`), non sulla singola riga di prezzo (`listini_prezzi` non ha e non deve avere, per ora, colonne `valido_dal`/`valido_al`). Un'eventuale validità per singola riga è una possibile estensione futura, non decisa né implementata oggi. Questo distingue il ciclo Vendite dal ciclo Acquisti, dove `prodotti_fornitori_prezzi` **ha già** validità per singola riga (`valido_dal`/`valido_al`), correttamente.
+
+**Bug trovato e corretto**: `SalesPricelistsController::getSalePrice()` conteneva tre query (Level 1 "listino dedicato cliente", Level 1 "listino esplicito richiesto", Level 2 "listino standard") che filtravano `listini_prezzi` per `valido_dal`/`valido_al` come se quelle colonne esistessero — probabilmente per analogia con il lato Acquisti, dove esistono davvero. Con la gestione errori PDO attiva (`ERRMODE_EXCEPTION`), questo causava un errore SQL a ogni chiamata, che risaliva fino al `try/catch` più esterno (`apiOttieniPrezzo()`) **saltando l'intera cascata di fallback successiva** — la ricerca prezzo falliva sempre con un errore invece di restituire un prezzo o cadere elegantemente al livello successivo. Corretto rimuovendo le condizioni non valide dalle tre query.
+
+**Vincolo di unicità allineato**: verificato che lo schema SQLite ha già `UNIQUE (listino_id, prodotto_id, quantita_minima, unita_misura_id)` su `listini_prezzi`, impedendo a livello di database due righe prezzo contraddittorie per la stessa combinazione — lo schema MySQL non ce l'aveva. Aggiunto lo stesso vincolo a `db/init_mysql.sql` per allinearlo. **Nota**: questo si applica automaticamente solo a nuove installazioni; un database MySQL già esistente richiede una migrazione separata (non ancora eseguita) per ricevere lo stesso vincolo.
+
+**Dettaglio completo**: nel file di revisione di questa cartella, punto 6.10.
 
 ---
 
@@ -468,7 +428,7 @@ Ecco la nostra valutazione sintetica:
 
 | Scenario / Eccezione | Conseguenza sul Sistema | Soluzione Architetturale |
 | :--- | :--- | :--- |
-| **A. Cambio della Base UoM (Stock) prima dei movimenti** | Ci sono preventivi/ordini in bozza o aperti con la vecchia UoM. | Consentito se `giacenze` e `movimenti_magazzino` sono a 0. Tuttavia, il sistema deve aggiornare o ricalcolare le righe di preventivi/ordini in stato "bozza" per evitare disallineamenti di UoM. |
+| **A. Cambio della Base UoM (Stock) prima dei movimenti** | Ci sono preventivi/ordini in bozza o aperti con la vecchia UoM. | Consentito **esclusivamente** se non esiste **nessuna riga** in `movimenti_magazzino` per quel prodotto (`COUNT(*) = 0`). **Attenzione**: questo criterio è indipendente dalle `giacenze` (il saldo attuale a magazzino). Un prodotto può avere giacenza attuale pari a zero (perché tutto ciò che è stato caricato è stato anche scaricato) e restare comunque bloccato, perché in `movimenti_magazzino` esiste comunque lo storico dei movimenti passati. Il blocco quindi non si "riapre" mai automaticamente col tornare a zero della giacenza — è **permanente** dal primo movimento in poi. Questa è anche la regola realmente applicata dal codice (verificata il 10/07/2026 in `includes/prodotti.php` e `app/Controllers/ProductsController.php`, entrambi controllano solo `movimenti_magazzino`, mai `giacenze`), ed è coerente con la Sezione 1 di questo stesso documento e con SAP, dove basta un solo movimento fisico per bloccare per sempre il cambio di Base UoM. Tuttavia, quando il cambio è consentito, il sistema deve aggiornare o ricalcolare le righe di preventivi/ordini in stato "bozza" per evitare disallineamenti di UoM. |
 | **B. Cambio della Base UoM (Stock) dopo i movimenti** | Storico di magazzino corrotto, inventario incoerente. | **Blocco Totale a livello di codice (Controller/Model)**. Se esiste almeno un movimento di magazzino per il prodotto, il campo `unita_misura_stock_id` in modifica prodotto viene disabilitato in UI e rigettato in backend. |
 | **C. Inserimento Listino/RRP in UoM Commerciale senza che il prodotto la abbia** | Divisione per zero o calcolo nullo. | In UI, se il prodotto non ha `unita_contenuto_id` impostato, la UoM selezionabile nel listino o nel prezzo consigliato (RRP) è bloccata solo sulla UoM di Stock. In backend, validazione rigida che rifiuta combinazioni non configurate. |
 | **D. Eliminazione o Inattivazione di una UoM dal registro** | Prodotti o listini esistenti fanno riferimento a una UoM non più valida. | Si usa il **Soft-Delete** (`attivo = 0` su `unita_misura`). La UoM non compare più nei nuovi inserimenti, ma le transazioni passate e i prodotti esistenti continuano a funzionare normalmente. |
@@ -479,18 +439,20 @@ Ecco la nostra valutazione sintetica:
 
 ### A. Modifiche al Database (Schema SQL)
 
-Per allineare Quack alle best practice, dobbiamo eseguire una migrazione del database SQLite/MySQL apportando le seguenti modifiche:
+> ✅ **Aggiornamento di stato (verificato contro `db/init_mysql.sql` il 10/07/2026)**: tutte e 4 le modifiche elencate in questo paragrafo **sono già state applicate al database reale**. Questo paragrafo descriveva un piano di migrazione che oggi è completamente eseguito — viene lasciato qui solo come traccia storica di cosa è stato fatto e perché, non più come lista di attività da svolgere.
 
-1.  **Tabella `listini_prezzi` (Vendita)**:
-    *   Aggiungere colonna `unita_misura_id INTEGER REFERENCES unita_misura(id)` (consente di salvare il prezzo di listino riferito alla UoM commerciale o di stock).
-2.  **Tabella `prodotti_fornitori_prezzi` (Acquisto)**:
-    *   Aggiungere colonna `unita_misura_id INTEGER REFERENCES unita_misura(id)`.
-3.  **Tabella `prodotti_fornitori` (RRP e Prezzi di default)**:
-    *   Aggiungere colonna `rrp_unita_misura_id INTEGER REFERENCES unita_misura(id)` per indicare a quale UoM si riferiscono `rrp_min` e `rrp_max`.
-4.  **Tabelle Transazionali (Righe Documenti)**:
-    *   Nelle tabelle `preventivi_righe`, `ordini_clienti_righe`, `ordini_acquisto_righe`, `ricevimento_merce_righe`:
-        *   Garantire la presenza di `quantita_stock` e `unita_misura_stock_id`.
-        *   Aggiungere `quantita_contenuto_snapshot DECIMAL(10,3)` per memorizzare il fattore di conversione al momento della creazione del documento.
+Per allineare Quack alle best practice, era stata pianificata una migrazione del database SQLite/MySQL con le seguenti modifiche (**tutte già presenti nello schema attuale**):
+
+1.  **Tabella `listini_prezzi` (Vendita)** — ✅ fatto:
+    *   Colonna `unita_misura_id INTEGER REFERENCES unita_misura(id)` presente (consente di salvare il prezzo di listino riferito alla UoM commerciale o di stock).
+2.  **Tabella `prodotti_fornitori_prezzi` (Acquisto)** — ✅ fatto:
+    *   Colonna `unita_misura_id INTEGER REFERENCES unita_misura(id)` presente.
+3.  **Tabella `prodotti_fornitori` (RRP e Prezzi di default)** — ✅ fatto:
+    *   Colonna `rrp_unita_misura_id INTEGER REFERENCES unita_misura(id)` presente, per indicare a quale UoM si riferiscono `rrp_min` e `rrp_max`.
+4.  **Tabelle Transazionali (Righe Documenti)** — ✅ fatto:
+    *   Le tabelle reali si chiamano `preventivi_righe`, `ordini_clienti_righe`, `rfq_righe`, `ordini_righe` (non esiste una tabella chiamata `ordini_acquisto_righe` né `ricevimento_merce_righe`: il nome corretto della tabella acquisti è `ordini_righe`, con testata `ordini_testata`).
+    *   Tutte e quattro contengono già `quantita_stock` e `unita_misura_stock_id`.
+    *   Tutte e quattro contengono già `quantita_contenuto_snapshot DECIMAL`, oltre a `num_factor_snapshot` e `den_factor_snapshot` per congelare il fattore di conversione al momento della creazione del documento (coppia intera, non un solo decimale: vedi Sezione 8A per il perché).
 
 ### B. Modifiche al Backend (PHP)
 
@@ -507,12 +469,15 @@ Per allineare Quack alle best practice, dobbiamo eseguire una migrazione del dat
 *   Applicare la stessa logica speculare per gli ordini clienti, le RFQ, gli ordini d'acquisto e il ricevimento merci.
 
 #### 3. Determinazione del Prezzo da Listino
-*   Quando il backend (o il controller) ricerca il prezzo di listino per proporlo all'utente:
-    1.  Cercare la riga di listino per il prodotto.
-    2.  Se la UoM del listino corrisponde alla UoM selezionata dall'utente (es. KG), proporre il prezzo tal quale.
-    3.  Se differisce, convertire il prezzo matematicamente:
-        *   Se listino è in `KG` e l'utente ordina in `PZ` (e 1 PZ = 25 KG): $\text{Prezzo PZ} = \text{Prezzo KG} \times 25$.
-        *   Se listino è in `PZ` e l'utente ordina in `KG`: $\text{Prezzo KG} = \text{Prezzo PZ} / 25$.
+
+> ⚠️ **Correzione (verificata contro il codice reale il 10/07/2026)**: i 3 passi sotto descrivevano un algoritmo in cui è il **backend** a convertire il prezzo quando la UoM del listino non coincide con quella scelta dall'utente. Non è così che funziona Quack, e non è un errore da correggere nel codice: è il testo di questo paragrafo che va corretto, perché descrive un'architettura diversa da quella realmente costruita — e quella reale è la scelta corretta (vedi il "perché" più sotto). Il paragrafo prosegue con la descrizione **corretta** dell'architettura reale.
+
+Quando l'utente sta compilando una riga di preventivo/ordine, il sistema mostra un prezzo suggerito in due momenti distinti, con due responsabilità diverse:
+
+1.  **Momento 1 — suggerimento a video (mentre l'utente compila la riga)**: il backend (`SalesPricelistsController.php`) cerca la riga di listino per il prodotto e restituisce il prezzo **così come è salvato**, insieme alla UoM a cui quel prezzo si riferisce nativamente (es. `10€` con UoM `KG`) — **senza convertirlo** nella UoM che l'utente ha scelto sulla riga (es. `PZ`). È il browser (JavaScript) a fare il calcolo di conversione per mostrare a schermo il valore nell'unità giusta, usando le stesse formule descritte in questo documento ($\text{Prezzo PZ} = \text{Prezzo KG} \times 25$, oppure $\text{Prezzo KG} = \text{Prezzo PZ} / 25$, a seconda del verso).
+2.  **Momento 2 — salvataggio effettivo del documento**: quando l'utente conferma e il preventivo/ordine viene scritto nel database, il backend **rifà da capo tutti i calcoli in PHP** (funzione `qk_uom_converti_riga()` in `includes/prodotti.php`), ignorando qualunque valore il browser avesse mostrato a video. Il prezzo che finisce davvero nel database è quindi sempre calcolato e verificato dal server, mai preso per buono da ciò che ha inviato il browser.
+
+**Perché questa architettura (e non quella a un solo passo descritta in precedenza) è la scelta corretta**: il "suggerimento prezzo" del Momento 1 serve solo a mostrare qualcosa a video mentre l'utente lavora — è un'anteprima, non un dato che verrà mai salvato così com'è. Farlo calcolare al server invece che al browser non aggiungerebbe alcuna sicurezza in più (tanto verrà ricalcolato comunque al Momento 2), aggiungerebbe solo un giro di rete inutile e renderebbe l'interfaccia meno reattiva. Il principio di sicurezza da rispettare in un ERP — "non fidarsi mai di un calcolo fatto solo nel browser quando si scrive nel database" — resta comunque rispettato, perché il Momento 2 (l'unico che conta ai fini contabili) è interamente responsabilità del server e ignora il browser.
 
 ### C. Modifiche al Frontend (JavaScript e Viste)
 
@@ -635,8 +600,10 @@ $$\text{Prezzo Stock } (P_{stock}) = P_{comm} \times F_{conv}$$
 
 ### A. Modifiche al Database (Migrazioni SQLite / MySQL)
 
-#### 1. Tabella `listini_prezzi` (Vendite)
-Aggiungere il riferimento alla UoM per memorizzare il prezzo nella sua unità nativa.
+> ✅ **Aggiornamento di stato (verificato contro `db/init_mysql.sql` il 10/07/2026)**: le 4 migrazioni descritte in questo paragrafo **sono già state eseguite**. Gli script SQL sotto sono mantenuti come documentazione storica di ciò che è stato fatto (utile se in futuro serve replicare la stessa migrazione su un ambiente non ancora allineato), non come lavoro da fare.
+
+#### 1. Tabella `listini_prezzi` (Vendite) — ✅ fatto
+Il riferimento alla UoM per memorizzare il prezzo nella sua unità nativa è già presente (colonna `unita_misura_id`). Script storico della migrazione già eseguita:
 ```sql
 ALTER TABLE listini_prezzi ADD COLUMN unita_misura_id INTEGER REFERENCES unita_misura(id);
 -- Migrazione conservativa dei dati esistenti:
@@ -645,8 +612,8 @@ UPDATE listini_prezzi
 SET unita_misura_id = (SELECT unita_misura_stock_id FROM prodotti WHERE prodotti.id = listini_prezzi.prodotto_id);
 ```
 
-#### 2. Tabella `prodotti_fornitori_prezzi` (Acquisti)
-Aggiungere il riferimento alla UoM per memorizzare il prezzo di acquisto negoziato.
+#### 2. Tabella `prodotti_fornitori_prezzi` (Acquisti) — ✅ fatto
+Il riferimento alla UoM per memorizzare il prezzo di acquisto negoziato è già presente. Script storico della migrazione già eseguita:
 ```sql
 ALTER TABLE prodotti_fornitori_prezzi ADD COLUMN unita_misura_id INTEGER REFERENCES unita_misura(id);
 -- Migrazione conservativa:
@@ -659,8 +626,8 @@ SET unita_misura_id = (
 );
 ```
 
-#### 3. Tabella `prodotti_fornitori` (RRP Fornitore)
-Aggiungere la colonna per definire la UoM a cui si riferiscono `rrp_min` e `rrp_max`.
+#### 3. Tabella `prodotti_fornitori` (RRP Fornitore) — ✅ fatto
+La colonna per definire la UoM a cui si riferiscono `rrp_min` e `rrp_max` è già presente. Script storico della migrazione già eseguita:
 ```sql
 ALTER TABLE prodotti_fornitori ADD COLUMN rrp_unita_misura_id INTEGER REFERENCES unita_misura(id);
 -- Migrazione conservativa:
@@ -668,11 +635,12 @@ UPDATE prodotti_fornitori
 SET rrp_unita_misura_id = (SELECT unita_misura_stock_id FROM prodotti WHERE prodotti.id = prodotti_fornitori.prodotto_id);
 ```
 
-#### 4. Tabelle Transazionali (Righe Documenti)
-Assicurarsi che le tabelle `preventivi_righe`, `ordini_clienti_righe`, `ordini_acquisto_righe`, `ricevimento_merce_righe` contengano i campi per congelare lo snapshot del fattore di conversione:
-*   `quantita_contenuto_snapshot DECIMAL(10,3)`
-*   `quantita_stock DECIMAL(10,3)`
+#### 4. Tabelle Transazionali (Righe Documenti) — ✅ fatto
+Le tabelle reali (nomi corretti: `preventivi_righe`, `ordini_clienti_righe`, `rfq_righe` per le richieste d'offerta, `ordini_righe` per gli ordini d'acquisto — non esistono tabelle chiamate `ordini_acquisto_righe` o `ricevimento_merce_righe`) contengono già tutti i campi per congelare lo snapshot del fattore di conversione:
+*   `quantita_contenuto_snapshot DECIMAL`
+*   `quantita_stock DECIMAL`
 *   `unita_misura_stock_id INTEGER REFERENCES unita_misura(id)`
+*   `num_factor_snapshot` e `den_factor_snapshot` (coppia intera, non presente nell'elenco originale di questo paragrafo ma necessaria per lo stesso motivo spiegato in Sezione 8A: evitare la deriva dei numeri decimali periodici)
 
 ---
 

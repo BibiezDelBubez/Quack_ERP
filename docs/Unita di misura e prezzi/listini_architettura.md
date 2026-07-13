@@ -58,7 +58,9 @@ Si "chiude" la validità del vecchio record (`valido_al = ieri`) e si crea un nu
 - Avere preventivi passati che puntano al prezzo corretto del tempo.
 
 ### Come sceglie il prezzo il sistema?
+
+> ⚠️ **Correzione (10/07/2026)**: i due punti 1 e 2 sotto descrivevano "listino promozionale temporaneo" e "listino specifico assegnato" come due regole separate e sequenziali. Verificato contro il codice reale (`SalesPricelistsController::getSalePrice()`): sono in realtà **un unico meccanismo**. Un cliente può avere **più listini assegnati contemporaneamente** tramite la tabella `clienti_listini`, ciascuno con una propria finestra di validità (`data_inizio`/`data_fine` sull'assegnazione, oltre a `valido_dal`/`valido_al` del listino stesso) e una **priorità numerica** (`clienti_listini.priorita`, default 10). Un "listino promozionale temporaneo" non è altro che un'assegnazione con date più strette e/o priorità più alta rispetto all'assegnazione "standard" dello stesso cliente — non un meccanismo diverso. Quando più assegnazioni sono valide nello stesso momento per lo stesso cliente (es. sia il listino standard sia una promozione in corso), il sistema le ordina per priorità decrescente e usa sempre la più alta, con il nome del listino come spareggio in caso di parità — risolvendo così anche il caso di più promozioni contemporaneamente idonee, che prima non era garantito da nessun vincolo esplicito.
+
 Quando si crea un ordine, il Pricing Engine valuta le regole in quest'ordine (dal più specifico al più generico):
-1. C'è un listino promozionale temporaneo attivo oggi per questo cliente? -> *Usa quello*
-2. Il cliente ha un listino specifico assegnato in anagrafica? -> *Usa quello*
-3. Nessuna regola specifica trovata -> *Usa il Listino Base (quello popolato "al volo" nella scheda prodotto).*
+1. Tra tutti i listini assegnati al cliente in `clienti_listini` e validi oggi (per data di assegnazione e per validità propria del listino), usa quello con `priorita` più alta — così un'eventuale promozione temporanea con priorità maggiore prevale automaticamente sul listino standard dello stesso cliente, senza bisogno di due regole distinte.
+2. Nessun listino assegnato al cliente produce un prezzo per quel prodotto -> *Usa il Listino Base (quello popolato "al volo" nella scheda prodotto, marcato `is_default = 1`).*

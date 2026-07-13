@@ -88,13 +88,20 @@ La possibilità di editare i prezzi inline e vedere avvisi in tempo reale ("Prez
 ## 4. Considerazioni Implementative (SQL & API reali)
 
 Struttura dati per la matrice di vendita basata sul database reale (`listini_prezzi`):
+
+> ⚠️ **Correzione (verificata contro `db/init_mysql.sql` il 10/07/2026)**: lo schema sotto era rimasto indietro rispetto al database reale — mancavano diverse colonne già esistenti, e il nome della colonna prezzo era sbagliato (`prezzo` invece del reale `prezzo_unitario`). Ecco lo schema corretto e completo:
+
 ```sql
 CREATE TABLE IF NOT EXISTS listini_prezzi (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   listino_id INTEGER NOT NULL,
   prodotto_id INTEGER NOT NULL,
   quantita_minima DECIMAL(10,2) DEFAULT 1.00,
-  prezzo DECIMAL(10,2) NOT NULL,
+  prezzo_unitario DECIMAL(10,2) NOT NULL,   -- nome colonna reale (non "prezzo")
+  unita_misura_id INTEGER REFERENCES unita_misura(id),  -- UoM nativa del prezzo (stock o commerciale)
+  sconto_perc DECIMAL(5,2) DEFAULT 0,
+  note TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (listino_id) REFERENCES listini(id),
   FOREIGN KEY (prodotto_id) REFERENCES prodotti(id)
 );

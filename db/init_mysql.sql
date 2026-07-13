@@ -668,7 +668,8 @@ CREATE TABLE IF NOT EXISTS listini_prezzi (
     unita_misura_id INTEGER       REFERENCES unita_misura(id), -- UoM nativa del prezzo
     sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
     note            TEXT,
-    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (listino_id, prodotto_id, quantita_minima, unita_misura_id) -- allineato allo schema SQLite gemello: impedisce due righe prezzo contraddittorie per la stessa chiave
 );
 
 -- =============================================================================

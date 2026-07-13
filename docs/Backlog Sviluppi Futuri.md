@@ -98,3 +98,19 @@ Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere s
 **Perché è rimandato.** Scelta esplicita dell'utente ("skippato su decisione utente") — non implementato per ora perché nella pratica capitano consegne in eccesso legittime (es. il fornitore manda un pallet intero anche se ne era stato chiesto uno spezzato), e un blocco rigido rischierebbe di intralciare casi normali più che prevenire errori reali.
 
 **Prima di implementarlo:** andrebbe capito come gestiscono questo esatto caso i grandi ERP best-in-class (SAP, Odoo, NetSuite, Dynamics 365) — se bloccano l'eccesso, lo permettono con una soglia di tolleranza percentuale configurabile, o lo permettono sempre con solo un avviso non bloccante — prima di decidere se e come vincolarlo qui.
+
+---
+
+## Migliorie possibili, non pianificate né previste
+
+A differenza delle voci sopra — che sono lavoro riconosciuto e **deliberatamente rimandato** (si farà, ma non ora) — le voci qui sotto sono osservazioni emerse durante il lavoro di analisi/documentazione: possibili miglioramenti segnalati per completezza, su cui **non è stata presa alcuna decisione**, nemmeno quella di farli in futuro. Non è nemmeno stabilito se abbiano senso per l'operatività reale di Quack. Vanno lette come spunti da verificare con chi conosce il processo aziendale, non come backlog impegnato.
+
+### 7. Catch Weight (doppia misura) per prodotti chimici a peso variabile
+
+**Fonte:** [REVISIONE - Ridondanze, Contraddizioni e Piano di Riorganizzazione.md](Unita%20di%20misura%20e%20prezzi/REVISIONE%20-%20Ridondanze%2C%20Contraddizioni%20e%20Piano%20di%20Riorganizzazione.md), §6.1.
+
+**Di cosa si tratta.** Oggi Quack converte tra Stock UoM e UoM commerciale con un fattore fisso salvato in anagrafica prodotto (es. `quantita_contenuto = 25`, "1 fusto = 25 kg", applicato sempre e per ogni movimento di quel prodotto). Il "Catch Weight" è un pattern diverso, usato in alcuni ERP enterprise per il settore chimico/alimentare: permette di registrare, per ogni singolo movimento o lotto, un **peso realmente misurato** (es. alla bilancia in fase di carico/scarico) che può differire dal peso teorico calcolato come conteggio × fattore fisso — per variazioni di densità, temperatura, tolleranza di riempimento in produzione. Non è la stessa cosa di "avere due unità di misura per prodotto" (quello Quack lo ha già, correttamente, con l'Approccio 1 a UoM commerciale singola): è una seconda misura fisica indipendente, per singolo movimento, non derivabile moltiplicando un conteggio per un fattore costante.
+
+**Stato attuale.** Non esiste nessuna colonna tipo `peso_reale`/`peso_effettivo` su `movimenti_magazzino` né altrove nello schema. Il sistema oggi assume sempre che il peso di un movimento sia esattamente `conteggio × quantita_contenuto`, senza possibilità di scostamento registrato.
+
+**Perché non è nel backlog vero e proprio.** Non è chiaro se questo scostamento tra peso teorico e peso realmente pesato si presenti davvero nell'operatività di Quack, né se — quando si presenta — debba riflettersi su magazzino/fatturazione (fatturare sul peso pesato invece che su quello teorico) o sia una differenza sempre trascurabile e ignorata nella pratica. È una domanda di processo aziendale da verificare con chi gestisce magazzino/logistica, non una decisione tecnica: finché non è confermato che serve, non ha senso progettare lo schema per supportarlo.

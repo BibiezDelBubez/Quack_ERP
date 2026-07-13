@@ -583,8 +583,6 @@ final class SalesPricelistsController extends BaseController
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
                        AND quantita_minima <= :qty
-                       AND (valido_dal IS NULL OR valido_dal <= :data)
-                       AND (valido_al IS NULL OR valido_al >= :data)
                      ORDER BY quantita_minima DESC
                      LIMIT 1"
                 );
@@ -592,7 +590,6 @@ final class SalesPricelistsController extends BaseController
                     ':lid'  => $clientListino['listino_id'],
                     ':pid'  => $prodottoId,
                     ':qty'  => $quantita,
-                    ':data' => $dataRiferimento,
                 ]);
                 $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
@@ -635,8 +632,6 @@ final class SalesPricelistsController extends BaseController
                      WHERE listino_id = :lid
                        AND prodotto_id = :pid
                        AND quantita_minima <= :qty
-                       AND (valido_dal IS NULL OR valido_dal <= :data)
-                       AND (valido_al IS NULL OR valido_al >= :data)
                      ORDER BY quantita_minima DESC
                      LIMIT 1"
                 );
@@ -644,7 +639,6 @@ final class SalesPricelistsController extends BaseController
                     ':lid'  => $listinoId,
                     ':pid'  => $prodottoId,
                     ':qty'  => $quantita,
-                    ':data' => $dataRiferimento,
                 ]);
                 $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
@@ -688,8 +682,6 @@ final class SalesPricelistsController extends BaseController
                  WHERE listino_id = :lid
                    AND prodotto_id = :pid
                    AND quantita_minima <= :qty
-                   AND (valido_dal IS NULL OR valido_dal <= :data)
-                   AND (valido_al IS NULL OR valido_al >= :data)
                  ORDER BY quantita_minima DESC
                  LIMIT 1"
             );
@@ -697,7 +689,6 @@ final class SalesPricelistsController extends BaseController
                     ':lid'  => $fallbackListinoId,
                     ':pid'  => $prodottoId,
                     ':qty'  => $quantita,
-                    ':data' => $dataRiferimento,
                 ]);
                 $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
