@@ -467,34 +467,7 @@ $v = $values;
 </div>
 <?php endif; ?>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function setupPreview(inputId, containerId, previewId, statusId) {
-        const input = document.getElementById(inputId);
-        const container = document.getElementById(containerId);
-        const preview = document.getElementById(previewId);
-        const status = document.getElementById(statusId);
- 
-        if (!input) return;
- 
-        input.addEventListener('change', function() {
-            const file = this.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    preview.src = e.target.result;
-                    container.style.setProperty('display', 'flex', 'important');
-                    status.innerHTML = '<span class="text-success font-monospace" style="font-weight:600;"><i class="fa-solid fa-circle-check"></i> Anteprima (' + (file.size / 1024).toFixed(1) + ' KB) pronta</span>';
-                }
-                reader.readAsDataURL(file);
-            }
-        });
-    }
- 
-    setupPreview('logo-input', 'logo-preview-container', 'logo-preview', 'logo-status-text');
-    setupPreview('header-input', 'header-preview-container', 'header-preview', 'header-status-text');
-});
-</script>
+<script src="<?= url('assets/js/aziende-form.js') ?>"></script>
 
 <?php if ($isEdit): ?>
 <!-- Config PHP → JS -->

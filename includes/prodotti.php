@@ -431,8 +431,8 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
                 COALESCE(p.is_adr, 0) AS is_adr,
                 lp.prezzo_unitario AS prezzo_vendita,
                 p.descrizione_confezione,
-                -- Costo di acquisto base: da v_costo_acquisto_prodotti (fix "Listino
-                -- Fantasma", audit/MASTER_AUDIT_REPORT.md — la vecchia sub-query
+                -- Costo di acquisto base: da v_costo_acquisto_prodotti (fix 'Listino
+                -- Fantasma', audit/MASTER_AUDIT_REPORT.md — la vecchia sub-query
                 -- sceglieva il prezzo con ORDER BY pfp.id DESC, cioè l'ultimo
                 -- inserito, senza controllare se il suo listino fosse ancora
                 -- attivo o nella finestra di validità).

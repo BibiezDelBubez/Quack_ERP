@@ -907,6 +907,22 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     stato                   TEXT         NOT NULL CHECK (stato IN (
                                               'in_lavorazione','parzialmente_spedito',
                                               'spedito','completato','annullato')),
+    -- NOTA (14/07/2026): questa CREATE TABLE era già disallineata da tempo
+    -- rispetto a init_sqlite.sql (mancano azienda_interna_id, consegna_*,
+    -- contatto_*, indirizzo_consegna_id, contatto_snapshot_id, cliente_*,
+    -- stato_fatturazione, riferimento_interno, condizioni_pagamento,
+    -- trasporto, valuta) — drift preesistente, non introdotto qui, fuori
+    -- scope per questo intervento (coerente con "sviluppo oggi su SQLite,
+    -- MySQL quando lo schema sarà stabile"). Aggiunte qui SOLO le colonne
+    -- azienda_* per non allargare ulteriormente il divario mentre si
+    -- corregge la storicizzazione azienda emittente (mirror di preventivi).
+    azienda_ragione_sociale VARCHAR(255),
+    azienda_partita_iva     VARCHAR(30),
+    azienda_codice_fiscale  VARCHAR(30),
+    azienda_indirizzo       VARCHAR(255),
+    azienda_telefono        VARCHAR(30),
+    azienda_email           VARCHAR(150),
+    azienda_iban            VARCHAR(34),
     note                    TEXT,
     listino_id              INTEGER      REFERENCES listini(id), -- listino di vendita applicato
     creato_da               INTEGER      NOT NULL REFERENCES utenti(id),

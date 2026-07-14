@@ -439,11 +439,21 @@ document.addEventListener('DOMContentLoaded', function () {
       const pu   = parseFloat(tr.querySelector('.inp-pu')?.value)   || 0;
       const sc   = parseFloat(tr.querySelector('.inp-sc')?.value)   || 0;
       const iva  = parseFloat(tr.querySelector('.inp-iva')?.value)  || 22;
-      const pn   = pu * (1 - sc / 100);
-      const tot  = Math.round(pn * qta * 100) / 100;
-      const rig  = Math.round(tot * iva / 100 * 100) / 100;
+      
+      const puBig = Big(pu);
+      const qtaBig = Big(qta);
+      const scMultiplier = Big(1).minus(Big(sc).div(100)); // 1 - (sc/100)
+      
+      const pnBig = puBig.times(scMultiplier);
+      const totBig = pnBig.times(qtaBig).round(2);
+      const tot = totBig.toNumber();
+      
+      const rigBig = totBig.times(Big(iva).div(100)).round(2);
+      const rig = rigBig.toNumber();
+      
       imponibile += tot;
       totIva     += rig;
+      
       if (tr.querySelector('.riga-total')) {
         tr.querySelector('.riga-total').textContent = window.qkFormatEuro(tot);
       }
@@ -464,7 +474,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       // Costo fornitore: è sempre in UoM stock (viene da prodotti_fornitori_prezzi)
       if (currentUomMode === 'commercial' && hasCommercialUom) {
-        costoConvertito = costoBase / qFactor;
+        costoConvertito = Big(costoBase).div(qFactor).toNumber();
       }
 
       // RRP: può essere in UoM stock o commerciale secondo rrp_unita_misura_id
@@ -473,24 +483,24 @@ document.addEventListener('DOMContentLoaded', function () {
         const rrpIsCommercial = rrpUomId && rrpUomId === parseInt(tr.dataset.uomCommercialId);
         if (currentUomMode === 'commercial' && !rrpIsCommercial) {
           // RRP è in stock, sto mostrando in commerciale → divido
-          if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw / qFactor;
-          if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw / qFactor;
+          if (rrpMinConvertito !== null) rrpMinConvertito = Big(rrpMinRaw).div(qFactor).toNumber();
+          if (rrpMaxConvertito !== null) rrpMaxConvertito = Big(rrpMaxRaw).div(qFactor).toNumber();
         } else if (currentUomMode === 'stock' && rrpIsCommercial) {
           // RRP è in commerciale, sto mostrando in stock → moltiplico
-          if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw * qFactor;
-          if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw * qFactor;
+          if (rrpMinConvertito !== null) rrpMinConvertito = Big(rrpMinRaw).times(qFactor).toNumber();
+          if (rrpMaxConvertito !== null) rrpMaxConvertito = Big(rrpMaxRaw).times(qFactor).toNumber();
         }
         // Se rrpUomId è null (dato vecchio senza UoM), fallback: assume stock come prima
         if (rrpUomId === null && currentUomMode === 'commercial') {
-          if (rrpMinConvertito !== null) rrpMinConvertito = rrpMinRaw / qFactor;
-          if (rrpMaxConvertito !== null) rrpMaxConvertito = rrpMaxRaw / qFactor;
+          if (rrpMinConvertito !== null) rrpMinConvertito = Big(rrpMinRaw).div(qFactor).toNumber();
+          if (rrpMaxConvertito !== null) rrpMaxConvertito = Big(rrpMaxRaw).div(qFactor).toNumber();
         }
       }
 
-      const rowCostTotal = Math.round(costoConvertito * qta * 100) / 100;
+      const rowCostTotal = Big(costoConvertito).times(qtaBig).round(2).toNumber();
       totaleCosto += rowCostTotal;
 
-      const rowDelta = tot - rowCostTotal;
+      const rowDelta = Big(tot).minus(rowCostTotal).toNumber();
 
       const elCosto = tr.querySelector('.riga-costo-val');
       if (elCosto) {
@@ -518,9 +528,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     const scGlob = parseFloat(document.getElementById('sconto_globale')?.value) || 0;
-    const impSc  = Math.round(imponibile * (1 - scGlob / 100) * 100) / 100;
-    const ivaSc  = Math.round(totIva    * (1 - scGlob / 100) * 100) / 100;
-    const totale = Math.round((impSc + ivaSc) * 100) / 100;
+    const globMultiplier = Big(1).minus(Big(scGlob).div(100));
+    
+    const impSc  = Big(imponibile).times(globMultiplier).round(2).toNumber();
+    const ivaSc  = Big(totIva).times(globMultiplier).round(2).toNumber();
+    const totale = Big(impSc).plus(ivaSc).round(2).toNumber();
 
     document.getElementById('tot-imponibile').textContent = window.qkFormatEuro(impSc);
     document.getElementById('tot-iva').textContent        = window.qkFormatEuro(ivaSc);
@@ -534,7 +546,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const boxMargineEuro = document.getElementById('box-margine-euro');
     const boxMargineEuroCont = document.getElementById('box-margine-euro-container');
-    const marginEuro = impSc - totaleCosto;
+    const marginEuro = Big(impSc).minus(totaleCosto).toNumber();
     if (boxMargineEuro) {
       boxMargineEuro.textContent = window.qkFormatEuro(marginEuro);
       if (marginEuro >= 0) {
@@ -554,7 +566,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const boxMarginePerc = document.getElementById('box-margine-perc');
     const boxMarginePercCont = document.getElementById('box-margine-perc-container');
-    const marginPerc = impSc > 0 ? (marginEuro / impSc) * 100 : 0;
+    const marginPerc = impSc > 0 ? Big(marginEuro).div(impSc).times(100).toNumber() : 0;
     if (boxMarginePerc) {
       boxMarginePerc.textContent = marginPerc.toFixed(2) + '%';
       if (marginPerc >= 20) {

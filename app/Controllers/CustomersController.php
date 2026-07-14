@@ -399,45 +399,13 @@ class CustomersController extends BaseController
             exit;
         }
 
-        $tipiValidi = ['sede_legale', 'sede_operativa', 'spedizione', 'fatturazione', 'magazzino'];
-        $tipo = post('tipo', '');
-        if (!in_array($tipo, $tipiValidi, true)) {
+        $validazione = qk_build_e_valida_indirizzo();
+        if (!$validazione['ok']) {
             ob_end_clean();
-            echo json_encode(['ok' => false, 'error' => 'Tipo indirizzo non valido.']);
+            echo json_encode(['ok' => false, 'error' => $validazione['error']]);
             exit;
         }
-
-        $v = [
-            'tipo'               => $tipo,
-            'nome_sede'          => post('nome_sede', ''),
-            'predefinito'        => post('predefinito', '0') === '1',
-            'referente_consegna' => post('referente_consegna', ''),
-            'telefono_consegna'  => post('telefono_consegna', ''),
-            'presso'             => post('presso', ''),
-            'via'                => post('via', ''),
-            'civico'             => post('civico', ''),
-            'cap'                => post('cap', ''),
-            'citta'              => post('citta', ''),
-            'provincia'          => post('provincia', ''),
-            'nazione'            => post('nazione', 'IT') ?: 'IT',
-            'note_consegna'      => post('note_consegna', ''),
-        ];
-
-        if (trim($v['via']) === '') {
-            ob_end_clean();
-            echo json_encode(['ok' => false, 'error' => 'Il campo indirizzo (via) è obbligatorio.']);
-            exit;
-        }
-        if (trim($v['cap']) === '') {
-            ob_end_clean();
-            echo json_encode(['ok' => false, 'error' => 'Il CAP è obbligatorio.']);
-            exit;
-        }
-        if (trim($v['citta']) === '') {
-            ob_end_clean();
-            echo json_encode(['ok' => false, 'error' => 'La città è obbligatoria.']);
-            exit;
-        }
+        $v = $validazione['v'];
 
         try {
             if ($address_id > 0) {
@@ -954,8 +922,9 @@ class CustomersController extends BaseController
         $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
         if ($id) {
             try {
-                qk_delete_soggetto($this->pdo, $id);
-                redirect_with('customers', 'success', 'Cliente rimosso con successo.');
+                $esito = qk_delete_soggetto($this->pdo, $id);
+                $msg = qk_esito_cancellazione_messaggio($esito, 'cliente', 'il');
+                redirect_with('customers', $msg['type'], $msg['text']);
             } catch (Throwable $e) {
                 redirect_with('customers', 'danger', 'Errore durante l\'eliminazione del cliente: ' . $e->getMessage());
             }

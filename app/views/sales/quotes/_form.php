@@ -872,4 +872,5 @@ window.QK_QUOTES_CONFIG = {
   listini: <?= json_encode(array_map(fn($l) => ['id' => $l['id'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini)) ?>
 };
 </script>
+<script src="<?= asset('js/big.min.js') ?>"></script>
 <script src="<?= asset('js/sales-quotes.js') ?>"></script>

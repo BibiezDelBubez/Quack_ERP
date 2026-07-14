@@ -789,7 +789,7 @@ class WarehouseController extends BaseController
                         SUM(COALESCE(g.scorta_minima, 0)) AS scorta_minima,
                         MAX(pf.fornitore_id) AS fornitore_id,
                         MAX(COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, ''))) AS fornitore_nome,
-                        -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md): da
+                        -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md): da
                         -- v_prezzo_acquisto_base_fornitore, non più ORDER BY id DESC.
                         MAX((SELECT vf.prezzo FROM v_prezzo_acquisto_base_fornitore vf
                              WHERE vf.prodotto_fornitore_id = pf.id)) AS ultimo_prezzo
@@ -840,7 +840,7 @@ class WarehouseController extends BaseController
                         g.scorta_minima,
                         pf.fornitore_id,
                         COALESCE(cf.ragione_sociale, cf.nome || ' ' || COALESCE(cf.cognome, '')) AS fornitore_nome,
-                        -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md): da
+                        -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md): da
                         -- v_prezzo_acquisto_base_fornitore, non più ORDER BY id DESC.
                         (SELECT vf.prezzo FROM v_prezzo_acquisto_base_fornitore vf
                          WHERE vf.prodotto_fornitore_id = pf.id) AS ultimo_prezzo

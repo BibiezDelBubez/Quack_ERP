@@ -103,6 +103,81 @@ Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere s
 
 ---
 
+### 11. Validazione indirizzi differenziata per nazione (CAP e Provincia "paese-dipendenti")
+
+**Fonte:** [Revisione Incrociata - Concetti Ripetuti e Incongruenze.md](Guide%20Anagrafiche%20Clienti%2C%20Fornitori%2C%20Indirizzi/Revisione%20Incrociata%20-%20Concetti%20Ripetuti%20e%20Incongruenze.md), §5.2.4; segnalazione originaria in `Gestione e Associazione Indirizzi con Clienti e Fornitori su Quack erp.docx`, sezione "Regole di inserimento per gli Indirizzi" ("Nazioni estere").
+
+**Di cosa si tratta.** Oggi il modulo indirizzi tratta CAP e Provincia come se fossero sempre italiani, indipendentemente dalla nazione effettivamente selezionata. Un fornitore tedesco ha un CAP a 5 cifre ma nessun concetto di "provincia" a 2 lettere; un cliente americano ha uno "state" a 2 lettere ma un formato CAP diverso (ZIP, a volte con suffisso); un cliente irlandese o di Hong Kong storicamente non ha alcun codice postale da inserire. La documentazione originaria (F2) prometteva che "i controlli applicativi devono adattarsi o disattivarsi" per questi casi, ma è rimasta una dichiarazione di intenti mai tradotta in codice.
+
+**Stato attuale, verificato su schema, backend e frontend (14/07/2026):**
+- **Schema** (`db/init_mysql.sql:361-366`, stesso su `init_sqlite.sql`): `cap VARCHAR(10) NOT NULL`, `provincia CHAR(2)` nullable, `nazione CHAR(2) NOT NULL DEFAULT 'IT'` — nessuna regola condizionata dalla nazione.
+- **Backend** (`app/Controllers/CustomersController.php:426-439`, stesso pattern in `SuppliersController.php`/`AziendeController.php`): il CAP è sempre obbligatorio incondizionatamente, qualunque sia la nazione. La provincia non è mai obbligatoria (corretto per l'estero), ma quando compilata non ha alcun controllo di formato differenziato.
+- **Frontend** (`app/views/customers/_form.php:672-689`): il campo `provincia` ha `maxlength="2"` fisso nell'HTML, indipendentemente dalla nazione — tronca fisicamente qualunque valore più lungo di 2 caratteri anche per paesi che non usano sigle di 2 lettere. Il campo `nazione` è un `<input>` di testo libero (non un menu ISO), quindi non impedisce nemmeno errori di battitura sul codice paese.
+- **JavaScript** (`assets/js/customers-addresses.js`, `suppliers-addresses.js`): l'unico uso del campo `nazione` è mostrarlo in etichetta e resettarlo al default `'IT'` in un nuovo form — zero logica condizionale che adatti il comportamento degli altri campi.
+
+**Decisione di progetto (14/07/2026): funzionalità futura, non implementata ora.** Il refactor tocca schema, backend e frontend contemporaneamente su più form (clienti, fornitori, aziende interne) — va pianificato come intervento a sé, non improvvisato dentro un'altra sessione di lavoro.
+
+**Implementazione prevista, per quando verrà pianificata:**
+
+1. **Tabella di configurazione per paese** (nuova, es. `paesi_config` o estensione di una eventuale tabella `nazioni` già esistente per gli ISO code):
+   - Colonne minime: `codice_iso` (PK, CHAR(2)), `nome`, `cap_obbligatorio` (booleano), `cap_pattern` (regex opzionale, es. `^\d{5}$` per l'Italia), `provincia_obbligatoria` (booleano, quasi sempre falso), `provincia_lunghezza_max` (INT, es. 2 per l'Italia, più ampio o NULL/illimitato per l'estero).
+   - Popolata inizialmente con una riga `IT` (CAP obbligatorio, pattern 5 cifre, provincia 2 lettere) e una riga di default generica per tutti gli altri paesi (CAP non obbligatorio, nessun pattern, provincia libera fino a 50 caratteri) — non serve popolare tutti i ~195 paesi del mondo con regole specifiche fin da subito, la riga di default copre il caso generico "estero" in modo ragionevole; regole più specifiche per singoli paesi (Germania, USA, ecc.) si aggiungono solo se e quando emerge un caso reale.
+
+2. **Schema** (`db/init_mysql.sql` e `db/init_sqlite.sql`, mantenuti allineati):
+   - `indirizzi.provincia`: cambiare da `CHAR(2)` a `VARCHAR(50)` per non troncare regioni estere più lunghe di 2 caratteri (correzione necessaria comunque, indipendente dalla tabella di configurazione).
+   - Nuova tabella `paesi_config` come sopra, con migrazione dedicata su entrambi gli schemi gemelli.
+
+3. **Backend** (`includes/anagrafiche.php`, funzioni `qk_insert_indirizzo()`/`qk_update_indirizzo()`, e i controller `CustomersController.php`/`SuppliersController.php`/`AziendeController.php`):
+   - Prima di validare CAP/Provincia, leggere la riga di `paesi_config` corrispondente a `nazione` (con fallback alla riga di default se il paese non è censito esplicitamente).
+   - Rendere il CAP obbligatorio solo se `cap_obbligatorio = 1` per quel paese; se compilato, validarne il formato con `cap_pattern` solo quando presente.
+   - Validare la lunghezza di `provincia` rispetto a `provincia_lunghezza_max` del paese selezionato, invece del limite fisso attuale.
+
+4. **Frontend** (`app/views/customers/_form.php`, `app/views/suppliers/_form.php`, `app/views/aziende/_form.php` — gli stessi tre form individuati anche per i punti già corretti su indirizzi):
+   - Sostituire l'`<input type="text" name="nazione">` con un `<select>` popolato dai codici ISO 3166-1 alpha-2 presenti in `paesi_config` (o da una lista ISO statica lato frontend, se si preferisce non dipendere dal contenuto della tabella per la sola lista dei paesi esistenti).
+   - Rimuovere il `maxlength="2"` fisso su `provincia` e renderlo dinamico via JS: alla selezione di una nazione diversa da IT, ampliare il limite (o rimuoverlo) e aggiornare il placeholder.
+   - Aggiungere un listener sul campo `nazione` che, in tempo reale, marca CAP come opzionale/obbligatorio e ne aggiorna il placeholder, leggendo le regole via una piccola chiamata AJAX a `paesi_config` (o imbustando le regole dei paesi più comuni direttamente nel JS, se si vuole evitare una chiamata di rete aggiuntiva per un caso d'uso poco frequente).
+
+5. **Riuso.** Le stesse regole di validazione andrebbero applicate a tutti i punti che oggi validano indirizzi in modo duplicato (i tre form di cui sopra) — occasione per centralizzare la validazione indirizzo in un'unica funzione condivisa (`qk_validate_indirizzo($v)`) invece di ripetere gli stessi controlli in ciascun controller, coerente con l'osservazione DRY già fatta altrove in questa cartella (vedi Revisione Incrociata §5.6.3) per un problema concettualmente analogo.
+
+**Perché è rimandato.** Nessun cliente/fornitore estero reale ha ancora incontrato il problema in produzione (verificato: il progetto oggi lavora prevalentemente con anagrafiche italiane). Costruire la tabella di configurazione e il refactor dei tre form in anticipo, senza un caso reale che lo richieda, sarebbe complessità aggiunta prematura — coerente con l'approccio "non anticipare architettura senza un requisito reale" già seguito altrove nel progetto. Da riprendere quando si censisce il primo cliente/fornitore con un indirizzo che il sistema attuale gestisce male (es. provincia estera troncata, o CAP mancante bloccato da un obbligo che non dovrebbe applicarsi).
+
+---
+
+## 12. Modulo di fatturazione elettronica (con distinzione IT/estero fin dalla progettazione)
+
+**Fonte:** [Revisione Incrociata - Concetti Ripetuti e Incongruenze.md](Guide%20Anagrafiche%20Clienti%2C%20Fornitori%2C%20Indirizzi/Revisione%20Incrociata%20-%20Concetti%20Ripetuti%20e%20Incongruenze.md), §5.5.1.
+
+**Di cosa si tratta.** F1 cita la fatturazione elettronica (SDI, Sistema di Interscambio) come motivazione di design per l'Anagrafica Unica, ma il modulo vero e proprio non è mai stato costruito. Verificato: `codice_sdi` (`dettagli_clienti.codice_sdi`) è un campo di testo libero opzionale, mai validato in base alla nazione del cliente. Esiste una tabella `fatture`/`fatture_righe` nello schema (`db/init_sqlite.sql:1332-1370` circa), con colonne base (numero, tipo, date, cliente, stato, importi) ma **nessuna colonna SDI-specifica** (codice destinatario, percorso XML, stato invio) e **nessun controller la gestisce** — nessun `FatturaController`, nessuna view, nessuna funzione che crei o invii una fattura elettronica. È uno scheletro di schema, non una funzionalità.
+
+**Perché conviene progettarlo da subito con la distinzione IT/estero.** Le regole SDI si applicano solo alle operazioni con controparti italiane: per un cliente/fornitore estero (`nazione != 'IT'`) servono un codice destinatario convenzionale fisso ("XXXXXXX", le regole SDI reali possono variare ed è da verificare il valore corretto al momento dell'implementazione) e nessun obbligo di PEC, oltre a regole IVA diverse (reverse charge intra-UE, fatturazione extra-UE). Se il modulo venisse costruito pensando implicitamente solo a clienti italiani (lo stesso errore di progettazione già visto altrove in questa cartella, §5.2.4), funzionerebbe bene finché non arriva la prima fattura verso un cliente estero, momento in cui si scoprirebbe il problema in produzione invece che in fase di analisi.
+
+**Cosa servirebbe per implementarlo (in ordine):**
+1. **Schema**: aggiungere a `fatture` le colonne mancanti per la fatturazione elettronica vera e propria: `codice_destinatario` (7 caratteri, con valore convenzionale per l'estero), `xml_path` (percorso del file XML generato), `stato_invio_sdi` (es. `non_inviata`/`inviata`/`accettata`/`scartata`), `data_invio_sdi`, `esito_sdi`.
+2. **Logica di generazione**: una funzione che, dato l'ordine/DDT di origine e il cliente, generi l'XML nel formato FatturaPA — con un ramo esplicito IT vs estero fin dalla prima versione (non aggiunto dopo come eccezione), leggendo `nazione` dal cliente per decidere codice destinatario, aliquote IVA applicabili e presenza/assenza di alcuni campi obbligatori solo per l'Italia.
+3. **Controller e viste**: un `FatturaController` dedicato (creazione, invio, storico stati), coerente con lo stile dei controller più recenti del progetto (RFQ/Ordini v2), non con lo stile legacy di `PurchasesController` (vedi voce 5 di questo stesso backlog).
+4. **Integrazione SDI reale**: valutare se l'invio allo SDI avviene tramite un intermediario (es. Aruba, Fatture in Cloud, o un provider PEC/SDI dedicato) o direttamente — decisione che condiziona buona parte dell'architettura del punto 2, da prendere con chi gestisce il processo di fatturazione reale dell'azienda prima di scrivere codice.
+5. **Anagrafica**: nessuna modifica strutturale necessaria a `codice_sdi` (già libero e opzionale, compatibile con l'assenza per clienti esteri) — eventualmente aggiungere una validazione di formato (7 caratteri alfanumerici) solo quando compilato e `nazione = 'IT'`.
+
+**Perché è rimandato.** È un modulo intero non ancora iniziato, non un fix su qualcosa di esistente — non c'è nulla di rotto oggi perché non c'è ancora nulla che funzioni in questo ambito. Da programmare come progetto a sé quando si deciderà di implementare la fatturazione elettronica reale, con il coinvolgimento di chi gestisce il processo contabile/fiscale dell'azienda per le decisioni di provider e formato.
+
+---
+
+## 13. Import massivo di anagrafiche/indirizzi (clienti, fornitori, indirizzi)
+
+**Fonte:** [Revisione Incrociata - Concetti Ripetuti e Incongruenze.md](Guide%20Anagrafiche%20Clienti%2C%20Fornitori%2C%20Indirizzi/Revisione%20Incrociata%20-%20Concetti%20Ripetuti%20e%20Incongruenze.md), §5.5.2.
+
+**Di cosa si tratta.** Oggi l'import massivo (da CSV) esiste solo per due domini: prodotti/categorie (`ProductsController::importProdotti()`/`importCategorie()`) e prezzi/listini (`SalesPricelistsController::apiImportPrezzi()`) — entrambe implementazioni mature, con logica di protezione dei dati modificati manualmente dopo l'ultimo import (confronto `importato_il` vs `modificato_manualmente_il`). Verificato: `CustomersController.php`, `SuppliersController.php` e `AziendeController.php` non hanno alcuna funzione di import — ogni cliente, fornitore o indirizzo va inserito uno alla volta tramite il form. Manca quindi la possibilità di caricare in blocco un'anagrafica esistente (es. in fase di migrazione da un altro gestionale) o di aggiornare in blocco indirizzi/dati di più soggetti insieme.
+
+**Cosa servirebbe per implementarlo.** Riutilizzare lo stesso pattern già maturo di `apiImportPrezzi()`/`importProdotti()`, applicato a `clienti_fornitori` e `indirizzi` invece che a `prodotti`/`listini_prezzi`:
+1. Endpoint di import (es. `CustomersController::apiImportClienti()`, e speculare per fornitori) che accetta un CSV con mappatura colonne (ragione sociale/nome/cognome, partita IVA, codice fiscale, email, telefono, indirizzo completo).
+2. Logica di upsert che usa la Partita IVA (o il codice fiscale per i privati) come chiave di matching per capire se un soggetto esiste già — coerente con il vincolo di unicità già presente sul database (vedi Revisione §5.1.2) — evitando così i duplicati che l'import potrebbe altrimenti creare in massa.
+3. Stesso principio di protezione già usato per prezzi/prodotti: se un record è stato modificato manualmente dopo l'ultimo import, l'import successivo non deve sovrascriverlo silenziosamente — richiede aggiungere colonne equivalenti a `importato_il`/`modificato_manualmente_il` su `clienti_fornitori` e `indirizzi`.
+4. Un'interfaccia di anteprima/conferma prima dell'import definitivo (mostrare quanti record verranno creati, quanti aggiornati, quanti scartati per errore di formato), sul modello di quanto già esiste per prodotti/prezzi.
+
+**Perché è rimandato.** Nessuna richiesta reale di import massivo di anagrafiche si è ancora presentata nell'uso del sistema — lo sviluppo si è concentrato finora su prodotti e prezzi come priorità immediata. Da programmare quando emerge un caso reale (es. migrazione di un nuovo cliente/reparto da un altro gestionale, o necessità di aggiornare in blocco dati di più soggetti).
+
+---
+
 ## Migliorie possibili, non pianificate né previste
 
 A differenza delle voci sopra — che sono lavoro riconosciuto e **deliberatamente rimandato** (si farà, ma non ora) — le voci qui sotto sono osservazioni emerse durante il lavoro di analisi/documentazione: possibili miglioramenti segnalati per completezza, su cui **non è stata presa alcuna decisione**, nemmeno quella di farli in futuro. Non è nemmeno stabilito se abbiano senso per l'operatività reale di Quack. Vanno lette come spunti da verificare con chi conosce il processo aziendale, non come backlog impegnato.

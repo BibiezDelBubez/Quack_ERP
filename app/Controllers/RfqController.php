@@ -259,26 +259,10 @@ class RfqController extends BaseController
         $righe = $detail['righe'];
 
         // Recupera azienda interna per l'RFQ o quella predefinita
-        $azienda = null;
-        if (!empty($rfq['azienda_interna_id'])) {
-            $stmtAz = $this->pdo->prepare(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.id = ? LIMIT 1"
-            );
-            $stmtAz->execute([(int)$rfq['azienda_interna_id']]);
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC);
-        }
-        if (!$azienda) {
-            $stmtAz = $this->pdo->query(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.predefinita = 1 LIMIT 1"
-            );
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC) ?: [];
-        }
+        // (Revisione Incrociata §7.1.1/§5.3.1: risoluzione centralizzata in
+        // qk_resolve_azienda_emittente(), prima duplicata qui x2 e in
+        // PurchaseOrdersController.php x2)
+        $azienda = qk_resolve_azienda_emittente($this->pdo, !empty($rfq['azienda_interna_id']) ? (int)$rfq['azienda_interna_id'] : null);
 
         // Fetch supplier address
         $indirizzoFornitore = '';
@@ -610,26 +594,10 @@ class RfqController extends BaseController
         $righe = $detail['righe'];
 
         // Recupera azienda interna per l'RFQ o quella predefinita
-        $azienda = null;
-        if (!empty($rfq['azienda_interna_id'])) {
-            $stmtAz = $this->pdo->prepare(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.id = ? LIMIT 1"
-            );
-            $stmtAz->execute([(int)$rfq['azienda_interna_id']]);
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC);
-        }
-        if (!$azienda) {
-            $stmtAz = $this->pdo->query(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.predefinita = 1 LIMIT 1"
-            );
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC) ?: [];
-        }
+        // (Revisione Incrociata §7.1.1/§5.3.1: risoluzione centralizzata in
+        // qk_resolve_azienda_emittente(), prima duplicata qui x2 e in
+        // PurchaseOrdersController.php x2)
+        $azienda = qk_resolve_azienda_emittente($this->pdo, !empty($rfq['azienda_interna_id']) ? (int)$rfq['azienda_interna_id'] : null);
 
         // Fetch supplier address
         $indirizzoFornitore = '';

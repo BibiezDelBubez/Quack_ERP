@@ -21,31 +21,11 @@ $_current_theme = ACTIVE_THEME;
 require_once INCLUDES_DIR . '/anagrafiche.php';
 require_once INCLUDES_DIR . '/magazzino.php';
 global $pdo;
+// Risoluzione azienda attiva centralizzata in qk_resolve_azienda_attiva_sessione()
+// (Revisione Incrociata §7.1.1): prima la stessa logica (query + fallback +
+// scrittura $_SESSION) viveva qui, inline nella View.
 $aziende_topbar = qk_aziende_list($pdo);
-$attiva_azienda = null;
-if (!empty($aziende_topbar)) {
-    $sess_id = $_SESSION['azienda_attiva_id'] ?? null;
-    if ($sess_id) {
-        foreach ($aziende_topbar as $az) {
-            if ((int)$az['id'] === (int)$sess_id) {
-                $attiva_azienda = $az;
-                break;
-            }
-        }
-    }
-    if (!$attiva_azienda) {
-        foreach ($aziende_topbar as $az) {
-            if ($az['predefinita'] == 1) {
-                $attiva_azienda = $az;
-                break;
-            }
-        }
-    }
-    if (!$attiva_azienda) {
-        $attiva_azienda = $aziende_topbar[0];
-    }
-    $_SESSION['azienda_attiva_id'] = (int)$attiva_azienda['id'];
-}
+$attiva_azienda = qk_resolve_azienda_attiva_sessione($pdo, $aziende_topbar);
 
 // Selettore magazzino attivo (Piano Multi-Magazzino §3.3/§3.10) — stesso
 // pattern del selettore azienda sopra, con qk_magazzino_attivo_id() come

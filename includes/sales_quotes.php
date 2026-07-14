@@ -90,8 +90,8 @@ function qk_search_prodotti_sales(PDO $pdo, string $q): array
                pf.rrp_min,
                pf.rrp_max,
                pf.fornitore_id AS rrp_fornitore_id,
-               -- Costo base: da v_costo_acquisto_prodotti (fix "Listino Fantasma",
-               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql §14b.
+               -- Costo base: da v_costo_acquisto_prodotti (fix 'Listino Fantasma',
+               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql par.14b.
                CASE WHEN p.tipo = 'kit' THEN (
                    SELECT SUM(ck.quantita * vc.costo_acquisto)
                    FROM componenti_kit ck
@@ -987,6 +987,7 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             consegna_referente, consegna_telefono, consegna_note,
             contatto_id, contatto_nome, contatto_email, contatto_telefono,
             indirizzo_consegna_id, contatto_snapshot_id,
+            azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
             cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
             creato_da, created_at, updated_at
         ) VALUES (
@@ -998,6 +999,7 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             :consegna_referente, :consegna_telefono, :consegna_note,
             :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono,
             :indirizzo_consegna_id, :contatto_snapshot_id,
+            :azienda_ragione_sociale, :azienda_partita_iva, :azienda_codice_fiscale, :azienda_indirizzo, :azienda_telefono, :azienda_email, :azienda_iban,
             :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
             :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )";
@@ -1031,6 +1033,13 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             ':contatto_telefono'       => $quota['contatto_telefono'] ?: null,
             ':indirizzo_consegna_id'   => $indirizzo_consegna_id ?: null,
             ':contatto_snapshot_id'    => $contatto_snapshot_id ?: null,
+            ':azienda_ragione_sociale' => $quota['azienda_ragione_sociale'] ?: null,
+            ':azienda_partita_iva'     => $quota['azienda_partita_iva'] ?: null,
+            ':azienda_codice_fiscale'  => $quota['azienda_codice_fiscale'] ?: null,
+            ':azienda_indirizzo'       => $quota['azienda_indirizzo'] ?: null,
+            ':azienda_telefono'        => $quota['azienda_telefono'] ?: null,
+            ':azienda_email'           => $quota['azienda_email'] ?: null,
+            ':azienda_iban'            => $quota['azienda_iban'] ?: null,
             ':cliente_ragione_sociale' => $quota['cliente_ragione_sociale'] ?: null,
             ':cliente_partita_iva'     => $quota['cliente_partita_iva'] ?: null,
             ':cliente_codice_fiscale'  => $quota['cliente_codice_fiscale'] ?: null,

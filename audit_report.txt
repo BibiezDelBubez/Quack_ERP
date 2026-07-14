@@ -1,0 +1,19 @@
+- **check_db2.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **db/crea_db.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **db/crea_db_sqlite.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **db/migrations/migrate_ordini_righe_uom.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/compliance.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/config.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/db.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/document_common.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/purchases_receipts.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/purchases_rfq.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/sales_orders.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/sales_quotes.php**: VIOLAZIONE TROVATA. File monolitico (God Object, 13922 parole). Altissimo rischio di logica duplicata (violazione DRY).
+- **includes/sidebar.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/trasferimenti.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **includes/word_helper.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **index.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **tools/check-utf8.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **tools/generate_audit_plan.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.
+- **tools/generate_full_plan.php**: NESSUNA VIOLAZIONE EVIDENTE. Il codice appare strutturalmente pulito e rispetta i pattern base.

@@ -1272,6 +1272,18 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     condizioni_pagamento     TEXT,
     trasporto                TEXT,
     valuta                   CHAR(3)      NOT NULL DEFAULT 'EUR',
+    -- Colonne denormalizzate per integrita' storica dell'azienda emittente,
+    -- mirror esatto di quelle di 'preventivi' (Revisione Incrociata, fix
+    -- 14/07/2026: prima solo 'preventivi' le aveva, ordini_clienti no -
+    -- asimmetria segnalata dall'utente e corretta per dare la stessa
+    -- robustezza a entrambi i cicli).
+    azienda_ragione_sociale VARCHAR(255),
+    azienda_partita_iva     VARCHAR(30),
+    azienda_codice_fiscale  VARCHAR(30),
+    azienda_indirizzo       VARCHAR(255),
+    azienda_telefono        VARCHAR(30),
+    azienda_email           VARCHAR(150),
+    azienda_iban            VARCHAR(34),
     cliente_ragione_sociale  VARCHAR(255),
     cliente_partita_iva      VARCHAR(30),
     cliente_codice_fiscale   VARCHAR(30),

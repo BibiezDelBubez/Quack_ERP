@@ -763,27 +763,12 @@ final class SalesQuotesController extends BaseController
         $quota = $detail['offerta'];
         $righe = $detail['righe'];
 
-        // Recupera azienda interna
-        $azienda = null;
-        if (!empty($quota['azienda_interna_id'])) {
-            $stmtAz = $this->pdo->prepare(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.id = ? LIMIT 1"
-            );
-            $stmtAz->execute([(int)$quota['azienda_interna_id']]);
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC);
-        }
-        if (!$azienda) {
-            $stmtAz = $this->pdo->query(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.predefinita = 1 LIMIT 1"
-            );
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC) ?: [];
-        }
+        // Recupera azienda interna emittente, rispettando l'integrità storica
+        // (Revisione §5.3.3 / doc "00" §3.3, fix 14/07/2026): legge prima le
+        // colonne denormalizzate già congelate sul preventivo, invece di
+        // rifare sempre una query dal vivo che cambierebbe l'intestazione
+        // fiscale di un documento vecchio a ogni ristampa.
+        $azienda = qk_resolve_azienda_emittente_stampa($this->pdo, $quota);
 
         // Genera il PDF
         $mpdf = new \Mpdf\Mpdf([
@@ -1091,27 +1076,10 @@ final class SalesQuotesController extends BaseController
         $quota = $detail['offerta'];
         $righe = $detail['righe'];
 
-        // Recupera azienda interna
-        $azienda = null;
-        if (!empty($quota['azienda_interna_id'])) {
-            $stmtAz = $this->pdo->prepare(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.id = ? LIMIT 1"
-            );
-            $stmtAz->execute([(int)$quota['azienda_interna_id']]);
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC);
-        }
-        if (!$azienda) {
-            $stmtAz = $this->pdo->query(
-                "SELECT cf.*, az.*
-                   FROM aziende_interne az
-                   JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                  WHERE az.predefinita = 1 LIMIT 1"
-            );
-            $azienda = $stmtAz->fetch(PDO::FETCH_ASSOC) ?: [];
-        }
+        // Recupera azienda interna emittente, rispettando l'integrità storica
+        // (Revisione §5.3.3 / doc "00" §3.3, fix 14/07/2026) — stessa
+        // funzione condivisa usata per il PDF, vedi commento lì.
+        $azienda = qk_resolve_azienda_emittente_stampa($this->pdo, $quota);
 
         $wordHelper = new \Quack\WordHelper();
         $phpWord = $wordHelper->getPhpWord();

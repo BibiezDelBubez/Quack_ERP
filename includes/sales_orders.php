@@ -97,6 +97,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 consegna_referente, consegna_telefono, consegna_note,
                 contatto_id, contatto_nome, contatto_email, contatto_telefono,
                 indirizzo_consegna_id, contatto_snapshot_id,
+                azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
                 cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
                 creato_da, created_at, updated_at
             ) VALUES (
@@ -111,6 +112,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
                 ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
@@ -144,6 +146,13 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
             $values['contatto_telefono'] ?: null,
             $indirizzo_consegna_id,
             $contatto_snapshot_id,
+            $denorm['azienda_ragione_sociale'] ?: null,
+            $denorm['azienda_partita_iva'] ?: null,
+            $denorm['azienda_codice_fiscale'] ?: null,
+            $denorm['azienda_indirizzo'] ?: null,
+            $denorm['azienda_telefono'] ?: null,
+            $denorm['azienda_email'] ?: null,
+            $denorm['azienda_iban'] ?: null,
             $denorm['cliente_ragione_sociale'] ?: null,
             $denorm['cliente_partita_iva'] ?: null,
             $denorm['cliente_codice_fiscale'] ?: null,
@@ -269,8 +278,8 @@ function qk_search_prodotti_orders(PDO $pdo, string $q): array
                pf.rrp_min,
                pf.rrp_max,
                pf.fornitore_id AS rrp_fornitore_id,
-               -- Costo base: da v_costo_acquisto_prodotti (fix "Listino Fantasma",
-               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql §14b.
+               -- Costo base: da v_costo_acquisto_prodotti (fix 'Listino Fantasma',
+               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql par.14b.
                CASE WHEN p.tipo = 'kit' THEN (
                    SELECT SUM(ck.quantita * vc.costo_acquisto)
                    FROM componenti_kit ck

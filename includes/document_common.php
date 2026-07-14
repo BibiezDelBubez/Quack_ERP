@@ -50,6 +50,38 @@ function qk_generate_contact_hash(?array $cont): string
 }
 
 /**
+ * Calcola se uno snapshot documento (indirizzo o contatto) e' "personalizzato"
+ * rispetto al record master, confrontando gli hash generati da $hashFn.
+ * Logica prima duplicata identica in qk_upsert_document_address() e
+ * qk_upsert_document_contact() (Revisione Incrociata Sez.5.6.3/7.2.2).
+ *
+ * @param array|null $masterRecord Il record master (indirizzo o clienti_fornitori),
+ *        null se non e' stato passato un master_id o se il master non e' stato trovato.
+ * @param array      $payload      I dati ricevuti dal client per lo snapshot.
+ * @param bool       $masterIdGiven true se e' stato passato un master_id esplicito
+ *        (anche se poi $masterRecord risulta null perche' il record non esiste piu').
+ * @param callable   $hashFn       qk_generate_address_hash() o qk_generate_contact_hash()
+ * @return array{personalizzato:int, hash_originale:?string}
+ */
+function qk_snapshot_stato_personalizzazione(?array $masterRecord, array $payload, bool $masterIdGiven, callable $hashFn): array
+{
+    if (!$masterIdGiven) {
+        return ['personalizzato' => 1, 'hash_originale' => null];
+    }
+    if (!$masterRecord) {
+        // master_id fornito ma record non trovato: comportamento invariato
+        // rispetto al codice originale (personalizzato=0, hash=null).
+        return ['personalizzato' => 0, 'hash_originale' => null];
+    }
+    $masterHash = $hashFn($masterRecord);
+    $payloadHash = $hashFn($payload);
+    return [
+        'personalizzato' => ($masterHash !== $payloadHash) ? 1 : 0,
+        'hash_originale' => $masterHash,
+    ];
+}
+
+/**
  * Salva o aggiorna un record di snapshot per l'indirizzo di consegna di un documento.
  *
  * @param PDO      $pdo Database PDO connection
@@ -60,21 +92,15 @@ function qk_generate_contact_hash(?array $cont): string
 function qk_upsert_document_address(PDO $pdo, array $payload, ?int $existingId = null): int
 {
     $masterId = ($payload['indirizzo_master_id'] ?? '') !== '' ? (int)$payload['indirizzo_master_id'] : null;
-    $masterHash = null;
-    $personalizzato = 0;
-
+    $masterAddr = null;
     if ($masterId !== null) {
         $st = $pdo->prepare('SELECT * FROM indirizzi WHERE id = ?');
         $st->execute([$masterId]);
-        $masterAddr = $st->fetch(PDO::FETCH_ASSOC);
-        if ($masterAddr) {
-            $masterHash = qk_generate_address_hash($masterAddr);
-            $payloadHash = qk_generate_address_hash($payload);
-            $personalizzato = ($masterHash !== $payloadHash) ? 1 : 0;
-        }
-    } else {
-        $personalizzato = 1;
+        $masterAddr = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
+    $stato = qk_snapshot_stato_personalizzazione($masterAddr, $payload, $masterId !== null, 'qk_generate_address_hash');
+    $personalizzato = $stato['personalizzato'];
+    $masterHash = $stato['hash_originale'];
 
     $params = [
         $masterId,
@@ -123,21 +149,15 @@ function qk_upsert_document_address(PDO $pdo, array $payload, ?int $existingId =
 function qk_upsert_document_contact(PDO $pdo, array $payload, ?int $existingId = null): int
 {
     $masterId = ($payload['contatto_master_id'] ?? '') !== '' ? (int)$payload['contatto_master_id'] : null;
-    $masterHash = null;
-    $personalizzato = 0;
-
+    $masterCont = null;
     if ($masterId !== null) {
         $st = $pdo->prepare('SELECT * FROM clienti_fornitori WHERE id = ?');
         $st->execute([$masterId]);
-        $masterCont = $st->fetch(PDO::FETCH_ASSOC);
-        if ($masterCont) {
-            $masterHash = qk_generate_contact_hash($masterCont);
-            $payloadHash = qk_generate_contact_hash($payload);
-            $personalizzato = ($masterHash !== $payloadHash) ? 1 : 0;
-        }
-    } else {
-        $personalizzato = 1;
+        $masterCont = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
+    $stato = qk_snapshot_stato_personalizzazione($masterCont, $payload, $masterId !== null, 'qk_generate_contact_hash');
+    $personalizzato = $stato['personalizzato'];
+    $masterHash = $stato['hash_originale'];
 
     $params = [
         $masterId,
@@ -168,9 +188,13 @@ function qk_upsert_document_contact(PDO $pdo, array $payload, ?int $existingId =
 }
 
 /**
- * Recupera e restituisce i dati denormalizzati di azienda, cliente e consegna per l'integrit� storica.
+ * REPOSITORY: recupera dal DB i 3 record grezzi (azienda, cliente, consegna)
+ * necessari per costruire lo snapshot denormalizzato di un documento.
+ * Nessuna formattazione qui: solo accesso dati (Revisione Incrociata Sez.5.6.2/7.2.2).
+ *
+ * @return array{azienda: ?array, cliente: ?array, consegna: ?array}
  */
-function qk_denormalize_document_details(PDO $pdo, array $values): array
+function qk_fetch_document_entities(PDO $pdo, array $values): array
 {
     $azienda = null;
     if (!empty($values['azienda_interna_id'])) {
@@ -185,7 +209,7 @@ function qk_denormalize_document_details(PDO $pdo, array $values): array
             LIMIT 1
         ");
         $stAz->execute([(int)$values['azienda_interna_id']]);
-        $azienda = $stAz->fetch(PDO::FETCH_ASSOC);
+        $azienda = $stAz->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
     $cliente = null;
@@ -199,7 +223,7 @@ function qk_denormalize_document_details(PDO $pdo, array $values): array
             LIMIT 1
         ");
         $stCli->execute([(int)$values['cliente_id']]);
-        $cliente = $stCli->fetch(PDO::FETCH_ASSOC);
+        $cliente = $stCli->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
     $consegna = null;
@@ -219,38 +243,77 @@ function qk_denormalize_document_details(PDO $pdo, array $values): array
     } elseif (!empty($values['indirizzo_spedizione_id']) && is_numeric($values['indirizzo_spedizione_id'])) {
         $stInd = $pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
         $stInd->execute([(int)$values['indirizzo_spedizione_id']]);
-        $consegna = $stInd->fetch(PDO::FETCH_ASSOC);
+        $consegna = $stInd->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
-    $azienda_ragione_sociale = $azienda['ragione_sociale'] ?? null;
-    $azienda_partita_iva     = $azienda['partita_iva'] ?? null;
-    $azienda_codice_fiscale  = $azienda['codice_fiscale'] ?? null;
-    $azienda_indirizzo       = $azienda ? trim(($azienda['via'] ?? '') . ' ' . ($azienda['civico'] ?? '') . ', ' . ($azienda['cap'] ?? '') . ' ' . ($azienda['citta'] ?? '') . ' (' . ($azienda['provincia'] ?? '') . ')') : null;
-    $azienda_telefono        = $azienda['telefono'] ?? null;
-    $azienda_email           = $azienda['email'] ?? null;
-    $azienda_iban            = $azienda['iban_default'] ?? null;
+    return ['azienda' => $azienda, 'cliente' => $cliente, 'consegna' => $consegna];
+}
+
+/**
+ * Formatta una riga indirizzo (via/civico/cap/citta/provincia) in una singola
+ * stringa leggibile, omettendo i campi vuoti (Revisione Incrociata Sez.5.2.4/5.6.2):
+ * PRIMA di questa correzione, indirizzi con campi mancanti producevano
+ * stringhe tipo ",  ()" (virgola/spazi/parentesi vuote) perche' la concatenazione
+ * non filtrava le parti vuote. Restituisce null se non c'e' nulla da mostrare.
+ */
+function qk_format_indirizzo_stringa(?array $addr): ?string
+{
+    if (!$addr) {
+        return null;
+    }
+
+    $viaCivico = trim(($addr['via'] ?? '') . ' ' . ($addr['civico'] ?? ''));
+
+    $cittaParti = array_filter([
+        trim((string)($addr['cap'] ?? '')),
+        trim((string)($addr['citta'] ?? '')),
+    ], static fn($s) => $s !== '');
+    $cittaLinea = implode(' ', $cittaParti);
+
+    $provincia = trim((string)($addr['provincia'] ?? ''));
+    if ($provincia !== '' && $cittaLinea !== '') {
+        $cittaLinea .= ' (' . $provincia . ')';
+    } elseif ($provincia !== '') {
+        $cittaLinea = '(' . $provincia . ')';
+    }
+
+    $parti = array_filter([$viaCivico, $cittaLinea], static fn($s) => $s !== '');
+    $risultato = implode(', ', $parti);
+
+    return $risultato !== '' ? $risultato : null;
+}
+
+/**
+ * FORMATTER: trasforma le 3 entita' grezze (azienda/cliente/consegna) nel
+ * formato piatto atteso dai chiamanti di qk_denormalize_document_details().
+ * Funzione pura: nessun accesso a PDO/DB (Revisione Incrociata Sez.5.6.2/7.2.2),
+ * facilmente testabile in isolamento.
+ *
+ * @param array{azienda: ?array, cliente: ?array, consegna: ?array} $entities
+ */
+function qk_format_document_snapshot(array $entities): array
+{
+    $azienda  = $entities['azienda']  ?? null;
+    $cliente  = $entities['cliente']  ?? null;
+    $consegna = $entities['consegna'] ?? null;
 
     $cliente_label = '';
     if ($cliente) {
         $cliente_label = $cliente['ragione_sociale'] ?: trim(($cliente['nome'] ?? '') . ' ' . ($cliente['cognome'] ?? ''));
     }
-    $cliente_ragione_sociale = $cliente_label ?: null;
-    $cliente_partita_iva     = $cliente['partita_iva'] ?? null;
-    $cliente_codice_fiscale  = $cliente['codice_fiscale'] ?? null;
-    $cliente_indirizzo       = $cliente ? trim(($cliente['via'] ?? '') . ' ' . ($cliente['civico'] ?? '') . ', ' . ($cliente['cap'] ?? '') . ' ' . ($cliente['citta'] ?? '') . ' (' . ($cliente['provincia'] ?? '') . ')') : null;
 
     return [
-        'azienda_ragione_sociale' => $azienda_ragione_sociale,
-        'azienda_partita_iva'     => $azienda_partita_iva,
-        'azienda_codice_fiscale'  => $azienda_codice_fiscale,
-        'azienda_indirizzo'       => $azienda_indirizzo,
-        'azienda_telefono'        => $azienda_telefono,
-        'azienda_email'           => $azienda_email,
-        'azienda_iban'            => $azienda_iban,
-        'cliente_ragione_sociale' => $cliente_ragione_sociale,
-        'cliente_partita_iva'     => $cliente_partita_iva,
-        'cliente_codice_fiscale'  => $cliente_codice_fiscale,
-        'cliente_indirizzo'       => $cliente_indirizzo,
+        'azienda_ragione_sociale' => $azienda['ragione_sociale'] ?? null,
+        'azienda_partita_iva'     => $azienda['partita_iva'] ?? null,
+        'azienda_codice_fiscale'  => $azienda['codice_fiscale'] ?? null,
+        'azienda_indirizzo'       => qk_format_indirizzo_stringa($azienda),
+        'azienda_telefono'        => $azienda['telefono'] ?? null,
+        'azienda_email'           => $azienda['email'] ?? null,
+        'azienda_iban'            => $azienda['iban_default'] ?? null,
+        'cliente_ragione_sociale' => $cliente_label ?: null,
+        'cliente_partita_iva'     => $cliente['partita_iva'] ?? null,
+        'cliente_codice_fiscale'  => $cliente['codice_fiscale'] ?? null,
+        'cliente_indirizzo'       => qk_format_indirizzo_stringa($cliente),
         'consegna_via'            => $consegna['via'] ?? null,
         'consegna_civico'         => $consegna['civico'] ?? null,
         'consegna_cap'            => $consegna['cap'] ?? null,
@@ -264,3 +327,94 @@ function qk_denormalize_document_details(PDO $pdo, array $values): array
     ];
 }
 
+/**
+ * Recupera e restituisce i dati denormalizzati di azienda, cliente e consegna
+ * per l'integrita' storica. Ora e' un semplice orchestratore Repository+Formatter
+ * (Revisione Incrociata Sez.5.6.2/7.2.2): qk_fetch_document_entities() legge dal
+ * DB, qk_format_document_snapshot() formatta (funzione pura, testabile senza DB).
+ *
+ * NOTA COMPORTAMENTALE: questa correzione risolve anche il bug delle stringhe
+ * indirizzo con campi vuoti (es. ",  ()") descritto in Revisione Sez.5.2.4 -
+ * i documenti gia' salvati con quel bug NON vengono retroattivamente corretti
+ * (sono snapshot storici), ma i nuovi salvataggi useranno il formato pulito.
+ */
+function qk_denormalize_document_details(PDO $pdo, array $values): array
+{
+    $entities = qk_fetch_document_entities($pdo, $values);
+    return qk_format_document_snapshot($entities);
+}
+
+
+/**
+ * Risolve i dati dell'azienda interna emittente da mostrare in stampa
+ * (PDF/Word) su un documento di vendita (preventivo o ordine cliente),
+ * rispettando l'integrità storica (Revisione Incrociata §5.3.3, doc
+ * "00 - Anagrafica Unica" §3.3, fix 14/07/2026).
+ *
+ * PRIMA: la stampa rifaceva sempre una query dal vivo su aziende_interne,
+ * ignorando le colonne denormalizzate azienda_* già scritte correttamente
+ * sulla riga del documento alla creazione — un preventivo vecchio cambiava
+ * intestazione fiscale (ragione sociale, P.IVA...) a ogni ristampa se
+ * l'anagrafica dell'azienda cambiava nel frattempo, o se cambiava quale
+ * azienda fosse "predefinita". Duplicato identico in due punti di
+ * SalesQuotesController.php (generazione PDF e Word).
+ *
+ * ORA: se il documento ha le colonne azienda_* valorizzate (scritte da
+ * qk_denormalize_document_details() alla creazione/modifica), sono quelle a
+ * fare fede, senza query — il documento resta storicamente accurato. Il
+ * fallback dal vivo scatta SOLO per documenti legacy creati prima che queste
+ * colonne esistessero (azienda_ragione_sociale vuota), con lo stesso
+ * fallback a due livelli di prima (azienda_interna_id esplicito, poi
+ * predefinita = 1) MA con l'aggiunta del filtro attivo = 1 (Revisione
+ * §5.3.1/§5.3.2: un'azienda disattivata non deve mai essere scelta come
+ * emittente di default).
+ *
+ * header_path/logo_path (branding grafico) sono sempre risolti dal vivo,
+ * deliberatamente: rappresentano l'aspetto attuale dei documenti stampati,
+ * non un dato storico-fiscale da congelare — comportamento invariato.
+ *
+ * @param array $documento Riga di preventivi/ordini_clienti (deve contenere
+ *        almeno azienda_interna_id e, se presenti, le colonne azienda_*).
+ * @return array{ragione_sociale:?string, partita_iva:?string,
+ *         codice_fiscale:?string, indirizzo:?string, telefono:?string,
+ *         email:?string, iban_default:?string, header_path:?string,
+ *         logo_path:?string}
+ */
+function qk_resolve_azienda_emittente_stampa(PDO $pdo, array $documento): array
+{
+    // Branding: sempre dal vivo (vedi motivazione sopra).
+    $aziendaLive = null;
+    if (!empty($documento['azienda_interna_id'])) {
+        $st = $pdo->prepare(
+            "SELECT cf.*, az.*
+               FROM aziende_interne az
+               JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+              WHERE az.id = ? LIMIT 1"
+        );
+        $st->execute([(int) $documento['azienda_interna_id']]);
+        $aziendaLive = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+    if (!$aziendaLive) {
+        $st = $pdo->query(
+            "SELECT cf.*, az.*
+               FROM aziende_interne az
+               JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+              WHERE az.predefinita = 1 AND az.attivo = 1 LIMIT 1"
+        );
+        $aziendaLive = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    $frozen = !empty($documento['azienda_ragione_sociale']);
+
+    return [
+        'ragione_sociale' => $frozen ? $documento['azienda_ragione_sociale'] : ($aziendaLive['ragione_sociale'] ?? null),
+        'partita_iva'     => $frozen ? ($documento['azienda_partita_iva'] ?? null)    : ($aziendaLive['partita_iva'] ?? null),
+        'codice_fiscale'  => $frozen ? ($documento['azienda_codice_fiscale'] ?? null) : ($aziendaLive['codice_fiscale'] ?? null),
+        'indirizzo'       => $frozen ? ($documento['azienda_indirizzo'] ?? null)      : qk_format_indirizzo_stringa($aziendaLive ?: null),
+        'telefono'        => $frozen ? ($documento['azienda_telefono'] ?? null)       : ($aziendaLive['telefono'] ?? null),
+        'email'           => $frozen ? ($documento['azienda_email'] ?? null)          : ($aziendaLive['email'] ?? null),
+        'iban_default'    => $frozen ? ($documento['azienda_iban'] ?? null)           : ($aziendaLive['iban_default'] ?? null),
+        'header_path'     => $aziendaLive['header_path'] ?? null,
+        'logo_path'       => $aziendaLive['logo_path'] ?? null,
+    ];
+}

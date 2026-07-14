@@ -144,6 +144,24 @@ function qk_merge_note_commerciali_referente(?string $existing, ?string $referen
  * @param array<string, string> $values Form values (customers keys)
  * @return array{soggetto: array, dettagli: array, indirizzo: ?array}
  */
+/**
+ * Converte una stringa numerica in formato italiano (virgola decimale) in
+ * float, con un default per stringa vuota. Prima duplicata identica (stesso
+ * pattern str_replace(',', '.', ...)) in qk_cliente_prepare_row() (campo
+ * sconto) e qk_fornitore_prepare_row() (campo minimo_ordine_euro) - vedi
+ * Revisione Incrociata Sez.7.2.1. Esiste lo stesso identico pattern anche in
+ * altri ~18 punti del codice fuori da questo dominio (Prodotti, Acquisti,
+ * Vendite, Magazzino) - non toccati qui perche' fuori scope, ma segnalati.
+ */
+function qk_parse_float_it(?string $raw, ?float $default = null): ?float
+{
+    $raw = trim((string) $raw);
+    if ($raw === '') {
+        return $default;
+    }
+    return (float) str_replace(',', '.', $raw);
+}
+
 function qk_cliente_prepare_row(array $values, ?string $existingNoteCommerciali = null): array
 {
     $tipoSogg = qk_form_tipo_soggetto($values['type'] ?? 'privato');
@@ -185,8 +203,7 @@ function qk_cliente_prepare_row(array $values, ?string $existingNoteCommerciali 
         'attivo'            => qk_form_attivo($values['status'] ?? 'active'),
     ];
 
-    $discount = trim((string) ($values['discount'] ?? ''));
-    $sconto = $discount === '' ? 0.0 : (float) str_replace(',', '.', $discount);
+    $sconto = qk_parse_float_it($values['discount'] ?? '', 0.0);
 
     $dettagli = [
         'tipo_cliente'         => qk_map_category_to_tipo_cliente($values['category'] ?? ''),
@@ -268,39 +285,96 @@ function qk_upsert_indirizzo(PDO $pdo, int $soggettoId, ?array $indirizzo): void
     ]);
 }
 
+/**
+ * Inserisce o aggiorna la riga "soggetto" (record base) in clienti_fornitori.
+ * Condivisa da cliente e fornitore (Revisione Incrociata Sez.7.2.1).
+ *
+ * MOTIVAZIONE (analisi del 2026-07-14): prima, insert e update per il
+ * fornitore scrivevano due insiemi di colonne DIVERSI (l'update "dimenticava"
+ * tipo_soggetto/nome/cognome/cellulare rispetto all'insert) perche' il codice
+ * SQL era scritto due volte, in due punti diversi, ed era libero di divergere
+ * nel tempo. Con questa funzione unica, insert e update leggono sempre lo
+ * stesso identico elenco di colonne dallo stesso array $soggetto: non possono
+ * piu' divergere per costruzione, ne' oggi ne' in futuro se si aggiungeranno
+ * altri campi. Effetto collaterale positivo: corregge anche il bug latente
+ * di qk_update_fornitore() (colonne mancanti nell'UPDATE).
+ *
+ * @param array $soggetto Deve contenere le chiavi: tipo, tipo_soggetto,
+ *        ragione_sociale, nome, cognome, partita_iva, codice_fiscale, email,
+ *        telefono, cellulare, pec, sito_web, note, attivo (esattamente le
+ *        chiavi gia' prodotte da qk_cliente_prepare_row()/qk_fornitore_prepare_row()).
+ * @param int|null $existingId null per creare un nuovo soggetto (INSERT),
+ *        altrimenti l'id del soggetto esistente da aggiornare (UPDATE).
+ *        'codice' e 'tipo' sono scritti solo in creazione: sono considerati
+ *        immutabili una volta assegnati (comportamento invariato rispetto
+ *        al codice originale, che gia' li escludeva dall'UPDATE).
+ * @param string $codicePrefix Prefisso per qk_next_codice() (es. 'CLI', 'FOR').
+ *        Usato solo in creazione, ignorato in aggiornamento.
+ * @return int L'id del soggetto (nuovo o esistente)
+ */
+function qk_persist_soggetto_clienti_fornitori(PDO $pdo, array $soggetto, ?int $existingId, string $codicePrefix): int
+{
+    if ($existingId === null) {
+        $codice = qk_next_codice($pdo, $codicePrefix);
+        $stmt = $pdo->prepare(
+            'INSERT INTO clienti_fornitori (
+                codice, tipo, tipo_soggetto, ragione_sociale, nome, cognome,
+                partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $codice,
+            $soggetto['tipo'],
+            $soggetto['tipo_soggetto'],
+            $soggetto['ragione_sociale'],
+            $soggetto['nome'],
+            $soggetto['cognome'],
+            $soggetto['partita_iva'],
+            $soggetto['codice_fiscale'],
+            $soggetto['email'],
+            $soggetto['telefono'],
+            $soggetto['cellulare'],
+            $soggetto['pec'],
+            $soggetto['sito_web'],
+            $soggetto['note'],
+            $soggetto['attivo'],
+        ]);
+        return (int) $pdo->lastInsertId();
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE clienti_fornitori SET
+            tipo_soggetto = ?, ragione_sociale = ?, nome = ?, cognome = ?,
+            partita_iva = ?, codice_fiscale = ?, email = ?, telefono = ?, cellulare = ?,
+            pec = ?, sito_web = ?, note = ?, attivo = ?
+         WHERE id = ?'
+    );
+    $stmt->execute([
+        $soggetto['tipo_soggetto'],
+        $soggetto['ragione_sociale'],
+        $soggetto['nome'],
+        $soggetto['cognome'],
+        $soggetto['partita_iva'],
+        $soggetto['codice_fiscale'],
+        $soggetto['email'],
+        $soggetto['telefono'],
+        $soggetto['cellulare'],
+        $soggetto['pec'],
+        $soggetto['sito_web'],
+        $soggetto['note'],
+        $soggetto['attivo'],
+        $existingId,
+    ]);
+    return $existingId;
+}
+
 function qk_insert_cliente(PDO $pdo, array $values): int
 {
     $prep = qk_cliente_prepare_row($values, null);
     $pdo->beginTransaction();
     try {
-        $codice = qk_next_codice($pdo, 'CLI');
         $s = $prep['soggetto'];
-        $sql = 'INSERT INTO clienti_fornitori (
-            codice, tipo, tipo_soggetto, ragione_sociale, nome, cognome,
-            partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo
-        ) VALUES (
-            :codice, :tipo, :tipo_soggetto, :ragione_sociale, :nome, :cognome,
-            :partita_iva, :codice_fiscale, :email, :telefono, :cellulare, :pec, :sito_web, :note, :attivo
-        )';
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            ':codice'          => $codice,
-            ':tipo'            => $s['tipo'],
-            ':tipo_soggetto'   => $s['tipo_soggetto'],
-            ':ragione_sociale' => $s['ragione_sociale'],
-            ':nome'            => $s['nome'],
-            ':cognome'         => $s['cognome'],
-            ':partita_iva'     => $s['partita_iva'],
-            ':codice_fiscale'  => $s['codice_fiscale'],
-            ':email'           => $s['email'],
-            ':telefono'        => $s['telefono'],
-            ':cellulare'       => $s['cellulare'],
-            ':pec'             => $s['pec'],
-            ':sito_web'        => $s['sito_web'],
-            ':note'            => $s['note'],
-            ':attivo'          => $s['attivo'],
-        ]);
-        $id = (int) $pdo->lastInsertId();
+        $id = qk_persist_soggetto_clienti_fornitori($pdo, $s, null, 'CLI');
 
         $d = $prep['dettagli'];
         $tipo_cliente_id = qk_get_tipo_cliente_id_by_code($pdo, $d['tipo_cliente']);
@@ -386,29 +460,7 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
         $prep = qk_cliente_prepare_row($values, $existingNc !== false ? (string) $existingNc : null);
 
         $s = $prep['soggetto'];
-        $upd = $pdo->prepare(
-            'UPDATE clienti_fornitori SET
-                tipo_soggetto = ?, ragione_sociale = ?, nome = ?, cognome = ?,
-                partita_iva = ?, codice_fiscale = ?, email = ?, telefono = ?, cellulare = ?,
-                pec = ?, sito_web = ?, note = ?, attivo = ?
-             WHERE id = ?'
-        );
-        $upd->execute([
-            $s['tipo_soggetto'],
-            $s['ragione_sociale'],
-            $s['nome'],
-            $s['cognome'],
-            $s['partita_iva'],
-            $s['codice_fiscale'],
-            $s['email'],
-            $s['telefono'],
-            $s['cellulare'],
-            $s['pec'],
-            $s['sito_web'],
-            $s['note'],
-            $s['attivo'],
-            $id,
-        ]);
+        qk_persist_soggetto_clienti_fornitori($pdo, $s, $id, 'CLI');
 
         $d = $prep['dettagli'];
         $tipo_cliente_id = qk_get_tipo_cliente_id_by_code($pdo, $d['tipo_cliente']);
@@ -640,8 +692,7 @@ function qk_fornitore_prepare_row(array $values): array
     $lead = trim((string) ($values['lead_time'] ?? ''));
     $leadDays = $lead === '' ? null : (int) $lead;
 
-    $minEuro = trim((string) ($values['min_order'] ?? ''));
-    $minEuroVal = $minEuro === '' ? null : (float) str_replace(',', '.', $minEuro);
+    $minEuroVal = qk_parse_float_it($values['min_order'] ?? '', null);
 
     $dettagli = [
         'condizioni_pagamento'            => qk_null_if_empty($values['payment_terms'] ?? ''),
@@ -662,34 +713,8 @@ function qk_insert_fornitore(PDO $pdo, array $values): int
     $prep = qk_fornitore_prepare_row($values);
     $pdo->beginTransaction();
     try {
-        $codice = qk_next_codice($pdo, 'FOR');
         $s = $prep['soggetto'];
-        $stmt = $pdo->prepare(
-            'INSERT INTO clienti_fornitori (
-                codice, tipo, tipo_soggetto, ragione_sociale, nome, cognome,
-                partita_iva, codice_fiscale, email, telefono, cellulare, pec, sito_web, note, attivo
-            ) VALUES (
-                ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-            )'
-        );
-        $stmt->execute([
-            $codice,
-            $s['tipo'],
-            $s['tipo_soggetto'],
-            $s['ragione_sociale'],
-            $s['nome'],
-            $s['cognome'],
-            $s['partita_iva'],
-            $s['codice_fiscale'],
-            $s['email'],
-            $s['telefono'],
-            $s['cellulare'],
-            $s['pec'],
-            $s['sito_web'],
-            $s['note'],
-            $s['attivo'],
-        ]);
-        $id = (int) $pdo->lastInsertId();
+        $id = qk_persist_soggetto_clienti_fornitori($pdo, $s, null, 'FOR');
 
         $d = $prep['dettagli'];
         $pdo->prepare(
@@ -733,23 +758,13 @@ function qk_update_fornitore(PDO $pdo, int $id, array $values): void
         }
 
         $s = $prep['soggetto'];
-        $pdo->prepare(
-            'UPDATE clienti_fornitori SET
-                ragione_sociale = ?, partita_iva = ?, codice_fiscale = ?, email = ?, telefono = ?,
-                pec = ?, sito_web = ?, note = ?, attivo = ?
-             WHERE id = ?'
-        )->execute([
-            $s['ragione_sociale'],
-            $s['partita_iva'],
-            $s['codice_fiscale'],
-            $s['email'],
-            $s['telefono'],
-            $s['pec'],
-            $s['sito_web'],
-            $s['note'],
-            $s['attivo'],
-            $id,
-        ]);
+        // NOTA (correzione 2026-07-14, Revisione Incrociata Sez.7.2.1): prima
+        // questo UPDATE scriveva solo 9 delle 13 colonne mutabili (mancavano
+        // tipo_soggetto/nome/cognome/cellulare, presenti invece in
+        // qk_insert_fornitore()). Usando la stessa funzione condivisa
+        // dell'insert, l'update scrive ora lo stesso identico set di colonne:
+        // struttralmente non puo' piu' divergere.
+        qk_persist_soggetto_clienti_fornitori($pdo, $s, $id, 'FOR');
 
         $d = $prep['dettagli'];
         $chk = $pdo->prepare('SELECT 1 FROM dettagli_fornitori WHERE soggetto_id = ?');
@@ -925,165 +940,77 @@ function qk_db_user_message(Throwable $e): string
 // =============================================================================
 
 /**
- * Restituisce tutti i contatti di un fornitore, ordinati per cognome/nome.
+ * Restituisce tutti i contatti collegati a un cliente o fornitore, ordinati
+ * per cognome/nome. Funzione generica condivisa (Revisione Incrociata
+ * Sez.7.2.1): unifica qk_list_contatti_cliente()/qk_list_contatti_fornitore(),
+ * prima identiche a parte il filtro sul campo tipo.
+ *
+ * NOTA COMPORTAMENTALE (comportamento pre-esistente, non introdotto qui):
+ * la versione "fornitore" originale non filtrava affatto per tipo (solo
+ * parent_id), mentre la versione "cliente" filtrava tipo IN ('cliente','entrambi').
+ * Per non alterare il comportamento esistente, $tipoFiltro � opzionale: null
+ * per il fornitore (nessun filtro, come prima), 'cliente' per il cliente.
  *
  * @return list<array{id:int, nome:string, cognome:string, email:string,
  *                    telefono:string, cellulare:string, ruolo:string}>
  */
+function qk_list_contatti_generico(PDO $pdo, int $parent_id, ?string $tipoFiltro): array
+{
+    $sql = "SELECT id, nome, cognome, email, telefono, cellulare, note AS ruolo
+              FROM clienti_fornitori
+             WHERE parent_id = ?";
+    if ($tipoFiltro !== null) {
+        $sql .= " AND tipo IN ('" . $tipoFiltro . "', 'entrambi')";
+    }
+    $sql .= " ORDER BY cognome COLLATE NOCASE, nome COLLATE NOCASE";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$parent_id]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    return array_map(static function (array $r): array {
+        return [
+            'id'        => (int) $r['id'],
+            'nome'      => (string) ($r['nome']      ?? ''),
+            'cognome'   => (string) ($r['cognome']   ?? ''),
+            'email'     => (string) ($r['email']     ?? ''),
+            'telefono'  => (string) ($r['telefono']  ?? ''),
+            'cellulare' => (string) ($r['cellulare'] ?? ''),
+            'ruolo'     => (string) ($r['ruolo']     ?? ''),
+        ];
+    }, $rows);
+}
+
+/** Restituisce tutti i contatti di un fornitore, ordinati per cognome/nome. */
 function qk_list_contatti_fornitore(PDO $pdo, int $parent_id): array
 {
-    $stmt = $pdo->prepare(
-        "SELECT id, nome, cognome, email, telefono, cellulare, note AS ruolo
-           FROM clienti_fornitori
-          WHERE parent_id = ?
-          ORDER BY cognome COLLATE NOCASE, nome COLLATE NOCASE"
-    );
-    $stmt->execute([$parent_id]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    return array_map(static function (array $r): array {
-        return [
-            'id'        => (int) $r['id'],
-            'nome'      => (string) ($r['nome']      ?? ''),
-            'cognome'   => (string) ($r['cognome']   ?? ''),
-            'email'     => (string) ($r['email']     ?? ''),
-            'telefono'  => (string) ($r['telefono']  ?? ''),
-            'cellulare' => (string) ($r['cellulare'] ?? ''),
-            'ruolo'     => (string) ($r['ruolo']     ?? ''),
-        ];
-    }, $rows);
+    return qk_list_contatti_generico($pdo, $parent_id, null);
 }
 
-/**
- * Crea un nuovo contatto collegato a un fornitore.
- *
- * @return int  l'id del nuovo record
- */
-function qk_insert_contatto_fornitore(PDO $pdo, int $parent_id, array $v): int
-{
-    // Verifica che il parent esista ed è un fornitore
-    $check = $pdo->prepare(
-        "SELECT id FROM clienti_fornitori WHERE id = ? AND tipo IN ('fornitore','entrambi') LIMIT 1"
-    );
-    $check->execute([$parent_id]);
-    if (!$check->fetchColumn()) {
-        throw new \RuntimeException('Fornitore non trovato.');
-    }
-
-    $codice = qk_next_codice($pdo, 'CONT');
-
-    $stmt = $pdo->prepare(
-        "INSERT INTO clienti_fornitori
-            (parent_id, codice, tipo, tipo_soggetto, nome, cognome, email, telefono, cellulare, note, attivo, updated_at)
-         VALUES
-            (?, ?, 'fornitore', 'privato', ?, ?, ?, ?, ?, ?, 1, datetime('now'))"
-    );
-    $stmt->execute([
-        $parent_id,
-        $codice,
-        qk_null_if_empty($v['nome']      ?? ''),
-        qk_null_if_empty($v['cognome']   ?? ''),
-        qk_null_if_empty($v['email']     ?? ''),
-        qk_null_if_empty($v['telefono']  ?? ''),
-        qk_null_if_empty($v['cellulare'] ?? ''),
-        qk_null_if_empty($v['ruolo']     ?? ''),
-    ]);
-
-
-    return (int) $pdo->lastInsertId();
-}
-
-/**
- * Aggiorna un contatto esistente, verificando che appartenga al fornitore corretto.
- */
-function qk_update_contatto_fornitore(PDO $pdo, int $id, int $parent_id, array $v): void
-{
-    $stmt = $pdo->prepare(
-        "UPDATE clienti_fornitori
-            SET nome      = ?,
-                cognome   = ?,
-                email     = ?,
-                telefono  = ?,
-                cellulare = ?,
-                note      = ?,
-                updated_at = datetime('now')
-          WHERE id = ? AND parent_id = ?"
-    );
-    $stmt->execute([
-        qk_null_if_empty($v['nome']      ?? ''),
-        qk_null_if_empty($v['cognome']   ?? ''),
-        qk_null_if_empty($v['email']     ?? ''),
-        qk_null_if_empty($v['telefono']  ?? ''),
-        qk_null_if_empty($v['cellulare'] ?? ''),
-        qk_null_if_empty($v['ruolo']     ?? ''),
-        $id,
-        $parent_id,
-    ]);
-
-    if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Contatto non trovato o non appartiene a questo fornitore.');
-    }
-}
-
-/**
- * Elimina un contatto, verificando che appartenga al fornitore corretto.
- */
-function qk_delete_contatto_fornitore(PDO $pdo, int $id, int $parent_id): void
-{
-    $stmt = $pdo->prepare(
-        'DELETE FROM clienti_fornitori WHERE id = ? AND parent_id = ?'
-    );
-    $stmt->execute([$id, $parent_id]);
-
-    if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Contatto non trovato o non appartiene a questo fornitore.');
-    }
-}
-
-/**
- * Ritorna la lista dei contatti collegati a un cliente.
- *
- * @return list<array{id:int, nome:string, cognome:string, email:string,
- *                    telefono:string, cellulare:string, ruolo:string}>
- */
+/** Ritorna la lista dei contatti collegati a un cliente. */
 function qk_list_contatti_cliente(PDO $pdo, int $parent_id): array
 {
-    $stmt = $pdo->prepare(
-        "SELECT id, nome, cognome, email, telefono, cellulare, note AS ruolo
-           FROM clienti_fornitori
-          WHERE parent_id = ? AND tipo IN ('cliente', 'entrambi')
-          ORDER BY cognome COLLATE NOCASE, nome COLLATE NOCASE"
-    );
-    $stmt->execute([$parent_id]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    return array_map(static function (array $r): array {
-        return [
-            'id'        => (int) $r['id'],
-            'nome'      => (string) ($r['nome']      ?? ''),
-            'cognome'   => (string) ($r['cognome']   ?? ''),
-            'email'     => (string) ($r['email']     ?? ''),
-            'telefono'  => (string) ($r['telefono']  ?? ''),
-            'cellulare' => (string) ($r['cellulare'] ?? ''),
-            'ruolo'     => (string) ($r['ruolo']     ?? ''),
-        ];
-    }, $rows);
+    return qk_list_contatti_generico($pdo, $parent_id, 'cliente');
 }
 
 /**
- * Crea un nuovo contatto collegato a un cliente.
+ * Crea un nuovo contatto collegato a un cliente o fornitore. Funzione
+ * generica condivisa (Revisione Incrociata Sez.7.2.1): unifica
+ * qk_insert_contatto_cliente()/qk_insert_contatto_fornitore(), prima
+ * identiche a parte la stringa 'tipo' e i messaggi d'errore.
  *
+ * @param string $tipo 'cliente' o 'fornitore'
  * @return int l'id del nuovo record
  */
-function qk_insert_contatto_cliente(PDO $pdo, int $parent_id, array $v): int
+function qk_insert_contatto_generico(PDO $pdo, int $parent_id, array $v, string $tipo): int
 {
-    // Verifica che il parent esista ed è un cliente
+    // Verifica che il parent esista ed � del tipo atteso
     $check = $pdo->prepare(
-        "SELECT id FROM clienti_fornitori WHERE id = ? AND tipo IN ('cliente','entrambi') LIMIT 1"
+        "SELECT id FROM clienti_fornitori WHERE id = ? AND tipo IN (?, 'entrambi') LIMIT 1"
     );
-    $check->execute([$parent_id]);
+    $check->execute([$parent_id, $tipo]);
     if (!$check->fetchColumn()) {
-        throw new \RuntimeException('Cliente non trovato.');
+        throw new \RuntimeException(ucfirst($tipo) . ' non trovato.');
     }
 
     $codice = qk_next_codice($pdo, 'CONT');
@@ -1092,11 +1019,12 @@ function qk_insert_contatto_cliente(PDO $pdo, int $parent_id, array $v): int
         "INSERT INTO clienti_fornitori
             (parent_id, codice, tipo, tipo_soggetto, nome, cognome, email, telefono, cellulare, note, attivo, updated_at)
          VALUES
-            (?, ?, 'cliente', 'privato', ?, ?, ?, ?, ?, ?, 1, datetime('now'))"
+            (?, ?, ?, 'privato', ?, ?, ?, ?, ?, ?, 1, datetime('now'))"
     );
     $stmt->execute([
         $parent_id,
         $codice,
+        $tipo,
         qk_null_if_empty($v['nome']      ?? ''),
         qk_null_if_empty($v['cognome']   ?? ''),
         qk_null_if_empty($v['email']     ?? ''),
@@ -1108,10 +1036,26 @@ function qk_insert_contatto_cliente(PDO $pdo, int $parent_id, array $v): int
     return (int) $pdo->lastInsertId();
 }
 
+/** Crea un nuovo contatto collegato a un fornitore. @return int l'id del nuovo record */
+function qk_insert_contatto_fornitore(PDO $pdo, int $parent_id, array $v): int
+{
+    return qk_insert_contatto_generico($pdo, $parent_id, $v, 'fornitore');
+}
+
+/** Crea un nuovo contatto collegato a un cliente. @return int l'id del nuovo record */
+function qk_insert_contatto_cliente(PDO $pdo, int $parent_id, array $v): int
+{
+    return qk_insert_contatto_generico($pdo, $parent_id, $v, 'cliente');
+}
+
 /**
- * Aggiorna un contatto esistente, verificando che appartenga al cliente corretto.
+ * Aggiorna un contatto esistente, verificando che appartenga al
+ * cliente/fornitore corretto. Funzione generica condivisa (Revisione
+ * Incrociata Sez.7.2.1).
+ *
+ * @param string $tipoLabel 'cliente' o 'fornitore', solo per il messaggio d'errore
  */
-function qk_update_contatto_cliente(PDO $pdo, int $id, int $parent_id, array $v): void
+function qk_update_contatto_generico(PDO $pdo, int $id, int $parent_id, array $v, string $tipoLabel): void
 {
     $stmt = $pdo->prepare(
         "UPDATE clienti_fornitori
@@ -1136,14 +1080,29 @@ function qk_update_contatto_cliente(PDO $pdo, int $id, int $parent_id, array $v)
     ]);
 
     if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Contatto non trovato o non appartiene a questo cliente.');
+        throw new \RuntimeException('Contatto non trovato o non appartiene a questo ' . $tipoLabel . '.');
     }
 }
 
+/** Aggiorna un contatto esistente, verificando che appartenga al fornitore corretto. */
+function qk_update_contatto_fornitore(PDO $pdo, int $id, int $parent_id, array $v): void
+{
+    qk_update_contatto_generico($pdo, $id, $parent_id, $v, 'fornitore');
+}
+
+/** Aggiorna un contatto esistente, verificando che appartenga al cliente corretto. */
+function qk_update_contatto_cliente(PDO $pdo, int $id, int $parent_id, array $v): void
+{
+    qk_update_contatto_generico($pdo, $id, $parent_id, $v, 'cliente');
+}
+
 /**
- * Elimina un contatto, verificando che appartenga al cliente corretto.
+ * Elimina un contatto, verificando che appartenga al cliente/fornitore
+ * corretto. Funzione generica condivisa (Revisione Incrociata Sez.7.2.1).
+ *
+ * @param string $tipoLabel 'cliente' o 'fornitore', solo per il messaggio d'errore
  */
-function qk_delete_contatto_cliente(PDO $pdo, int $id, int $parent_id): void
+function qk_delete_contatto_generico(PDO $pdo, int $id, int $parent_id, string $tipoLabel): void
 {
     $stmt = $pdo->prepare(
         'DELETE FROM clienti_fornitori WHERE id = ? AND parent_id = ?'
@@ -1151,8 +1110,20 @@ function qk_delete_contatto_cliente(PDO $pdo, int $id, int $parent_id): void
     $stmt->execute([$id, $parent_id]);
 
     if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Contatto non trovato o non appartiene a questo cliente.');
+        throw new \RuntimeException('Contatto non trovato o non appartiene a questo ' . $tipoLabel . '.');
     }
+}
+
+/** Elimina un contatto, verificando che appartenga al fornitore corretto. */
+function qk_delete_contatto_fornitore(PDO $pdo, int $id, int $parent_id): void
+{
+    qk_delete_contatto_generico($pdo, $id, $parent_id, 'fornitore');
+}
+
+/** Elimina un contatto, verificando che appartenga al cliente corretto. */
+function qk_delete_contatto_cliente(PDO $pdo, int $id, int $parent_id): void
+{
+    qk_delete_contatto_generico($pdo, $id, $parent_id, 'cliente');
 }
 
 // =============================================================================
@@ -1217,42 +1188,67 @@ function qk_list_indirizzi(PDO $pdo, int $soggetto_id): array
  */
 function qk_insert_indirizzo(PDO $pdo, int $soggetto_id, array $v): int
 {
-    if ((bool) ($v['predefinito'] ?? false)) {
-        $pdo->prepare(
-            "UPDATE indirizzi SET predefinito = 0 WHERE soggetto_id = ? AND tipo = ?"
-        )->execute([$soggetto_id, $v['tipo']]);
+    $isPredefinito = (bool) ($v['predefinito'] ?? false);
+
+    // Revisione Incrociata §5.2.2: reset del predefinito precedente + scrittura del
+    // nuovo vanno avvolti in una transazione, altrimenti due richieste quasi
+    // contemporanee sullo stesso soggetto potrebbero lasciare due predefiniti (o
+    // zero) per lo stesso tipo. La transazione si apre solo quando serve davvero
+    // (predefinito=1), per non appesantire il caso comune.
+    $ownTransaction = $isPredefinito && !$pdo->inTransaction();
+    if ($ownTransaction) {
+        $pdo->beginTransaction();
     }
 
-    $stmt = $pdo->prepare(
-        "INSERT INTO indirizzi
-            (soggetto_id, tipo, nome_sede, predefinito,
-             referente_consegna, telefono_consegna,
-             presso, via, civico, cap, citta, provincia, nazione,
-             note_consegna, attivo)
-         VALUES
-            (?, ?, ?, ?,
-             ?, ?,
-             ?, ?, ?, ?, ?, ?, ?,
-             ?, 1)"
-    );
-    $stmt->execute([
-        $soggetto_id,
-        $v['tipo'],
-        qk_null_if_empty($v['nome_sede']          ?? ''),
-        (int) (bool) ($v['predefinito']            ?? false),
-        qk_null_if_empty($v['referente_consegna']  ?? ''),
-        qk_null_if_empty($v['telefono_consegna']   ?? ''),
-        qk_null_if_empty($v['presso']              ?? ''),
-        $v['via'],
-        qk_null_if_empty($v['civico']              ?? ''),
-        $v['cap'],
-        $v['citta'],
-        qk_null_if_empty($v['provincia']           ?? ''),
-        $v['nazione'] ?: 'IT',
-        qk_null_if_empty($v['note_consegna']       ?? ''),
-    ]);
+    try {
+        if ($isPredefinito) {
+            $pdo->prepare(
+                "UPDATE indirizzi SET predefinito = 0 WHERE soggetto_id = ? AND tipo = ?"
+            )->execute([$soggetto_id, $v['tipo']]);
+        }
 
-    return (int) $pdo->lastInsertId();
+        $stmt = $pdo->prepare(
+            "INSERT INTO indirizzi
+                (soggetto_id, tipo, nome_sede, predefinito,
+                 referente_consegna, telefono_consegna,
+                 presso, via, civico, cap, citta, provincia, nazione,
+                 note_consegna, attivo)
+             VALUES
+                (?, ?, ?, ?,
+                 ?, ?,
+                 ?, ?, ?, ?, ?, ?, ?,
+                 ?, 1)"
+        );
+        $stmt->execute([
+            $soggetto_id,
+            $v['tipo'],
+            qk_null_if_empty($v['nome_sede']          ?? ''),
+            (int) $isPredefinito,
+            qk_null_if_empty($v['referente_consegna']  ?? ''),
+            qk_null_if_empty($v['telefono_consegna']   ?? ''),
+            qk_null_if_empty($v['presso']              ?? ''),
+            $v['via'],
+            qk_null_if_empty($v['civico']              ?? ''),
+            $v['cap'],
+            $v['citta'],
+            qk_null_if_empty($v['provincia']           ?? ''),
+            $v['nazione'] ?: 'IT',
+            qk_null_if_empty($v['note_consegna']       ?? ''),
+        ]);
+
+        $newId = (int) $pdo->lastInsertId();
+
+        if ($ownTransaction) {
+            $pdo->commit();
+        }
+
+        return $newId;
+    } catch (\Throwable $e) {
+        if ($ownTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
 }
 
 /**
@@ -1261,49 +1257,69 @@ function qk_insert_indirizzo(PDO $pdo, int $soggetto_id, array $v): int
  */
 function qk_update_indirizzo(PDO $pdo, int $id, int $soggetto_id, array $v): void
 {
-    if ((bool) ($v['predefinito'] ?? false)) {
-        $pdo->prepare(
-            "UPDATE indirizzi SET predefinito = 0 WHERE soggetto_id = ? AND tipo = ? AND id != ?"
-        )->execute([$soggetto_id, $v['tipo'], $id]);
+    $isPredefinito = (bool) ($v['predefinito'] ?? false);
+
+    // Stessa protezione transazionale di qk_insert_indirizzo() — Revisione
+    // Incrociata §5.2.2. Vedi commento lì per il motivo.
+    $ownTransaction = $isPredefinito && !$pdo->inTransaction();
+    if ($ownTransaction) {
+        $pdo->beginTransaction();
     }
 
-    $stmt = $pdo->prepare(
-        "UPDATE indirizzi
-            SET tipo                = ?,
-                nome_sede           = ?,
-                predefinito         = ?,
-                referente_consegna  = ?,
-                telefono_consegna   = ?,
-                presso              = ?,
-                via                 = ?,
-                civico              = ?,
-                cap                 = ?,
-                citta               = ?,
-                provincia           = ?,
-                nazione             = ?,
-                note_consegna       = ?
-          WHERE id = ? AND soggetto_id = ?"
-    );
-    $stmt->execute([
-        $v['tipo'],
-        qk_null_if_empty($v['nome_sede']          ?? ''),
-        (int) (bool) ($v['predefinito']            ?? false),
-        qk_null_if_empty($v['referente_consegna']  ?? ''),
-        qk_null_if_empty($v['telefono_consegna']   ?? ''),
-        qk_null_if_empty($v['presso']              ?? ''),
-        $v['via'],
-        qk_null_if_empty($v['civico']              ?? ''),
-        $v['cap'],
-        $v['citta'],
-        qk_null_if_empty($v['provincia']           ?? ''),
-        $v['nazione'] ?: 'IT',
-        qk_null_if_empty($v['note_consegna']       ?? ''),
-        $id,
-        $soggetto_id,
-    ]);
+    try {
+        if ($isPredefinito) {
+            $pdo->prepare(
+                "UPDATE indirizzi SET predefinito = 0 WHERE soggetto_id = ? AND tipo = ? AND id != ?"
+            )->execute([$soggetto_id, $v['tipo'], $id]);
+        }
 
-    if ($stmt->rowCount() === 0) {
-        throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo soggetto.');
+        $stmt = $pdo->prepare(
+            "UPDATE indirizzi
+                SET tipo                = ?,
+                    nome_sede           = ?,
+                    predefinito         = ?,
+                    referente_consegna  = ?,
+                    telefono_consegna   = ?,
+                    presso              = ?,
+                    via                 = ?,
+                    civico              = ?,
+                    cap                 = ?,
+                    citta               = ?,
+                    provincia           = ?,
+                    nazione             = ?,
+                    note_consegna       = ?
+              WHERE id = ? AND soggetto_id = ?"
+        );
+        $stmt->execute([
+            $v['tipo'],
+            qk_null_if_empty($v['nome_sede']          ?? ''),
+            (int) $isPredefinito,
+            qk_null_if_empty($v['referente_consegna']  ?? ''),
+            qk_null_if_empty($v['telefono_consegna']   ?? ''),
+            qk_null_if_empty($v['presso']              ?? ''),
+            $v['via'],
+            qk_null_if_empty($v['civico']              ?? ''),
+            $v['cap'],
+            $v['citta'],
+            qk_null_if_empty($v['provincia']           ?? ''),
+            $v['nazione'] ?: 'IT',
+            qk_null_if_empty($v['note_consegna']       ?? ''),
+            $id,
+            $soggetto_id,
+        ]);
+
+        if ($stmt->rowCount() === 0) {
+            throw new \RuntimeException('Indirizzo non trovato o non appartiene a questo soggetto.');
+        }
+
+        if ($ownTransaction) {
+            $pdo->commit();
+        }
+    } catch (\Throwable $e) {
+        if ($ownTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
     }
 }
 
@@ -1339,6 +1355,146 @@ function qk_aziende_list(PDO $pdo): array
           ORDER BY az.predefinita DESC, cf.ragione_sociale COLLATE NOCASE"
     );
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Carica un'azienda interna completa (tutti i campi di clienti_fornitori e
+ * aziende_interne, utile per intestazioni di stampa PDF/Word) dato il suo id.
+ *
+ * NOTA: nessun filtro attivo=1 qui, di proposito. Questa funzione viene usata
+ * per risolvere l'azienda GIA' COLLEGATA a un documento esistente (RFQ,
+ * ordine...): un documento storico deve continuare a mostrare l'azienda che
+ * lo ha effettivamente emesso anche se quell'azienda e' stata disattivata nel
+ * frattempo (integrita' storica). Comportamento identico ai 4 punti duplicati
+ * originali in RfqController.php/PurchaseOrdersController.php, che non
+ * filtravano attivo. Per un elenco di aziende SELEZIONABILI (form, dropdown),
+ * usare invece qk_aziende_list(), che filtra attivo=1.
+ */
+function qk_azienda_interna_by_id(PDO $pdo, int $id): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT cf.*, az.*
+           FROM aziende_interne az
+           JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+          WHERE az.id = ?
+          LIMIT 1"
+    );
+    $stmt->execute([$id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+/**
+ * Carica l'azienda interna marcata come predefinita (stesso formato di
+ * qk_azienda_interna_by_id), filtrando attivo=1.
+ *
+ * CORRETTO il 14/07/2026 (era: nessun filtro attivo=1, stesso comportamento
+ * dei 4 punti duplicati originali in RfqController.php/PurchaseOrdersController.php).
+ * Questa funzione è usata solo come *fallback* quando un documento non ha
+ * ancora un'azienda_interna_id esplicita: in quel caso proporre un'azienda
+ * disattivata come emittente di un documento nuovo/da stampare oggi è un
+ * bug vero, non una scelta di integrità storica (a differenza del ramo con
+ * id esplicito in qk_resolve_azienda_emittente(), che resta intenzionalmente
+ * senza filtro attivo — vedi il docblock di qk_azienda_interna_by_id()).
+ * Vedi `00` §3.1 e `01`/`02` per il dettaglio della distinzione.
+ */
+function qk_azienda_predefinita(PDO $pdo): ?array
+{
+    $stmt = $pdo->query(
+        "SELECT cf.*, az.*
+           FROM aziende_interne az
+           JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+          WHERE az.predefinita = 1 AND az.attivo = 1
+          LIMIT 1"
+    );
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+/**
+ * Risolve l'azienda interna "emittente" per un documento (RFQ, offerta,
+ * ordine d'acquisto, preventivo/ordine di vendita): usa l'id esplicito se
+ * presente e trovato, altrimenti l'azienda marcata come predefinita.
+ *
+ * CORRETTO il 14/07/2026: due comportamenti distinti, non più identici:
+ * - id esplicito ($aziendaInternaId, sempre il valore già salvato sul
+ *   documento) → nessun filtro attivo=1, di proposito (integrità storica,
+ *   vedi qk_azienda_interna_by_id()): un documento già emesso deve
+ *   continuare a mostrare l'azienda che lo ha realmente emesso anche se
+ *   nel frattempo è stata disattivata.
+ * - fallback su predefinita (nessun id esplicito sul documento) → filtro
+ *   attivo=1 ora applicato in qk_azienda_predefinita(): proporre
+ *   un'azienda disattivata come emittente per un documento senza azienda
+ *   ancora assegnata era il bug reale (vedi `00` §3.1).
+ *
+ * Unifica la logica che prima era duplicata identica in RfqController.php
+ * (x2) e PurchaseOrdersController.php (x2) — vedi Revisione Incrociata,
+ * nota metodologica MVC/DRY in cima al documento, e §5.3.1/§7.1.1.
+ *
+ * @return array Array associativo dei dati azienda, o [] se nessuna azienda
+ *               è risolvibile (comportamento invariato per i chiamanti
+ *               esistenti, che già gestiscono l'array vuoto con `?:`/`??`).
+ */
+function qk_resolve_azienda_emittente(PDO $pdo, ?int $aziendaInternaId = null): array
+{
+    if ($aziendaInternaId) {
+        $az = qk_azienda_interna_by_id($pdo, $aziendaInternaId);
+        if ($az) {
+            return $az;
+        }
+    }
+    return qk_azienda_predefinita($pdo) ?? [];
+}
+
+/**
+ * Risolve e sincronizza in $_SESSION l'azienda interna "attiva" mostrata
+ * nella topbar: sessione → predefinita → prima disponibile. Restituisce
+ * null se non esiste alcuna azienda interna attiva.
+ *
+ * Estratta da includes/header.php (Revisione Incrociata §7.1.1): prima di
+ * questa correzione la stessa logica viveva inline dentro la View, con
+ * query dirette e scrittura di sessione mescolate alla presentazione.
+ * Resta un side-effect (scrive $_SESSION) perché header.php è incluso
+ * direttamente da diversi controller senza un hook comune "prima del
+ * render" — spostarlo in un vero passaggio Controller→View richiederebbe
+ * toccare ogni controller che include header.php; qui almeno la logica
+ * duplicata e le query dirette sono centralizzate in un solo posto.
+ *
+ * @param array|null $aziendeGiaCaricate Se il chiamante ha già una lista
+ *        aziende (es. header.php la usa anche per il dropdown), passarla qui
+ *        evita una seconda query identica a qk_aziende_list().
+ */
+function qk_resolve_azienda_attiva_sessione(PDO $pdo, ?array $aziendeGiaCaricate = null): ?array
+{
+    $aziende = $aziendeGiaCaricate ?? qk_aziende_list($pdo);
+    if (empty($aziende)) {
+        return null;
+    }
+
+    $sessId = $_SESSION['azienda_attiva_id'] ?? null;
+    $attiva = null;
+    if ($sessId) {
+        foreach ($aziende as $az) {
+            if ((int) $az['id'] === (int) $sessId) {
+                $attiva = $az;
+                break;
+            }
+        }
+    }
+    if (!$attiva) {
+        foreach ($aziende as $az) {
+            if ($az['predefinita'] == 1) {
+                $attiva = $az;
+                break;
+            }
+        }
+    }
+    if (!$attiva) {
+        $attiva = $aziende[0];
+    }
+
+    $_SESSION['azienda_attiva_id'] = (int) $attiva['id'];
+    return $attiva;
 }
 
 function qk_load_azienda_form(PDO $pdo, int $id): ?array
@@ -1576,36 +1732,73 @@ function qk_update_azienda(PDO $pdo, int $id, array $v): void
     }
 }
 
-function qk_delete_azienda(PDO $pdo, int $id): void
+/**
+ * Disattiva un'azienda interna (SOFT DELETE sempre: mai cancellazione fisica,
+ * perché aziende_interne è collegata a documenti storici tramite FK). Ritorna
+ * l'esito ('disattivato' o 'non_trovato') da passare a
+ * qk_esito_cancellazione_messaggio() — prima il controller mostrava sempre
+ * "rimossa con successo" anche quando in realtà non era stata trovata alcuna
+ * azienda con quell'id (return silenzioso), o quando si trattava solo di una
+ * disattivazione e non di un'eliminazione reale (Revisione §5.3.2/§7.2.2).
+ */
+function qk_delete_azienda(PDO $pdo, int $id): string
 {
+    $stmtLoad = $pdo->prepare("SELECT soggetto_id, predefinita FROM aziende_interne WHERE id = ?");
+    $stmtLoad->execute([$id]);
+    $azienda = $stmtLoad->fetch(PDO::FETCH_ASSOC);
+    if (!$azienda) {
+        return 'non_trovato';
+    }
+    $soggetto_id     = (int) $azienda['soggetto_id'];
+    $eraPredefinita  = (bool) $azienda['predefinita'];
+
     $pdo->beginTransaction();
     try {
-        $stmtLoad = $pdo->prepare("SELECT soggetto_id FROM aziende_interne WHERE id = ?");
-        $stmtLoad->execute([$id]);
-        $soggetto_id = $stmtLoad->fetchColumn();
-        if (!$soggetto_id) {
-            $pdo->rollBack();
-            return;
+        // Disattiva la riga specifica di aziende_interne (SOFT DELETE, mai
+        // fisica: collegata a documenti storici tramite FK RESTRICT). Azzera
+        // anche 'predefinita' qui stesso: un'azienda disattivata non deve mai
+        // restare selezionabile come emittente di default (Revisione §5.3.1).
+        $pdo->prepare("UPDATE aziende_interne SET attivo = 0, predefinita = 0 WHERE id = ?")->execute([$id]);
+
+        // Se era la predefinita, promuove un'altra azienda attiva al suo posto
+        // (la prima per id), invece di lasciare il fallback "predefinita = 1"
+        // senza alcuna azienda che lo soddisfi (Revisione §5.3.1/§5.3.2).
+        if ($eraPredefinita) {
+            $pdo->prepare(
+                "UPDATE aziende_interne SET predefinita = 1
+                  WHERE id = (SELECT id FROM aziende_interne WHERE attivo = 1 AND id != ? ORDER BY id LIMIT 1)"
+            )->execute([$id]);
         }
-
-        // Elimina/Disattiva record da aziende_interne (SOFT DELETE)
-        $pdo->prepare("UPDATE aziende_interne SET attivo = 0 WHERE id = ?")->execute([$id]);
-
-        // Elimina/Disattiva soggetto in clienti_fornitori
-        $pdo->prepare("UPDATE clienti_fornitori SET attivo = 0 WHERE id = ?")->execute([$soggetto_id]);
 
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
+
+    // Riusa la logica generica di cancellazione/soft-delete del soggetto
+    // clienti_fornitori sottostante (stessa funzione usata per clienti e
+    // fornitori puri) invece di duplicarla qui. La DELETE fisica tentata da
+    // qk_delete_soggetto() fallirà sempre in questo caso — aziende_interne.
+    // soggetto_id ha 'ON DELETE RESTRICT' e la riga aziende_interne non viene
+    // mai eliminata, solo disattivata sopra — quindi il risultato è
+    // deterministicamente lo stesso soft-delete del comportamento precedente,
+    // senza più duplicare la query UPDATE clienti_fornitori SET attivo = 0.
+    qk_delete_soggetto($pdo, $soggetto_id);
+
+    return 'disattivato';
 }
 
 /**
- * Elimina fisicamente un cliente/fornitore se non ci sono vincoli di integrità referenziale,
- * altrimenti esegue un soft-delete impostando attivo = 0.
+ * Elimina fisicamente un cliente/fornitore se non ci sono vincoli di integrità
+ * referenziale; altrimenti esegue un soft-delete (attivo = 0). Ritorna
+ * l'esito ('eliminato' o 'disattivato') da passare a
+ * qk_esito_cancellazione_messaggio() — prima il chiamante non aveva modo di
+ * sapere quale dei due rami si era verificato, e mostrava sempre lo stesso
+ * messaggio "rimosso con successo" anche quando il record era in realtà
+ * ancora presente, solo disattivato (Revisione §7.2.2).
  */
-function qk_delete_soggetto(PDO $pdo, int $id): void
+function qk_delete_soggetto(PDO $pdo, int $id): string
 {
     // Proviamo la cancellazione fisica abilitando i vincoli di FK
     $pdo->beginTransaction();
@@ -1614,13 +1807,107 @@ function qk_delete_soggetto(PDO $pdo, int $id): void
         if (DB_DRIVER === 'sqlite') {
             $pdo->exec("PRAGMA foreign_keys = ON;");
         }
-        
+
         $stmt = $pdo->prepare("DELETE FROM clienti_fornitori WHERE id = ?");
         $stmt->execute([$id]);
         $pdo->commit();
+        return 'eliminato';
     } catch (Throwable $e) {
         $pdo->rollBack();
         // Fallback sul soft delete (disattivazione)
         $pdo->prepare("UPDATE clienti_fornitori SET attivo = 0 WHERE id = ?")->execute([$id]);
+        return 'disattivato';
     }
+}
+
+/**
+ * Costruisce il messaggio flash da mostrare dopo un'eliminazione di
+ * cliente/fornitore/azienda, in base all'esito effettivo restituito da
+ * qk_delete_soggetto()/qk_delete_azienda(). Unifica la logica di messaggio
+ * prima duplicata (in modo errato: sempre "successo" generico) in
+ * CustomersController::delete(), SuppliersController::delete() e
+ * AziendeController::delete() — vedi Revisione Incrociata §7.2.2.
+ *
+ * @param string $esito           'eliminato' | 'disattivato' | 'non_trovato'
+ * @param string $entitaSingolare Es. 'cliente', 'fornitore', 'azienda'
+ * @param string $entitaArticolo  Articolo indeterminativo concordato, es. 'il', 'la'
+ * @return array{type: string, text: string} type è 'success' o 'warning',
+ *         pronto per redirect_with($path, $type, $text)
+ */
+function qk_esito_cancellazione_messaggio(string $esito, string $entitaSingolare, string $entitaArticolo = 'il'): array
+{
+    switch ($esito) {
+        case 'eliminato':
+            return [
+                'type' => 'success',
+                'text' => ucfirst($entitaSingolare) . ' eliminat' . ($entitaArticolo === 'la' ? 'a' : 'o') . ' definitivamente.',
+            ];
+        case 'disattivato':
+            return [
+                'type' => 'warning',
+                'text' => ucfirst($entitaSingolare) . ' non eliminat' . ($entitaArticolo === 'la' ? 'a' : 'o')
+                    . ' (è referenziat' . ($entitaArticolo === 'la' ? 'a' : 'o') . ' da altri documenti/dati): '
+                    . 'è stat' . ($entitaArticolo === 'la' ? 'a' : 'o') . ' disattivat' . ($entitaArticolo === 'la' ? 'a' : 'o') . ' invece.',
+            ];
+        case 'non_trovato':
+            return [
+                'type' => 'danger',
+                'text' => ucfirst($entitaSingolare) . ' non trovat' . ($entitaArticolo === 'la' ? 'a' : 'o') . '.',
+            ];
+        default:
+            return [
+                'type' => 'success',
+                'text' => ucfirst($entitaSingolare) . ' rimosso con successo.',
+            ];
+    }
+}
+
+/**
+ * Legge da $_POST, costruisce e valida i campi di un indirizzo (usato dai 3
+ * endpoint AJAX "salva indirizzo" quasi identici in CustomersController.php,
+ * SuppliersController.php, AziendeController.php — vedi Revisione Incrociata
+ * §7.2.1/§7.2.2). Unifica: whitelist tipi sede, costruzione array valori,
+ * validazione campi obbligatori (via/cap/citta).
+ *
+ * NOTA: non è (ancora) validazione CAP/provincia differenziata per nazione
+ * (vedi Backlog Sviluppi Futuri, voce 11) — qui si unifica solo la
+ * validazione ESISTENTE (presenza dei campi), senza cambiarne le regole.
+ *
+ * @return array{ok: true, v: array}|array{ok: false, error: string}
+ */
+function qk_build_e_valida_indirizzo(): array
+{
+    $tipiValidi = ['sede_legale', 'sede_operativa', 'spedizione', 'fatturazione', 'magazzino'];
+    $tipo = post('tipo', '');
+    if (!in_array($tipo, $tipiValidi, true)) {
+        return ['ok' => false, 'error' => 'Tipo indirizzo non valido.'];
+    }
+
+    $v = [
+        'tipo'               => $tipo,
+        'nome_sede'          => post('nome_sede', ''),
+        'predefinito'        => post('predefinito', '0') === '1',
+        'referente_consegna' => post('referente_consegna', ''),
+        'telefono_consegna'  => post('telefono_consegna', ''),
+        'presso'             => post('presso', ''),
+        'via'                => post('via', ''),
+        'civico'             => post('civico', ''),
+        'cap'                => post('cap', ''),
+        'citta'              => post('citta', ''),
+        'provincia'          => post('provincia', ''),
+        'nazione'            => post('nazione', 'IT') ?: 'IT',
+        'note_consegna'      => post('note_consegna', ''),
+    ];
+
+    if (trim($v['via']) === '') {
+        return ['ok' => false, 'error' => 'Il campo indirizzo (via) è obbligatorio.'];
+    }
+    if (trim($v['cap']) === '') {
+        return ['ok' => false, 'error' => 'Il CAP è obbligatorio.'];
+    }
+    if (trim($v['citta']) === '') {
+        return ['ok' => false, 'error' => 'La città è obbligatoria.'];
+    }
+
+    return ['ok' => true, 'v' => $v];
 }

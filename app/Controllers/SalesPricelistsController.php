@@ -264,7 +264,7 @@ final class SalesPricelistsController extends BaseController
                     um_comm.codice AS um_comm_code,
                     um_native.codice AS um_native_code,
                     COALESCE(um_native.codice, um_stock.codice) AS unita_misura,
-                    -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md) —
+                    -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md) —
                     -- vedi commento esteso in db/init_sqlite.sql §14b.
                     (SELECT MIN(vf.prezzo)
                      FROM v_prezzo_acquisto_base_fornitore vf
@@ -504,7 +504,7 @@ final class SalesPricelistsController extends BaseController
                         um_stock.codice AS uom_stock_code,
                         p.unita_contenuto_id AS uom_commercial_id,
                         um_comm.codice AS uom_commercial_code,
-                        -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md).
+                        -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md).
                         (SELECT MIN(vf.prezzo)
                          FROM v_prezzo_acquisto_base_fornitore vf
                          JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
@@ -575,7 +575,7 @@ final class SalesPricelistsController extends BaseController
                     p.unita_misura_stock_id, um_c.codice AS unita_misura_commerciale,
                     p.unita_contenuto_id, p.quantita_contenuto,
                     pf.rrp_min, pf.rrp_max,
-                    -- Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md).
+                    -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md).
                     (SELECT MIN(vf.prezzo)
                      FROM v_prezzo_acquisto_base_fornitore vf
                      JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
