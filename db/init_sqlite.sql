@@ -2480,33 +2480,13 @@ CREATE TABLE IF NOT EXISTS ordini_righe_pianificazione (
 
 CREATE INDEX IF NOT EXISTS idx_ordini_pian_riga ON ordini_righe_pianificazione(ordine_riga_id);
 
-CREATE TABLE IF NOT EXISTS ricezioni_testata (
-    id                      INTEGER      PRIMARY KEY AUTOINCREMENT,
-
-    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. RIC/2026/0001
-    ordine_id               INTEGER      NOT NULL REFERENCES ordini_testata(id),
-    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comodità
-
-    stato                   TEXT         NOT NULL DEFAULT 'bozza'
-                                          CHECK (stato IN (
-                                              'bozza',      -- in inserimento
-                                              'completata', -- merce registrata in magazzino
-                                              'annullata'
-                                          )),
-
-    -- Date
-    data_attesa             DATE,         -- data attesa di arrivo
-    data_effettiva          DATETIME,     -- data/ora effettiva di ricezione (valorizzata alla conferma)
-
-    -- Documento di trasporto del fornitore
-    ddt_numero              VARCHAR(50),  -- numero DDT fornitore
-    ddt_data                DATE,
-
-    note                    TEXT,
-    creato_da               INTEGER      REFERENCES utenti(id),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at              DATETIME
-);
+-- (14/07/2026: rimossa una seconda CREATE TABLE IF NOT EXISTS ricezioni_testata
+-- duplicata che viveva qui, identica alla definizione più sopra (vicino a
+-- idx_ricezioni_testata_ordine) tranne per l'assenza della colonna magazzino_id.
+-- Essendo IF NOT EXISTS, non veniva mai eseguita: la definizione realmente
+-- attiva resta quella più sopra, con magazzino_id, coerente con
+-- purchases_receipts.php che scrive quella colonna. Vedi Ciclo Acquisti/
+-- REVISIONE - Analisi Documentazione Ciclo Acquisti.md, problema 10.)
 
 CREATE TABLE IF NOT EXISTS ricezioni_righe (
     id                      INTEGER       PRIMARY KEY AUTOINCREMENT,
@@ -2540,12 +2520,11 @@ CREATE TABLE IF NOT EXISTS ricezioni_righe (
 
 CREATE INDEX IF NOT EXISTS idx_ricezioni_righe_ricezione ON ricezioni_righe(ricezione_id);
 
-CREATE TRIGGER IF NOT EXISTS trg_ricezioni_testata_updated_at
-AFTER UPDATE ON ricezioni_testata
-FOR EACH ROW
-BEGIN
-    UPDATE ricezioni_testata SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
+-- (14/07/2026: rimosso un secondo trg_ricezioni_testata_updated_at duplicato
+-- che viveva qui, identico a quello già creato più sopra vicino a
+-- trg_ordini_testata_updated_at. Stesso pattern del duplicato ricezioni_testata
+-- risolto in questa stessa sessione — vedi Ciclo Acquisti/REVISIONE - Analisi
+-- Documentazione Ciclo Acquisti.md, problema 10.)
 
 -- =============================================================================
 -- PRODOTTI RRP (Recommended Retail Price)

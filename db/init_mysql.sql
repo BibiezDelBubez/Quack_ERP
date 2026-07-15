@@ -1,378 +1,281 @@
 -- =============================================================================
 -- Quack ERP — Database Inizializzazione (MySQL/MariaDB)
 -- =============================================================================
--- Versione schema: NON più un numero a mano ("Schema vX.Y" qui in testa è
--- stato tolto — restava puntualmente disallineato sia dalla costante
--- DB_SCHEMA_VERSION in config.php sia dalla versione dichiarata nel file
--- gemello db/init_sqlite.sql). La versione "vera" di un database specifico è
--- ora il contenuto della tabella schema_migrations (§0 sotto). Vedi
--- db/migrate.php.
+-- Rigenerato il 14/07/2026 per allineamento completo con db/init_sqlite.sql
+-- (vedi docs/Ciclo Acquisti/REVISIONE - Analisi Documentazione Ciclo Acquisti.md,
+-- problema 11). Generato per introspezione dello schema SQLite realmente
+-- eseguito (PRAGMA table_info / foreign_key_list / index_list), non per
+-- traduzione manuale del testo — per ridurre il rischio di errori di trascrizione
+-- su ~90 tabelle. Verificato eseguendolo per intero su un'istanza MySQL reale.
 --
--- ATTENZIONE — questo file NON è tenuto sincronizzato automaticamente con
--- db/init_sqlite.sql: sono due DDL scritti a mano separatamente. Il driver
--- MySQL non è ancora quello usato in sviluppo (vedi DB_DRIVER in config.php),
--- quindi questo file può essere indietro rispetto allo schema SQLite più
--- recente. Prima di usarlo per un'installazione reale, confrontare le
--- tabelle con `db/init_sqlite.sql` (stessa struttura logica, sintassi
--- MySQL/InnoDB invece di SQLite).
+-- Differenze intenzionali rispetto a una traduzione 1:1 del file SQLite:
+--   • Ogni FK è un vincolo FOREIGN KEY esplicito con nome (fk_<tabella>_<colonna>),
+--     non REFERENCES inline (sintassi che MySQL/InnoDB accetta ma non applica
+--     mai come vincolo reale se non preceduta dalla keyword FOREIGN KEY).
+--   • I trigger SQLite *_updated_at sono sostituiti da ON UPDATE CURRENT_TIMESTAMP
+--     sulla colonna diretta interessata (equivalente MySQL idiomatico).
+--   • Gli indici unique "parziali" (WHERE col = valore, non supportato da MySQL)
+--     sono ricreati con una colonna generata VIRTUAL + UNIQUE KEY su di essa
+--     (idx_magazzini_un_predefinito, uq_um_riferimento). uq_sostanze_chimiche_cas
+--     (WHERE ... IS NOT NULL) non necessita di questo trucco: un UNIQUE MySQL
+--     normale ammette già più righe NULL.
+--   • Colonne TEXT con CHECK (... IN (...)) diventano VARCHAR dimensionato sul
+--     valore più lungo dell'enum (MySQL applica comunque il CHECK).
+--   • Colonne TEXT con DEFAULT diventano VARCHAR(255): MySQL non ammette un
+--     DEFAULT letterale su TEXT/BLOB.
+--   • unita_misura_categorie e ordini_clienti_righe_lotti (esistevano solo in
+--     questo file, mai in SQLite) sono state rimosse: entrambe confermate
+--     obsolete per scelta di design nei commenti di init_sqlite.sql.
+--   • I dati seed (schema_migrations, ADR/CLP lookup, unita_misura, ruoli, ecc.)
+--     sono rigenerati dal contenuto realmente presente dopo l'esecuzione dello
+--     script SQLite, non ricopiati a mano dal testo.
 -- =============================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
 
--- =============================================================================
--- Convenzioni di naming:
---   • snake_case per tutti i nomi di tabelle e colonne
---   • FK verso PK intera: <tabella_singolare>_id  (es. prodotto_id, utente_id)
---   • FK verso PK codice/testo: <nome_colonna>    (es. codice_classe)
---   • File path: TEXT (senza limite di lunghezza)
---
--- Ordine di creazione:
---   0.  schema_migrations (tracciamento migrazioni)
---   1.  unita_misura_categorie
---   2.  unita_misura
---   3.  ADR lookup statiche
---   4.  ADR lookup con FK
---   5.  adr_codici_onu
---   6.  adr_etichetta_classe, adr_codici_onu_etichette
---   7.  Sistema: tipi_cliente, canali_vendita, ruoli
---   8.  utenti
---   9.  sequenze
---  10.  listini
---  11.  Anagrafica: clienti_fornitori, indirizzi, dettagli_*
---  12.  Catalogo: categorie_prodotto, prodotti
---  13.  prodotto_classificazioni_adr, schede_sicurezza, immagini, tag, kit
---  14.  prodotti_fornitori, prodotti_fornitori_prezzi
---  15.  listini_prezzi
---  16.  Acquisto: ordini_acquisto, ordini_acquisto_righe
---  17.  Lotti (tracciabilità)
---  18.  Ricevimento merce
---  19.  Magazzino (giacenze, movimenti, inventari)
---  20.  Log stati ordini
---  21.  Vendita: preventivi, ordini_clienti, righe lotti
---  22.  Fatture
---  23.  Spedizioni + Documenti di trasporto
--- =============================================================================
-
-
-
-
--- =============================================================================
--- 0. SCHEMA_MIGRATIONS — tracciamento migrazioni applicate
--- =============================================================================
--- Stesso ruolo e stessa struttura logica della tabella gemella in
--- db/init_sqlite.sql: registro di quali script in db/migrations/ sono già
--- stati eseguiti su QUESTO database. Vedi il commento esteso nel file
--- SQLite per il funzionamento completo del runner (db/migrate.php).
 CREATE TABLE IF NOT EXISTS schema_migrations (
-    id         INT          AUTO_INCREMENT PRIMARY KEY,
-    migration  VARCHAR(255) NOT NULL UNIQUE,  -- nome file in db/migrations/, senza .php
-    applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    migration VARCHAR(255) NOT NULL,
+    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (migration)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Baseline — vedi spiegazione nel file SQLite gemello.
-INSERT IGNORE INTO schema_migrations (migration) VALUES
-    ('migrate_ordini_righe_uom'),
-    ('2026_07_10_rfq_esito_chiusura'),
-    ('2026_07_10_lotti_codice_unique_per_prodotto'),
-    ('2026_07_10_inventari_categoria_filtro'),
-    ('2026_07_10_inventario_creazione_lock'),
-    ('2026_07_10_vista_costo_acquisto_base'),
-    ('2026_07_10_movimenti_quantita_delta');
-
--- =============================================================================
--- 1. UNITÀ DI MISURA — CATEGORIE
--- =============================================================================
--- Raggruppa le UoM convertibili tra loro (es. Massa, Volume).
--- Impedisce conversioni tra categorie diverse.
-
-CREATE TABLE IF NOT EXISTS unita_misura_categorie (
-    id   INT AUTO_INCREMENT PRIMARY KEY,
-    nome VARCHAR(50) NOT NULL,
-    note TEXT
-);
-
--- =============================================================================
--- 2. UNITÀ DI MISURA
--- =============================================================================
-
 CREATE TABLE IF NOT EXISTS unita_misura (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    codice        VARCHAR(10)   NOT NULL UNIQUE,  -- es. kg, l, pz, ml
-    descrizione   VARCHAR(50)   NOT NULL,          -- nome leggibile
-    categoria_id  INTEGER       REFERENCES unita_misura_categorie(id),
-    fattore_base  DECIMAL(20,10) NOT NULL DEFAULT 1, -- fattore verso la UoM di riferimento della categoria
-    e_riferimento BOOLEAN       NOT NULL DEFAULT 0   -- se 1, è la UoM di riferimento della categoria (un solo TRUE per categoria)
-);
-
--- =============================================================================
--- 3. ADR — LOOKUP STATICHE (nessuna FK)
--- =============================================================================
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(10) NOT NULL,
+    descrizione VARCHAR(50) NOT NULL,
+    fattore_base DECIMAL(20,10) NOT NULL DEFAULT 1,
+    e_riferimento TINYINT(1) NOT NULL DEFAULT 0,
+    UNIQUE (codice),
+    e_riferimento_uniq TINYINT(1) GENERATED ALWAYS AS (CASE WHEN e_riferimento = 1 THEN 1 ELSE NULL END) VIRTUAL,
+    UNIQUE KEY uq_um_riferimento (e_riferimento_uniq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_classi_pericolo (
-    codice        VARCHAR(5)   PRIMARY KEY,
+    codice VARCHAR(5) NOT NULL PRIMARY KEY,
     denominazione VARCHAR(100) NOT NULL,
-    ha_divisioni  BOOLEAN      NOT NULL DEFAULT 0
-);
+    ha_divisioni TINYINT(1) NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_gruppi_imballaggio (
-    codice      CHAR(3)      PRIMARY KEY,   -- 'I','II','III'
+    codice CHAR(3) NOT NULL PRIMARY KEY,
     descrizione VARCHAR(100) NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_categorie_trasporto (
-    categoria                SMALLINT PRIMARY KEY,  -- 0–4
-    moltiplicatore_punti     SMALLINT NOT NULL,
-    soglia_esenzione_kg_l    INTEGER,               -- NULL = nessuna esenzione
-    descrizione              TEXT
-);
+    categoria SMALLINT NOT NULL PRIMARY KEY,
+    moltiplicatore_punti SMALLINT NOT NULL,
+    soglia_esenzione_kg_l INTEGER,
+    descrizione TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_etichette (
-    codice      VARCHAR(20) PRIMARY KEY,
-    file_path   TEXT,                       -- percorso file immagine etichetta
+    codice VARCHAR(20) NOT NULL PRIMARY KEY,
+    file_path TEXT,
     descrizione TEXT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_quantita_esenti (
-    codice                           CHAR(2)  PRIMARY KEY,   -- E0–E5
-    quantita_max_imballaggio_interno INTEGER,                 -- NULL per E0 (ml per liquidi, g per solidi)
-    quantita_max_collo               INTEGER,                 -- NULL per E0
-    descrizione                      TEXT
-);
+    codice CHAR(2) NOT NULL PRIMARY KEY,
+    quantita_max_imballaggio_interno INTEGER,
+    quantita_max_collo INTEGER,
+    descrizione TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_codici_restrizione_gallerie (
-    codice                VARCHAR(10) PRIMARY KEY,
-    si_applica_a_cisterna BOOLEAN,   -- da rivedere
-    descrizione           TEXT
-);
+    codice VARCHAR(10) NOT NULL PRIMARY KEY,
+    si_applica_a_cisterna TINYINT(1),
+    descrizione TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Categorie di galleria vietate per ciascun codice restrizione
 CREATE TABLE IF NOT EXISTS adr_restrizione_gallerie_categorie (
-    restrizione_codice VARCHAR(10) NOT NULL
-                        REFERENCES adr_codici_restrizione_gallerie(codice) ON DELETE CASCADE,
-    categoria_galleria CHAR(1)     NOT NULL
-                        CHECK (categoria_galleria IN ('A','B','C','D','E')),
-    PRIMARY KEY (restrizione_codice, categoria_galleria)
-);
-
--- =============================================================================
--- 4. ADR — LOOKUP CON FK
--- =============================================================================
+    restrizione_codice VARCHAR(10) NOT NULL,
+    categoria_galleria CHAR(1) NOT NULL CHECK (categoria_galleria IN ('A', 'B', 'C', 'D', 'E')),
+    PRIMARY KEY (restrizione_codice, categoria_galleria),
+    CONSTRAINT fk_adr_restrizione_gallerie_categorie_restrizione_codice FOREIGN KEY (restrizione_codice) REFERENCES adr_codici_restrizione_gallerie(codice) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_codici_classificazione (
     id_codice_classificazione INT AUTO_INCREMENT PRIMARY KEY,
-    codice              VARCHAR(20) NOT NULL,  -- es. F, TF, CT1
-    codice_classe       VARCHAR(5)  REFERENCES adr_classi_pericolo(codice),
-    descrizione         TEXT,
-    pericolo_primario   VARCHAR(50),
+    codice VARCHAR(20) NOT NULL,
+    codice_classe VARCHAR(5),
+    descrizione TEXT,
+    pericolo_primario VARCHAR(50),
     pericolo_secondario VARCHAR(50),
-    UNIQUE (codice, codice_classe)
-);
-
--- =============================================================================
--- 5. ADR — TABELLA PRINCIPALE (Tabella A ADR)
--- =============================================================================
+    UNIQUE (codice, codice_classe),
+    CONSTRAINT fk_adr_codici_classificazione_codice_classe FOREIGN KEY (codice_classe) REFERENCES adr_classi_pericolo(codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS adr_codici_onu (
-    id                          INT AUTO_INCREMENT PRIMARY KEY,
-    codice_onu                  INTEGER  NOT NULL,    -- numero UN (es. 1203); non univoco: stesso UN per stati fisici diversi
-    nome_descrizione            TEXT,                  -- nome ufficiale della merce
-    classe_pericolo             VARCHAR(5)
-                                 REFERENCES adr_classi_pericolo(codice),
-    codice_classificazione      VARCHAR(20),
-    gruppo_imballaggio          CHAR(3)
-                                 REFERENCES adr_gruppi_imballaggio(codice),
-    categoria_trasporto         SMALLINT
-                                 REFERENCES adr_categorie_trasporto(categoria),
-    codice_restrizione_gallerie VARCHAR(10)
-                                 REFERENCES adr_codici_restrizione_gallerie(codice),
-    quantita_limitata           INTEGER,              -- regime QL col.7a: max ml/g per imballaggio interno
-    codice_quantita_esente      CHAR(2)
-                                 REFERENCES adr_quantita_esenti(codice),
-    e_merce_alto_rischio        BOOLEAN,
-    e_inquinante_marino         BOOLEAN,
-    inizio_validita             DATE,
-    fine_validita               DATE,
-    FOREIGN KEY (codice_classificazione, classe_pericolo)
-        REFERENCES adr_codici_classificazione(codice, codice_classe)
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice_onu INTEGER NOT NULL,
+    nome_descrizione TEXT,
+    classe_pericolo VARCHAR(5),
+    codice_classificazione VARCHAR(20),
+    gruppo_imballaggio CHAR(3),
+    categoria_trasporto SMALLINT,
+    codice_restrizione_gallerie VARCHAR(10),
+    quantita_limitata INTEGER,
+    codice_quantita_esente CHAR(2),
+    e_merce_alto_rischio TINYINT(1),
+    e_inquinante_marino TINYINT(1),
+    inizio_validita DATE,
+    fine_validita DATE,
+    CONSTRAINT fk_adr_codici_onu_codice_classificazione_classe_pericolo FOREIGN KEY (codice_classificazione, classe_pericolo) REFERENCES adr_codici_classificazione(codice, codice_classe),
+    CONSTRAINT fk_adr_codici_onu_codice_quantita_esente FOREIGN KEY (codice_quantita_esente) REFERENCES adr_quantita_esenti(codice),
+    CONSTRAINT fk_adr_codici_onu_codice_restrizione_gallerie FOREIGN KEY (codice_restrizione_gallerie) REFERENCES adr_codici_restrizione_gallerie(codice),
+    CONSTRAINT fk_adr_codici_onu_categoria_trasporto FOREIGN KEY (categoria_trasporto) REFERENCES adr_categorie_trasporto(categoria),
+    CONSTRAINT fk_adr_codici_onu_gruppo_imballaggio FOREIGN KEY (gruppo_imballaggio) REFERENCES adr_gruppi_imballaggio(codice),
+    CONSTRAINT fk_adr_codici_onu_classe_pericolo FOREIGN KEY (classe_pericolo) REFERENCES adr_classi_pericolo(codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =============================================================================
--- 6. ADR — ETICHETTE PER CLASSE E PER CODICE ONU
--- =============================================================================
-
--- Associa ogni classe di pericolo alle sue etichette standard
 CREATE TABLE IF NOT EXISTS adr_etichetta_classe (
-    id               INT AUTO_INCREMENT PRIMARY KEY,
-    classe_codice    VARCHAR(5)  NOT NULL REFERENCES adr_classi_pericolo(codice),
-    etichetta_codice VARCHAR(20) NOT NULL REFERENCES adr_etichette(codice),
-    ordine           INTEGER                -- ordine di stampa sul documento
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    classe_codice VARCHAR(5) NOT NULL,
+    etichetta_codice VARCHAR(20) NOT NULL,
+    ordine INTEGER,
+    CONSTRAINT fk_adr_etichetta_classe_etichetta_codice FOREIGN KEY (etichetta_codice) REFERENCES adr_etichette(codice),
+    CONSTRAINT fk_adr_etichetta_classe_classe_codice FOREIGN KEY (classe_codice) REFERENCES adr_classi_pericolo(codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Etichette specifiche assegnate a ogni riga della Tabella A ADR
 CREATE TABLE IF NOT EXISTS adr_codici_onu_etichette (
-    codice_onu_id    INTEGER     NOT NULL REFERENCES adr_codici_onu(id),
-    etichetta_codice VARCHAR(20) NOT NULL REFERENCES adr_etichette(codice),
-    tipo             TEXT,                  -- 'primaria' o 'sussidiaria'
-    ordine           INTEGER,               -- ordine di stampa sul documento
-    PRIMARY KEY (codice_onu_id, etichetta_codice)
-);
-
--- =============================================================================
--- 7. SISTEMA — LOOKUP
--- =============================================================================
+    codice_onu_id INTEGER NOT NULL,
+    etichetta_codice VARCHAR(20) NOT NULL,
+    tipo TEXT,
+    ordine INTEGER,
+    PRIMARY KEY (codice_onu_id, etichetta_codice),
+    CONSTRAINT fk_adr_codici_onu_etichette_etichetta_codice FOREIGN KEY (etichetta_codice) REFERENCES adr_etichette(codice),
+    CONSTRAINT fk_adr_codici_onu_etichette_codice_onu_id FOREIGN KEY (codice_onu_id) REFERENCES adr_codici_onu(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS tipi_cliente (
-    id     INT AUTO_INCREMENT PRIMARY KEY,
-    codice VARCHAR(20)  NOT NULL UNIQUE,
-    nome   VARCHAR(100) NOT NULL,
-    attivo BOOLEAN      NOT NULL DEFAULT 1
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(20) NOT NULL,
+    nome VARCHAR(100) NOT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS canali_vendita (
-    id     INT AUTO_INCREMENT PRIMARY KEY,
-    codice VARCHAR(20)  NOT NULL UNIQUE,
-    nome   VARCHAR(100) NOT NULL,          -- es. Ordine sito, Ordine extrasito, Sul posto
-    attivo BOOLEAN      NOT NULL DEFAULT 1
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(20) NOT NULL,
+    nome VARCHAR(100) NOT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ruoli (
-    id                   INT AUTO_INCREMENT PRIMARY KEY,
-    codice               VARCHAR(20)  NOT NULL UNIQUE,
-    nome                 VARCHAR(100) NOT NULL,
-    can_manage_users     BOOLEAN      NOT NULL DEFAULT 0,
-    can_view_costs       BOOLEAN      NOT NULL DEFAULT 0,
-    can_edit_prices      BOOLEAN      NOT NULL DEFAULT 0,
-    can_manage_catalog   BOOLEAN      NOT NULL DEFAULT 0,
-    can_manage_warehouse BOOLEAN      NOT NULL DEFAULT 0,
-    can_manage_orders    BOOLEAN      NOT NULL DEFAULT 0,
-    can_view_only        BOOLEAN      NOT NULL DEFAULT 0,
-    attivo               BOOLEAN      NOT NULL DEFAULT 1
-);
-
--- =============================================================================
--- 8. UTENTI
--- =============================================================================
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(20) NOT NULL,
+    nome VARCHAR(100) NOT NULL,
+    can_manage_users TINYINT(1) NOT NULL DEFAULT 0,
+    can_view_costs TINYINT(1) NOT NULL DEFAULT 0,
+    can_edit_prices TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_catalog TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_warehouse TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_orders TINYINT(1) NOT NULL DEFAULT 0,
+    can_view_only TINYINT(1) NOT NULL DEFAULT 0,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS utenti (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    username      VARCHAR(50)  NOT NULL UNIQUE,
-    nome          VARCHAR(80)  NOT NULL,
-    cognome       VARCHAR(80)  NOT NULL,
-    email         VARCHAR(150) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,            -- bcrypt rounds=12
-    ruolo_id      INTEGER      NOT NULL REFERENCES ruoli(id),
-    attivo        BOOLEAN      NOT NULL DEFAULT 1,
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- =============================================================================
--- 9. SEQUENZE — GENERATORE NUMERI DOCUMENTO
--- =============================================================================
--- Usata per generare numeri progressivi per ordini, preventivi, ecc.
--- Formato risultante: <prefisso><anno>/<numero_corrente zero-padded>
--- es. RFQ/2026/0001
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    nome VARCHAR(80) NOT NULL,
+    cognome VARCHAR(80) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    ruolo_id INTEGER NOT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (email),
+    UNIQUE (username),
+    CONSTRAINT fk_utenti_ruolo_id FOREIGN KEY (ruolo_id) REFERENCES ruoli(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS sequenze (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    tipo            VARCHAR(50) NOT NULL UNIQUE,  -- es. ordine_acquisto, preventivo, ricevimento_merce
-    prefisso        VARCHAR(20) NOT NULL,          -- es. RFQ/, IN/, PREV/
-    anno            INTEGER     NOT NULL,          -- anno corrente; si resetta a 1 a ogni cambio anno
-    numero_corrente INTEGER     NOT NULL DEFAULT 0, -- ultimo numero assegnato
-    padding         INTEGER     NOT NULL DEFAULT 4  -- numero di cifre (es. 4 → 0001)
-);
-
--- =============================================================================
--- 10. LISTINI
--- =============================================================================
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tipo VARCHAR(50) NOT NULL,
+    prefisso VARCHAR(20) NOT NULL,
+    anno INTEGER NOT NULL,
+    numero_corrente INTEGER NOT NULL DEFAULT 0,
+    padding INTEGER NOT NULL DEFAULT 4,
+    UNIQUE (tipo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS listini (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    nome        VARCHAR(100) NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
     descrizione TEXT,
-    valuta      CHAR(3)      NOT NULL DEFAULT 'EUR',
-    attivo      BOOLEAN      NOT NULL DEFAULT 1,
-    valido_dal  DATE,
-    valido_al   DATE,
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    valido_dal DATE,
+    valido_al DATE,
+    is_default TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS clienti_listini (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    cliente_id  INT NOT NULL REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
-    listino_id  INT NOT NULL REFERENCES listini(id) ON DELETE CASCADE,
-    priorita    INT NOT NULL DEFAULT 10,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cliente_id INTEGER NOT NULL,
+    listino_id INTEGER NOT NULL,
+    priorita INTEGER NOT NULL DEFAULT 10,
     data_inizio DATE,
-    data_fine   DATE,
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- =============================================================================
--- 11. ANAGRAFICA SOGGETTI
--- =============================================================================
+    data_fine DATE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_clienti_listini_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id) ON DELETE CASCADE,
+    CONSTRAINT fk_clienti_listini_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS clienti_fornitori (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    parent_id       INTEGER,                                       -- FK su ID del contatto principale (se sottocontatto)
-    codice          VARCHAR(20)  NOT NULL UNIQUE,  -- codice interno
-    tipo            TEXT         NOT NULL CHECK (tipo IN ('cliente','fornitore','entrambi')),
-    tipo_soggetto   TEXT         NOT NULL CHECK (tipo_soggetto IN (
-                                     'azienda','libero_professionista',
-                                     'privato','pubblica_amministrazione')),
-    ragione_sociale VARCHAR(150),                  -- per aziende
-    nome            VARCHAR(80),                   -- per persone fisiche
-    cognome         VARCHAR(80),                   -- per persone fisiche
-    partita_iva     VARCHAR(20)  UNIQUE,
-    codice_fiscale  VARCHAR(16),
-    email           VARCHAR(150),
-    telefono        VARCHAR(20),
-    cellulare       VARCHAR(20),
-    pec             VARCHAR(150),                  -- PEC per fatturazione elettronica
-    sito_web        VARCHAR(255),
-    note            TEXT,
-    attivo          BOOLEAN      NOT NULL DEFAULT 1,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    parent_id INTEGER,
+    codice VARCHAR(20) NOT NULL,
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('cliente', 'fornitore', 'entrambi')),
+    tipo_soggetto VARCHAR(34) NOT NULL CHECK (tipo_soggetto IN ('azienda', 'libero_professionista', 'privato', 'pubblica_amministrazione')),
+    ragione_sociale VARCHAR(150),
+    nome VARCHAR(80),
+    cognome VARCHAR(80),
+    partita_iva VARCHAR(20),
+    codice_fiscale VARCHAR(16),
+    email VARCHAR(150),
+    telefono VARCHAR(20),
+    cellulare VARCHAR(20),
+    pec VARCHAR(150),
+    sito_web VARCHAR(255),
+    note TEXT,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (partita_iva),
+    UNIQUE (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS indirizzi (
     id INT AUTO_INCREMENT PRIMARY KEY,
-
-    soggetto_id INTEGER NOT NULL
-        REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
-
-    tipo TEXT NOT NULL CHECK (
-        tipo IN (
-            'sede_legale',
-            'sede_operativa',
-            'spedizione',
-            'fatturazione',
-            'magazzino'
-        )
-    ),
-
-    nome_sede VARCHAR(100),        -- Es: "Ufficio Milano", "Magazzino Logistica"
-    predefinito BOOLEAN NOT NULL DEFAULT 0,
-
-    referente_consegna VARCHAR(80), -- Es: "Chiedere di Marco"
-    telefono_consegna VARCHAR(20),  -- Numero del magazziniere o del cantiere
-
-    presso VARCHAR(100),            -- c/o
+    soggetto_id INTEGER NOT NULL,
+    tipo VARCHAR(24) NOT NULL CHECK (tipo IN ('sede_legale', 'sede_operativa', 'spedizione', 'fatturazione', 'magazzino')),
+    nome_sede VARCHAR(100),
+    predefinito TINYINT(1) NOT NULL DEFAULT 0,
+    referente_consegna VARCHAR(80),
+    telefono_consegna VARCHAR(20),
+    presso VARCHAR(100),
     via VARCHAR(150) NOT NULL,
     civico VARCHAR(10),
     cap VARCHAR(10) NOT NULL,
     citta VARCHAR(100) NOT NULL,
     provincia CHAR(2),
-    nazione CHAR(2) NOT NULL DEFAULT 'IT',  -- ISO 3166-1 alpha-2
+    nazione CHAR(2) NOT NULL DEFAULT 'IT',
+    note_consegna VARCHAR(255),
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    CONSTRAINT fk_indirizzi_soggetto_id FOREIGN KEY (soggetto_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    note_consegna VARCHAR(255),     -- istruzioni per il corriere
-    attivo BOOLEAN NOT NULL DEFAULT 1
-);
-
--- Tabella di snapshot per gli indirizzi di consegna associati ai documenti
 CREATE TABLE IF NOT EXISTS indirizzi_documenti (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    indirizzo_master_id INT REFERENCES indirizzi(id) ON DELETE SET NULL,
+    indirizzo_master_id INTEGER,
     nome_sede VARCHAR(100),
     presso VARCHAR(100),
     via VARCHAR(150) NOT NULL,
@@ -384,248 +287,1394 @@ CREATE TABLE IF NOT EXISTS indirizzi_documenti (
     referente_consegna VARCHAR(80),
     telefono_consegna VARCHAR(20),
     note_consegna VARCHAR(255),
-    personalizzato BOOLEAN NOT NULL DEFAULT 0,
-    hash_originale VARCHAR(64)
-);
+    personalizzato TINYINT(1) NOT NULL DEFAULT 0,
+    hash_originale VARCHAR(64),
+    CONSTRAINT fk_indirizzi_documenti_indirizzo_master_id FOREIGN KEY (indirizzo_master_id) REFERENCES indirizzi(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabella di snapshot per i contatti dei referenti dei fornitori
 CREATE TABLE IF NOT EXISTS contatti_documenti (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    contatto_master_id INT REFERENCES clienti_fornitori(id) ON DELETE SET NULL,
+    contatto_master_id INTEGER,
     nome VARCHAR(80),
     cognome VARCHAR(80),
     email VARCHAR(150),
     telefono VARCHAR(20),
     cellulare VARCHAR(20),
-    personalizzato BOOLEAN NOT NULL DEFAULT 0,
-    hash_originale VARCHAR(64)
-);
+    personalizzato TINYINT(1) NOT NULL DEFAULT 0,
+    hash_originale VARCHAR(64),
+    CONSTRAINT fk_contatti_documenti_contatto_master_id FOREIGN KEY (contatto_master_id) REFERENCES clienti_fornitori(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS dettagli_clienti (
-    id                        INT AUTO_INCREMENT PRIMARY KEY,
-    soggetto_id               INTEGER      NOT NULL UNIQUE
-                                            REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
-    tipo_cliente_id           INTEGER      REFERENCES tipi_cliente(id),
-    canale_vendita_default_id INTEGER      REFERENCES canali_vendita(id),
-    listino_id                INTEGER      REFERENCES listini(id),
-    sconto_extra_perc         DECIMAL(5,2) NOT NULL DEFAULT 0,  -- sconto aggiuntivo sempre applicato
-    condizioni_pagamento      TEXT,
-    fido_credito              DECIMAL(10,2),
-    codice_sdi                VARCHAR(7),                        -- codice SDI per fattura elettronica
-    iva_esente                BOOLEAN      NOT NULL DEFAULT 0,
-    codice_esenzione_iva      VARCHAR(20),
-    note_commerciali          TEXT,
-    note_interne              TEXT,
-    regime_fiscale            VARCHAR(10),                       -- es. RF01 ordinario, RF19 forfettario
-    zona_commerciale          VARCHAR(50)
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    soggetto_id INTEGER NOT NULL,
+    tipo_cliente_id INTEGER,
+    canale_vendita_default_id INTEGER,
+    listino_id INTEGER,
+    sconto_extra_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    condizioni_pagamento TEXT,
+    fido_credito DECIMAL(10,2),
+    codice_sdi VARCHAR(7),
+    iva_esente TINYINT(1) NOT NULL DEFAULT 0,
+    codice_esenzione_iva VARCHAR(20),
+    note_commerciali TEXT,
+    note_interne TEXT,
+    regime_fiscale VARCHAR(10),
+    zona_commerciale VARCHAR(50),
+    UNIQUE (soggetto_id),
+    CONSTRAINT fk_dettagli_clienti_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id),
+    CONSTRAINT fk_dettagli_clienti_canale_vendita_default_id FOREIGN KEY (canale_vendita_default_id) REFERENCES canali_vendita(id),
+    CONSTRAINT fk_dettagli_clienti_tipo_cliente_id FOREIGN KEY (tipo_cliente_id) REFERENCES tipi_cliente(id),
+    CONSTRAINT fk_dettagli_clienti_soggetto_id FOREIGN KEY (soggetto_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS dettagli_fornitori (
-    id                              INT AUTO_INCREMENT PRIMARY KEY,
-    soggetto_id                     INTEGER      NOT NULL UNIQUE
-                                                  REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
-    condizioni_pagamento            TEXT,                        -- es. 30gg, 60gg FM
-    valuta                          CHAR(3)      NOT NULL DEFAULT 'EUR',
-    lead_time_giorni                INTEGER,                     -- giorni di consegna default; usato per calcolare data attesa ricevimento
-    minimo_ordine_euro              DECIMAL(10,2),
-    codice_cliente_presso_fornitore VARCHAR(50),                 -- il codice con cui il fornitore ci identifica; appare sui documenti inviati al fornitore
-    portale_ordini_url              TEXT,                        -- URL del portale ordini del fornitore
-    note_commerciali                TEXT,
-    note_interne                    TEXT
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    soggetto_id INTEGER NOT NULL,
+    condizioni_pagamento TEXT,
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    lead_time_giorni INTEGER,
+    minimo_ordine_euro DECIMAL(10,2),
+    codice_cliente_presso_fornitore VARCHAR(50),
+    portale_ordini_url TEXT,
+    note_commerciali TEXT,
+    note_interne TEXT,
+    UNIQUE (soggetto_id),
+    CONSTRAINT fk_dettagli_fornitori_soggetto_id FOREIGN KEY (soggetto_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS aziende_interne (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
-    -- Punta al record con i dati della nostra azienda Gemina in 'clienti_fornitori'
-    soggetto_id         INTEGER      NOT NULL UNIQUE REFERENCES clienti_fornitori(id) ON DELETE RESTRICT,
-    
-    -- Dati specifici per le stampe e la fatturazione della TUA azienda
-    logo_path           VARCHAR(255),                  -- Percorso del file del logo (es. "/uploads/logo.png")
-	header_path           VARCHAR(255),                  -- Percorso del file dell'header per i documenti
-    capitale_sociale    DECIMAL(15,2),                 -- Obbligatorio in Italia per SRL/SPA (es. 10000.00)
-    registro_imprese    VARCHAR(50),                   -- Numero REA e CCIAA (es. "REA MI-123456")
-    socio_unico         BOOLEAN      NOT NULL DEFAULT 0, -- Se SRL a socio unico
-    in_liquidazione     BOOLEAN      NOT NULL DEFAULT 0, -- Stato di liquidazione (obbligatorio in fattura se sì)
-    
-    -- Dati bancari di default per farti pagare dai clienti
-    banca_default       VARCHAR(100),                  -- Nome banca (es. "Intesa Sanpaolo")
-    iban_default        VARCHAR(34),                   -- IBAN su cui ricevere i bonifici dei preventivi
-    bic_swift_default   VARCHAR(11),
-    
-    predefinita         BOOLEAN      NOT NULL DEFAULT 1, -- Identifica l'azienda principale se ne hai più di una
-    attivo              BOOLEAN      NOT NULL DEFAULT 1,
-    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
--- =============================================================================
--- 12. CATALOGO PRODOTTI
--- =============================================================================
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    soggetto_id INTEGER NOT NULL,
+    logo_path VARCHAR(255),
+    header_path VARCHAR(255),
+    capitale_sociale DECIMAL(15,2),
+    registro_imprese VARCHAR(50),
+    socio_unico TINYINT(1) NOT NULL DEFAULT 0,
+    in_liquidazione TINYINT(1) NOT NULL DEFAULT 0,
+    banca_default VARCHAR(100),
+    iban_default VARCHAR(34),
+    bic_swift_default VARCHAR(11),
+    predefinita TINYINT(1) NOT NULL DEFAULT 1,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (soggetto_id),
+    CONSTRAINT fk_aziende_interne_soggetto_id FOREIGN KEY (soggetto_id) REFERENCES clienti_fornitori(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS categorie_prodotto (
-    id                 INT AUTO_INCREMENT PRIMARY KEY,
-    nome               VARCHAR(100) NOT NULL,
-    parent_id          INTEGER      REFERENCES categorie_prodotto(id),  -- self-join per struttura ad albero
-    posizione_categoria INTEGER     NOT NULL DEFAULT 0,                 -- ordine di visualizzazione
-    created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    parent_id INTEGER,
+    posizione_categoria INTEGER NOT NULL DEFAULT 0,
+    immagine_path VARCHAR(500),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_categorie_prodotto_parent_id FOREIGN KEY (parent_id) REFERENCES categorie_prodotto(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS prodotti (
-    id                   INT AUTO_INCREMENT PRIMARY KEY,
-    sku_interno          VARCHAR(50)   NOT NULL UNIQUE,  -- codice interno / barcode interno
-    sku_ecommerce        VARCHAR(50)   UNIQUE,           -- SKU usato su WooCommerce
-	id_ecommerce          VARCHAR(50)   UNIQUE,           -- codice id del prodotto su WooCommerce
-    nome                 VARCHAR(150)  NOT NULL,          -- nome commerciale
-    descrizione_confezione    VARCHAR(255), -- nei preventivi va inserito descrizione formato confezione
-	descrizione_breve    VARCHAR(255),
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sku_interno VARCHAR(50) NOT NULL,
+    sku_ecommerce VARCHAR(50),
+    id_ecommerce VARCHAR(50),
+    nome VARCHAR(150) NOT NULL,
+    descrizione_confezione VARCHAR(255),
+    descrizione_breve VARCHAR(255),
     descrizione_completa TEXT,
-    tipo                 TEXT          NOT NULL CHECK (tipo IN ('semplice','kit')),
-    categoria_id         INTEGER       REFERENCES categorie_prodotto(id),
-	iva_vendita_default   DECIMAL(5,2), -- iva che viene suggerita nelle offerte. forse in futuro sarà sostituita da una fk a tabella aliquote
-	iva_acquisto_default   DECIMAL(5,2), -- iva che viene suggerita di base per le richieste preventivo.
-    unita_misura_stock_id INTEGER      NOT NULL REFERENCES unita_misura(id),  -- UoM in cui è tenuta la giacenza (la UoM 'canonica' del prodotto)
-    unita_contenuto_id   INTEGER       REFERENCES unita_misura(id),           -- unità con cui si indica il contenuto (kg, litri); usata nei preventivi
-    quantita_contenuto   DECIMAL(10,3),                                       -- quantità contenuta in 1 unità stock, nell'unità di misura di contenuto
-    num_factor           INTEGER       NOT NULL DEFAULT 1,                    -- numeratore frazione conversione (calcolato da quantita_contenuto)
-    den_factor           INTEGER       NOT NULL DEFAULT 1,                    -- denominatore frazione conversione (calcolato da quantita_contenuto)
-    volume_m3   DECIMAL(10,4),                                                -- volume occupato in magazzino dalla confezione
-    peso_netto_kg        DECIMAL(10,3),                                        -- peso netto contenuto; distinto da quantita_contenuto (es. tanica 25 l ≠ 25 kg)
-    peso_lordo_kg        DECIMAL(10,3),
-    ean                  VARCHAR(14),                                          -- EAN/barcode della confezione
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('semplice', 'kit')),
+    categoria_id INTEGER,
+    iva_vendita_default DECIMAL(5,2),
+    iva_acquisto_default DECIMAL(5,2),
+    unita_misura_stock_id INTEGER NOT NULL,
+    unita_contenuto_id INTEGER,
+    quantita_contenuto DECIMAL(10,3),
+    num_factor INTEGER NOT NULL DEFAULT 1,
+    den_factor INTEGER NOT NULL DEFAULT 1,
+    volume_m3 DECIMAL(10,4),
+    peso_netto_kg DECIMAL(10,3),
+    peso_lordo_kg DECIMAL(10,3),
+    ean VARCHAR(14),
+    traccia_lotti TINYINT(1) NOT NULL DEFAULT 0,
+    is_adr TINYINT(1) NOT NULL DEFAULT 0,
+    sostanza_chimica_id INTEGER,
+    markup_fallback_perc DECIMAL(5,2) DEFAULT NULL,
+    note_interne TEXT,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (id_ecommerce),
+    UNIQUE (sku_ecommerce),
+    UNIQUE (sku_interno),
+    CONSTRAINT fk_prodotti_sostanza_chimica_id FOREIGN KEY (sostanza_chimica_id) REFERENCES sostanze_chimiche(id),
+    CONSTRAINT fk_prodotti_unita_contenuto_id FOREIGN KEY (unita_contenuto_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_prodotti_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_prodotti_categoria_id FOREIGN KEY (categoria_id) REFERENCES categorie_prodotto(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    -- =========================================================================================================
-    -- [AI WARNING - CRITICAL RULE ENFORCEMENT]
-    -- DO NOT MOVE `scorta_minima` TO `giacenze` OR ANY OTHER TABLE. IT MUST REMAIN IN `prodotti`.
-    -- THIS IS A HARD ARCHITECTURAL REQUIREMENT. The DashboardController relies heavily on p.scorta_minima.
-    -- ANY LLM OR AI AGENT THAT ATTEMPTS TO "NORMALIZE" THIS INTO GIACENZE WILL BREAK THE ENTIRE APP.
-    -- DO NOT TOUCH THIS FIELD UNDER ANY CIRCUMSTANCE.
-    -- =========================================================================================================
-    scorta_minima        DECIMAL(10,3) NOT NULL DEFAULT 0,
+CREATE TABLE IF NOT EXISTS clp_h_statements (
+    codice VARCHAR(6) NOT NULL PRIMARY KEY,
+    testo TEXT NOT NULL,
+    tipo VARCHAR(23) NOT NULL CHECK (tipo IN ('fisico', 'salute', 'ambiente', 'supplementare'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    traccia_lotti        BOOLEAN       NOT NULL DEFAULT 0,                     -- 1 = gestione lotti attiva; sempre 1 per prodotti ADR
-    markup_fallback_perc DECIMAL(5,2)  DEFAULT NULL,                           -- override del markup di fallback per vendite su costo
-    note_interne         TEXT,
-    attivo               BOOLEAN       NOT NULL DEFAULT 1,
-    created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
+CREATE TABLE IF NOT EXISTS clp_p_statements (
+    codice VARCHAR(6) NOT NULL PRIMARY KEY,
+    testo TEXT NOT NULL,
+    tipo VARCHAR(23) NOT NULL CHECK (tipo IN ('generale', 'prevenzione', 'risposta', 'conservazione', 'smaltimento'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =============================================================================
--- 13. PRODOTTO ↔ ADR, SCHEDE SICUREZZA, IMMAGINI, TAG, KIT
--- =============================================================================
+CREATE TABLE IF NOT EXISTS clp_pittogrammi (
+    codice VARCHAR(6) NOT NULL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    descrizione TEXT,
+    file_path TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Un prodotto può avere più classificazioni (stati fisici diversi, concentrazioni, biennio ADR)
+CREATE TABLE IF NOT EXISTS sostanze_chimiche (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(300) NOT NULL,
+    codice_cas VARCHAR(12),
+    codice_onu_id INTEGER,
+    nome_tecnico VARCHAR(200),
+    gruppo_imballaggio CHAR(3),
+    concentrazione_min_pct DECIMAL(5,2),
+    concentrazione_max_pct DECIMAL(5,2),
+    punto_infiammabilita_c DECIMAL(6,2),
+    e_soluzione TINYINT(1) NOT NULL DEFAULT 0,
+    e_rifiuto TINYINT(1) NOT NULL DEFAULT 0,
+    e_stabilizzato TINYINT(1) NOT NULL DEFAULT 0,
+    codice_ufi VARCHAR(20),
+    codice_einecs VARCHAR(10),
+    codice_reach VARCHAR(30),
+    numero_kemler VARCHAR(4),
+    stato_fisico VARCHAR(20) CHECK (stato_fisico IN ('solido', 'liquido', 'gas', 'aerosol', 'pasta')),
+    clp_avvertenza VARCHAR(20) CHECK (clp_avvertenza IN ('Pericolo', 'Attenzione')),
+    note_interne TEXT,
+    creato_da INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (codice_cas),
+    CONSTRAINT fk_sostanze_chimiche_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_sostanze_chimiche_codice_onu_id FOREIGN KEY (codice_onu_id) REFERENCES adr_codici_onu(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS sostanze_chimiche_schede (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sostanza_id INTEGER NOT NULL,
+    lingua CHAR(5) NOT NULL,
+    versione VARCHAR(20),
+    data_emissione DATE,
+    file_path TEXT NOT NULL,
+    file_nome_orig VARCHAR(255),
+    e_corrente TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (sostanza_id, lingua, versione),
+    CONSTRAINT fk_sostanze_chimiche_schede_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS sostanze_h_statements (
+    sostanza_id INTEGER NOT NULL,
+    h_codice VARCHAR(6) NOT NULL,
+    PRIMARY KEY (sostanza_id, h_codice),
+    CONSTRAINT fk_sostanze_h_statements_h_codice FOREIGN KEY (h_codice) REFERENCES clp_h_statements(codice) ON DELETE CASCADE,
+    CONSTRAINT fk_sostanze_h_statements_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS sostanze_p_statements (
+    sostanza_id INTEGER NOT NULL,
+    p_codice VARCHAR(6) NOT NULL,
+    PRIMARY KEY (sostanza_id, p_codice),
+    CONSTRAINT fk_sostanze_p_statements_p_codice FOREIGN KEY (p_codice) REFERENCES clp_p_statements(codice) ON DELETE CASCADE,
+    CONSTRAINT fk_sostanze_p_statements_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS sostanze_pittogrammi (
+    sostanza_id INTEGER NOT NULL,
+    pittogramma_cod VARCHAR(6) NOT NULL,
+    PRIMARY KEY (sostanza_id, pittogramma_cod),
+    CONSTRAINT fk_sostanze_pittogrammi_pittogramma_cod FOREIGN KEY (pittogramma_cod) REFERENCES clp_pittogrammi(codice) ON DELETE CASCADE,
+    CONSTRAINT fk_sostanze_pittogrammi_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS prodotto_classificazioni_adr (
-    id                          INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_id                 INTEGER      NOT NULL REFERENCES prodotti(id) ON DELETE CASCADE,
-    codice_onu_id               INTEGER      NOT NULL REFERENCES adr_codici_onu(id),
-    concentrazione_min_pct      DECIMAL(5,2),                -- % concentrazione minima; per prodotti con range di concentrazione
-    concentrazione_max_pct      DECIMAL(5,2),
-    punto_infiammabilita_c      DECIMAL(6,2),                -- punto di infiammabilità in °C
-    e_rifiuto                   BOOLEAN,
-    e_stabilizzato              BOOLEAN,
-    e_soluzione                 BOOLEAN,
-    nome_tecnico                VARCHAR(200),                -- nome tecnico del componente pericoloso; appare sui documenti ADR
-    gruppo_imballaggio_override CHAR(3)      REFERENCES adr_gruppi_imballaggio(codice),  -- override del GI del codice ONU; solo se il prodotto specifico ha un gruppo diverso
-    valido_dal                  DATE,
-    valido_al                   DATE,
-    e_corrente                  BOOLEAN,                     -- se 1, classificazione attiva
-    creato_da                   INTEGER      NOT NULL REFERENCES utenti(id),
-    created_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_id INTEGER NOT NULL,
+    codice_onu_id INTEGER NOT NULL,
+    concentrazione_min_pct DECIMAL(5,2),
+    concentrazione_max_pct DECIMAL(5,2),
+    punto_infiammabilita_c DECIMAL(6,2),
+    e_rifiuto TINYINT(1),
+    e_stabilizzato TINYINT(1),
+    e_soluzione TINYINT(1),
+    nome_tecnico VARCHAR(200),
+    gruppo_imballaggio_override CHAR(3),
+    valido_dal DATE,
+    valido_al DATE,
+    e_corrente TINYINT(1),
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_prodotto_classificazioni_adr_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_prodotto_classificazioni_adr_gruppo_imballaggio_override FOREIGN KEY (gruppo_imballaggio_override) REFERENCES adr_gruppi_imballaggio(codice),
+    CONSTRAINT fk_prodotto_classificazioni_adr_codice_onu_id FOREIGN KEY (codice_onu_id) REFERENCES adr_codici_onu(id),
+    CONSTRAINT fk_prodotto_classificazioni_adr_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS prodotti_immagini (
-    id                INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_id       INTEGER  NOT NULL REFERENCES prodotti(id) ON DELETE CASCADE,
-    file_path         TEXT     NOT NULL,
-    posizione_immagine INTEGER NOT NULL DEFAULT 0  -- posizione in galleria immagini del prodotto
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    posizione_immagine INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT fk_prodotti_immagini_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS tag (
-    id   INT AUTO_INCREMENT PRIMARY KEY,
-    nome VARCHAR(50) NOT NULL UNIQUE
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(50) NOT NULL,
+    UNIQUE (nome)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS prodotti_tag (
-    prodotto_id INTEGER NOT NULL REFERENCES prodotti(id) ON DELETE CASCADE,
-    tag_id      INTEGER NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
-    PRIMARY KEY (prodotto_id, tag_id)
-);
+    prodotto_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
+    PRIMARY KEY (prodotto_id, tag_id),
+    CONSTRAINT fk_prodotti_tag_tag_id FOREIGN KEY (tag_id) REFERENCES tag(id) ON DELETE CASCADE,
+    CONSTRAINT fk_prodotti_tag_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS componenti_kit (
-    kit_id        INTEGER       NOT NULL REFERENCES prodotti(id) ON DELETE CASCADE,  -- prodotto padre (tipo=kit)
-    componente_id INTEGER       NOT NULL REFERENCES prodotti(id),                    -- prodotto componente
-    quantita      DECIMAL(10,3) NOT NULL,
-    note          TEXT,
-    PRIMARY KEY (kit_id, componente_id)
-);
-
--- =============================================================================
--- 14. PRODOTTI FORNITORI E PREZZI ACQUISTO
--- =============================================================================
+    kit_id INTEGER NOT NULL,
+    componente_id INTEGER NOT NULL,
+    quantita DECIMAL(10,3) NOT NULL,
+    note TEXT,
+    PRIMARY KEY (kit_id, componente_id),
+    CONSTRAINT fk_componenti_kit_componente_id FOREIGN KEY (componente_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_componenti_kit_kit_id FOREIGN KEY (kit_id) REFERENCES prodotti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS prodotti_fornitori (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
-    fornitore_id            INTEGER       NOT NULL REFERENCES clienti_fornitori(id),
-    sku_fornitore           VARCHAR(50),                -- codice articolo usato dal fornitore; appare sui documenti inviati al fornitore
-    nome_prodotto_fornitore VARCHAR(150),               -- nome del prodotto secondo il fornitore
-    unita_misura_acquisto_id INTEGER      NOT NULL REFERENCES unita_misura(id),  -- UoM in cui il fornitore quota il prezzo; può differire dalla UoM di stock
-    quantita_minima         DECIMAL(10,3),              -- MOQ in unita_misura_acquisto_id
-    iva_acquisto_default   DECIMAL(5,2), -- iva che viene suggerita di base per le richieste preventivo. è OVERRIDE di quella in tabella prodotti
-    ordine_preferenza_fornitore INTEGER   NOT NULL DEFAULT 1,  -- 1 = fornitore preferito per questo prodotto
-    lead_time_giorni        INTEGER,                    -- override del lead_time del fornitore per questo specifico prodotto
-    attivo                  BOOLEAN       NOT NULL DEFAULT 1,
-    note                    TEXT,
-    rrp_min                 DECIMAL(10,4),              -- prezzo di vendita MINIMO consigliato dal fornitore
-    rrp_max                 DECIMAL(10,4),              -- prezzo di vendita MASSIMO consigliato dal fornitore
-    rrp_unita_misura_id     INTEGER       REFERENCES unita_misura(id), -- UoM associata a rrp_min/rrp_max
-    created_at              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_id INTEGER NOT NULL,
+    fornitore_id INTEGER NOT NULL,
+    sku_fornitore VARCHAR(50),
+    nome_prodotto_fornitore VARCHAR(150),
+    unita_misura_acquisto_id INTEGER NOT NULL,
+    quantita_minima DECIMAL(10,3),
+    iva_acquisto_default DECIMAL(5,2),
+    ordine_preferenza_fornitore INTEGER NOT NULL DEFAULT 1,
+    lead_time_giorni INTEGER,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    note TEXT,
+    rrp_min DECIMAL(10,4),
+    rrp_max DECIMAL(10,4),
+    rrp_unita_misura_id INTEGER,
+    rrp_valido_dal DATE,
+    rrp_valido_al DATE,
+    rrp_valuta CHAR(3) DEFAULT 'EUR',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_prodotti_fornitori_rrp_unita_misura_id FOREIGN KEY (rrp_unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_prodotti_fornitori_unita_misura_acquisto_id FOREIGN KEY (unita_misura_acquisto_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_prodotti_fornitori_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_prodotti_fornitori_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS listini_acquisto (
-	id    INT AUTO_INCREMENT PRIMARY KEY,
-	fornitore_id    INTEGER       NOT NULL REFERENCES clienti_fornitori(id),
-	nome_listino	VARCHAR(100) NOT NULL,
-	valido_dal   DATE,
-	valido_al   DATE,
-	note TEXT,
-	file_path TEXT,   -- salvo i pdf dei listini
-	attivo BOOLEAN NOT NULL DEFAULT 1  -- allineato a init_sqlite.sql il 13/07/2026: la vista v_prezzo_acquisto_base_fornitore sotto referenzia già la.attivo, mancava la colonna
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fornitore_id INTEGER NOT NULL,
+    nome_listino VARCHAR(100) NOT NULL,
+    valido_dal DATE,
+    valido_al DATE,
+    note TEXT,
+    file_path TEXT,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    CONSTRAINT fk_listini_acquisto_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Prezzi di acquisto a scaglione per coppia prodotto-fornitore
 CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
-    id                    INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_fornitore_id INTEGER       NOT NULL REFERENCES prodotti_fornitori(id) ON DELETE CASCADE,
-    quantita_minima       DECIMAL(10,3) NOT NULL DEFAULT 0,  -- 0 = prezzo base; >0 = prezzo a scaglione
-    prezzo                DECIMAL(10,4) NOT NULL,             -- prezzo unitario negoziato
-    unita_misura_id       INTEGER       REFERENCES unita_misura(id), -- UoM a cui si riferisce il prezzo
-    sconto_perc           DECIMAL(5,2)  NOT NULL DEFAULT 0,  -- alternativo al prezzo già scontato
-    valido_dal            DATE,                               -- NULL = sempre valido
-    valido_al             DATE,                               -- NULL = senza scadenza
-    note                  TEXT,
-	listino_acquisto_id   INTEGER       REFERENCES listini_acquisto(id), -- collegato al listino d'acquisto se esistente
-	importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
-	modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
-	-- D1.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1): vedi commento esteso nello schema SQLite gemello.
-	quantita_minima_intento    DECIMAL(10,3) DEFAULT NULL,
-	unita_misura_soglia_id     INTEGER       DEFAULT NULL REFERENCES unita_misura(id),
-	quantita_minima_stock      DECIMAL(10,3) DEFAULT NULL,
-	-- D1.2 (PIANO Motore di Pricing Multi-UoM §5.7/§7.4/§8): questa tabella non aveva MAI avuto
-	-- un vincolo UNIQUE su MySQL (gap noto, REVISIONE §6.10/§5.7 del piano) — aggiunto qui
-	-- direttamente sul valore canonico, allineato allo schema SQLite gemello fin dall'inizio.
-	UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima_stock)
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_fornitore_id INTEGER NOT NULL,
+    quantita_minima DECIMAL(10,3) NOT NULL DEFAULT 0,
+    prezzo DECIMAL(10,4) NOT NULL,
+    unita_misura_id INTEGER,
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    valido_dal DATE,
+    valido_al DATE,
+    note TEXT,
+    listino_acquisto_id INTEGER,
+    importato_il DATETIME DEFAULT NULL,
+    modificato_manualmente_il DATETIME DEFAULT NULL,
+    quantita_minima_intento DECIMAL(10,3) DEFAULT NULL,
+    unita_misura_soglia_id INTEGER DEFAULT NULL,
+    quantita_minima_stock DECIMAL(10,3) DEFAULT NULL,
+    UNIQUE (prodotto_fornitore_id, listino_acquisto_id, quantita_minima_stock),
+    CONSTRAINT fk_prodotti_fornitori_prezzi_unita_misura_soglia_id FOREIGN KEY (unita_misura_soglia_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_prodotti_fornitori_prezzi_listino_acquisto_id FOREIGN KEY (listino_acquisto_id) REFERENCES listini_acquisto(id) ON DELETE CASCADE,
+    CONSTRAINT fk_prodotti_fornitori_prezzi_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_prodotti_fornitori_prezzi_prodotto_fornitore_id FOREIGN KEY (prodotto_fornitore_id) REFERENCES prodotti_fornitori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS listini_prezzi (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    listino_id INTEGER NOT NULL,
+    prodotto_id INTEGER NOT NULL,
+    quantita_minima DECIMAL(10,3) NOT NULL DEFAULT 0,
+    prezzo_unitario DECIMAL(10,4) NOT NULL,
+    unita_misura_id INTEGER,
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    importato_il DATETIME DEFAULT NULL,
+    modificato_manualmente_il DATETIME DEFAULT NULL,
+    quantita_minima_intento DECIMAL(10,3) DEFAULT NULL,
+    unita_misura_soglia_id INTEGER DEFAULT NULL,
+    quantita_minima_stock DECIMAL(10,3) DEFAULT NULL,
+    UNIQUE (listino_id, prodotto_id, quantita_minima_stock),
+    CONSTRAINT fk_listini_prezzi_unita_misura_soglia_id FOREIGN KEY (unita_misura_soglia_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_listini_prezzi_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_listini_prezzi_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_listini_prezzi_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lotti (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice_lotto_fornitore VARCHAR(50),
+    codice_lotto_interno VARCHAR(50) NOT NULL,
+    prodotto_id INTEGER NOT NULL,
+    origine_tipo TEXT,
+    fornitore_id INTEGER,
+    ordine_testata_id INTEGER,
+    ricezione_riga_id INTEGER,
+    data_produzione DATE,
+    data_scadenza DATE,
+    data_arrivo DATE,
+    numero_ddt_arrivo VARCHAR(50),
+    quantita_ricevuta DECIMAL(10,3) NOT NULL,
+    note TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (codice_lotto_fornitore, prodotto_id, fornitore_id),
+    CONSTRAINT fk_lotti_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_lotti_ricezione_riga_id FOREIGN KEY (ricezione_riga_id) REFERENCES ricezioni_righe(id),
+    CONSTRAINT fk_lotti_ordine_testata_id FOREIGN KEY (ordine_testata_id) REFERENCES ordini_testata(id),
+    CONSTRAINT fk_lotti_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_lotti_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS magazzini (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(20) NOT NULL,
+    nome VARCHAR(100) NOT NULL,
+    tipo VARCHAR(22) NOT NULL DEFAULT 'fisico' CHECK (tipo IN ('fisico', 'virtuale', 'conto_terzi', 'conto_lavoro')),
+    azienda_interna_id INTEGER,
+    indirizzo_id INTEGER,
+    parent_id INTEGER,
+    soggetto_esterno_id INTEGER,
+    predefinito TINYINT(1) NOT NULL DEFAULT 0,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (codice),
+    predefinito_uniq TINYINT(1) GENERATED ALWAYS AS (CASE WHEN predefinito = 1 THEN 1 ELSE NULL END) VIRTUAL,
+    UNIQUE KEY idx_magazzini_un_predefinito (predefinito_uniq),
+    CONSTRAINT fk_magazzini_soggetto_esterno_id FOREIGN KEY (soggetto_esterno_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_magazzini_parent_id FOREIGN KEY (parent_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_magazzini_indirizzo_id FOREIGN KEY (indirizzo_id) REFERENCES indirizzi(id),
+    CONSTRAINT fk_magazzini_azienda_interna_id FOREIGN KEY (azienda_interna_id) REFERENCES aziende_interne(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giacenze (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_id INTEGER NOT NULL,
+    magazzino_id INTEGER NOT NULL,
+    quantita_disponibile DECIMAL(10,3) NOT NULL DEFAULT 0,
+    quantita_riservata DECIMAL(10,3) NOT NULL DEFAULT 0,
+    quantita_in_arrivo DECIMAL(10,3) NOT NULL DEFAULT 0,
+    scorta_minima DECIMAL(10,3) NOT NULL DEFAULT 0,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (prodotto_id, magazzino_id),
+    CONSTRAINT fk_giacenze_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_giacenze_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lotti_giacenze (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    lotto_id INTEGER NOT NULL,
+    magazzino_id INTEGER NOT NULL,
+    quantita_disponibile DECIMAL(10,3) NOT NULL DEFAULT 0,
+    updated_at DATETIME,
+    UNIQUE (lotto_id, magazzino_id),
+    CONSTRAINT fk_lotti_giacenze_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_lotti_giacenze_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS movimenti_magazzino (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_id INTEGER NOT NULL,
+    lotto_id INTEGER,
+    magazzino_id INTEGER,
+    tipo_movimento VARCHAR(24) NOT NULL CHECK (tipo_movimento IN ('carico', 'scarico', 'reso_cliente', 'reso_fornitore', 'rettifica', 'riserva', 'svincolo', 'trasferimento')),
+    quantita DECIMAL(10,3) NOT NULL,
+    quantita_delta DECIMAL(10,3),
+    documento_tipo VARCHAR(50),
+    documento_id INTEGER,
+    canale_origine VARCHAR(50),
+    riferimento_esterno VARCHAR(100),
+    note TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_movimenti_magazzino_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_movimenti_magazzino_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_movimenti_magazzino_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id),
+    CONSTRAINT fk_movimenti_magazzino_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS trasferimenti_magazzino (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero VARCHAR(20) NOT NULL,
+    magazzino_origine_id INTEGER NOT NULL,
+    magazzino_destinazione_id INTEGER NOT NULL,
+    stato VARCHAR(21) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'in_transito', 'completato', 'annullato')),
+    data_richiesta DATE NOT NULL,
+    data_partenza DATE,
+    data_arrivo DATE,
+    tipo_creazione VARCHAR(23) NOT NULL DEFAULT 'trasferimento' CHECK (tipo_creazione IN ('trasferimento', 'diretto')),
+    note TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (numero),
+    CONSTRAINT fk_trasferimenti_magazzino_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_trasferimenti_magazzino_magazzino_destinazione_id FOREIGN KEY (magazzino_destinazione_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_trasferimenti_magazzino_magazzino_origine_id FOREIGN KEY (magazzino_origine_id) REFERENCES magazzini(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS trasferimenti_magazzino_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    trasferimento_id INTEGER NOT NULL,
+    prodotto_id INTEGER NOT NULL,
+    lotto_id INTEGER,
+    quantita_richiesta DECIMAL(10,3) NOT NULL,
+    quantita_arrivata DECIMAL(10,3),
+    note_discrepanza TEXT,
+    CONSTRAINT fk_trasferimenti_magazzino_righe_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id),
+    CONSTRAINT fk_trasferimenti_magazzino_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_trasferimenti_magazzino_righe_trasferimento_id FOREIGN KEY (trasferimento_id) REFERENCES trasferimenti_magazzino(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventari (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    data_inventario DATE NOT NULL,
+    magazzino_id INTEGER,
+    categoria_filtro_id INTEGER,
+    note TEXT,
+    stato VARCHAR(255) NOT NULL DEFAULT 'bozza',
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inventari_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_inventari_categoria_filtro_id FOREIGN KEY (categoria_filtro_id) REFERENCES categorie_prodotto(id),
+    CONSTRAINT fk_inventari_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventari_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    inventario_id INTEGER NOT NULL,
+    prodotto_id INTEGER NOT NULL,
+    lotto_id INTEGER,
+    giacenza_teorica DECIMAL(10,3) NOT NULL,
+    quantita_contata DECIMAL(10,3) NOT NULL,
+    movimento_id INTEGER,
+    CONSTRAINT fk_inventari_righe_movimento_id FOREIGN KEY (movimento_id) REFERENCES movimenti_magazzino(id),
+    CONSTRAINT fk_inventari_righe_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id),
+    CONSTRAINT fk_inventari_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_inventari_righe_inventario_id FOREIGN KEY (inventario_id) REFERENCES inventari(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventario_creazione_lock (
+    magazzino_id INT AUTO_INCREMENT PRIMARY KEY,
+    CONSTRAINT fk_inventario_creazione_lock_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS log_stati_ordini (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tipo_documento VARCHAR(50) NOT NULL,
+    documento_id INTEGER NOT NULL,
+    stato_precedente TEXT,
+    stato_nuovo TEXT NOT NULL,
+    cambiato_da INTEGER,
+    cambiato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    note TEXT,
+    CONSTRAINT fk_log_stati_ordini_cambiato_da FOREIGN KEY (cambiato_da) REFERENCES utenti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS preventivi (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero_preventivo VARCHAR(20) NOT NULL,
+    riferimento_interno VARCHAR(100),
+    cliente_id INTEGER NOT NULL,
+    azienda_interna_id INTEGER,
+    indirizzo_spedizione_id INTEGER,
+    alla_ca VARCHAR(150),
+    contatto_id INTEGER,
+    contatto_nome VARCHAR(150),
+    contatto_email VARCHAR(150),
+    contatto_telefono VARCHAR(50),
+    oggetto VARCHAR(255),
+    storico TINYINT(1) NOT NULL DEFAULT 0,
+    data_offerta DATE NOT NULL,
+    data_scadenza DATE,
+    data_consegna_richiesta DATE,
+    canale_vendita_id INTEGER,
+    stato VARCHAR(20) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'inviato', 'accettato', 'rifiutato', 'scaduto', 'annullato')),
+    listino_id INTEGER,
+    sconto_globale_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    condizioni_pagamento TEXT,
+    trasporto TEXT,
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    imponibile DECIMAL(10,2),
+    totale_iva DECIMAL(10,2),
+    totale DECIMAL(10,2),
+    totale_costo DECIMAL(10,2),
+    margine_euro DECIMAL(10,2),
+    margine_perc DECIMAL(5,2),
+    azienda_ragione_sociale TEXT,
+    azienda_partita_iva TEXT,
+    azienda_codice_fiscale TEXT,
+    azienda_indirizzo TEXT,
+    azienda_telefono TEXT,
+    azienda_email TEXT,
+    azienda_iban TEXT,
+    cliente_ragione_sociale TEXT,
+    cliente_partita_iva TEXT,
+    cliente_codice_fiscale TEXT,
+    cliente_indirizzo TEXT,
+    consegna_via TEXT,
+    consegna_civico TEXT,
+    consegna_cap TEXT,
+    consegna_citta TEXT,
+    consegna_provincia TEXT,
+    consegna_nazione TEXT,
+    consegna_presso TEXT,
+    consegna_referente TEXT,
+    consegna_telefono TEXT,
+    consegna_note TEXT,
+    indirizzo_consegna_id INTEGER,
+    contatto_snapshot_id INTEGER,
+    note_cliente TEXT,
+    note_interne TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero_preventivo),
+    CONSTRAINT fk_preventivi_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_preventivi_contatto_snapshot_id FOREIGN KEY (contatto_snapshot_id) REFERENCES contatti_documenti(id),
+    CONSTRAINT fk_preventivi_indirizzo_consegna_id FOREIGN KEY (indirizzo_consegna_id) REFERENCES indirizzi_documenti(id),
+    CONSTRAINT fk_preventivi_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id),
+    CONSTRAINT fk_preventivi_canale_vendita_id FOREIGN KEY (canale_vendita_id) REFERENCES canali_vendita(id),
+    CONSTRAINT fk_preventivi_contatto_id FOREIGN KEY (contatto_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_preventivi_indirizzo_spedizione_id FOREIGN KEY (indirizzo_spedizione_id) REFERENCES indirizzi(id),
+    CONSTRAINT fk_preventivi_azienda_interna_id FOREIGN KEY (azienda_interna_id) REFERENCES aziende_interne(id),
+    CONSTRAINT fk_preventivi_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS preventivi_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    preventivo_id INTEGER NOT NULL,
+    prodotto_id INTEGER,
+    descrizione VARCHAR(255) NOT NULL,
+    descrizione_confezione VARCHAR(255),
+    quantita DECIMAL(10,3) NOT NULL,
+    unita_misura_id INTEGER,
+    prezzo_unitario DECIMAL(10,4) NOT NULL,
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    prezzo_netto DECIMAL(10,4),
+    iva_perc DECIMAL(5,2) NOT NULL DEFAULT 22,
+    imponibile_riga DECIMAL(10,2),
+    totale_riga DECIMAL(10,2),
+    costo_unitario DECIMAL(10,4),
+    totale_costo_riga DECIMAL(10,2),
+    margine_riga DECIMAL(10,2),
+    is_adr TINYINT(1) NOT NULL DEFAULT 0,
+    quantita_stock DECIMAL(10,3),
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id INTEGER,
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
+    num_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    den_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    posizione_riga INTEGER NOT NULL DEFAULT 0,
+    note_riga TEXT,
+    CONSTRAINT fk_preventivi_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_preventivi_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_preventivi_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_preventivi_righe_preventivo_id FOREIGN KEY (preventivo_id) REFERENCES preventivi(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ordini_clienti (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero_ordine VARCHAR(20) NOT NULL,
+    preventivo_id INTEGER,
+    cliente_id INTEGER NOT NULL,
+    indirizzo_spedizione_id INTEGER,
+    azienda_interna_id INTEGER,
+    data_ordine DATE NOT NULL,
+    data_consegna_prevista DATE,
+    stato VARCHAR(30) NOT NULL CHECK (stato IN ('in_lavorazione', 'parzialmente_spedito', 'spedito', 'completato', 'annullato')),
+    stato_fatturazione VARCHAR(255) NOT NULL DEFAULT 'da_fatturare',
+    riferimento_interno VARCHAR(100),
+    condizioni_pagamento TEXT,
+    trasporto TEXT,
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    azienda_ragione_sociale VARCHAR(255),
+    azienda_partita_iva VARCHAR(30),
+    azienda_codice_fiscale VARCHAR(30),
+    azienda_indirizzo VARCHAR(255),
+    azienda_telefono VARCHAR(30),
+    azienda_email VARCHAR(150),
+    azienda_iban VARCHAR(34),
+    cliente_ragione_sociale VARCHAR(255),
+    cliente_partita_iva VARCHAR(30),
+    cliente_codice_fiscale VARCHAR(30),
+    cliente_indirizzo VARCHAR(255),
+    consegna_via VARCHAR(150),
+    consegna_civico VARCHAR(10),
+    consegna_cap VARCHAR(10),
+    consegna_citta VARCHAR(100),
+    consegna_provincia CHAR(2),
+    consegna_nazione CHAR(2) DEFAULT 'IT',
+    consegna_presso VARCHAR(100),
+    consegna_referente VARCHAR(80),
+    consegna_telefono VARCHAR(20),
+    consegna_note VARCHAR(255),
+    contatto_id INTEGER,
+    contatto_nome VARCHAR(150),
+    contatto_email VARCHAR(150),
+    contatto_telefono VARCHAR(50),
+    indirizzo_consegna_id INTEGER,
+    contatto_snapshot_id INTEGER,
+    note TEXT,
+    listino_id INTEGER,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero_ordine),
+    CONSTRAINT fk_ordini_clienti_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_ordini_clienti_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id),
+    CONSTRAINT fk_ordini_clienti_contatto_snapshot_id FOREIGN KEY (contatto_snapshot_id) REFERENCES contatti_documenti(id),
+    CONSTRAINT fk_ordini_clienti_indirizzo_consegna_id FOREIGN KEY (indirizzo_consegna_id) REFERENCES indirizzi_documenti(id),
+    CONSTRAINT fk_ordini_clienti_azienda_interna_id FOREIGN KEY (azienda_interna_id) REFERENCES aziende_interne(id),
+    CONSTRAINT fk_ordini_clienti_indirizzo_spedizione_id FOREIGN KEY (indirizzo_spedizione_id) REFERENCES indirizzi(id),
+    CONSTRAINT fk_ordini_clienti_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_ordini_clienti_preventivo_id FOREIGN KEY (preventivo_id) REFERENCES preventivi(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ordine_id INTEGER NOT NULL,
+    preventivo_riga_id INTEGER,
+    prodotto_id INTEGER,
+    descrizione VARCHAR(255) NOT NULL,
+    quantita_ordinata DECIMAL(10,3) NOT NULL,
+    quantita_spedita DECIMAL(10,3) NOT NULL DEFAULT 0,
+    unita_misura_id INTEGER,
+    prezzo_unitario DECIMAL(10,4),
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    iva_perc DECIMAL(5,2) NOT NULL DEFAULT 22,
+    costo_unitario DECIMAL(10,4),
+    quantita_stock DECIMAL(10,3),
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id INTEGER,
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
+    num_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    den_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    quantita_confezione VARCHAR(50),
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ordini_clienti_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_ordini_clienti_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_ordini_clienti_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_ordini_clienti_righe_preventivo_riga_id FOREIGN KEY (preventivo_riga_id) REFERENCES preventivi_righe(id),
+    CONSTRAINT fk_ordini_clienti_righe_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fatture (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero_fattura VARCHAR(20) NOT NULL,
+    tipo VARCHAR(22) NOT NULL DEFAULT 'fattura' CHECK (tipo IN ('fattura', 'nota_credito', 'proforma')),
+    data_emissione DATE NOT NULL,
+    data_scadenza_pagamento DATE,
+    cliente_id INTEGER NOT NULL,
+    ordine_id INTEGER,
+    metodo_pagamento VARCHAR(50),
+    stato VARCHAR(20) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'emessa', 'pagata', 'annullata')),
+    imponibile DECIMAL(10,2),
+    totale_iva DECIMAL(10,2),
+    totale DECIMAL(10,2),
+    note TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero_fattura),
+    CONSTRAINT fk_fatture_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_fatture_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id),
+    CONSTRAINT fk_fatture_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fatture_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fattura_id INTEGER NOT NULL,
+    ordine_riga_id INTEGER,
+    prodotto_id INTEGER,
+    descrizione VARCHAR(255) NOT NULL,
+    quantita DECIMAL(10,3) NOT NULL,
+    unita_misura_id INTEGER,
+    prezzo_unitario DECIMAL(10,4) NOT NULL,
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    aliquota_iva DECIMAL(5,2) NOT NULL DEFAULT 22,
+    imponibile_riga DECIMAL(10,2),
+    iva_riga DECIMAL(10,2),
+    totale_riga DECIMAL(10,2),
+    posizione_riga INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT fk_fatture_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_fatture_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_fatture_righe_ordine_riga_id FOREIGN KEY (ordine_riga_id) REFERENCES ordini_clienti_righe(id),
+    CONSTRAINT fk_fatture_righe_fattura_id FOREIGN KEY (fattura_id) REFERENCES fatture(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS spedizioni (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero_spedizione VARCHAR(20) NOT NULL,
+    ordine_id INTEGER NOT NULL,
+    data_spedizione DATE NOT NULL,
+    indirizzo_spedizione_id INTEGER,
+    vettore VARCHAR(100),
+    tracking VARCHAR(100),
+    stato VARCHAR(22) NOT NULL DEFAULT 'preparazione' CHECK (stato IN ('preparazione', 'spedita', 'consegnata', 'reso')),
+    note TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (numero_spedizione),
+    CONSTRAINT fk_spedizioni_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_spedizioni_indirizzo_spedizione_id FOREIGN KEY (indirizzo_spedizione_id) REFERENCES indirizzi(id),
+    CONSTRAINT fk_spedizioni_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS spedizioni_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    spedizione_id INTEGER NOT NULL,
+    ordine_riga_id INTEGER NOT NULL,
+    prodotto_id INTEGER NOT NULL,
+    lotto_id INTEGER,
+    quantita DECIMAL(10,3) NOT NULL,
+    note TEXT,
+    CONSTRAINT fk_spedizioni_righe_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id),
+    CONSTRAINT fk_spedizioni_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_spedizioni_righe_ordine_riga_id FOREIGN KEY (ordine_riga_id) REFERENCES ordini_clienti_righe(id),
+    CONSTRAINT fk_spedizioni_righe_spedizione_id FOREIGN KEY (spedizione_id) REFERENCES spedizioni(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS spedizioni_foto (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    spedizione_id INTEGER NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_spedizioni_foto_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_spedizioni_foto_spedizione_id FOREIGN KEY (spedizione_id) REFERENCES spedizioni(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS documenti_trasporto (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero_documento_trasporto VARCHAR(20) NOT NULL,
+    spedizione_id INTEGER,
+    ordine_id INTEGER NOT NULL,
+    data DATE NOT NULL,
+    destinatario_id INTEGER NOT NULL,
+    indirizzo_destinazione_id INTEGER NOT NULL,
+    causale_trasporto TEXT,
+    porto VARCHAR(20) NOT NULL CHECK (porto IN ('franco', 'assegnato')),
+    vettore TEXT,
+    aspetto_beni TEXT,
+    numero_colli INTEGER,
+    peso_lordo_kg DECIMAL(10,3),
+    stato VARCHAR(20) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'emesso', 'consegnato')),
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero_documento_trasporto),
+    CONSTRAINT fk_documenti_trasporto_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_documenti_trasporto_indirizzo_destinazione_id FOREIGN KEY (indirizzo_destinazione_id) REFERENCES indirizzi(id),
+    CONSTRAINT fk_documenti_trasporto_destinatario_id FOREIGN KEY (destinatario_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_documenti_trasporto_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id),
+    CONSTRAINT fk_documenti_trasporto_spedizione_id FOREIGN KEY (spedizione_id) REFERENCES spedizioni(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS documenti_trasporto_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    documento_trasporto_id INTEGER NOT NULL,
+    prodotto_id INTEGER NOT NULL,
+    descrizione VARCHAR(255) NOT NULL,
+    quantita DECIMAL(10,3) NOT NULL,
+    unita_misura_id INTEGER,
+    lotto_id INTEGER,
+    codice_lotto VARCHAR(50),
+    is_adr TINYINT(1) NOT NULL DEFAULT 0,
+    numero_onu VARCHAR(10),
+    classe_adr VARCHAR(10),
+    packing_group TEXT,
+    posizione_riga INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    CONSTRAINT fk_documenti_trasporto_righe_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id),
+    CONSTRAINT fk_documenti_trasporto_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_documenti_trasporto_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_documenti_trasporto_righe_documento_trasporto_id FOREIGN KEY (documento_trasporto_id) REFERENCES documenti_trasporto(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS Impostazioni (
+    chiave VARCHAR(50) NOT NULL PRIMARY KEY,
+    valore TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS incoterms (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice CHAR(3) NOT NULL,
+    descrizione VARCHAR(100) NOT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS metodi_pagamento (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(20) NOT NULL,
+    descrizione VARCHAR(100) NOT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rfq_testata (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero VARCHAR(30) NOT NULL,
+    versione INTEGER NOT NULL DEFAULT 1,
+    rfq_padre_id INTEGER,
+    stato VARCHAR(21) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'inviata', 'revisionata', 'chiusa')),
+    esito_chiusura VARCHAR(20),
+    fornitore_id INTEGER,
+    indirizzo_consegna_id INTEGER,
+    incoterm_codice CHAR(3),
+    incoterm_luogo VARCHAR(150),
+    consegna_via VARCHAR(150),
+    consegna_civico VARCHAR(10),
+    consegna_cap VARCHAR(10),
+    consegna_citta VARCHAR(100),
+    consegna_provincia CHAR(2),
+    consegna_nazione CHAR(2) DEFAULT 'IT',
+    consegna_presso VARCHAR(100),
+    consegna_referente VARCHAR(80),
+    consegna_telefono VARCHAR(20),
+    consegna_note VARCHAR(255),
+    contatto_id INTEGER,
+    contatto_nome VARCHAR(100),
+    contatto_telefono VARCHAR(20),
+    contatto_email VARCHAR(150),
+    fornitore_telefono VARCHAR(20),
+    fornitore_email VARCHAR(150),
+    data_emissione DATE NOT NULL DEFAULT (CURRENT_DATE),
+    data_scadenza DATE,
+    condizioni_pagamento TEXT,
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    note_fornitore TEXT,
+    note_interne TEXT,
+    imponibile DECIMAL(10,2),
+    totale_iva DECIMAL(10,2),
+    totale DECIMAL(10,2),
+    inviata_il DATETIME,
+    creato_da INTEGER,
+    listino_acquisto_id INTEGER,
+    metodo_pagamento_id INTEGER,
+    resa_porto VARCHAR(25) CHECK (resa_porto IN ('porto_franco', 'porto_assegnato')),
+    riferimento_rfq_interno TEXT,
+    azienda_interna_id INTEGER,
+    uom_mode VARCHAR(20) NOT NULL DEFAULT 'commercial' CHECK (uom_mode IN ('commercial', 'stock')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero),
+    CONSTRAINT fk_rfq_testata_azienda_interna_id FOREIGN KEY (azienda_interna_id) REFERENCES aziende_interne(id),
+    CONSTRAINT fk_rfq_testata_metodo_pagamento_id FOREIGN KEY (metodo_pagamento_id) REFERENCES metodi_pagamento(id),
+    CONSTRAINT fk_rfq_testata_listino_acquisto_id FOREIGN KEY (listino_acquisto_id) REFERENCES listini_acquisto(id),
+    CONSTRAINT fk_rfq_testata_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_rfq_testata_contatto_id FOREIGN KEY (contatto_id) REFERENCES contatti_documenti(id),
+    CONSTRAINT fk_rfq_testata_incoterm_codice FOREIGN KEY (incoterm_codice) REFERENCES incoterms(codice),
+    CONSTRAINT fk_rfq_testata_indirizzo_consegna_id FOREIGN KEY (indirizzo_consegna_id) REFERENCES indirizzi_documenti(id),
+    CONSTRAINT fk_rfq_testata_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_rfq_testata_rfq_padre_id FOREIGN KEY (rfq_padre_id) REFERENCES rfq_testata(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rfq_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    rfq_id INTEGER NOT NULL,
+    posizione_riga INTEGER NOT NULL DEFAULT 0,
+    prodotto_id INTEGER NOT NULL,
+    descrizione VARCHAR(255),
+    sku_fornitore VARCHAR(50),
+    quantita_richiesta DECIMAL(10,3) NOT NULL,
+    unita_misura_id INTEGER,
+    prezzo_indicativo DECIMAL(10,4),
+    data_consegna_richiesta DATE,
+    e_rifiutato TINYINT(1) NOT NULL DEFAULT 0,
+    note TEXT,
+    quantita_stock DECIMAL(10,3),
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id INTEGER,
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
+    num_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    den_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    CONSTRAINT fk_rfq_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_rfq_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_rfq_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_rfq_righe_rfq_id FOREIGN KEY (rfq_id) REFERENCES rfq_testata(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS offerte_testata (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero VARCHAR(30) NOT NULL,
+    rfq_id INTEGER,
+    fornitore_id INTEGER NOT NULL,
+    stato VARCHAR(24) NOT NULL DEFAULT 'in_valutazione' CHECK (stato IN ('in_valutazione', 'accettata', 'rifiutata')),
+    data_offerta DATE NOT NULL DEFAULT (CURRENT_DATE),
+    data_scadenza_offerta DATE,
+    condizioni_pagamento TEXT,
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    riferimento_fornitore VARCHAR(100),
+    allegato_path TEXT,
+    note_fornitore TEXT,
+    note_interne TEXT,
+    motivo_rifiuto TEXT,
+    imponibile DECIMAL(10,2),
+    totale_iva DECIMAL(10,2),
+    totale DECIMAL(10,2),
+    valutata_il DATETIME,
+    valutata_da INTEGER,
+    creato_da INTEGER,
+    indirizzo_consegna_id INTEGER,
+    contatto_id INTEGER,
+    contatto_nome VARCHAR(100),
+    contatto_telefono VARCHAR(20),
+    contatto_email VARCHAR(150),
+    fornitore_telefono VARCHAR(20),
+    fornitore_email VARCHAR(150),
+    listino_acquisto_id INTEGER,
+    metodo_pagamento_id INTEGER,
+    resa_porto VARCHAR(25) CHECK (resa_porto IN ('porto_franco', 'porto_assegnato')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero),
+    CONSTRAINT fk_offerte_testata_metodo_pagamento_id FOREIGN KEY (metodo_pagamento_id) REFERENCES metodi_pagamento(id),
+    CONSTRAINT fk_offerte_testata_listino_acquisto_id FOREIGN KEY (listino_acquisto_id) REFERENCES listini_acquisto(id),
+    CONSTRAINT fk_offerte_testata_contatto_id FOREIGN KEY (contatto_id) REFERENCES contatti_documenti(id),
+    CONSTRAINT fk_offerte_testata_indirizzo_consegna_id FOREIGN KEY (indirizzo_consegna_id) REFERENCES indirizzi_documenti(id),
+    CONSTRAINT fk_offerte_testata_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_offerte_testata_valutata_da FOREIGN KEY (valutata_da) REFERENCES utenti(id),
+    CONSTRAINT fk_offerte_testata_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_offerte_testata_rfq_id FOREIGN KEY (rfq_id) REFERENCES rfq_testata(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS offerte_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    offerta_id INTEGER NOT NULL,
+    rfq_riga_id INTEGER,
+    posizione_riga INTEGER NOT NULL DEFAULT 0,
+    prodotto_id INTEGER NOT NULL,
+    descrizione VARCHAR(255),
+    sku_fornitore VARCHAR(50),
+    quantita_offerta DECIMAL(10,3) NOT NULL,
+    unita_misura_id INTEGER,
+    prezzo_unitario DECIMAL(10,4) NOT NULL DEFAULT 0,
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    iva_perc DECIMAL(5,2) NOT NULL DEFAULT 22,
+    imponibile_riga DECIMAL(10,2),
+    iva_riga DECIMAL(10,2),
+    offerta_riga_padre_id INTEGER,
+    flag_sostituto TINYINT(1) NOT NULL DEFAULT 0,
+    e_rifiutato TINYINT(1) NOT NULL DEFAULT 0,
+    data_consegna_prevista DATE,
+    note TEXT,
+    CONSTRAINT fk_offerte_righe_offerta_riga_padre_id FOREIGN KEY (offerta_riga_padre_id) REFERENCES offerte_righe(id),
+    CONSTRAINT fk_offerte_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_offerte_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_offerte_righe_rfq_riga_id FOREIGN KEY (rfq_riga_id) REFERENCES rfq_righe(id),
+    CONSTRAINT fk_offerte_righe_offerta_id FOREIGN KEY (offerta_id) REFERENCES offerte_testata(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ordini_testata (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero VARCHAR(30) NOT NULL,
+    offerta_id INTEGER,
+    rfq_id INTEGER,
+    fornitore_id INTEGER NOT NULL,
+    stato VARCHAR(31) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'in_approvazione', 'approvato', 'inviato', 'parzialmente_ricevuto', 'completato', 'annullato', 'superato')),
+    data_ordine DATE NOT NULL DEFAULT (CURRENT_DATE),
+    data_consegna_prevista DATE,
+    indirizzo_consegna_id INTEGER,
+    magazzino_destinazione_id INTEGER,
+    incoterm_codice CHAR(3),
+    incoterm_luogo VARCHAR(150),
+    consegna_via VARCHAR(150),
+    consegna_civico VARCHAR(10),
+    consegna_cap VARCHAR(10),
+    consegna_citta VARCHAR(100),
+    consegna_provincia CHAR(2),
+    consegna_nazione CHAR(2) DEFAULT 'IT',
+    consegna_presso VARCHAR(100),
+    consegna_referente VARCHAR(80),
+    consegna_telefono VARCHAR(20),
+    consegna_note VARCHAR(255),
+    condizioni_pagamento TEXT,
+    valuta CHAR(3) NOT NULL DEFAULT 'EUR',
+    riferimento_fornitore VARCHAR(100),
+    altri_riferimenti TEXT,
+    note_fornitore TEXT,
+    note_interne TEXT,
+    imponibile DECIMAL(10,2),
+    totale_iva DECIMAL(10,2),
+    totale DECIMAL(10,2),
+    approvato_il DATETIME,
+    approvato_da INTEGER,
+    inviato_il DATETIME,
+    creato_da INTEGER,
+    contatto_id INTEGER,
+    contatto_nome VARCHAR(100),
+    contatto_telefono VARCHAR(20),
+    contatto_email VARCHAR(150),
+    fornitore_telefono VARCHAR(20),
+    fornitore_email VARCHAR(150),
+    listino_acquisto_id INTEGER,
+    metodo_pagamento_id INTEGER,
+    resa_porto VARCHAR(25) CHECK (resa_porto IN ('porto_franco', 'porto_assegnato')),
+    riferimento_rfq_interno TEXT,
+    azienda_interna_id INTEGER,
+    versione INTEGER NOT NULL DEFAULT 1,
+    ordine_padre_id INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero),
+    CONSTRAINT fk_ordini_testata_ordine_padre_id FOREIGN KEY (ordine_padre_id) REFERENCES ordini_testata(id),
+    CONSTRAINT fk_ordini_testata_azienda_interna_id FOREIGN KEY (azienda_interna_id) REFERENCES aziende_interne(id),
+    CONSTRAINT fk_ordini_testata_metodo_pagamento_id FOREIGN KEY (metodo_pagamento_id) REFERENCES metodi_pagamento(id),
+    CONSTRAINT fk_ordini_testata_listino_acquisto_id FOREIGN KEY (listino_acquisto_id) REFERENCES listini_acquisto(id),
+    CONSTRAINT fk_ordini_testata_contatto_id FOREIGN KEY (contatto_id) REFERENCES contatti_documenti(id),
+    CONSTRAINT fk_ordini_testata_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_ordini_testata_approvato_da FOREIGN KEY (approvato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_ordini_testata_incoterm_codice FOREIGN KEY (incoterm_codice) REFERENCES incoterms(codice),
+    CONSTRAINT fk_ordini_testata_magazzino_destinazione_id FOREIGN KEY (magazzino_destinazione_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_ordini_testata_indirizzo_consegna_id FOREIGN KEY (indirizzo_consegna_id) REFERENCES indirizzi_documenti(id),
+    CONSTRAINT fk_ordini_testata_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_ordini_testata_rfq_id FOREIGN KEY (rfq_id) REFERENCES rfq_testata(id),
+    CONSTRAINT fk_ordini_testata_offerta_id FOREIGN KEY (offerta_id) REFERENCES offerte_testata(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ordini_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ordine_id INTEGER NOT NULL,
+    offerta_riga_id INTEGER,
+    posizione_riga INTEGER NOT NULL DEFAULT 0,
+    prodotto_id INTEGER NOT NULL,
+    descrizione VARCHAR(255),
+    sku_fornitore VARCHAR(50),
+    quantita_ordinata DECIMAL(10,3) NOT NULL,
+    quantita_ricevuta DECIMAL(10,3) NOT NULL DEFAULT 0,
+    unita_misura_id INTEGER,
+    prezzo_unitario DECIMAL(10,4) NOT NULL DEFAULT 0,
+    sconto_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    iva_perc DECIMAL(5,2) NOT NULL DEFAULT 22,
+    imponibile_riga DECIMAL(10,2),
+    iva_riga DECIMAL(10,2),
+    tolleranza_esubero_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
+    data_consegna_prevista DATE,
+    data_consegna_richiesta DATE,
+    quantita_stock DECIMAL(10,3),
+    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
+    unita_misura_stock_id INTEGER,
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
+    num_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    den_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+    note TEXT,
+    CONSTRAINT fk_ordini_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_ordini_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_ordini_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_ordini_righe_offerta_riga_id FOREIGN KEY (offerta_riga_id) REFERENCES offerte_righe(id),
+    CONSTRAINT fk_ordini_righe_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_testata(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ricezioni_testata (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero VARCHAR(30) NOT NULL,
+    ordine_id INTEGER NOT NULL,
+    fornitore_id INTEGER,
+    stato VARCHAR(20) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'completata', 'annullata')),
+    data_attesa DATE,
+    data_effettiva DATETIME,
+    ddt_numero VARCHAR(50),
+    ddt_data DATE,
+    magazzino_id INTEGER,
+    note TEXT,
+    creato_da INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE (numero),
+    CONSTRAINT fk_ricezioni_testata_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_ricezioni_testata_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_ricezioni_testata_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id),
+    CONSTRAINT fk_ricezioni_testata_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_testata(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS sostanze_chimiche_restrizioni (
+    sostanza_id INTEGER NOT NULL,
+    restriction_type_id INTEGER NOT NULL,
+    concentrazione_min DECIMAL(5,2),
+    concentrazione_max DECIMAL(5,2),
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (sostanza_id, restriction_type_id),
+    CONSTRAINT fk_sostanze_chimiche_restrizioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
+    CONSTRAINT fk_sostanze_chimiche_restrizioni_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_restriction_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(30) NOT NULL,
+    name TEXT NOT NULL,
+    regulatory_ref TEXT,
+    requires_vat TINYINT(1) NOT NULL DEFAULT 0,
+    validity_days INTEGER NOT NULL DEFAULT 365,
+    log_transactions TINYINT(1) NOT NULL DEFAULT 0,
+    report_within_days INTEGER,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_codice_onu_restrizioni (
+    un_code_id INTEGER NOT NULL,
+    restriction_type_id INTEGER NOT NULL,
+    min_concentration DECIMAL(5,2),
+    max_concentration DECIMAL(5,2),
+    notes TEXT,
+    PRIMARY KEY (un_code_id, restriction_type_id),
+    CONSTRAINT fk_compliance_codice_onu_restrizioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
+    CONSTRAINT fk_compliance_codice_onu_restrizioni_un_code_id FOREIGN KEY (un_code_id) REFERENCES adr_codici_onu(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_documenti_richiesti (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    restriction_type_id INTEGER NOT NULL,
+    document_code VARCHAR(50) NOT NULL,
+    document_name TEXT NOT NULL,
+    mandatory TINYINT(1) NOT NULL DEFAULT 1,
+    instructions TEXT,
+    CONSTRAINT fk_compliance_documenti_richiesti_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_autorizzazioni (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INTEGER NOT NULL,
+    restriction_type_id INTEGER NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('in_attesa', 'approvata', 'rifiutata', 'scaduta', 'sospesa')),
+    issued_date DATE,
+    expiry_date DATE,
+    approved_by INTEGER,
+    internal_notes TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_compliance_autorizzazioni_approved_by FOREIGN KEY (approved_by) REFERENCES utenti(id),
+    CONSTRAINT fk_compliance_autorizzazioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
+    CONSTRAINT fk_compliance_autorizzazioni_customer_id FOREIGN KEY (customer_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_documenti_caricati (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    authorization_id INTEGER NOT NULL,
+    required_doc_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verified TINYINT(1) NOT NULL DEFAULT 0,
+    verified_by INTEGER,
+    verified_at DATETIME,
+    CONSTRAINT fk_compliance_documenti_caricati_verified_by FOREIGN KEY (verified_by) REFERENCES utenti(id),
+    CONSTRAINT fk_compliance_documenti_caricati_required_doc_id FOREIGN KEY (required_doc_id) REFERENCES compliance_documenti_richiesti(id),
+    CONSTRAINT fk_compliance_documenti_caricati_authorization_id FOREIGN KEY (authorization_id) REFERENCES compliance_autorizzazioni(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS compliance_log_transazioni (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sale_id INTEGER NOT NULL,
+    authorization_id INTEGER NOT NULL,
+    restriction_type_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity DECIMAL(10,3) NOT NULL,
+    unit_id INTEGER,
+    transaction_date DATE NOT NULL,
+    reported_to_authority TINYINT(1) NOT NULL DEFAULT 0,
+    reported_at DATETIME,
+    report_reference TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_compliance_log_transazioni_unit_id FOREIGN KEY (unit_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_compliance_log_transazioni_product_id FOREIGN KEY (product_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_compliance_log_transazioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
+    CONSTRAINT fk_compliance_log_transazioni_authorization_id FOREIGN KEY (authorization_id) REFERENCES compliance_autorizzazioni(id),
+    CONSTRAINT fk_compliance_log_transazioni_sale_id FOREIGN KEY (sale_id) REFERENCES ordini_clienti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS prodotti_restrizioni (
+    prodotto_id INTEGER NOT NULL,
+    restriction_type_id INTEGER NOT NULL,
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (prodotto_id, restriction_type_id),
+    CONSTRAINT fk_prodotti_restrizioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
+    CONSTRAINT fk_prodotti_restrizioni_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ordini_righe_pianificazione (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ordine_riga_id INTEGER NOT NULL,
+    riga_padre_id INTEGER,
+    data_consegna_prevista DATE,
+    quantita_pianificata DECIMAL(10,3) NOT NULL,
+    quantita_ricevuta DECIMAL(10,3) NOT NULL DEFAULT 0,
+    stato VARCHAR(27) NOT NULL DEFAULT 'attesa' CHECK (stato IN ('attesa', 'ricevuta_parziale', 'completata')),
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ordini_righe_pianificazione_riga_padre_id FOREIGN KEY (riga_padre_id) REFERENCES ordini_righe_pianificazione(id),
+    CONSTRAINT fk_ordini_righe_pianificazione_ordine_riga_id FOREIGN KEY (ordine_riga_id) REFERENCES ordini_righe(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ricezioni_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ricezione_id INTEGER NOT NULL,
+    ordine_riga_id INTEGER,
+    pianificazione_id INTEGER,
+    prodotto_id INTEGER NOT NULL,
+    lotto_id INTEGER,
+    quantita_ricevuta DECIMAL(10,3) NOT NULL,
+    quantita_accettata DECIMAL(10,3),
+    quantita_rifiutata DECIMAL(10,3) NOT NULL DEFAULT 0,
+    motivo_rifiuto TEXT,
+    ubicazione_stoccaggio VARCHAR(50),
+    quantita_stock DECIMAL(10,3),
+    unita_misura_stock_id INTEGER,
+    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,
+    num_factor_snapshot INTEGER DEFAULT 1,
+    den_factor_snapshot INTEGER DEFAULT 1,
+    note TEXT,
+    CONSTRAINT fk_ricezioni_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
+    CONSTRAINT fk_ricezioni_righe_lotto_id FOREIGN KEY (lotto_id) REFERENCES lotti(id),
+    CONSTRAINT fk_ricezioni_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT fk_ricezioni_righe_pianificazione_id FOREIGN KEY (pianificazione_id) REFERENCES ordini_righe_pianificazione(id),
+    CONSTRAINT fk_ricezioni_righe_ordine_riga_id FOREIGN KEY (ordine_riga_id) REFERENCES ordini_righe(id),
+    CONSTRAINT fk_ricezioni_righe_ricezione_id FOREIGN KEY (ricezione_id) REFERENCES ricezioni_testata(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS prodotti_rrp (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    prodotto_id INTEGER NOT NULL,
+    fornitore_id INTEGER,
+    rrp_min DECIMAL(10,4) NOT NULL,
+    rrp_max DECIMAL(10,4) NOT NULL,
+    valuta CHAR(3) DEFAULT 'EUR',
+    valido_dal DATE,
+    valido_al DATE,
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_prodotti_rrp_fornitore_id FOREIGN KEY (fornitore_id) REFERENCES clienti_fornitori(id) ON DELETE SET NULL,
+    CONSTRAINT fk_prodotti_rrp_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- 14b. VISTE: COSTO DI ACQUISTO BASE (fix "Listino Fantasma", 2026-07-10)
+-- INDICI
 -- =============================================================================
--- Vedi commento esteso nel file SQLite gemello per la spiegazione completa
--- del problema che risolvono e della logica di scelta del prezzo.
-CREATE OR REPLACE VIEW v_prezzo_acquisto_base_fornitore AS
+
+CREATE UNIQUE INDEX uq_sostanze_chimiche_cas
+    ON sostanze_chimiche(codice_cas);
+CREATE INDEX idx_sostanze_chimiche_cas      ON sostanze_chimiche(codice_cas);
+CREATE INDEX idx_sostanze_chimiche_onu      ON sostanze_chimiche(codice_onu_id);
+CREATE INDEX idx_sost_h_sostanza            ON sostanze_h_statements(sostanza_id);
+CREATE INDEX idx_sost_p_sostanza            ON sostanze_p_statements(sostanza_id);
+CREATE INDEX idx_sost_pitt_sostanza         ON sostanze_pittogrammi(sostanza_id);
+CREATE INDEX idx_listini_prezzi_listino_prodotto
+    ON listini_prezzi(listino_id, prodotto_id);
+CREATE INDEX idx_magazzini_parent ON magazzini(parent_id);
+CREATE INDEX idx_giacenze_magazzino ON giacenze(magazzino_id);
+CREATE INDEX idx_lotti_giacenze_magazzino ON lotti_giacenze(magazzino_id);
+CREATE INDEX idx_clienti_fornitori_tipo         ON clienti_fornitori(tipo);
+CREATE INDEX idx_clienti_fornitori_attivo       ON clienti_fornitori(attivo);
+CREATE INDEX idx_indirizzi_soggetto             ON indirizzi(soggetto_id);
+CREATE INDEX idx_prodotti_attivo                ON prodotti(attivo);
+CREATE INDEX idx_prodotti_categoria             ON prodotti(categoria_id);
+CREATE INDEX idx_prodotti_unita_misura_stock    ON prodotti(unita_misura_stock_id);
+CREATE INDEX idx_adr_codici_onu_codice          ON adr_codici_onu(codice_onu);
+CREATE INDEX idx_prodotto_adr_prodotto          ON prodotto_classificazioni_adr(prodotto_id);
+CREATE INDEX idx_prodotto_adr_codice_onu        ON prodotto_classificazioni_adr(codice_onu_id);
+CREATE INDEX idx_prodotti_fornitori_prodotto    ON prodotti_fornitori(prodotto_id);
+CREATE INDEX idx_prodotti_fornitori_fornitore   ON prodotti_fornitori(fornitore_id);
+CREATE INDEX idx_prodotti_fornitori_rrp_validita ON prodotti_fornitori(prodotto_id, fornitore_id, rrp_valido_dal, rrp_valido_al);
+CREATE INDEX idx_lotti_prodotto                 ON lotti(prodotto_id);
+CREATE INDEX idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
+CREATE INDEX idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
+CREATE UNIQUE INDEX idx_lotti_prodotto_codice_unique ON lotti(prodotto_id, codice_lotto_interno);
+CREATE INDEX idx_lotti_fornitore                ON lotti(fornitore_id);
+CREATE INDEX idx_lotti_data_arrivo              ON lotti(data_arrivo);
+CREATE INDEX idx_lotti_data_scadenza            ON lotti(data_scadenza);
+CREATE INDEX idx_giacenze_prodotto              ON giacenze(prodotto_id);
+CREATE INDEX idx_movimenti_prodotto             ON movimenti_magazzino(prodotto_id);
+CREATE INDEX idx_movimenti_lotto                ON movimenti_magazzino(lotto_id);
+CREATE INDEX idx_movimenti_created_at           ON movimenti_magazzino(created_at);
+CREATE INDEX idx_preventivi_cliente             ON preventivi(cliente_id);
+CREATE INDEX idx_preventivi_stato               ON preventivi(stato);
+CREATE INDEX idx_preventivi_created_at          ON preventivi(created_at);
+CREATE INDEX idx_ordini_clienti_cliente         ON ordini_clienti(cliente_id);
+CREATE INDEX idx_ordini_clienti_stato           ON ordini_clienti(stato);
+CREATE INDEX idx_spedizioni_ordine              ON spedizioni(ordine_id);
+CREATE INDEX idx_spedizioni_righe_lotto         ON spedizioni_righe(lotto_id);
+CREATE INDEX idx_ddt_righe_lotto                ON documenti_trasporto_righe(lotto_id);
+CREATE INDEX idx_documenti_trasporto_ordine     ON documenti_trasporto(ordine_id);
+CREATE INDEX idx_fatture_cliente                ON fatture(cliente_id);
+CREATE INDEX idx_fatture_ordine                 ON fatture(ordine_id);
+CREATE INDEX idx_fatture_stato                  ON fatture(stato);
+CREATE INDEX idx_preventivi_righe_preventivo          ON preventivi_righe(preventivo_id);
+CREATE INDEX idx_ordini_clienti_righe_ordine          ON ordini_clienti_righe(ordine_id);
+CREATE INDEX idx_fatture_righe_fattura                ON fatture_righe(fattura_id);
+CREATE INDEX idx_spedizioni_righe_spedizione          ON spedizioni_righe(spedizione_id);
+CREATE INDEX idx_documenti_trasporto_righe_dt         ON documenti_trasporto_righe(documento_trasporto_id);
+CREATE INDEX idx_prodotti_fornitori_prezzi_pf         ON prodotti_fornitori_prezzi(prodotto_fornitore_id);
+CREATE INDEX idx_rfq_testata_fornitore    ON rfq_testata(fornitore_id);
+CREATE INDEX idx_rfq_testata_stato        ON rfq_testata(stato);
+CREATE INDEX idx_rfq_testata_padre        ON rfq_testata(rfq_padre_id);
+CREATE INDEX idx_rfq_righe_rfq            ON rfq_righe(rfq_id);
+CREATE INDEX idx_rfq_righe_prodotto       ON rfq_righe(prodotto_id);
+CREATE INDEX idx_offerte_testata_rfq      ON offerte_testata(rfq_id);
+CREATE INDEX idx_offerte_testata_fornitore ON offerte_testata(fornitore_id);
+CREATE INDEX idx_offerte_testata_stato    ON offerte_testata(stato);
+CREATE INDEX idx_offerte_righe_offerta    ON offerte_righe(offerta_id);
+CREATE INDEX idx_offerte_righe_rfq_riga   ON offerte_righe(rfq_riga_id);
+CREATE INDEX idx_ordini_testata_fornitore ON ordini_testata(fornitore_id);
+CREATE INDEX idx_ordini_testata_stato     ON ordini_testata(stato);
+CREATE INDEX idx_ordini_testata_offerta   ON ordini_testata(offerta_id);
+CREATE INDEX idx_ordini_righe_ordine      ON ordini_righe(ordine_id);
+CREATE INDEX idx_ordini_righe_prodotto    ON ordini_righe(prodotto_id);
+CREATE INDEX idx_ricezioni_testata_ordine  ON ricezioni_testata(ordine_id);
+CREATE INDEX idx_sost_restr_sostanza ON sostanze_chimiche_restrizioni(sostanza_id);
+CREATE INDEX idx_sost_restr_tipo     ON sostanze_chimiche_restrizioni(restriction_type_id);
+CREATE INDEX idx_prodotti_restrizioni_prodotto
+    ON prodotti_restrizioni(prodotto_id);
+CREATE INDEX idx_prodotti_restrizioni_tipo
+    ON prodotti_restrizioni(restriction_type_id);
+CREATE INDEX idx_ordini_pian_riga ON ordini_righe_pianificazione(ordine_riga_id);
+CREATE INDEX idx_ricezioni_righe_ricezione ON ricezioni_righe(ricezione_id);
+
+-- =============================================================================
+-- VISTE
+-- =============================================================================
+
+CREATE VIEW v_prezzo_acquisto_base_fornitore AS
 SELECT prodotto_fornitore_id, prezzo, unita_misura_id
 FROM (
     SELECT
@@ -640,14 +1689,14 @@ FROM (
     LEFT JOIN listini_acquisto la ON la.id = pfp.listino_acquisto_id
     WHERE pfp.quantita_minima = 0
       AND (pfp.listino_acquisto_id IS NULL OR la.attivo = 1)
-      AND (pfp.valido_dal IS NULL OR pfp.valido_dal <= CURDATE())
-      AND (pfp.valido_al  IS NULL OR pfp.valido_al  >= CURDATE())
-      AND (la.valido_dal  IS NULL OR la.valido_dal  <= CURDATE())
-      AND (la.valido_al   IS NULL OR la.valido_al   >= CURDATE())
+      AND (pfp.valido_dal IS NULL OR pfp.valido_dal <= DATE('now'))
+      AND (pfp.valido_al  IS NULL OR pfp.valido_al  >= DATE('now'))
+      AND (la.valido_dal  IS NULL OR la.valido_dal  <= DATE('now'))
+      AND (la.valido_al   IS NULL OR la.valido_al   >= DATE('now'))
 ) ranked
 WHERE rn = 1;
 
-CREATE OR REPLACE VIEW v_costo_acquisto_prodotti AS
+CREATE VIEW v_costo_acquisto_prodotti AS
 SELECT prodotto_id, prodotto_fornitore_id, fornitore_id, costo_acquisto, unita_misura_id
 FROM (
     SELECT
@@ -669,1126 +1718,317 @@ FROM (
 WHERE rn = 1;
 
 -- =============================================================================
--- 15. LISTINI PREZZI (VENDITA)
+-- DATI SEED
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS listini_prezzi (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    listino_id      INTEGER       NOT NULL REFERENCES listini(id) ON DELETE CASCADE,
-    prodotto_id     INTEGER       NOT NULL REFERENCES prodotti(id),
-    quantita_minima DECIMAL(10,3) NOT NULL DEFAULT 0,  -- scaglione quantità
-    prezzo_unitario DECIMAL(10,4) NOT NULL,             -- imponibile
-    unita_misura_id INTEGER       REFERENCES unita_misura(id), -- UoM nativa del prezzo
-    sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    note            TEXT,
-    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    importato_il               DATETIME DEFAULT NULL, -- valorizzato SOLO da apiImportPrezzi(): quando questa riga è stata scritta/confermata dall'ultimo import massivo
-    modificato_manualmente_il  DATETIME DEFAULT NULL, -- valorizzato SOLO dal salvataggio manuale (drawer prodotto o griglia listino): se più recente di importato_il, un nuovo import non sovrascrive la riga
-    -- D1.1 (PIANO Motore di Pricing Multi-UoM §8 Fase 1): vedi commento esteso nello schema SQLite gemello.
-    quantita_minima_intento    DECIMAL(10,3) DEFAULT NULL,
-    unita_misura_soglia_id     INTEGER       DEFAULT NULL REFERENCES unita_misura(id),
-    quantita_minima_stock      DECIMAL(10,3) DEFAULT NULL,
-    -- D1.2: vincolo spostato sul valore canonico (sempre Stock UoM), non più su valore grezzo+unità.
-    UNIQUE (listino_id, prodotto_id, quantita_minima_stock)
-);
+INSERT IGNORE INTO schema_migrations (id, migration, applied_at) VALUES
+    (1, 'migrate_ordini_righe_uom', '2026-07-14 19:56:08'),
+    (2, '2026_07_10_rfq_esito_chiusura', '2026-07-14 19:56:08'),
+    (3, '2026_07_10_lotti_codice_unique_per_prodotto', '2026-07-14 19:56:08'),
+    (4, '2026_07_10_inventari_categoria_filtro', '2026-07-14 19:56:08'),
+    (5, '2026_07_10_inventario_creazione_lock', '2026-07-14 19:56:08'),
+    (6, '2026_07_10_vista_costo_acquisto_base', '2026-07-14 19:56:08'),
+    (7, '2026_07_10_movimenti_quantita_delta', '2026-07-14 19:56:08');
 
--- =============================================================================
--- 17. LOTTI — TRACCIABILITÀ
--- =============================================================================
--- Un lotto corrisponde a una partita di merce ricevuta.
--- La tracciatura lotti per prodotto è opzionale: attivare prodotti.traccia_lotti = 1.
--- Nota: ricezione_riga_id referenzia ricezioni_righe(id) del ciclo acquisti v2 (vedi FK sotto).
--- codice_lotto_interno è univoco per prodotto (vedi UNIQUE su prodotto_id+codice_lotto_interno
--- più sotto), non globalmente: prodotti diversi possono legittimamente condividere lo stesso codice.
-
-CREATE TABLE IF NOT EXISTS lotti (
-    id                   INT AUTO_INCREMENT PRIMARY KEY,
-    codice_lotto_fornitore         VARCHAR(50),                          -- numero lotto dalla bolla del fornitore; nullable per lotti da produzione/rettifica interna
-	codice_lotto_interno         VARCHAR(50)   NOT NULL,               -- Il "nostro" codice unico (generato dall'ERP o inserito a mano);
-    prodotto_id          INTEGER       NOT NULL REFERENCES prodotti(id),
-    fornitore_id         INTEGER       REFERENCES clienti_fornitori(id),  -- fornitore da cui è arrivato il lotto
-    data_produzione      DATE,
-    data_scadenza        DATE,                                 -- usata per FEFO e alerting; NULL se il prodotto non scade
-    data_arrivo          DATE,                                 -- data di arrivo in magazzino
-    numero_ddt_arrivo    VARCHAR(50),                          -- numero DDT del fornitore
-    quantita_ricevuta    DECIMAL(10,3) NOT NULL,               -- quantità totale ricevuta per questo lotto
-    quantita_disponibile DECIMAL(10,3) NOT NULL,               -- giacenza corrente del lotto
-    note                 TEXT,
-    creato_da            INTEGER       NOT NULL REFERENCES utenti(id),
-    created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-   UNIQUE (codice_lotto_fornitore, prodotto_id, fornitore_id)
-);
-
--- =============================================================================
--- 19. MAGAZZINO
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS giacenze (
-    id                   INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_id          INTEGER       NOT NULL UNIQUE REFERENCES prodotti(id),
-    quantita_disponibile DECIMAL(10,3) NOT NULL DEFAULT 0,  -- giacenza corrente; aggiornata a ogni movimento
-    quantita_riservata   DECIMAL(10,3) NOT NULL DEFAULT 0,  -- riservata per ordini clienti confermati
-    quantita_in_arrivo   DECIMAL(10,3) NOT NULL DEFAULT 0,  -- da ordini acquisto confermati non ancora ricevuti
-    scorta_minima        DECIMAL(10,3)          DEFAULT 0,  -- sotto questa soglia scatta l'alert
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS movimenti_magazzino (
-    id                  INT AUTO_INCREMENT PRIMARY KEY,
-    prodotto_id         INTEGER       NOT NULL REFERENCES prodotti(id),
-    lotto_id            INTEGER       REFERENCES lotti(id),   -- NULL se il prodotto non traccia lotti
-    tipo_movimento      TEXT          NOT NULL CHECK (tipo_movimento IN (
-                                          'carico','scarico','reso_cliente','reso_fornitore',
-                                          'rettifica','riserva','svincolo')),
-    quantita            DECIMAL(10,3) NOT NULL,               -- sempre positivo; il tipo_movimento indica la direzione
-    quantita_delta      DECIMAL(10,3),                        -- SOLO per tipo_movimento='rettifica': valore CON segno (positivo=aumento, negativo=diminuzione). NULL per tutti gli altri tipi (dove la direzione è già implicita nel tipo). Usato dalla UI storico movimenti per mostrare il verso corretto senza violare l'invariante "quantita sempre positivo" sopra.
-    documento_tipo      VARCHAR(50),                          -- tipo documento sorgente (ordine_acquisto, ordine_cliente…)
-    documento_id        INTEGER,                              -- ID del documento sorgente
-    canale_origine      VARCHAR(50),                          -- sistema che ha generato il movimento (es. sito, manuale, woocommerce, importazione)
-    riferimento_esterno VARCHAR(100),                         -- ID documento nel sistema esterno (es. WC-10452 per WooCommerce)
-    note                TEXT,
-    creato_da           INTEGER       NOT NULL REFERENCES utenti(id),
-    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS inventari (
-    id                  INT      AUTO_INCREMENT PRIMARY KEY,
-    data_inventario     DATE     NOT NULL,
-    magazzino_id        INTEGER  REFERENCES magazzini(id),  -- sede oggetto dell'inventario; vedi file SQLite gemello
-    -- Cycle counting (Tappa 4.3, 10/07/2026): vedi spiegazione nel file SQLite gemello.
-    categoria_filtro_id INTEGER  REFERENCES categorie_prodotto(id),
-    note                TEXT,
-    stato               TEXT     NOT NULL DEFAULT 'bozza',  -- 'bozza' | 'convalidato'
-    creato_da           INTEGER  NOT NULL REFERENCES utenti(id),
-    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS inventari_righe (
-    id               INT AUTO_INCREMENT PRIMARY KEY,
-    inventario_id    INTEGER       NOT NULL REFERENCES inventari(id) ON DELETE CASCADE,
-    prodotto_id      INTEGER       NOT NULL REFERENCES prodotti(id),
-    giacenza_teorica DECIMAL(10,3) NOT NULL,                  -- giacenza calcolata dal sistema
-    quantita_contata DECIMAL(10,3) NOT NULL,                  -- quantità contata fisicamente
-    rettifica        DECIMAL(10,3) GENERATED ALWAYS AS (quantita_contata - giacenza_teorica) STORED,
-    movimento_id     INTEGER       REFERENCES movimenti_magazzino(id)  -- movimento di rettifica generato
-);
-
--- Lock applicativo per serializzare la CREAZIONE di nuovi inventari sullo
--- stesso magazzino (Tappa 4.3, 2026-07-10) — vedi commento gemello in
--- init_sqlite.sql per la spiegazione completa (race check-then-act sul
--- controllo di sovrapposizione bozze, chiusa con un vincolo PRIMARY KEY
--- controllato atomicamente dal motore all'INSERT).
-CREATE TABLE IF NOT EXISTS inventario_creazione_lock (
-    magazzino_id INTEGER PRIMARY KEY REFERENCES magazzini(id)
-);
-
--- =============================================================================
--- 20. LOG STATI ORDINI
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS log_stati_ordini (
-    id               INT AUTO_INCREMENT PRIMARY KEY,
-    tipo_documento   VARCHAR(50)  NOT NULL,   -- es. ordine_acquisto, preventivo
-    documento_id     INTEGER      NOT NULL,
-    stato_precedente TEXT,                    -- NULL per la creazione
-    stato_nuovo      TEXT         NOT NULL,
-    cambiato_da      INTEGER      REFERENCES utenti(id),
-    cambiato_il      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    note             TEXT                     -- motivo del cambio stato (es. motivo annullamento)
-);
-
--- =============================================================================
--- 21. VENDITA — PREVENTIVI + ORDINI CLIENTI
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS preventivi (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero_preventivo       VARCHAR(20)  NOT NULL UNIQUE,
-    riferimento_interno     VARCHAR(100),
-    cliente_id              INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
-    azienda_interna_id      INTEGER      REFERENCES aziende_interne(id),
-    indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
-    alla_ca                 VARCHAR(150),                  -- c/o
-    contatto_id             INTEGER      REFERENCES clienti_fornitori(id),
-    contatto_nome           VARCHAR(150),
-    contatto_email          VARCHAR(150),
-    contatto_telefono       VARCHAR(50),
-    oggetto                 VARCHAR(255),                  -- titolo/oggetto del preventivo
-    storico                 BOOLEAN      NOT NULL DEFAULT 0, -- preventivo importato solo per tracciabilità
-    data_offerta            DATE         NOT NULL,
-    data_scadenza           DATE,
-    data_consegna_richiesta DATE,
-    canale_vendita_id       INTEGER      REFERENCES canali_vendita(id),
-    stato                   TEXT         NOT NULL DEFAULT 'bozza'
-                                          CHECK (stato IN (
-                                              'bozza','inviato','accettato',
-                                              'rifiutato','scaduto','annullato')),
-    listino_id              INTEGER      REFERENCES listini(id),
-    sconto_globale_perc     DECIMAL(5,2) NOT NULL DEFAULT 0,  -- sconto aggiuntivo su tutto il preventivo
-    condizioni_pagamento    TEXT,
-    trasporto               TEXT,                          -- condizioni di trasporto (es. porto franco, assegnato)
-    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
-    imponibile              DECIMAL(10,2),
-    totale_iva              DECIMAL(10,2),
-    totale                  DECIMAL(10,2),
-    totale_costo            DECIMAL(10,2),
-    margine_euro            DECIMAL(10,2),
-    margine_perc            DECIMAL(5,2),
-    -- Dati denormalizzati dell'azienda venditrice per integrità storica (best practice)
-    azienda_ragione_sociale VARCHAR(255),
-    azienda_partita_iva     VARCHAR(30),
-    azienda_codice_fiscale  VARCHAR(30),
-    azienda_indirizzo       VARCHAR(255),
-    azienda_telefono        VARCHAR(50),
-    azienda_email           VARCHAR(100),
-    azienda_iban            VARCHAR(50),
-
-    -- Dati denormalizzati del cliente per integrità storica (best practice)
-    cliente_ragione_sociale VARCHAR(255),
-    cliente_partita_iva     VARCHAR(30),
-    cliente_codice_fiscale  VARCHAR(30),
-    cliente_indirizzo       VARCHAR(255),
-
-    -- Spedizione denormalizzata per integrità storica (best practice)
-    consegna_via            VARCHAR(150),
-    consegna_civico         VARCHAR(10),
-    consegna_cap            VARCHAR(10),
-    consegna_citta          VARCHAR(100),
-    consegna_provincia      CHAR(2),
-    consegna_nazione        CHAR(2),
-    consegna_presso         VARCHAR(100),
-    consegna_referente      VARCHAR(80),
-    consegna_telefono       VARCHAR(20),
-    consegna_note           VARCHAR(255),
-
-    note_cliente            TEXT,
-    note_interne            TEXT,
-    creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS preventivi_righe (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    preventivo_id   INTEGER       NOT NULL REFERENCES preventivi(id) ON DELETE CASCADE,
-    prodotto_id     INTEGER       REFERENCES prodotti(id),
-    descrizione     VARCHAR(255)  NOT NULL,          -- testo riga; può differire dal nome prodotto
-    descrizione_confezione VARCHAR(255),             -- descrizione della confezione personalizzata/formato
-    quantita        DECIMAL(10,3) NOT NULL,
-    unita_misura_id INTEGER       REFERENCES unita_misura(id),  -- UoM usata in questo preventivo
-    prezzo_unitario DECIMAL(10,4) NOT NULL,          -- imponibile nell'unità di misura della riga
-    sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    prezzo_netto    DECIMAL(10,4),                   -- prezzo_unitario × (1-sconto)
-    iva_perc        DECIMAL(5,2)  NOT NULL DEFAULT 22, -- cristallizzata al momento del preventivo
-    imponibile_riga DECIMAL(10,2),                   -- prezzo_netto × quantità (senza IVA)
-    totale_riga     DECIMAL(10,2),                   -- imponibile_riga + IVA (totale ivato di riga)
-    costo_unitario  DECIMAL(10,4),                   -- costo d'acquisto al momento del preventivo
-    totale_costo_riga DECIMAL(10,2),                 -- costo_unitario × quantità
-    margine_riga    DECIMAL(10,2),                   -- imponibile_riga − totale_costo_riga
-    is_adr          BOOLEAN       NOT NULL DEFAULT 0, -- riga contiene prodotto ADR
-    quantita_stock  DECIMAL(10,3),                   -- quantità convertita in unità di stock
-    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
-    unita_misura_stock_id BIGINT UNSIGNED, -- UoM di stock del prodotto
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
-    num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
-    den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
-    posizione_riga  INTEGER       NOT NULL DEFAULT 0, -- ordine di visualizzazione
-    note_riga       TEXT
-);
-
-CREATE TABLE IF NOT EXISTS ordini_clienti (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero_ordine           VARCHAR(20)  NOT NULL UNIQUE,
-    preventivo_id           INTEGER      REFERENCES preventivi(id),
-    cliente_id              INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
-    indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
-    data_ordine             DATE         NOT NULL,
-    data_consegna_prevista  DATE,
-    stato                   TEXT         NOT NULL CHECK (stato IN (
-                                              'in_lavorazione','parzialmente_spedito',
-                                              'spedito','completato','annullato')),
-    -- NOTA (14/07/2026): questa CREATE TABLE era già disallineata da tempo
-    -- rispetto a init_sqlite.sql (mancano azienda_interna_id, consegna_*,
-    -- contatto_*, indirizzo_consegna_id, contatto_snapshot_id, cliente_*,
-    -- stato_fatturazione, riferimento_interno, condizioni_pagamento,
-    -- trasporto, valuta) — drift preesistente, non introdotto qui, fuori
-    -- scope per questo intervento (coerente con "sviluppo oggi su SQLite,
-    -- MySQL quando lo schema sarà stabile"). Aggiunte qui SOLO le colonne
-    -- azienda_* per non allargare ulteriormente il divario mentre si
-    -- corregge la storicizzazione azienda emittente (mirror di preventivi).
-    azienda_ragione_sociale VARCHAR(255),
-    azienda_partita_iva     VARCHAR(30),
-    azienda_codice_fiscale  VARCHAR(30),
-    azienda_indirizzo       VARCHAR(255),
-    azienda_telefono        VARCHAR(30),
-    azienda_email           VARCHAR(150),
-    azienda_iban            VARCHAR(34),
-    note                    TEXT,
-    listino_id              INTEGER      REFERENCES listini(id), -- listino di vendita applicato
-    creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
-    id                 INT AUTO_INCREMENT PRIMARY KEY,
-    ordine_id          INTEGER       NOT NULL REFERENCES ordini_clienti(id) ON DELETE CASCADE,
-    preventivo_riga_id INTEGER       REFERENCES preventivi_righe(id),  -- collega la riga al preventivo originale
-    prodotto_id        INTEGER       REFERENCES prodotti(id),
-    descrizione        VARCHAR(255)  NOT NULL,
-    quantita_ordinata  DECIMAL(10,3) NOT NULL,
-    quantita_spedita   DECIMAL(10,3) NOT NULL DEFAULT 0,
-    unita_misura_id    INTEGER       REFERENCES unita_misura(id),
-    prezzo_unitario    DECIMAL(10,4),                                  -- prezzo di vendita
-    costo_unitario     DECIMAL(10,4),                                  -- costo d'acquisto al momento dell'ordine
-    quantita_stock     DECIMAL(10,3),                                  -- quantità in unità stock
-    system_unit_price_stock DECIMAL(18,4) DEFAULT 0.00,
-    unita_misura_stock_id BIGINT UNSIGNED,      -- UoM di stock
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
-    num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
-    den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
-    note               TEXT
-);
-
--- Lotti assegnati a ogni riga ordine (split multi-lotto possibile)
-CREATE TABLE IF NOT EXISTS ordini_clienti_righe_lotti (
-    id             INT AUTO_INCREMENT PRIMARY KEY,
-    ordine_riga_id INTEGER       NOT NULL REFERENCES ordini_clienti_righe(id) ON DELETE CASCADE,
-    lotto_id       INTEGER       NOT NULL REFERENCES lotti(id),
-    quantita       DECIMAL(10,3) NOT NULL,  -- quantità del lotto assegnata a questa riga
-    UNIQUE (ordine_riga_id, lotto_id)
-);
-
--- =============================================================================
--- 22. FATTURE
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS fatture (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero_fattura          VARCHAR(20)  NOT NULL UNIQUE,
-    tipo                    TEXT         NOT NULL DEFAULT 'fattura'
-                                          CHECK (tipo IN ('fattura','nota_credito','proforma')),
-    data_emissione          DATE         NOT NULL,
-    data_scadenza_pagamento DATE,
-    cliente_id              INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
-    ordine_id               INTEGER      REFERENCES ordini_clienti(id),
-    metodo_pagamento        VARCHAR(50),               -- es. 'bonifico','RIBA','contanti'
-    stato                   TEXT         NOT NULL DEFAULT 'bozza'
-                                          CHECK (stato IN ('bozza','emessa','pagata','annullata')),
-    imponibile              DECIMAL(10,2),
-    totale_iva              DECIMAL(10,2),
-    totale                  DECIMAL(10,2),
-    note                    TEXT,
-    creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS fatture_righe (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    fattura_id      INTEGER       NOT NULL REFERENCES fatture(id) ON DELETE CASCADE,
-    ordine_riga_id  INTEGER       REFERENCES ordini_clienti_righe(id),
-    prodotto_id     INTEGER       REFERENCES prodotti(id),
-    descrizione     VARCHAR(255)  NOT NULL,
-    quantita        DECIMAL(10,3) NOT NULL,
-    unita_misura_id INTEGER       REFERENCES unita_misura(id),
-    prezzo_unitario DECIMAL(10,4) NOT NULL,
-    sconto_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    aliquota_iva    DECIMAL(5,2)  NOT NULL DEFAULT 22,
-    imponibile_riga DECIMAL(10,2),
-    iva_riga        DECIMAL(10,2),
-    totale_riga     DECIMAL(10,2),
-    posizione_riga  INTEGER       NOT NULL DEFAULT 0
-);
-
--- =============================================================================
--- 23. SPEDIZIONI + DOCUMENTI DI TRASPORTO
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS spedizioni (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero_spedizione       VARCHAR(20)  NOT NULL UNIQUE,
-    ordine_id               INTEGER      NOT NULL REFERENCES ordini_clienti(id),
-    data_spedizione         DATE         NOT NULL,
-    indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
-    vettore                 VARCHAR(100),
-    tracking                VARCHAR(100),
-    stato                   TEXT         NOT NULL DEFAULT 'preparazione'
-                                          CHECK (stato IN ('preparazione','spedita','consegnata','reso')),
-    note                    TEXT,
-    creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS spedizioni_righe (
-    id             INT AUTO_INCREMENT PRIMARY KEY,
-    spedizione_id  INTEGER       NOT NULL REFERENCES spedizioni(id) ON DELETE CASCADE,
-    ordine_riga_id INTEGER       NOT NULL REFERENCES ordini_clienti_righe(id),
-    prodotto_id    INTEGER       NOT NULL REFERENCES prodotti(id),
-    lotto_id       INTEGER       REFERENCES lotti(id),   -- NULL se il prodotto non traccia lotti
-    quantita       DECIMAL(10,3) NOT NULL,
-    note           TEXT
-);
-
-CREATE TABLE IF NOT EXISTS spedizioni_foto (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    spedizione_id INTEGER      NOT NULL REFERENCES spedizioni(id) ON DELETE CASCADE,
-    file_path     VARCHAR(255) NOT NULL,
-    file_name     VARCHAR(255) NOT NULL,
-    creato_da     INTEGER      NOT NULL REFERENCES utenti(id),
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS documenti_trasporto (
-    id                         INT AUTO_INCREMENT PRIMARY KEY,
-    numero_documento_trasporto VARCHAR(20)   NOT NULL UNIQUE,
-    spedizione_id              INTEGER       REFERENCES spedizioni(id),
-    ordine_id                  INTEGER       NOT NULL REFERENCES ordini_clienti(id),
-    data                       DATE          NOT NULL,
-    destinatario_id            INTEGER       NOT NULL REFERENCES clienti_fornitori(id),
-    indirizzo_destinazione_id  INTEGER       NOT NULL REFERENCES indirizzi(id),
-    causale_trasporto          TEXT,
-    porto                      TEXT          NOT NULL CHECK (porto IN ('franco','assegnato')),
-    vettore                    TEXT,
-    aspetto_beni               TEXT,
-    numero_colli               INTEGER,
-    peso_lordo_kg              DECIMAL(10,3),
-    stato                      TEXT          NOT NULL DEFAULT 'bozza'
-                                              CHECK (stato IN ('bozza','emesso','consegnato')),
-    creato_da                  INTEGER       NOT NULL REFERENCES utenti(id),
-    created_at                 DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS documenti_trasporto_righe (
-    id                     INT AUTO_INCREMENT PRIMARY KEY,
-    documento_trasporto_id INTEGER       NOT NULL REFERENCES documenti_trasporto(id) ON DELETE CASCADE,
-    prodotto_id            INTEGER       NOT NULL REFERENCES prodotti(id),
-    descrizione            VARCHAR(255)  NOT NULL,
-    quantita               DECIMAL(10,3) NOT NULL,
-    unita_misura_id        INTEGER       REFERENCES unita_misura(id),
-    lotto_id               INTEGER       REFERENCES lotti(id),   -- NULL se il prodotto non traccia lotti
-    codice_lotto           VARCHAR(50),  -- denormalizzato per stampa DDT
-    is_adr                 BOOLEAN       NOT NULL DEFAULT 0,
-    numero_onu             VARCHAR(10),  -- denormalizzato per stampa DDT
-    classe_adr             VARCHAR(10),  -- denormalizzato
-    packing_group          TEXT,         -- denormalizzato
-    posizione_riga         INTEGER       NOT NULL DEFAULT 0,
-    note                   TEXT
-);
-
--- =============================================================================
--- 24. TABELLA CHIAVE VALORE IMPOSTAZIONI
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS Impostazioni (
-    chiave VARCHAR(50) PRIMARY KEY,
-    valore TEXT
-);
-
-
--- =============================================================================
--- INDICI
--- =============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_clienti_fornitori_tipo         ON clienti_fornitori(tipo);
-CREATE INDEX IF NOT EXISTS idx_clienti_fornitori_attivo       ON clienti_fornitori(attivo);
-CREATE INDEX IF NOT EXISTS idx_indirizzi_soggetto             ON indirizzi(soggetto_id);
-CREATE INDEX IF NOT EXISTS idx_prodotti_attivo                ON prodotti(attivo);
-CREATE INDEX IF NOT EXISTS idx_prodotti_categoria             ON prodotti(categoria_id);
-CREATE INDEX IF NOT EXISTS idx_prodotti_unita_misura_stock    ON prodotti(unita_misura_stock_id);
-CREATE INDEX IF NOT EXISTS idx_adr_codici_onu_codice          ON adr_codici_onu(codice_onu);
-CREATE INDEX IF NOT EXISTS idx_prodotto_adr_prodotto          ON prodotto_classificazioni_adr(prodotto_id);
-CREATE INDEX IF NOT EXISTS idx_prodotto_adr_codice_onu        ON prodotto_classificazioni_adr(codice_onu_id);
-CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prodotto    ON prodotti_fornitori(prodotto_id);
-CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_fornitore   ON prodotti_fornitori(fornitore_id);
-CREATE INDEX IF NOT EXISTS idx_lotti_prodotto                 ON lotti(prodotto_id);
-CREATE INDEX IF NOT EXISTS idx_lotti_codice_fornitore         ON lotti(codice_lotto_fornitore);
-CREATE INDEX IF NOT EXISTS idx_lotti_codice_interno           ON lotti(codice_lotto_interno);
--- Un codice_lotto_interno deve essere univoco PER PRODOTTO (non globalmente: prodotti
--- diversi possono legittimamente condividere lo stesso codice, es. numerazione del
--- fornitore riusata). Vedi db/migrations/2026_07_10_lotti_codice_unique_per_prodotto.php.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_lotti_prodotto_codice_unique ON lotti(prodotto_id, codice_lotto_interno);
-CREATE INDEX IF NOT EXISTS idx_lotti_fornitore                ON lotti(fornitore_id);
-CREATE INDEX IF NOT EXISTS idx_lotti_data_arrivo              ON lotti(data_arrivo);
-CREATE INDEX IF NOT EXISTS idx_lotti_data_scadenza            ON lotti(data_scadenza);
-CREATE INDEX IF NOT EXISTS idx_giacenze_prodotto              ON giacenze(prodotto_id);
-CREATE INDEX IF NOT EXISTS idx_movimenti_prodotto             ON movimenti_magazzino(prodotto_id);
-CREATE INDEX IF NOT EXISTS idx_movimenti_lotto                ON movimenti_magazzino(lotto_id);
-CREATE INDEX IF NOT EXISTS idx_movimenti_created_at           ON movimenti_magazzino(created_at);
-CREATE INDEX IF NOT EXISTS idx_preventivi_cliente             ON preventivi(cliente_id);
-CREATE INDEX IF NOT EXISTS idx_preventivi_stato               ON preventivi(stato);
-CREATE INDEX IF NOT EXISTS idx_preventivi_created_at          ON preventivi(created_at);
-CREATE INDEX IF NOT EXISTS idx_ordini_clienti_cliente         ON ordini_clienti(cliente_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_clienti_stato           ON ordini_clienti(stato);
-CREATE INDEX IF NOT EXISTS idx_oc_righe_lotti_riga            ON ordini_clienti_righe_lotti(ordine_riga_id);
-CREATE INDEX IF NOT EXISTS idx_oc_righe_lotti_lotto           ON ordini_clienti_righe_lotti(lotto_id);
-CREATE INDEX IF NOT EXISTS idx_spedizioni_ordine              ON spedizioni(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_spedizioni_righe_lotto         ON spedizioni_righe(lotto_id);
-CREATE INDEX IF NOT EXISTS idx_ddt_righe_lotto                ON documenti_trasporto_righe(lotto_id);
-CREATE INDEX IF NOT EXISTS idx_documenti_trasporto_ordine     ON documenti_trasporto(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_fatture_cliente                ON fatture(cliente_id);
-CREATE INDEX IF NOT EXISTS idx_fatture_ordine                 ON fatture(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_fatture_stato                  ON fatture(stato);
-
--- Indici sulle righe di dettaglio (SQLite non indicizza automaticamente le FK)
-CREATE INDEX IF NOT EXISTS idx_preventivi_righe_preventivo          ON preventivi_righe(preventivo_id);
-CREATE INDEX IF NOT EXISTS idx_ordini_clienti_righe_ordine          ON ordini_clienti_righe(ordine_id);
-CREATE INDEX IF NOT EXISTS idx_fatture_righe_fattura                ON fatture_righe(fattura_id);
-CREATE INDEX IF NOT EXISTS idx_spedizioni_righe_spedizione          ON spedizioni_righe(spedizione_id);
-CREATE INDEX IF NOT EXISTS idx_documenti_trasporto_righe_dt         ON documenti_trasporto_righe(documento_trasporto_id);
-CREATE INDEX IF NOT EXISTS idx_prodotti_fornitori_prezzi_pf         ON prodotti_fornitori_prezzi(prodotto_fornitore_id);
-
--- Indice composito per query di vendita (ricerca prezzo per listino + prodotto)
-CREATE INDEX IF NOT EXISTS idx_listini_prezzi_listino_prodotto      ON listini_prezzi(listino_id, prodotto_id);
-
--- Unicità UoM di riferimento per categoria (un solo e_riferimento = 1 per categoria).
--- BUG CORRETTO (14/07/2026, audit a tappeto multi-UoM): MySQL/MariaDB non supportano
--- indici parziali (CREATE UNIQUE INDEX ... WHERE) — questa istruzione produceva un
--- errore di sintassi su un vero server MySQL, interrompendo l'esecuzione dell'intero
--- script. Sostituita con una colonna generata STORED: vale categoria_id solo quando
--- e_riferimento=1 (altrimenti NULL, e MySQL considera NULL sempre distinto da un altro
--- NULL in un indice UNIQUE, coerente con la semantica dell'indice parziale originale).
-ALTER TABLE unita_misura
-    ADD COLUMN categoria_riferimento_check INT
-    GENERATED ALWAYS AS (CASE WHEN e_riferimento = 1 THEN categoria_id ELSE NULL END) STORED;
-
-CREATE UNIQUE INDEX uq_um_categoria_riferimento
-    ON unita_misura(categoria_riferimento_check);
-
--- =============================================================================
--- TRIGGERS — AGGIORNAMENTO AUTOMATICO TIMESTAMP (updated_at)
--- =============================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- =============================================================================
--- SEED DATA
--- =============================================================================
-
-INSERT IGNORE INTO unita_misura_categorie (id, nome) VALUES
-    (1, 'Massa'),
-    (2, 'Volume'),
-    (3, 'Quantità'),
-    (4, 'Lunghezza');
-
-INSERT IGNORE INTO unita_misura (codice, descrizione, categoria_id, fattore_base, e_riferimento) VALUES
-    ('kg',  'Chilogrammo',  1, 1.0,         1),
-    ('g',   'Grammo',       1, 0.001,        0),
-    ('mg',  'Milligrammo',  1, 0.000001,     0),
-    ('t',   'Tonnellata',   1, 1000.0,       0),
-    ('l',   'Litro',        2, 1.0,          1),
-    ('ml',  'Millilitro',   2, 0.001,        0),
-    ('pz',  'Pezzo',        3, 1.0,          1),
-    ('m',   'Metro',        4, 1.0,          1),
-    ('cm',  'Centimetro',   4, 0.01,         0);
+INSERT IGNORE INTO unita_misura (id, codice, descrizione, fattore_base, e_riferimento) VALUES
+    (1, 'kg', 'Chilogrammo', 1, 1),
+    (2, 'g', 'Grammo', 0.001, 0),
+    (3, 'mg', 'Milligrammo', 1.0E-6, 0),
+    (4, 't', 'Tonnellata', 1000, 0),
+    (5, 'l', 'Litro', 1, 0),
+    (6, 'ml', 'Millilitro', 0.001, 0),
+    (7, 'pz', 'Pezzo', 1, 0),
+    (8, 'm', 'Metro', 1, 0),
+    (9, 'cm', 'Centimetro', 0.01, 0);
 
 INSERT IGNORE INTO adr_classi_pericolo (codice, denominazione, ha_divisioni) VALUES
-    ('1',   'Materie ed oggetti esplosivi',                                                          1),
-    ('2',   'Gas',                                                                                   0),
-    ('3',   'Liquidi infiammabili',                                                                  0),
-    ('4.1', 'Materie solide infiammabili, materie autoreattive ed esplosivi solidi desensibilizzati',1),
-    ('4.2', 'Materie soggette ad accensione spontanea',                                              0),
-    ('4.3', 'Materie che a contatto con l''acqua sviluppano gas infiammabili',                       0),
-    ('5.1', 'Materie comburenti',                                                                    0),
-    ('5.2', 'Perossidi organici',                                                                    0),
-    ('6.1', 'Materie tossiche',                                                                      0),
-    ('6.2', 'Materie infettanti',                                                                    0),
-    ('7',   'Materie radioattive',                                                                   0),
-    ('8',   'Materie corrosive',                                                                     0),
-    ('9',   'Materie e oggetti pericolosi diversi',                                                  0);
+    (1, 'Materie ed oggetti esplosivi', 1),
+    (2, 'Gas', 0),
+    (3, 'Liquidi infiammabili', 0),
+    (4.1, 'Materie solide infiammabili, materie autoreattive ed esplosivi solidi desensibilizzati', 1),
+    (4.2, 'Materie soggette ad accensione spontanea', 0),
+    (4.3, 'Materie che a contatto con l''acqua sviluppano gas infiammabili', 0),
+    (5.1, 'Materie comburenti', 0),
+    (5.2, 'Perossidi organici', 0),
+    (6.1, 'Materie tossiche', 0),
+    (6.2, 'Materie infettanti', 0),
+    (7, 'Materie radioattive', 0),
+    (8, 'Materie corrosive', 0),
+    (9, 'Materie e oggetti pericolosi diversi', 0);
 
 INSERT IGNORE INTO adr_gruppi_imballaggio (codice, descrizione) VALUES
-    ('I',   'Alta pericolosità'),
-    ('II',  'Media pericolosità'),
+    ('I', 'Alta pericolosità'),
+    ('II', 'Media pericolosità'),
     ('III', 'Bassa pericolosità');
 
 INSERT IGNORE INTO adr_categorie_trasporto (categoria, moltiplicatore_punti, soglia_esenzione_kg_l, descrizione) VALUES
-    (0, 0,  NULL, 'Esclusa dall''esenzione piccolo carico (es. esplosivi ad alto rischio)'),
-    (1, 50, 20,   'Moltiplicatore 50 — soglia esenzione 20 kg/l per unità di trasporto'),
-    (2, 3,  333,  'Moltiplicatore 3 — soglia esenzione 333 kg/l per unità di trasporto'),
-    (3, 1,  1000, 'Moltiplicatore 1 — soglia esenzione 1000 kg/l per unità di trasporto'),
-    (4, 0,  NULL, 'Non contribuisce ai punti (es. materie pericolose per l''ambiente)');
+    (0, 0, NULL, 'Esclusa dall''esenzione piccolo carico (es. esplosivi ad alto rischio)'),
+    (1, 50, 20, 'Moltiplicatore 50 — soglia esenzione 20 kg/l per unità di trasporto'),
+    (2, 3, 333, 'Moltiplicatore 3 — soglia esenzione 333 kg/l per unità di trasporto'),
+    (3, 1, 1000, 'Moltiplicatore 1 — soglia esenzione 1000 kg/l per unità di trasporto'),
+    (4, 0, NULL, 'Non contribuisce ai punti (es. materie pericolose per l''ambiente)');
 
 INSERT IGNORE INTO adr_quantita_esenti (codice, quantita_max_imballaggio_interno, quantita_max_collo, descrizione) VALUES
     ('E0', NULL, NULL, 'Regime quantità esenti non ammesso per questa sostanza'),
-    ('E1', 30,   1000, 'Max 30 ml/g per imballaggio interno; max 1000 ml/g per collo'),
-    ('E2', 30,   500,  'Max 30 ml/g per imballaggio interno; max 500 ml/g per collo'),
-    ('E3', 30,   300,  'Max 30 ml/g per imballaggio interno; max 300 ml/g per collo'),
-    ('E4', 1,    500,  'Max 1 ml/g per imballaggio interno; max 500 ml/g per collo'),
-    ('E5', 1,    300,  'Max 1 ml/g per imballaggio interno; max 300 ml/g per collo');
+    ('E1', 30, 1000, 'Max 30 ml/g per imballaggio interno; max 1000 ml/g per collo'),
+    ('E2', 30, 500, 'Max 30 ml/g per imballaggio interno; max 500 ml/g per collo'),
+    ('E3', 30, 300, 'Max 30 ml/g per imballaggio interno; max 300 ml/g per collo'),
+    ('E4', 1, 500, 'Max 1 ml/g per imballaggio interno; max 500 ml/g per collo'),
+    ('E5', 1, 300, 'Max 1 ml/g per imballaggio interno; max 300 ml/g per collo');
 
 INSERT IGNORE INTO adr_codici_restrizione_gallerie (codice, si_applica_a_cisterna, descrizione) VALUES
-    ('-',   NULL,  'Nessuna restrizione in galleria'),
-    ('B',   NULL,  'Vietato in gallerie cat. B, C, D, E'),
-    ('B/D', NULL,  'Colli: codice B (vietato B,C,D,E) — Cisterne: codice D (vietato D,E)'),
-    ('B/E', NULL,  'Colli: codice B (vietato B,C,D,E) — Cisterne: codice E (vietato E)'),
-    ('C',   NULL,  'Vietato in gallerie cat. C, D, E'),
-    ('C/D', NULL,  'Colli: codice C (vietato C,D,E) — Cisterne: codice D (vietato D,E)'),
-    ('C/E', NULL,  'Colli: codice C (vietato C,D,E) — Cisterne: codice E (vietato E)'),
-    ('D',   NULL,  'Vietato in gallerie cat. D, E'),
-    ('D/E', NULL,  'Colli: codice D (vietato D,E) — Cisterne: codice E (vietato E)'),
-    ('E',   NULL,  'Vietato in galleria cat. E');
+    ('-', NULL, 'Nessuna restrizione in galleria'),
+    ('B', NULL, 'Vietato in gallerie cat. B, C, D, E'),
+    ('B/D', NULL, 'Colli: codice B (vietato B,C,D,E) — Cisterne: codice D (vietato D,E)'),
+    ('B/E', NULL, 'Colli: codice B (vietato B,C,D,E) — Cisterne: codice E (vietato E)'),
+    ('C', NULL, 'Vietato in gallerie cat. C, D, E'),
+    ('C/D', NULL, 'Colli: codice C (vietato C,D,E) — Cisterne: codice D (vietato D,E)'),
+    ('C/E', NULL, 'Colli: codice C (vietato C,D,E) — Cisterne: codice E (vietato E)'),
+    ('D', NULL, 'Vietato in gallerie cat. D, E'),
+    ('D/E', NULL, 'Colli: codice D (vietato D,E) — Cisterne: codice E (vietato E)'),
+    ('E', NULL, 'Vietato in galleria cat. E');
 
 INSERT IGNORE INTO adr_restrizione_gallerie_categorie (restrizione_codice, categoria_galleria) VALUES
-    ('B',   'B'), ('B',   'C'), ('B',   'D'), ('B',   'E'),
-    ('B/D', 'B'), ('B/D', 'C'), ('B/D', 'D'), ('B/D', 'E'),
-    ('B/E', 'B'), ('B/E', 'C'), ('B/E', 'D'), ('B/E', 'E'),
-    ('C',   'C'), ('C',   'D'), ('C',   'E'),
-    ('C/D', 'C'), ('C/D', 'D'), ('C/D', 'E'),
-    ('C/E', 'C'), ('C/E', 'D'), ('C/E', 'E'),
-    ('D',   'D'), ('D',   'E'),
-    ('D/E', 'D'), ('D/E', 'E'),
-    ('E',   'E');
+    ('B', 'B'),
+    ('B', 'C'),
+    ('B', 'D'),
+    ('B', 'E'),
+    ('B/D', 'B'),
+    ('B/D', 'C'),
+    ('B/D', 'D'),
+    ('B/D', 'E'),
+    ('B/E', 'B'),
+    ('B/E', 'C'),
+    ('B/E', 'D'),
+    ('B/E', 'E'),
+    ('C', 'C'),
+    ('C', 'D'),
+    ('C', 'E'),
+    ('C/D', 'C'),
+    ('C/D', 'D'),
+    ('C/D', 'E'),
+    ('C/E', 'C'),
+    ('C/E', 'D'),
+    ('C/E', 'E'),
+    ('D', 'D'),
+    ('D', 'E'),
+    ('D/E', 'D'),
+    ('D/E', 'E'),
+    ('E', 'E');
 
-INSERT IGNORE INTO ruoli (codice, nome,
-    can_manage_users, can_view_costs, can_edit_prices,
-    can_manage_catalog, can_manage_warehouse, can_manage_orders, can_view_only)
-VALUES
-    ('admin',        'Amministratore',  1, 1, 1, 1, 1, 1, 0),
-    ('commerciale',  'Commerciale',     0, 1, 1, 0, 0, 1, 0),
-    ('magazziniere', 'Magazziniere',    0, 0, 0, 0, 1, 0, 0),
-    ('readonly',     'Solo lettura',    0, 0, 0, 0, 0, 0, 1);
+INSERT IGNORE INTO tipi_cliente (id, codice, nome, attivo) VALUES
+    (1, 'end_user', 'Utente finale', 1),
+    (2, 'rivenditore', 'Rivenditore', 1),
+    (3, 'dropshipper', 'Dropshipper', 1),
+    (4, 'grossista', 'Grossista', 1),
+    (5, 'ente_pubblico', 'Ente pubblico', 1);
 
-INSERT IGNORE INTO tipi_cliente (codice, nome) VALUES
-    ('end_user',     'Utente finale'),
-    ('rivenditore',  'Rivenditore'),
-    ('dropshipper',  'Dropshipper'),
-    ('grossista',    'Grossista'),
-    ('ente_pubblico','Ente pubblico');
+INSERT IGNORE INTO canali_vendita (id, codice, nome, attivo) VALUES
+    (1, 'sito', 'Sito e-commerce', 1),
+    (2, 'email_diretta', 'Email diretta', 1),
+    (3, 'dropshipping', 'Dropshipping', 1),
+    (4, 'agente', 'Agente', 1);
 
-INSERT IGNORE INTO canali_vendita (codice, nome) VALUES
-    ('sito',          'Sito e-commerce'),
-    ('email_diretta', 'Email diretta'),
-    ('dropshipping',  'Dropshipping'),
-    ('agente',        'Agente');
+INSERT IGNORE INTO ruoli (id, codice, nome, can_manage_users, can_view_costs, can_edit_prices, can_manage_catalog, can_manage_warehouse, can_manage_orders, can_view_only, attivo) VALUES
+    (1, 'admin', 'Amministratore', 1, 1, 1, 1, 1, 1, 0, 1),
+    (2, 'commerciale', 'Commerciale', 0, 1, 1, 0, 0, 1, 0, 1),
+    (3, 'magazziniere', 'Magazziniere', 0, 0, 0, 0, 1, 0, 0, 1),
+    (4, 'readonly', 'Solo lettura', 0, 0, 0, 0, 0, 0, 1, 1);
 
-INSERT IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES
-    ('preventivo',             'PREV/',2026, 0, 4),
-    ('ordine_cliente',         'ODC/', 2026, 0, 4),
-    ('fattura',                'FT/',  2026, 0, 4),
-    ('spedizione',             'SPE/', 2026, 0, 4),
-    ('documento_trasporto',    'DDT/', 2026, 0, 4);
+INSERT IGNORE INTO utenti (id, username, nome, cognome, email, password_hash, ruolo_id, attivo, created_at) VALUES
+    (1, 'admin', 'Admin', 'Quack', 'admin@quack.local', '$2y$10$AvqD7AR.9BcN/LAesKP0OuCk4vTZfHxN4a9GvjjlDKzLxTGwAZy6G', 1, 1, '2026-07-14 19:56:08');
 
-INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
--- Dati Anagrafici Gemina Srl
-('azienda_ragione_sociale', 'GEMINA S.R.L.'),
-('azienda_piva', '02969850607'),
-('azienda_indirizzo', 'Località Ferruccia SNC'),
-('azienda_cap', '03010'),
-('azienda_citta', 'Patrica'),
-('azienda_provincia', 'FR'),
-('azienda_email_commerciale', 'info@geminasrl.com'),
-('azienda_telefono', '0775.201147');
+INSERT IGNORE INTO sequenze (id, tipo, prefisso, anno, numero_corrente, padding) VALUES
+    (1, 'preventivo', 'PREV/', 2026, 0, 4),
+    (2, 'ordine_cliente', 'ODC/', 2026, 0, 4),
+    (3, 'fattura', 'FT/', 2026, 0, 4),
+    (4, 'spedizione', 'SPE/', 2026, 0, 4),
+    (5, 'documento_trasporto', 'DDT/', 2026, 0, 4),
+    (6, 'rfq', 'RFQ/', 2026, 0, 4),
+    (7, 'offerta', 'OFF/', 2026, 0, 4),
+    (8, 'ordine', 'ODA/', 2026, 0, 4),
+    (9, 'trasferimento', 'TRF/', 2026, 0, 4);
 
--- Configurazione Preventivi (Canale vendita 1)
-INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
-('preventivi_scadenza_giorni', '30'),
-('preventivi_prefisso', 'PREV-'),
-('markup_fallback_default', '20.00');
+INSERT IGNORE INTO clp_h_statements (codice, testo, tipo) VALUES
+    ('H200', 'Esplosivo instabile.', 'fisico'),
+    ('H201', 'Esplosivo; pericolo di esplosione di massa.', 'fisico'),
+    ('H202', 'Esplosivo; grave pericolo di proiezione.', 'fisico'),
+    ('H203', 'Esplosivo; pericolo di incendio, di spostamento d''aria o di proiezione.', 'fisico'),
+    ('H204', 'Pericolo di incendio o di proiezione.', 'fisico'),
+    ('H205', 'Pericolo di esplosione di massa in caso di incendio.', 'fisico'),
+    ('H220', 'Gas facilmente infiammabile.', 'fisico'),
+    ('H221', 'Gas infiammabile.', 'fisico'),
+    ('H222', 'Aerosol facilmente infiammabile.', 'fisico'),
+    ('H223', 'Aerosol infiammabile.', 'fisico'),
+    ('H224', 'Liquido e vapori facilmente infiammabili.', 'fisico'),
+    ('H225', 'Liquido e vapori molto facilmente infiammabili.', 'fisico'),
+    ('H226', 'Liquido e vapori infiammabili.', 'fisico'),
+    ('H227', 'Liquido combustibile.', 'fisico'),
+    ('H228', 'Solido infiammabile.', 'fisico'),
+    ('H229', 'Contenitore in pressione: può esplodere se riscaldato.', 'fisico'),
+    ('H240', 'Rischio di esplosione per riscaldamento.', 'fisico'),
+    ('H241', 'Rischio di incendio o esplosione per riscaldamento.', 'fisico'),
+    ('H242', 'Rischio di incendio per riscaldamento.', 'fisico'),
+    ('H250', 'Prende fuoco spontaneamente a contatto con l''aria.', 'fisico'),
+    ('H251', 'Autoriscaldante; può prendere fuoco.', 'fisico'),
+    ('H252', 'Autoriscaldante in grandi quantità; può prendere fuoco.', 'fisico'),
+    ('H260', 'A contatto con l''acqua libera gas infiammabili che possono infiammarsi spontaneamente.', 'fisico'),
+    ('H261', 'A contatto con l''acqua libera gas infiammabili.', 'fisico'),
+    ('H270', 'Può provocare o aggravare un incendio; comburente.', 'fisico'),
+    ('H271', 'Rischio di esplosione o incendio; molto comburente.', 'fisico'),
+    ('H272', 'Può aggravare un incendio; comburente.', 'fisico'),
+    ('H280', 'Contiene gas sotto pressione; può esplodere se riscaldato.', 'fisico'),
+    ('H281', 'Contiene gas refrigerato; può causare ustioni o lesioni criogeniche.', 'fisico'),
+    ('H290', 'Può essere corrosivo per i metalli.', 'fisico'),
+    ('H300', 'Letale se ingerito.', 'salute'),
+    ('H301', 'Tossico se ingerito.', 'salute'),
+    ('H302', 'Nocivo se ingerito.', 'salute'),
+    ('H303', 'Può essere nocivo se ingerito.', 'salute'),
+    ('H304', 'Può essere letale in caso di ingestione e di penetrazione nelle vie respiratorie.', 'salute'),
+    ('H310', 'Letale per contatto con la pelle.', 'salute'),
+    ('H311', 'Tossico per contatto con la pelle.', 'salute'),
+    ('H312', 'Nocivo per contatto con la pelle.', 'salute'),
+    ('H313', 'Può essere nocivo per contatto con la pelle.', 'salute'),
+    ('H314', 'Provoca gravi ustioni cutanee e gravi lesioni oculari.', 'salute'),
+    ('H315', 'Provoca irritazione cutanea.', 'salute'),
+    ('H317', 'Può provocare una reazione allergica cutanea.', 'salute'),
+    ('H318', 'Provoca gravi lesioni oculari.', 'salute'),
+    ('H319', 'Provoca grave irritazione oculare.', 'salute'),
+    ('H330', 'Letale per inalazione.', 'salute'),
+    ('H331', 'Tossico per inalazione.', 'salute'),
+    ('H332', 'Nocivo per inalazione.', 'salute'),
+    ('H334', 'Può provocare sintomi allergici o asmatici o difficoltà respiratorie per inalazione.', 'salute'),
+    ('H335', 'Può irritare le vie respiratorie.', 'salute'),
+    ('H336', 'Può provocare sonnolenza o vertigini.', 'salute'),
+    ('H340', 'Può provocare alterazioni genetiche.', 'salute'),
+    ('H341', 'Sospettato di provocare alterazioni genetiche.', 'salute'),
+    ('H350', 'Può provocare il cancro.', 'salute'),
+    ('H351', 'Sospettato di provocare il cancro.', 'salute'),
+    ('H360', 'Può nuocere alla fertilità o al feto.', 'salute'),
+    ('H361', 'Sospettato di nuocere alla fertilità o al feto.', 'salute'),
+    ('H362', 'Può essere nocivo per i lattanti allattati al seno.', 'salute'),
+    ('H370', 'Provoca danni agli organi.', 'salute'),
+    ('H371', 'Può provocare danni agli organi.', 'salute'),
+    ('H372', 'Provoca danni agli organi in caso di esposizione prolungata o ripetuta.', 'salute'),
+    ('H373', 'Può provocare danni agli organi in caso di esposizione prolungata o ripetuta.', 'salute'),
+    ('H400', 'Molto tossico per gli organismi acquatici.', 'ambiente'),
+    ('H410', 'Molto tossico per gli organismi acquatici con effetti di lunga durata.', 'ambiente'),
+    ('H411', 'Tossico per gli organismi acquatici con effetti di lunga durata.', 'ambiente'),
+    ('H412', 'Nocivo per gli organismi acquatici con effetti di lunga durata.', 'ambiente'),
+    ('H413', 'Può essere nocivo per gli organismi acquatici con effetti di lunga durata.', 'ambiente'),
+    ('H420', 'Danneggia la salute pubblica e l''ambiente distruggendo l''ozono nello strato superiore dell''atmosfera.', 'ambiente'),
+    ('EUH014', 'Reagisce violentemente con l''acqua.', 'supplementare'),
+    ('EUH018', 'Durante l''uso può formarsi una miscela vapore-aria esplosiva/infiammabile.', 'supplementare'),
+    ('EUH029', 'A contatto con l''acqua libera gas tossici.', 'supplementare'),
+    ('EUH031', 'A contatto con acidi libera gas tossici.', 'supplementare'),
+    ('EUH032', 'A contatto con acidi libera gas molto tossici.', 'supplementare'),
+    ('EUH059', 'Pericoloso per lo strato di ozono.', 'supplementare'),
+    ('EUH066', 'L''esposizione ripetuta può provocare secchezza o screpolature della pelle.', 'supplementare'),
+    ('EUH071', 'Corrosivo per le vie respiratorie.', 'supplementare'),
+    ('EUH208', 'Contiene [nome della sostanza sensibilizzante]. Può provocare una reazione allergica.', 'supplementare'),
+    ('EUH210', 'Su richiesta è disponibile una scheda di dati di sicurezza.', 'supplementare');
 
--- Configurazione WooCommerce (Canale vendita 2)
-INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
-('wc_api_url', 'https://piscinasuperstore.it/wp-json/wc/v3/'),
-('wc_consumer_key', '***WC_CONSUMER_KEY_RIMOSSA***'),
-('wc_consumer_secret', '***WC_CONSUMER_SECRET_RIMOSSA***'),
-('wc_sincronizzazione_attiva', '0');
+INSERT IGNORE INTO clp_p_statements (codice, testo, tipo) VALUES
+    ('P101', 'In caso di consultazione di un medico, tenere a disposizione il contenitore o l''etichetta del prodotto.', 'generale'),
+    ('P102', 'Tenere fuori dalla portata dei bambini.', 'generale'),
+    ('P103', 'Leggere l''etichetta prima dell''uso.', 'generale'),
+    ('P210', 'Tenere lontano da fonti di calore, superfici surriscaldate, scintille, fiamme libere o altre fonti di accensione. Non fumare.', 'prevenzione'),
+    ('P220', 'Tenere lontano da indumenti e altri materiali combustibili.', 'prevenzione'),
+    ('P233', 'Tenere il recipiente ben chiuso.', 'prevenzione'),
+    ('P260', 'Non respirare polveri/fumi/gas/nebbie/vapori/aerosol.', 'prevenzione'),
+    ('P261', 'Evitare di respirare polveri/fumi/gas/nebbie/vapori/aerosol.', 'prevenzione'),
+    ('P262', 'Evitare il contatto con gli occhi, la pelle o gli indumenti.', 'prevenzione'),
+    ('P264', 'Lavare accuratamente dopo l''uso.', 'prevenzione'),
+    ('P270', 'Non mangiare, né bere, né fumare durante l''uso.', 'prevenzione'),
+    ('P271', 'Utilizzare soltanto all''aperto o in luogo ben ventilato.', 'prevenzione'),
+    ('P273', 'Non disperdere nell''ambiente.', 'prevenzione'),
+    ('P280', 'Indossare dispositivi di protezione individuale.', 'prevenzione'),
+    ('P301', 'IN CASO DI INGESTIONE:', 'risposta'),
+    ('P302', 'IN CASO DI CONTATTO CON LA PELLE:', 'risposta'),
+    ('P304', 'IN CASO DI INALAZIONE:', 'risposta'),
+    ('P305', 'IN CASO DI CONTATTO CON GLI OCCHI:', 'risposta'),
+    ('P310', 'Contattare immediatamente un CENTRO ANTIVELENI/un medico.', 'risposta'),
+    ('P311', 'Contattare un CENTRO ANTIVELENI/un medico.', 'risposta'),
+    ('P312', 'Contattare un CENTRO ANTIVELENI/un medico in caso di malessere.', 'risposta'),
+    ('P330', 'Sciacquare la bocca.', 'risposta'),
+    ('P331', 'NON provocare il vomito.', 'risposta'),
+    ('P351', 'Sciacquare accuratamente per parecchi minuti.', 'risposta'),
+    ('P352', 'Lavare abbondantemente con acqua e sapone.', 'risposta'),
+    ('P353', 'Sciacquare la pelle/fare una doccia.', 'risposta'),
+    ('P391', 'Raccogliere il materiale fuoriuscito.', 'risposta'),
+    ('P401', 'Conservare in conformità alle norme locali.', 'conservazione'),
+    ('P403', 'Conservare in luogo ben ventilato.', 'conservazione'),
+    ('P405', 'Conservare sotto chiave.', 'conservazione'),
+    ('P410', 'Proteggere dai raggi solari.', 'conservazione'),
+    ('P501', 'Smaltire il prodotto/recipiente in conformità alle norme locali.', 'smaltimento'),
+    ('P502', 'Informarsi presso il produttore per il recupero e il riciclo.', 'smaltimento');
 
--- =========================================================================
--- CONFIGURAZIONE PAGINE WOOCOMMERCE (Canale 2)
--- =========================================================================
-INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
-('wc_page_carrello_id', '502'),
-('wc_page_pagamento_id', '503'),
-('wc_page_mio_account_id', '504'),
-('wc_page_termini_condizioni_id', '825');
+INSERT IGNORE INTO clp_pittogrammi (codice, nome, descrizione, file_path) VALUES
+    ('GHS01', 'Esplosivo', 'Esplosivi instabili, div. 1.1–1.4, autoreattivi A/B, perossidi organici A/B', NULL),
+    ('GHS02', 'Infiammabile', 'Gas, aerosol, liquidi e solidi infiammabili; sostanze piroforiche; autoriscaldanti; idroattive', NULL),
+    ('GHS03', 'Comburente', 'Gas, liquidi e solidi comburenti; perossidi organici', NULL),
+    ('GHS04', 'Gas compressi', 'Gas compressi, liquefatti, disciolti o refrigerati', NULL),
+    ('GHS05', 'Corrosivo', 'Corrosivi per metalli; corrosivi cutanei cat. 1; lesioni oculari gravi cat. 1', NULL),
+    ('GHS06', 'Tossico acuto', 'Tossicità acuta cat. 1-3 (orale, cutanea, inalazione)', NULL),
+    ('GHS07', 'Nocivo/Irritante', 'Tossicità acuta cat. 4; irritazione; sensibilizzazione cutanea; STOT cat. 3', NULL),
+    ('GHS08', 'Pericolo salute', 'Sensibilizzazione respiratoria; mutagenesi; carcinogenesi; STOT cat. 1-2; aspirazione', NULL),
+    ('GHS09', 'Ambiente', 'Pericolo acuto/cronico per l''ambiente acquatico', NULL);
 
--- =========================================================================
--- ENDPOINT DI PAGAMENTO WOOCOMMERCE (Valori standard di default)
--- =========================================================================
-INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
-('wc_endpoint_checkout_paga', 'order-pay'),
-('wc_endpoint_checkout_ordine_ricevuto', 'order-received'),
-('wc_endpoint_checkout_aggiungi_metodo', 'add-payment-method'),
-('wc_endpoint_checkout_elimina_metodo', 'delete-payment-method'),
-('wc_endpoint_checkout_imposta_predefinito', 'set-default-payment-method');
+INSERT IGNORE INTO magazzini (id, codice, nome, tipo, azienda_interna_id, indirizzo_id, parent_id, soggetto_esterno_id, predefinito, attivo, note, created_at) VALUES
+    (1, 'MAG-01', 'Magazzino Principale', 'fisico', NULL, NULL, NULL, NULL, 1, 1, NULL, '2026-07-14 19:56:08');
 
--- =========================================================================
--- ENDPOINT ACCOUNT WOOCOMMERCE (Valori standard di default)
--- =========================================================================
-INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES 
-('wc_endpoint_account_ordini', 'orders'),
-('wc_endpoint_account_visualizza_ordine', 'view-order'),
-('wc_endpoint_account_downloads', 'downloads'),
-('wc_endpoint_account_modifica_account', 'edit-account'),
-('wc_endpoint_account_indirizzi', 'edit-address'),
-('wc_endpoint_account_metodi_pagamento', 'payment-methods'),
-('wc_endpoint_account_perso_password', 'lost-password'),
-('wc_endpoint_account_logout', 'customer-logout');
+INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES
+    ('azienda_ragione_sociale', 'GEMINA S.R.L.'),
+    ('azienda_piva', '02969850607'),
+    ('azienda_indirizzo', 'Località Ferruccia SNC'),
+    ('azienda_cap', '03010'),
+    ('azienda_citta', 'Patrica'),
+    ('azienda_provincia', 'FR'),
+    ('azienda_email_commerciale', 'info@geminasrl.com'),
+    ('azienda_telefono', '0775.201147'),
+    ('preventivi_scadenza_giorni', 30),
+    ('preventivi_prefisso', 'PREV-'),
+    ('markup_fallback_default', 20.00),
+    ('wc_api_url', 'https://piscinasuperstore.it/wp-json/wc/v3/'),
+    ('wc_consumer_key', '***WC_CONSUMER_KEY_RIMOSSA***'),
+    ('wc_consumer_secret', '***WC_CONSUMER_SECRET_RIMOSSA***'),
+    ('wc_sincronizzazione_attiva', 0),
+    ('wc_page_carrello_id', 502),
+    ('wc_page_pagamento_id', 503),
+    ('wc_page_mio_account_id', 504),
+    ('wc_page_termini_condizioni_id', 825),
+    ('wc_endpoint_checkout_paga', 'order-pay'),
+    ('wc_endpoint_checkout_ordine_ricevuto', 'order-received'),
+    ('wc_endpoint_checkout_aggiungi_metodo', 'add-payment-method'),
+    ('wc_endpoint_checkout_elimina_metodo', 'delete-payment-method'),
+    ('wc_endpoint_checkout_imposta_predefinito', 'set-default-payment-method'),
+    ('wc_endpoint_account_ordini', 'orders'),
+    ('wc_endpoint_account_visualizza_ordine', 'view-order'),
+    ('wc_endpoint_account_downloads', 'downloads'),
+    ('wc_endpoint_account_modifica_account', 'edit-account'),
+    ('wc_endpoint_account_indirizzi', 'edit-address'),
+    ('wc_endpoint_account_metodi_pagamento', 'payment-methods'),
+    ('wc_endpoint_account_perso_password', 'lost-password'),
+    ('wc_endpoint_account_logout', 'customer-logout');
 
+INSERT IGNORE INTO incoterms (id, codice, descrizione, attivo) VALUES
+    (1, 'EXW', 'Franco Fabbrica / Ex Works', 1),
+    (2, 'FCA', 'Franco Vettore / Free Carrier', 1),
+    (3, 'FAS', 'Franco Sotto Bordo / Free Alongside Ship', 1),
+    (4, 'FOB', 'Franco a Bordo / Free On Board', 1),
+    (5, 'CFR', 'Costo e Nolo / Cost and Freight', 1),
+    (6, 'CIF', 'Costo, Assicurazione e Nolo / Cost, Insurance and Freight', 1),
+    (7, 'CPT', 'Porto Pagato Fino a / Carriage Paid To', 1),
+    (8, 'CIP', 'Trasporto e Assicurazione Pagati Fino a / Carriage and Insurance Paid To', 1),
+    (9, 'DAP', 'Reso al Luogo / Delivered At Place', 1),
+    (10, 'DPU', 'Reso al Luogo Scaricato / Delivered at Place Unloaded', 1),
+    (11, 'DDP', 'Reso Sdoganato / Delivered Duty Paid', 1);
 
--- =============================================================================
--- UTENTE AMMINISTRATORE DI DEFAULT
--- username: admin  |  password: admin123
--- CAMBIARE AL PRIMO ACCESSO!
--- =============================================================================
+INSERT IGNORE INTO compliance_restriction_types (id, code, name, regulatory_ref, requires_vat, validity_days, log_transactions, report_within_days, active) VALUES
+    (1, 'EXPLOSIVE_PRECURSOR', 'Precursori di esplosivi', 'Reg. UE 2019/1148', 1, 365, 1, 5, 1);
 
-INSERT IGNORE INTO utenti (username, nome, cognome, email, password_hash, ruolo_id)
-SELECT 'admin', 'Admin', 'Quack', 'admin@quack.local',
-       '$2y$10$AvqD7AR.9BcN/LAesKP0OuCk4vTZfHxN4a9GvjjlDKzLxTGwAZy6G',
-       id FROM ruoli WHERE codice = 'admin';
-
-
--- =============================================================================
--- CICLO ACQUISTI V2 — TIPO SAP/ORACLE (RFQ, OFFERTE, ORDINI V2)
--- =============================================================================
-
--- Tabella di lookup Incoterms standard (Termini di resa internazionali)
-CREATE TABLE IF NOT EXISTS incoterms (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    codice      CHAR(3) NOT NULL UNIQUE,          -- es. EXW, FOB, CIF
-    descrizione VARCHAR(100) NOT NULL,            -- descrizione in italiano
-    attivo      BOOLEAN NOT NULL DEFAULT 1        -- 1=attivo, 0=disattivato
-);
-
--- Seed dei dati Incoterms
-INSERT IGNORE INTO incoterms (codice, descrizione) VALUES
-    ('EXW', 'Franco Fabbrica / Ex Works'),
-    ('FCA', 'Franco Vettore / Free Carrier'),
-    ('FAS', 'Franco Sotto Bordo / Free Alongside Ship'),
-    ('FOB', 'Franco a Bordo / Free On Board'),
-    ('CFR', 'Costo e Nolo / Cost and Freight'),
-    ('CIF', 'Costo, Assicurazione e Nolo / Cost, Insurance and Freight'),
-    ('CPT', 'Porto Pagato Fino a / Carriage Paid To'),
-    ('CIP', 'Trasporto e Assicurazione Pagati Fino a / Carriage and Insurance Paid To'),
-    ('DAP', 'Reso al Luogo / Delivered At Place'),
-    ('DPU', 'Reso al Luogo Scaricato / Delivered at Place Unloaded'),
-    ('DDP', 'Reso Sdoganato / Delivered Duty Paid');
-
--- Tabella di lookup Metodi di Pagamento
-CREATE TABLE IF NOT EXISTS metodi_pagamento (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    codice      VARCHAR(20)  NOT NULL UNIQUE, -- Es: RD (Rimessa Diretta), BB (Bonifico Bancario), RB (Ricevuta Bancaria)
-    descrizione VARCHAR(100) NOT NULL,
-    attivo      BOOLEAN      NOT NULL DEFAULT 1
-);
-
--- RFQ - Richieste di Offerta
-CREATE TABLE IF NOT EXISTS rfq_testata (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- Numero RFQ (es. RFQ/2026/0001)
-    versione                INTEGER      NOT NULL DEFAULT 1, -- Versione/revisione del documento
-    rfq_padre_id            INTEGER      REFERENCES rfq_testata(id), -- Collegamento alla versione precedente
-    stato                   TEXT         NOT NULL DEFAULT 'bozza'
-                                          CHECK (stato IN ('bozza','inviata','revisionata','chiusa')),
-    -- Motivo della chiusura, valorizzato solo quando stato = 'chiusa': vedi
-    -- spiegazione nel file SQLite gemello.
-    esito_chiusura          VARCHAR(20),
-    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),
-    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),    -- ID snapshot indirizzo consegna
-    
-    -- Termini di resa (Incoterms) - Denormalizzati in stile SAP
-    incoterm_codice         CHAR(3)      REFERENCES incoterms(codice), -- Codice Incoterm a 3 lettere (es. EXW)
-    incoterm_luogo          VARCHAR(150),                              -- Luogo o porto di resa
-
-    -- Spedizione denormalizzata per integrità storica (Oracle style)
-    consegna_via            VARCHAR(150),
-    consegna_civico         VARCHAR(10),
-    consegna_cap            VARCHAR(10),
-    consegna_citta          VARCHAR(100),
-    consegna_provincia      CHAR(2),
-    consegna_nazione        CHAR(2)      DEFAULT 'IT',
-    consegna_presso         VARCHAR(100),
-    consegna_referente      VARCHAR(80),
-    consegna_telefono       VARCHAR(20),
-    consegna_note           VARCHAR(255),
-
-    -- Dati referente (Alla cortese attenzione) e azienda fornitrice denormalizzati
-    contatto_id             INTEGER      REFERENCES contatti_documenti(id), -- ID snapshot contatto referente
-    contatto_nome           VARCHAR(100),
-    contatto_telefono       VARCHAR(20),
-    contatto_email          VARCHAR(150),
-    fornitore_telefono      VARCHAR(20),
-    fornitore_email         VARCHAR(150),
-
-    data_emissione          DATE         NOT NULL DEFAULT (DATE('now')),
-    data_scadenza           DATE,        -- Data scadenza risposta del fornitore
-    condizioni_pagamento    TEXT,
-    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
-    note_fornitore          TEXT,
-    note_interne            TEXT,
-    imponibile              DECIMAL(10,2),
-    totale_iva              DECIMAL(10,2),
-    totale                  DECIMAL(10,2),
-    inviata_il              DATETIME,
-    creato_da               INTEGER      REFERENCES utenti(id),
-    listino_acquisto_id     INTEGER      REFERENCES listini_acquisto(id),
-    metodo_pagamento_id     INTEGER      REFERENCES metodi_pagamento(id),
-    resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS rfq_righe (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    rfq_id                  INTEGER       NOT NULL REFERENCES rfq_testata(id) ON DELETE CASCADE,
-    posizione_riga          INTEGER       NOT NULL DEFAULT 0,
-    prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
-    descrizione             VARCHAR(255),
-    sku_fornitore           VARCHAR(50),
-    quantita_richiesta      DECIMAL(10,3) NOT NULL,
-    unita_misura_id         INTEGER       REFERENCES unita_misura(id),
-    prezzo_indicativo       DECIMAL(10,4),
-    
-    -- Campi SAP/Odoo style
-    data_consegna_richiesta DATE,         -- Data di consegna richiesta per questo specifico articolo (Arrivo previsto)
-    e_rifiutato             BOOLEAN       NOT NULL DEFAULT 0, -- Se il fornitore RIFIUTA di quotare questa riga (1 = Rifiutata/Non quotabile, 0 = Attiva)
-
-    note                    TEXT,
-
-    -- Snapshot UoM (architettura Multi-UoM)
-    quantita_stock              DECIMAL(10,3),
-    system_unit_price_stock     DECIMAL(18,4)  DEFAULT 0.00,
-    unita_misura_stock_id       INTEGER        REFERENCES unita_misura(id),
-    quantita_contenuto_snapshot DECIMAL(10,3)  DEFAULT 1.0,
-    num_factor_snapshot         INTEGER        NOT NULL DEFAULT 1,
-    den_factor_snapshot         INTEGER        NOT NULL DEFAULT 1
-);
-
--- Offerte ricevute (Preventivi Fornitore)
-CREATE TABLE IF NOT EXISTS offerte_testata (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero                  VARCHAR(30)  NOT NULL UNIQUE,
-    rfq_id                  INTEGER      REFERENCES rfq_testata(id),
-    fornitore_id            INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
-    stato                   TEXT         NOT NULL DEFAULT 'in_valutazione'
-                                          CHECK (stato IN ('in_valutazione','accettata','rifiutata')),
-    data_offerta            DATE         NOT NULL DEFAULT (DATE('now')),
-    data_scadenza_offerta   DATE,
-    condizioni_pagamento    TEXT,
-    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
-    riferimento_fornitore   VARCHAR(100),
-    note_fornitore          TEXT,
-    note_interne            TEXT,
-    imponibile              DECIMAL(10,2),
-    totale_iva              DECIMAL(10,2),
-    totale                  DECIMAL(10,2),
-    valutata_il             DATETIME,
-    valutata_da             INTEGER      REFERENCES utenti(id),
-    creato_da               INTEGER      REFERENCES utenti(id),
-    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id), -- ID snapshot indirizzo consegna
-    
-    -- Dati referente (Alla cortese attenzione) e azienda fornitrice denormalizzati
-    contatto_id             INTEGER      REFERENCES contatti_documenti(id), -- ID snapshot contatto referente
-    contatto_nome           VARCHAR(100),
-    contatto_telefono       VARCHAR(20),
-    contatto_email          VARCHAR(150),
-    fornitore_telefono      VARCHAR(20),
-    fornitore_email         VARCHAR(150),
-    listino_acquisto_id     INTEGER      REFERENCES listini_acquisto(id),
-    metodo_pagamento_id     INTEGER      REFERENCES metodi_pagamento(id),
-    resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
-
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS offerte_righe (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    offerta_id              INTEGER       NOT NULL REFERENCES offerte_testata(id) ON DELETE CASCADE,
-    rfq_riga_id             INTEGER       REFERENCES rfq_righe(id),
-    posizione_riga          INTEGER       NOT NULL DEFAULT 0,
-    prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
-    descrizione             VARCHAR(255),
-    sku_fornitore           VARCHAR(50),
-    quantita_offerta        DECIMAL(10,3) NOT NULL,
-    unita_misura_id         INTEGER       REFERENCES unita_misura(id),
-    prezzo_unitario         DECIMAL(10,4) NOT NULL DEFAULT 0,
-    sconto_perc             DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    iva_perc                DECIMAL(5,2)  NOT NULL DEFAULT 22,
-    imponibile_riga         DECIMAL(10,2),
-    iva_riga                DECIMAL(10,2),
-    e_rifiutato             BOOLEAN       NOT NULL DEFAULT 0, -- Se riga rifiutata (1 = Rifiutata, 0 = Attiva)
-    data_consegna_prevista  DATE,
-    note                    TEXT
-);
-
--- Ordini di acquisto testata (v2)
-CREATE TABLE IF NOT EXISTS ordini_testata (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero                  VARCHAR(30)  NOT NULL UNIQUE,
-    offerta_id              INTEGER      REFERENCES offerte_testata(id),
-    rfq_id                  INTEGER      REFERENCES rfq_testata(id),
-    fornitore_id            INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
-    stato                   TEXT         NOT NULL DEFAULT 'bozza'
-                                          CHECK (stato IN ('bozza','in_approvazione','approvato','inviato','parzialmente_ricevuto','completato','annullato','superato')),
-    versione                INTEGER      NOT NULL DEFAULT 1,
-    ordine_padre_id         INTEGER      REFERENCES ordini_testata(id) ON DELETE SET NULL,
-    data_ordine             DATE         NOT NULL DEFAULT (DATE('now')),
-    data_consegna_prevista  DATE,
-    indirizzo_consegna_id   INTEGER      REFERENCES indirizzi_documenti(id),
-    
-    -- Termini di resa (Incoterms) - Denormalizzati in stile SAP
-    incoterm_codice         CHAR(3)      REFERENCES incoterms(codice), -- Codice Incoterm a 3 lettere (es. EXW)
-    incoterm_luogo          VARCHAR(150),                              -- Luogo o porto di resa
-
-    -- Spedizione denormalizzata per integrità storica (Oracle style)
-    consegna_via            VARCHAR(150),
-    consegna_civico         VARCHAR(10),
-    consegna_cap            VARCHAR(10),
-    consegna_citta          VARCHAR(100),
-    consegna_provincia      CHAR(2),
-    consegna_nazione        CHAR(2)      DEFAULT 'IT',
-    consegna_presso         VARCHAR(100),
-    consegna_referente      VARCHAR(80),
-    consegna_telefono       VARCHAR(20),
-    consegna_note           VARCHAR(255),
-
-    condizioni_pagamento    TEXT,
-    valuta                  CHAR(3)      NOT NULL DEFAULT 'EUR',
-    riferimento_fornitore   VARCHAR(100),
-    altri_riferimenti       TEXT,
-    note_fornitore          TEXT,
-    note_interne            TEXT,
-    imponibile              DECIMAL(10,2),
-    totale_iva              DECIMAL(10,2),
-    totale                  DECIMAL(10,2),
-    approvato_il            DATETIME,
-    approvato_da            INTEGER      REFERENCES utenti(id),
-    inviato_il              DATETIME,
-    creato_da               INTEGER      REFERENCES utenti(id),
-
-    -- Dati referente (Alla cortese attenzione) e azienda fornitrice denormalizzati
-    contatto_id             INTEGER      REFERENCES contatti_documenti(id),
-    contatto_nome           VARCHAR(100),
-    contatto_telefono       VARCHAR(20),
-    contatto_email          VARCHAR(150),
-    fornitore_telefono      VARCHAR(20),
-    fornitore_email         VARCHAR(150),
-    listino_acquisto_id     INTEGER      REFERENCES listini_acquisto(id),
-    metodo_pagamento_id     INTEGER      REFERENCES metodi_pagamento(id),
-    resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
-
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at              DATETIME     NULL ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS ordini_righe (
-    id                          INT AUTO_INCREMENT PRIMARY KEY,
-    ordine_id                   INTEGER       NOT NULL REFERENCES ordini_testata(id) ON DELETE CASCADE,
-    offerta_riga_id             INTEGER       REFERENCES offerte_righe(id),
-    posizione_riga              INTEGER       NOT NULL DEFAULT 0,
-    prodotto_id                 INTEGER       NOT NULL REFERENCES prodotti(id),
-    descrizione                 VARCHAR(255),
-    sku_fornitore               VARCHAR(50),
-    quantita_ordinata           DECIMAL(10,3) NOT NULL,
-    quantita_ricevuta           DECIMAL(10,3) NOT NULL DEFAULT 0,
-    unita_misura_id             INTEGER       REFERENCES unita_misura(id),
-    prezzo_unitario             DECIMAL(10,4) NOT NULL DEFAULT 0,
-    sconto_perc                 DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    iva_perc                    DECIMAL(5,2)  NOT NULL DEFAULT 22,
-    imponibile_riga             DECIMAL(10,2),
-    iva_riga                    DECIMAL(10,2),
-    tolleranza_esubero_perc     DECIMAL(5,2)  NOT NULL DEFAULT 0,
-    data_consegna_prevista      DATE,         -- Override data di consegna della riga
-    data_consegna_richiesta     DATE,         -- Data di consegna originariamente richiesta
-    quantita_stock              DECIMAL(10,3),                      -- quantità in unità stock
-    system_unit_price_stock     DECIMAL(18,4) DEFAULT 0.00,         -- prezzo unitario convertito in UoM stock
-    unita_misura_stock_id       INTEGER       REFERENCES unita_misura(id), -- UoM di stock
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,          -- snapshot del fattore di conversione
-    num_factor_snapshot         INTEGER       NOT NULL DEFAULT 1,    -- numeratore frazione di conversione
-    den_factor_snapshot         INTEGER       NOT NULL DEFAULT 1,    -- denominatore frazione di conversione
-    note                        TEXT
-);
-
-CREATE TABLE IF NOT EXISTS ricezioni_testata (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    numero                  VARCHAR(30)  NOT NULL UNIQUE,   -- es. RIC/2026/0001
-    ordine_id               INTEGER      NOT NULL REFERENCES ordini_testata(id),
-    fornitore_id            INTEGER      REFERENCES clienti_fornitori(id),  -- ridondanza per comodità
-    stato                   VARCHAR(20)  NOT NULL DEFAULT 'bozza',
-    data_attesa             DATE,         -- data attesa di arrivo
-    data_effettiva          DATETIME,     -- data/ora effettiva di ricezione
-    ddt_numero              VARCHAR(50),  -- numero DDT fornitore
-    ddt_data                DATE,
-    note                    TEXT,
-    creato_da               INTEGER      REFERENCES utenti(id),
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at              DATETIME ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ricezioni_righe (
-    id                      INT AUTO_INCREMENT PRIMARY KEY,
-    ricezione_id            INTEGER       NOT NULL REFERENCES ricezioni_testata(id) ON DELETE CASCADE,
-    ordine_riga_id          INTEGER       REFERENCES ordini_righe(id),
-    pianificazione_id       INTEGER       REFERENCES ordini_righe_pianificazione(id),
-    prodotto_id             INTEGER       NOT NULL REFERENCES prodotti(id),
-    lotto_id                INTEGER       REFERENCES lotti(id),
-    quantita_ricevuta       DECIMAL(10,3) NOT NULL,   -- quantità fisicamente conteggiata all'arrivo
-    quantita_accettata      DECIMAL(10,3),             -- quantità approvata per il magazzino
-    quantita_rifiutata      DECIMAL(10,3) NOT NULL DEFAULT 0,
-    motivo_rifiuto          TEXT,
-    ubicazione_stoccaggio   VARCHAR(50),
-    quantita_stock          DECIMAL(10,3),
-    unita_misura_stock_id   INTEGER       REFERENCES unita_misura(id),
-    quantita_contenuto_snapshot DECIMAL(10,3) DEFAULT 1.0,     -- snapshot del fattore di conversione
-    num_factor_snapshot     INTEGER       NOT NULL DEFAULT 1,
-    den_factor_snapshot     INTEGER       NOT NULL DEFAULT 1,
-    note                    TEXT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Indici per le nuove tabelle v2
-CREATE INDEX idx_rfq_testata_fornitore    ON rfq_testata(fornitore_id);
-CREATE INDEX idx_rfq_testata_stato        ON rfq_testata(stato);
-CREATE INDEX idx_rfq_testata_padre        ON rfq_testata(rfq_padre_id);
-CREATE INDEX idx_rfq_righe_rfq            ON rfq_righe(rfq_id);
-CREATE INDEX idx_rfq_righe_prodotto       ON rfq_righe(prodotto_id);
-CREATE INDEX idx_offerte_testata_rfq      ON offerte_testata(rfq_id);
-CREATE INDEX idx_offerte_testata_fornitore ON offerte_testata(fornitore_id);
-CREATE INDEX idx_offerte_testata_stato    ON offerte_testata(stato);
-CREATE INDEX idx_offerte_righe_offerta    ON offerte_righe(offerta_id);
-CREATE INDEX idx_offerte_righe_rfq_riga   ON offerte_righe(rfq_riga_id);
-CREATE INDEX idx_ordini_testata_fornitore ON ordini_testata(fornitore_id);
-CREATE INDEX idx_ordini_testata_stato     ON ordini_testata(stato);
-CREATE INDEX idx_ordini_testata_offerta   ON ordini_testata(offerta_id);
-CREATE INDEX idx_ordini_righe_ordine      ON ordini_righe(ordine_id);
-CREATE INDEX idx_ordini_righe_prodotto    ON ordini_righe(prodotto_id);
-CREATE INDEX idx_ricezioni_testata_ordine  ON ricezioni_testata(ordine_id);
-CREATE INDEX idx_ricezioni_righe_ricezione ON ricezioni_righe(ricezione_id);
-
--- Trigger per updated_at delle nuove tabelle v2
-
-
-
-
-
-
--- Inizializzazione sequenze numerazione documenti
-INSERT IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES
-    ('rfq',      'RFQ/', 2026, 0, 4),
-    ('offerta',  'OFF/', 2026, 0, 4),
-    ('ordine',   'ODA/', 2026, 0, 4);
-
--- =============================================================================
--- COMPLIANCE TABLES & SEEDS
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS compliance_restriction_types (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    code VARCHAR(30) UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    regulatory_ref TEXT,
-    requires_vat TINYINT(1) NOT NULL DEFAULT 0,
-    validity_days INT NOT NULL DEFAULT 365,
-    log_transactions TINYINT(1) NOT NULL DEFAULT 0,
-    report_within_days INT,
-    active TINYINT(1) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS compliance_codice_onu_restrizioni (
-    un_code_id INT NOT NULL,
-    restriction_type_id INT NOT NULL,
-    min_concentration DECIMAL(5,2),
-    max_concentration DECIMAL(5,2),
-    notes TEXT,
-    PRIMARY KEY (un_code_id, restriction_type_id),
-    FOREIGN KEY (un_code_id) REFERENCES adr_codici_onu(id),
-    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS compliance_documenti_richiesti (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    restriction_type_id INT NOT NULL,
-    document_code VARCHAR(50) NOT NULL,
-    document_name TEXT NOT NULL,
-    mandatory TINYINT(1) NOT NULL DEFAULT 1,
-    instructions TEXT,
-    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS compliance_autorizzazioni (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
-    restriction_type_id INT NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    issued_date DATE,
-    expiry_date DATE,
-    approved_by INT,
-    internal_notes TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (customer_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
-    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
-    FOREIGN KEY (approved_by) REFERENCES utenti(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS compliance_documenti_caricati (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    authorization_id INT NOT NULL,
-    required_doc_id INT NOT NULL,
-    file_path TEXT NOT NULL,
-    original_filename TEXT NOT NULL,
-    uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    verified TINYINT(1) NOT NULL DEFAULT 0,
-    verified_by INT,
-    verified_at DATETIME,
-    FOREIGN KEY (authorization_id) REFERENCES compliance_autorizzazioni(id) ON DELETE CASCADE,
-    FOREIGN KEY (required_doc_id) REFERENCES compliance_documenti_richiesti(id),
-    FOREIGN KEY (verified_by) REFERENCES utenti(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS compliance_log_transazioni (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    sale_id INT NOT NULL,
-    authorization_id INT NOT NULL,
-    restriction_type_id INT NOT NULL,
-    product_id INT NOT NULL,
-    quantity DECIMAL(10,3) NOT NULL,
-    unit_id INT,
-    transaction_date DATE NOT NULL,
-    reported_to_authority TINYINT(1) NOT NULL DEFAULT 0,
-    reported_at DATETIME,
-    report_reference TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (sale_id) REFERENCES ordini_clienti(id) ON DELETE CASCADE,
-    FOREIGN KEY (authorization_id) REFERENCES compliance_autorizzazioni(id),
-    FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
-    FOREIGN KEY (product_id) REFERENCES prodotti(id),
-    FOREIGN KEY (unit_id) REFERENCES unita_misura(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seeds for Explosive Precursors
-INSERT IGNORE INTO compliance_restriction_types 
-  (code, name, regulatory_ref, requires_vat, validity_days, log_transactions, report_within_days)
-VALUES 
-  ('EXPLOSIVE_PRECURSOR', 'Precursori di esplosivi', 'Reg. UE 2019/1148', 1, 365, 1, 5);
-
-INSERT IGNORE INTO compliance_documenti_richiesti (restriction_type_id, document_code, document_name, mandatory, instructions)
-SELECT id, 'DICHIARAZIONE_USO', 'Dichiarazione d''uso professionale (Allegato IV)', 1,
-       'Modulo firmato dal responsabile aziendale. Scaricare il modello dalla cartella documenti.'
-FROM compliance_restriction_types WHERE code = 'EXPLOSIVE_PRECURSOR';
-
-INSERT IGNORE INTO compliance_documenti_richiesti (restriction_type_id, document_code, document_name, mandatory, instructions)
-SELECT id, 'DOCUMENTO_IDENTITA', 'Documento d''identità del firmatario', 1,
-       'Copia fronte/retro di un documento d''identità in corso di validità del responsabile che ha firmato la dichiarazione.'
-FROM compliance_restriction_types WHERE code = 'EXPLOSIVE_PRECURSOR';
+INSERT IGNORE INTO compliance_documenti_richiesti (id, restriction_type_id, document_code, document_name, mandatory, instructions) VALUES
+    (1, 1, 'DICHIARAZIONE_USO', 'Dichiarazione d''uso professionale (Allegato IV)', 1, 'Modulo firmato dal responsabile aziendale. Scaricare il modello dalla cartella documenti.'),
+    (2, 1, 'DOCUMENTO_IDENTITA', 'Documento d''identità del firmatario', 1, 'Copia fronte/retro di un documento d''identità in corso di validità del responsabile che ha firmato la dichiarazione.');
 
 SET FOREIGN_KEY_CHECKS = 1;

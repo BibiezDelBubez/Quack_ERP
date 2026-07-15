@@ -178,6 +178,63 @@ Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere s
 
 ---
 
+## 14. Righe di spesa (non-magazzino) sugli ordini d'acquisto
+
+**Fonte:** [Ciclo Acquisti/REVISIONE - Analisi Documentazione Ciclo Acquisti.md](Ciclo%20Acquisti/REVISIONE%20-%20Analisi%20Documentazione%20Ciclo%20Acquisti.md), problema 7 (righe RFQ senza prodotto a catalogo).
+
+**Di cosa si tratta.** Oggi ogni riga di RFQ/Offerta/Ordine/Ricezione richiede obbligatoriamente un `prodotto_id` valido in anagrafica (`NOT NULL` su tutte e quattro le tabelle) — corretto e da mantenere per tutto ciò che è merce chimica da tracciare a magazzino (lotto, SDS, ADR). Non esiste però alcun modo di aggiungere a un ordine d'acquisto una riga di **spesa accessoria non di magazzino** (es. costo di trasporto fatturato dal fornitore insieme alla merce, un servizio, un articolo di consumo generico come cancelleria) senza doverci comunque creare un'anagrafica prodotto fittizia.
+
+**Come gestiscono questo caso i grandi ERP (verificato):** nessuno tratta le righe "senza codice articolo" come righe di magazzino generiche — sono sempre e solo righe di **spesa contabile**, strutturalmente diverse:
+- **SAP**: riga senza materiale con "Account Assignment Category" obbligatoria (centro di costo/commessa) al posto del materiale — non genera mai un movimento di magazzino, va dritta a un conto contabile.
+- **Dynamics 365**: "Procurement Category" al posto del codice articolo, stesso principio — nessuna giacenza, nessuno SKU.
+- **NetSuite**: distingue esplicitamente riga "Item" (tocca il magazzino) da riga "Expense" (solo conto contabile).
+
+In tutti i casi: niente SKU, nessun ricevimento merce a magazzino, nessun lotto — è un binario alternativo, non un rilassamento del vincolo su `prodotto_id`.
+
+**Cosa servirebbe per implementarlo:**
+1. Nuovo tipo di riga (es. `tipo_riga` enum `prodotto`/`spesa`) su `ordini_righe` (e a cascata `rfq_righe`/`offerte_righe` se si vuole coprire anche RFQ/Offerta, non solo l'ordine finale).
+2. Per le righe `spesa`: `prodotto_id` nullable, ma obbligatorio un riferimento a un conto/categoria di spesa (nuova tabella o riuso di una tabella conti già esistente, da verificare) invece che al prodotto.
+3. Escludere esplicitamente le righe `spesa` da tutta la logica di ricezione merce/magazzino (`_ordine_aggiorna_in_arrivo`, generazione righe di ricezione, aggiornamento giacenze) — quelle righe non devono mai generare un movimento di magazzino.
+4. UI: nel form riga ordine, un modo per scegliere "riga prodotto" vs "riga di spesa", con campi diversi a seconda della scelta.
+
+**Perché è rimandato.** Nessun caso d'uso reale lo ha ancora richiesto: oggi tutto ciò che viene acquistato passa già correttamente dall'anagrafica prodotto. È una funzionalità riconosciuta come utile (evita di dover creare prodotti fittizi per spese accessorie) ma va progettata a sé, con decisioni su conti contabili non ancora prese — non va costruita di corsa dentro un'altra sessione di lavoro.
+
+---
+
+## 15. Contratto Quadro (Blanket Purchase Order) con Chiamate d'Ordine
+
+**Fonte:** [Ciclo Acquisti/REVISIONE - Analisi Documentazione Ciclo Acquisti.md](Ciclo%20Acquisti/REVISIONE%20-%20Analisi%20Documentazione%20Ciclo%20Acquisti.md), problema 8; descritto in dettaglio in [Ciclo Acquisti/Ciclo acquisti SAP-Inspired da RFQ a Arrivo Merce.md](Ciclo%20Acquisti/Ciclo%20acquisti%20SAP-Inspired%20da%20RFQ%20a%20Arrivo%20Merce.md), Fase 3 Percorso B (righe 221-335); segnalato come mancante dall'utente stesso in `dubbi e domande su rfq.md`, riga 26.
+
+**Di cosa si tratta.** Oggi, quando un'offerta viene accettata, genera sempre e solo un Ordine d'Acquisto "spot" (singola consegna, singola trattativa chiusa). Manca un secondo percorso, comune nel commercio chimico: il **Contratto Quadro**. Si concorda con il fornitore un quantitativo totale a prezzo bloccato per un periodo (es. 10.000 kg di Cloro per tutto il 2026 a un prezzo vantaggioso), senza ricevere subito tutta la merce — durante l'anno si effettuano "Chiamate d'Ordine" (release order) che scalano dal saldo residuo del contratto, ciascuna delle quali genera un normale Ordine d'Acquisto agganciato al contratto di origine.
+
+**Stato attuale.** Non implementato in nessuna forma. Verificato: nessuna tabella `contratti_testata`/`contratti_righe` (o equivalenti) esiste nello schema, nessun riferimento a "blanket"/"contratto quadro"/"chiamata d'ordine" nel codice. Solo il percorso "Ordine d'Acquisto Diretto" (Spot PO) esiste oggi.
+
+**Cosa servirebbe per implementarlo** (adattando la proposta SAP-Inspired alla nomenclatura reale di Quack, minuscolo/snake_case coerente con `rfq_testata`/`offerte_testata`/`ordini_testata`, non gli originali `T_Maiuscoli`):
+
+1. **Schema**: nuove tabelle `contratti_testata` (fornitore, data inizio/fine, stato, riferimento all'offerta di origine) e `contratti_righe` (prodotto, quantità massima pattuita, prezzo bloccato, quantità già chiamata a saldo).
+2. **Generazione contratto**: quando un'offerta viene aggiudicata, un secondo percorso oltre a "Genera Ordine Diretto" — "Aggiudica come Contratto Quadro", che chiede almeno una data di scadenza e scrive testata/righe del contratto invece che di un ordine, aggiornando comunque a cascata gli stati di Offerta/RFQ come nel percorso spot.
+3. **Chiamata d'ordine (release order)**: dalla scheda del contratto attivo, un'azione "Crea Chiamata d'Ordine" che chiede solo quantità e data di consegna desiderata per quel prelievo. Il backend, prima di generare il normale Ordine d'Acquisto collegato (`ordine_padre_contratto_id` o simile), verifica che `SUM(quantità già chiamate) + quantità richiesta <= quantità massima pattuita`; se supera il saldo residuo, errore esplicito ("Quantità richiesta superiore al saldo residuo del contratto: X kg residui"), altrimenti genera l'ordine e aggiorna il contatore chiamato sulla riga di contratto.
+4. **UI**: schermata contratto con saldo residuo per riga, storico delle chiamate d'ordine già effettuate, azione di creazione nuova chiamata.
+5. Decidere se collegare i contratti anche al meccanismo di revisione/immutabilità già usato per RFQ e Ordini (vedi problema 6 della REVISIONE Ciclo Acquisti) nel caso in cui un contratto attivo debba essere rinegoziato (es. cambio prezzo a metà anno) — non specificato nella proposta originale.
+
+**Perché è rimandato.** Nessun conflitto da risolvere: sia la documentazione sia l'utente concordano che è lavoro mai iniziato ("manca completamente la Fase 3"). Non implementato ora, rimandato al futuro — da programmare come funzionalità a sé quando emergerà un caso reale di contratto quadro da gestire, non dentro un'altra sessione di lavoro.
+
+---
+
+## 16. Flusso di approvazione strutturato per gli ordini d'acquisto
+
+**Fonte:** [Ciclo Acquisti/REVISIONE - Analisi Documentazione Ciclo Acquisti.md](Ciclo%20Acquisti/REVISIONE%20-%20Analisi%20Documentazione%20Ciclo%20Acquisti.md), sezione "Stati ordine / ciclo di vita".
+
+**Di cosa si tratta.** Lo stato `in_approvazione` esiste nello schema di `ordini_testata` ed è persino letto in un paio di punti (badge UI, guardia di `qk_ordine_approva()`), ma **nessun punto del codice lo scrive mai**: oggi ogni ordine passa direttamente `bozza` → `approvato` con un singolo pulsante "Approva Ordine", cliccabile da chiunque abbia accesso alla schermata, senza instradamento a un ruolo specifico, senza soglie per importo, senza secondo livello di autorizzazione per importi alti.
+
+**Stato attuale.** Verificato: `qk_ordine_approva()` (`includes/purchases_orders.php:377`) accetta l'approvazione da qualunque `$utente_id` passato, senza controllare ruolo o importo dell'ordine. Nessuna UI per instradare un ordine a un approvatore specifico.
+
+**Cosa servirebbe per implementarlo.** Definire (con chi gestisce il processo acquisti aziendale, non solo tecnicamente): chi può approvare, se servono soglie di importo con livelli diversi di autorizzazione, se l'instradamento è a una persona specifica o a un ruolo. Solo dopo, tecnicamente: un'azione che porti davvero un ordine in `in_approvazione` (oggi assente), un campo che registri a chi è stato instradato, e un controllo di ruolo/importo dentro `qk_ordine_approva()` invece dell'attuale accettazione incondizionata.
+
+**Perché è rimandato.** Confermato con l'utente (14/07/2026): oggi va bene che un ordine resti indefinitamente in attesa se nessuno lo approva — non serve un'automazione che lo sblocchi da sola. Il flusso di approvazione strutturato è riconosciuto come utile ma non è mai stato richiesto come esigenza reale finora; da riprendere se/quando emerge un caso concreto (es. importi che richiedono un doppio controllo).
+
+---
+
 ## Migliorie possibili, non pianificate né previste
 
 A differenza delle voci sopra — che sono lavoro riconosciuto e **deliberatamente rimandato** (si farà, ma non ora) — le voci qui sotto sono osservazioni emerse durante il lavoro di analisi/documentazione: possibili miglioramenti segnalati per completezza, su cui **non è stata presa alcuna decisione**, nemmeno quella di farli in futuro. Non è nemmeno stabilito se abbiano senso per l'operatività reale di Quack. Vanno lette come spunti da verificare con chi conosce il processo aziendale, non come backlog impegnato.
