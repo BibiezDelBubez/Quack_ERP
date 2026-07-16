@@ -5,6 +5,9 @@ require_once INCLUDES_DIR . '/purchases_orders.php';
 require_once INCLUDES_DIR . '/anagrafiche.php';
 require_once INCLUDES_DIR . '/word_helper.php';
 require_once INCLUDES_DIR . '/magazzino.php';
+// Spostato in testa dal case 'invia' del metodo action() — vedi Revisione Ciclo
+// Acquisti §3bis A.2 (require_once condizionale dentro uno switch).
+require_once INCLUDES_DIR . '/purchases_receipts.php';
 
 /**
  * PurchaseOrdersController — Ordini di Acquisto (ciclo acquisti v2).
@@ -94,18 +97,15 @@ class PurchaseOrdersController extends BaseController
                     : null;
 
                 try {
-                    $this->pdo->prepare(
-                        'UPDATE ordini_testata SET
-                            note_fornitore = ?, note_interne = ?,
-                            riferimento_fornitore = ?, altri_riferimenti = ?,
-                            data_consegna_prevista = ?, magazzino_destinazione_id = ?
-                          WHERE id = ?'
-                    )->execute([
-                        $note_fornitore, $note_interne,
-                        $rif_fornitore, $altri_rif,
-                        $data_cons_prevista !== '' ? $data_cons_prevista : null,
-                        $magazzino_destinazione_id,
-                        $id,
+                    // SQL spostato in qk_ordine_aggiorna_note() (includes/purchases_orders.php)
+                    // — era scritto a mano qui, vedi Revisione Ciclo Acquisti §3bis A.1.
+                    qk_ordine_aggiorna_note($this->pdo, $id, [
+                        'note_fornitore' => $note_fornitore,
+                        'note_interne' => $note_interne,
+                        'riferimento_fornitore' => $rif_fornitore,
+                        'altri_riferimenti' => $altri_rif,
+                        'data_consegna_prevista' => $data_cons_prevista !== '' ? $data_cons_prevista : null,
+                        'magazzino_destinazione_id' => $magazzino_destinazione_id,
                     ]);
                     $detail = qk_ordine_detail($this->pdo, $id);
                     flash_set('success', 'Ordine aggiornato.');
@@ -159,8 +159,7 @@ class PurchaseOrdersController extends BaseController
                     try {
                         qk_ordine_invia($this->pdo, $id);
 
-                        // Create dynamic reception
-                        require_once INCLUDES_DIR . '/purchases_receipts.php';
+                        // Create dynamic reception (require spostato in testa al file)
                         $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
                         $stCheckRec->execute([$id]);
                         if (!$stCheckRec->fetch()) {
@@ -218,14 +217,7 @@ class PurchaseOrdersController extends BaseController
         // Fetch supplier address
         $indirizzoFornitore = '';
         if (!empty($ordine['fornitore_id'])) {
-            $stInd = $this->pdo->prepare("
-                SELECT * FROM indirizzi 
-                WHERE soggetto_id = ? 
-                ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
-                LIMIT 1
-            ");
-            $stInd->execute([(int)$ordine['fornitore_id']]);
-            $indForn = $stInd->fetch(PDO::FETCH_ASSOC);
+            $indForn = qk_soggetto_get_indirizzo_principale($this->pdo, (int)$ordine['fornitore_id']);
             if ($indForn) {
                 $indirizzoFornitore = $indForn['via'] . ' ' . $indForn['civico'] . '<br>' . $indForn['cap'] . ' ' . $indForn['citta'] . ' (' . $indForn['provincia'] . ')';
             }
@@ -548,14 +540,7 @@ class PurchaseOrdersController extends BaseController
         // Fetch supplier address
         $indirizzoFornitore = '';
         if (!empty($ordine['fornitore_id'])) {
-            $stInd = $this->pdo->prepare("
-                SELECT * FROM indirizzi 
-                WHERE soggetto_id = ? 
-                ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
-                LIMIT 1
-            ");
-            $stInd->execute([(int)$ordine['fornitore_id']]);
-            $indForn = $stInd->fetch(PDO::FETCH_ASSOC);
+            $indForn = qk_soggetto_get_indirizzo_principale($this->pdo, (int)$ordine['fornitore_id']);
             if ($indForn) {
                 $indirizzoFornitore = $indForn['via'] . ' ' . $indForn['civico'] . ', ' . $indForn['cap'] . ' ' . $indForn['citta'] . ' (' . $indForn['provincia'] . ')';
             }

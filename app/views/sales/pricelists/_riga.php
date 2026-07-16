@@ -68,7 +68,7 @@ $_note   = $item['note']            ?? '';
         <input type="hidden" class="r-prodotto-id" value="<?= e($_pid) ?>">
         <div class="d-flex align-items-center gap-1">
           <div class="position-relative flex-grow-1">
-            <input type="text" class="pl-input r-prodotto-label qk-m2o-input"
+            <input type="text" class="qk-form-control qk-form-control-sm r-prodotto-label qk-m2o-input"
                    value="<?= e($_nome) ?>" placeholder="Cerca prodotto…" autocomplete="off" style="text-align:left; padding-right: 24px;">
             <button type="button" class="qk-m2o-clear r-prodotto-clear" style="right: 8px;">&times;</button>
           </div>
@@ -88,7 +88,7 @@ $_note   = $item['note']            ?? '';
   <!-- ── UM ── -->
   <td class="pl-td-um">
     <span class="pl-view pl-um-label r-um-view"><?= e($_um) ?></span>
-    <select class="pl-edit pl-input r-unita-misura-id" style="padding: .2rem .35rem; font-size: .8rem; text-align: left;">
+    <select class="pl-edit qk-form-control qk-form-control-sm r-unita-misura-id" style="padding: .2rem .35rem; font-size: .8rem; text-align: left;">
       <option value="<?= e($item['uom_stock_id'] ?? '') ?>" <?= (int)($item['unita_misura_id'] ?? $item['uom_stock_id'] ?? 0) === (int)($item['uom_stock_id'] ?? 0) ? 'selected' : '' ?>>
         <?= e($item['uom_stock_code'] ?? 'pz') ?>
       </option>
@@ -103,7 +103,7 @@ $_note   = $item['note']            ?? '';
   <!-- ── Q.tà minima ── -->
   <td class="pl-td-qmin">
     <span class="pl-view pl-num r-qmin-view"><?= number_format($_qmin, 3, ',', '.') ?></span>
-    <input class="pl-edit pl-input r-qmin" type="number" min="0" step="0.001"
+    <input class="pl-edit qk-form-control qk-form-control-sm text-end r-qmin" type="number" min="0" step="0.001"
            value="<?= $_qmin ?>">
   </td>
 
@@ -113,7 +113,7 @@ $_note   = $item['note']            ?? '';
       <span class="pl-num pl-prezzo-val r-prezzo-view"><?= number_format($_prezzo, 2, ',', '.') ?> €</span>
     </div>
     <div class="pl-edit">
-      <input class="pl-input r-prezzo" type="number" min="0" step="0.0001"
+      <input class="pl-edit qk-form-control qk-form-control-sm text-end r-prezzo" type="number" min="0" step="0.0001"
              value="<?= $_prezzo ?>">
     </div>
     <div class="pl-sottocosto-warning text-warning fw-semibold mt-1" style="font-size: 0.75rem; text-align: right; display: none;">
@@ -124,20 +124,20 @@ $_note   = $item['note']            ?? '';
   <!-- ── Sconto % ── -->
   <td class="pl-td-sconto">
     <span class="pl-view pl-num"><?= number_format($_sconto, 2, ',', '.') ?> %</span>
-    <input class="pl-edit pl-input r-sconto" type="number" min="0" max="100" step="0.01"
+    <input class="pl-edit qk-form-control qk-form-control-sm text-end r-sconto" type="number" min="0" max="100" step="0.01"
            value="<?= $_sconto ?>">
   </td>
 
   <!-- ── Note ── -->
   <td class="pl-td-note">
     <span class="pl-view pl-note-val"><?= e($_note) ?></span>
-    <input class="pl-edit pl-input r-note" type="text" placeholder="Note…"
+    <input class="pl-edit qk-form-control qk-form-control-sm r-note" type="text" placeholder="Note…"
            value="<?= e($_note) ?>">
   </td>
 
   <!-- ── Azioni ── -->
   <td class="pl-td-actions">
-    <button type="button" class="pl-btn-icon pl-btn-danger btn-delete-riga" title="Rimuovi" style="vertical-align: middle;">
+    <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-delete-riga" title="Rimuovi" style="vertical-align: middle;">
       <i class="fa-solid fa-trash-can"></i>
     </button>
   </td>

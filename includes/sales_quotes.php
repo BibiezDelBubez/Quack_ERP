@@ -147,49 +147,14 @@ function qk_crea_cliente_rapido(PDO $pdo, array $data): int
 
 /**
  * Creazione rapida prodotto.
+ *
+ * Spostata in includes/prodotti.php il 15/07/2026 (Revisione Ciclo Acquisti
+ * §3bis, punto B.1) — non è specifica alle vendite, ed era usata anche da
+ * un controller Acquisti tramite una copia duplicata e incompleta invece che
+ * tramite questa funzione condivisa. prodotti.php è già incluso da questo
+ * file (vedi require in testa), quindi qk_crea_prodotto_rapido() resta
+ * disponibile qui senza bisogno di alcun require aggiuntivo.
  */
-function qk_crea_prodotto_rapido(PDO $pdo, array $data): int
-{
-    $um = $data['unita_misura'] ?? 'pz';
-    $stUm = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = ?');
-    $stUm->execute([$um]);
-    $um_id = $stUm->fetchColumn() ?: null;
-    if (!$um_id) {
-        $um_id = (int)$pdo->query('SELECT id FROM unita_misura LIMIT 1')->fetchColumn();
-    }
-    
-    $sku = trim($data['sku_interno'] ?? '');
-    if ($sku === '') {
-        $sku = 'PRD-' . strtoupper(bin2hex(random_bytes(4)));
-    }
-    
-    $pdo->beginTransaction();
-    try {
-        $sql = "INSERT INTO prodotti (
-            sku_interno, nome, tipo, unita_misura_stock_id, attivo, created_at, updated_at
-        ) VALUES (
-            :sku_interno, :nome, 'semplice', :um_id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        )";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            ':sku_interno' => $sku,
-            ':nome' => trim($data['nome']),
-            ':um_id' => $um_id,
-        ]);
-        $id = (int) $pdo->lastInsertId();
-
-        $pdo->prepare(
-            'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-             VALUES (:id, :magazzino_id, 0, 0, 0, 0, CURRENT_TIMESTAMP)'
-        )->execute([':id' => $id, ':magazzino_id' => qk_magazzino_attivo_id($pdo)]);
-        
-        $pdo->commit();
-        return $id;
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-}
 
 
 /**

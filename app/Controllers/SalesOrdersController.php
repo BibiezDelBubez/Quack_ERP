@@ -350,18 +350,33 @@ final class SalesOrdersController extends BaseController
 
         if ($nome === '') { echo json_encode(['success' => false, 'error' => 'Nome prodotto obbligatorio']); exit; }
 
+        // Riusa la funzione condivisa qk_crea_prodotto_rapido() (includes/prodotti.php) invece di un
+        // INSERT a mano: quello precedente ometteva la colonna NOT NULL "tipo" (falliva sempre) e passava
+        // null su "sku_interno" (anch'essa NOT NULL UNIQUE) quando l'utente lasciava lo SKU vuoto.
+        // Stesso bug di RfqController::apiCreaProdotto(), vedi Revisione Ciclo Acquisti §3bis B.1.
         try {
-            $stUm = $this->pdo->prepare("SELECT id FROM unita_misura WHERE codice = ? LIMIT 1");
-            $stUm->execute([$umCod]);
-            $umId = $stUm->fetchColumn() ?: null;
+            $id = qk_crea_prodotto_rapido($this->pdo, [
+                'nome' => $nome,
+                'sku_interno' => $sku,
+                'unita_misura' => $umCod,
+            ]);
 
-            $st = $this->pdo->prepare("
-                INSERT INTO prodotti (nome, sku_interno, unita_misura_stock_id, attivo, created_at, updated_at)
-                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ");
-            $st->execute([$nome, $sku ?: null, $umId]);
-            $id = (int)$this->pdo->lastInsertId();
-            echo json_encode(['success' => true, 'id' => $id, 'label' => $nome, 'sku' => $sku, 'unita_misura' => $umCod]);
+            $stInfo = $this->pdo->prepare(
+                "SELECT p.sku_interno, um.codice AS unita_misura
+                 FROM prodotti p
+                 LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+                 WHERE p.id = ?"
+            );
+            $stInfo->execute([$id]);
+            $info = $stInfo->fetch();
+
+            echo json_encode([
+                'success' => true,
+                'id' => $id,
+                'label' => $nome,
+                'sku' => $info['sku_interno'] ?? $sku,
+                'unita_misura' => $info['unita_misura'] ?? $umCod,
+            ]);
         } catch (\Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }

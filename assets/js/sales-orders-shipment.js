@@ -33,7 +33,7 @@
     const btnOpen  = document.getElementById('btnNuovaSpedizione');
     const form     = document.getElementById('formNuovaSpedizione');
 
-    /* ── Apertura modal ────────────────────────────────��────────────────── */
+    /* ── Apertura modal ──────────────────────────────────────────────────── */
     if (btnOpen) {
       btnOpen.addEventListener('click', function () {
         bsModal.show();

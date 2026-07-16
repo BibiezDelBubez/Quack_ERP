@@ -452,6 +452,34 @@ function qk_ordine_annulla(PDO $pdo, int $id): void
 }
 
 /**
+ * Aggiorna i campi di logistica/note dell'ordine modificabili dal form di dettaglio
+ * (note fornitore/interne, riferimenti, data consegna prevista, magazzino destinazione).
+ * Spostata da PurchaseOrdersController::edit() (era un UPDATE scritto a mano nel
+ * controller) — vedi Revisione Ciclo Acquisti §3bis A.1.
+ *
+ * @param array{note_fornitore:string,note_interne:string,riferimento_fornitore:string,
+ *              altri_riferimenti:string,data_consegna_prevista:?string,magazzino_destinazione_id:?int} $data
+ */
+function qk_ordine_aggiorna_note(PDO $pdo, int $id, array $data): void
+{
+    $pdo->prepare(
+        'UPDATE ordini_testata SET
+            note_fornitore = ?, note_interne = ?,
+            riferimento_fornitore = ?, altri_riferimenti = ?,
+            data_consegna_prevista = ?, magazzino_destinazione_id = ?
+          WHERE id = ?'
+    )->execute([
+        $data['note_fornitore'],
+        $data['note_interne'],
+        $data['riferimento_fornitore'],
+        $data['altri_riferimenti'],
+        $data['data_consegna_prevista'],
+        $data['magazzino_destinazione_id'],
+        $id,
+    ]);
+}
+
+/**
  * Aggiorna lo stato ricezione dell'ordine in base alle quantità ricevute.
  * Chiamato da acquisti_ricezioni.php dopo ogni conferma ricezione.
  *

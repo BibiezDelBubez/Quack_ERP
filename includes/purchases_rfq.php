@@ -630,3 +630,22 @@ function _rfq_ricalcola_totali(PDO $pdo, int $rfq_id): void
         'UPDATE rfq_testata SET imponibile = ?, totale_iva = ?, totale = ? WHERE id = ?'
     )->execute([round($imponibile, 2), round($totaleIva, 2), round($totale, 2), $rfq_id]);
 }
+
+/** 
+ * Recupera il principale indirizzo (sede legale/operativa) del fornitore.
+ * Ritorna array associativo se trovato, altrimenti null.
+ */
+// function rimossa, usare qk_soggetto_get_indirizzo_principale in anagrafiche.php(PDO $pdo, int $fornitore_id): ?array
+{
+    $st = $pdo->prepare("
+        SELECT * FROM indirizzi 
+        WHERE soggetto_id = ? 
+        ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
+        LIMIT 1
+    ");
+    $st->execute([$fornitore_id]);
+    $indForn = $st->fetch(PDO::FETCH_ASSOC);
+    
+    return $indForn ?: null;
+}
+

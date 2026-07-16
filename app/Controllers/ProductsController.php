@@ -382,15 +382,7 @@ final class ProductsController extends BaseController
             ')->execute([$newProductId, qk_magazzino_attivo_id($this->pdo)]);
 
             // 5. Copia tag associati
-            $tagsStmt = $this->pdo->prepare('SELECT tag_id FROM prodotti_tag WHERE prodotto_id = ?');
-            $tagsStmt->execute([$id]);
-            $tags = $tagsStmt->fetchAll(PDO::FETCH_COLUMN);
-            if (!empty($tags)) {
-                $insTag = $this->pdo->prepare('INSERT INTO prodotti_tag (prodotto_id, tag_id) VALUES (?, ?)');
-                foreach ($tags as $tid) {
-                    $insTag->execute([$newProductId, $tid]);
-                }
-            }
+            qk_copy_prodotto_tags($this->pdo, $id, $newProductId);
 
             // 6. Copia fornitori e relativi listini acquisto (prezzi)
             $fornStmt = $this->pdo->prepare('SELECT * FROM prodotti_fornitori WHERE prodotto_id = ?');
@@ -1063,21 +1055,7 @@ final class ProductsController extends BaseController
                 if (empty($errors)) {
                     try {
                         if ($id) {
-                            // FIX: Recupera la vecchia immagine per eliminarla se è stata cambiata
-                            $stmtOld = $this->pdo->prepare('SELECT immagine_path FROM categorie_prodotto WHERE id = :id');
-                            $stmtOld->execute([':id' => $id]);
-                            $oldImg = $stmtOld->fetchColumn();
-
-                            $stmt = $this->pdo->prepare(
-                                'UPDATE categorie_prodotto SET nome = :nome, parent_id = :parent_id, posizione_categoria = :pos, immagine_path = :img WHERE id = :id'
-                            );
-                            $stmt->execute([
-                                ':nome'      => $nome,
-                                ':parent_id' => $parent_id,
-                                ':pos'       => $posizione_categoria,
-                                ':img'       => $immagine_path,
-                                ':id'        => $id,
-                            ]);
+                            $oldImg = qk_save_category($this->pdo, $id, $nome, $parent_id, $posizione_categoria, $immagine_path);
 
                             // Se avevamo un'immagine vecchia ed è diversa dalla nuova (cioè abbiamo fatto upload), la eliminiamo
                             if ($oldImg && $oldImg !== $immagine_path) {
@@ -1089,18 +1067,8 @@ final class ProductsController extends BaseController
                                 }
                             }
 
-                            redirect_with('products/categories', 'success', 'Categoria aggiornata con successo.');
-                        } else {
-                            $stmt = $this->pdo->prepare(
-                                'INSERT INTO categorie_prodotto (nome, parent_id, posizione_categoria, immagine_path) VALUES (:nome, :parent_id, :pos, :img)'
-                            );
-                            $stmt->execute([
-                                ':nome'      => $nome,
-                                ':parent_id' => $parent_id,
-                                ':pos'       => $posizione_categoria,
-                                ':img'       => $immagine_path,
-                            ]);
-                            redirect_with('products/categories', 'success', 'Categoria creata con successo.');
+                            $msg = $id ? 'Categoria aggiornata con successo.' : 'Categoria creata con successo.';
+                            redirect_with('products/categories', 'success', $msg);
                         }
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
@@ -1110,12 +1078,7 @@ final class ProductsController extends BaseController
         }
 
         // Fetch categories list
-        $categories = $this->pdo->query(
-            'SELECT c.id, c.nome, c.parent_id, c.posizione_categoria, c.immagine_path, p.nome AS parent_nome
-               FROM categorie_prodotto c
-          LEFT JOIN categorie_prodotto p ON p.id = c.parent_id
-              ORDER BY c.posizione_categoria, c.nome'
-        )->fetchAll(PDO::FETCH_ASSOC);
+        $categories = qk_get_categories_list($this->pdo);
 
         // Fetch flat list for dropdown selection (parent choice)
         $dropdown_categories = qk_load_categorie($this->pdo);
@@ -1148,36 +1111,23 @@ final class ProductsController extends BaseController
             redirect_with('products/categories', 'danger', 'Categoria non specificata.');
         }
 
-        try {
-            // Check if there are subcategories
-            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM categorie_prodotto WHERE parent_id = :id');
-            $stmt->execute([':id' => $id]);
-            if ($stmt->fetchColumn() > 0) {
-                redirect_with('products/categories', 'danger', 'Impossibile eliminare: questa categoria ha delle sotto-categorie.');
-            }
+        $res = qk_delete_category($this->pdo, $id);
+        
+        if (!$res['ok']) {
+            redirect_with('products/categories', 'danger', $res['error']);
+        }
 
-            // FIX: Recupera l'immagine per eliminarla fisicamente dal disco
-            $stmtImg = $this->pdo->prepare('SELECT immagine_path FROM categorie_prodotto WHERE id = :id');
-            $stmtImg->execute([':id' => $id]);
-            $oldImg = $stmtImg->fetchColumn();
-
-            // Delete
-            $stmt = $this->pdo->prepare('DELETE FROM categorie_prodotto WHERE id = :id');
-            $stmt->execute([':id' => $id]);
-
-            if ($oldImg) {
-                $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
-                if (is_file($absPath)) {
-                    if (!unlink($absPath)) {
-                        error_log("ProductsController: Impossibile eliminare l'immagine categoria in fase di cancellazione: " . $absPath);
-                    }
+        $oldImg = $res['immagine_path'] ?? null;
+        if ($oldImg) {
+            $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
+            if (is_file($absPath)) {
+                if (!unlink($absPath)) {
+                    error_log("ProductsController: Impossibile eliminare l'immagine categoria in fase di cancellazione: " . $absPath);
                 }
             }
-
-            redirect_with('products/categories', 'success', 'Categoria eliminata correttamente.');
-        } catch (Throwable $e) {
-            redirect_with('products/categories', 'danger', 'Impossibile eliminare questa categoria poiché è associata ad uno o più prodotti.');
         }
+
+        redirect_with('products/categories', 'success', 'Categoria eliminata correttamente.');
     }
 
     /* ════════════════════════════════════════════════════════════════════════
@@ -1188,13 +1138,7 @@ final class ProductsController extends BaseController
     {
         header('Content-Type: application/json; charset=utf-8');
 
-        $rows = $this->pdo->query(
-            'SELECT c.id, c.nome, c.posizione_categoria, c.immagine_path,
-                    p.nome AS parent_nome
-               FROM categorie_prodotto c
-          LEFT JOIN categorie_prodotto p ON p.id = c.parent_id
-              ORDER BY c.posizione_categoria, c.nome'
-        )->fetchAll(PDO::FETCH_ASSOC);
+        $rows = qk_get_categories_for_export($this->pdo);
 
         echo json_encode([
             'ok'         => true,
@@ -1224,80 +1168,10 @@ final class ProductsController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'Nessun dato ricevuto.']); exit;
         }
 
-        $inserted  = 0;
-        $updated   = 0;
-        $skipped   = 0;
-        $rowErrors = [];
-
-        // Carica mappa nome→id per risolvere parent
-        $nameMap = [];
-        foreach ($this->pdo->query('SELECT id, nome FROM categorie_prodotto')->fetchAll() as $r) {
-            $nameMap[strtolower(trim($r['nome']))] = (int) $r['id'];
-        }
-
-        $this->pdo->beginTransaction();
         try {
-            foreach ($rows as $i => $row) {
-                $lineNum = $i + 2;
-                $nome    = trim((string)($row['nome'] ?? ''));
-
-                if ($nome === '') {
-                    $skipped++;
-                    $rowErrors[] = 'Riga ' . $lineNum . ': nome vuoto — saltata.';
-                    continue;
-                }
-
-                $posizione     = (int)($row['posizione_categoria'] ?? 0);
-                $immaginePath  = trim((string)($row['immagine_path'] ?? '')) ?: null;
-
-                // Risolvi parent per nome (opzionale)
-                $parentNome = strtolower(trim((string)($row['parent_nome'] ?? '')));
-                $parentId   = ($parentNome !== '') ? ($nameMap[$parentNome] ?? null) : null;
-
-                $nomeKey = strtolower($nome);
-                if (isset($nameMap[$nomeKey])) {
-                    // UPDATE — aggiorna posizione e immagine, non tocca parent se non specificato
-                    $existingId = $nameMap[$nomeKey];
-                    $this->pdo->prepare(
-                        'UPDATE categorie_prodotto
-                            SET posizione_categoria = :pos,
-                                immagine_path       = :img,
-                                parent_id           = COALESCE(:pid, parent_id)
-                          WHERE id = :id'
-                    )->execute([
-                        ':pos' => $posizione,
-                        ':img' => $immaginePath,
-                        ':pid' => $parentId,
-                        ':id'  => $existingId,
-                    ]);
-                    $updated++;
-                } else {
-                    // INSERT
-                    $this->pdo->prepare(
-                        'INSERT INTO categorie_prodotto (nome, parent_id, posizione_categoria, immagine_path)
-                         VALUES (:nome, :pid, :pos, :img)'
-                    )->execute([
-                        ':nome' => $nome,
-                        ':pid'  => $parentId,
-                        ':pos'  => $posizione,
-                        ':img'  => $immaginePath,
-                    ]);
-                    $newId = (int) $this->pdo->lastInsertId();
-                    $nameMap[$nomeKey] = $newId;
-                    $inserted++;
-                }
-            }
-
-            $this->pdo->commit();
-            echo json_encode([
-                'ok'       => true,
-                'inserted' => $inserted,
-                'updated'  => $updated,
-                'skipped'  => $skipped,
-                'errors'   => $rowErrors,
-            ]);
-        } catch (PDOException $e) {
-            $this->pdo->rollBack();
+            $result = qk_import_categories_massively($this->pdo, $rows);
+            echo json_encode($result);
+        } catch (Throwable $e) {
             echo json_encode(['ok' => false, 'error' => $this->dbMessage($e)]);
         }
         exit;
@@ -1324,24 +1198,16 @@ final class ProductsController extends BaseController
 
                 // Check uniqueness
                 if (empty($errors)) {
-                    $stmt = $this->pdo->prepare('SELECT id FROM tag WHERE nome = :nome AND (:id IS NULL OR id != :id)');
-                    $stmt->execute([':nome' => $nome, ':id' => $id]);
-                    if ($stmt->fetch()) {
+                    if (qk_tag_exists($this->pdo, $nome, $id)) {
                         $errors['nome'] = 'Questo tag esiste già.';
                     }
                 }
 
                 if (empty($errors)) {
                     try {
-                        if ($id) {
-                            $stmt = $this->pdo->prepare('UPDATE tag SET nome = :nome WHERE id = :id');
-                            $stmt->execute([':nome' => $nome, ':id' => $id]);
-                            redirect_with('products/tags', 'success', 'Tag aggiornato con successo.');
-                        } else {
-                            $stmt = $this->pdo->prepare('INSERT INTO tag (nome) VALUES (:nome)');
-                            $stmt->execute([':nome' => $nome]);
-                            redirect_with('products/tags', 'success', 'Tag creato con successo.');
-                        }
+                        qk_save_tag($this->pdo, $id, $nome);
+                        $msg = $id ? 'Tag aggiornato con successo.' : 'Tag creato con successo.';
+                        redirect_with('products/tags', 'success', $msg);
                     } catch (Throwable $e) {
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
@@ -1350,11 +1216,7 @@ final class ProductsController extends BaseController
         }
 
         // Fetch tags with product count
-        $tags = $this->pdo->query(
-            'SELECT t.id, t.nome, (SELECT COUNT(*) FROM prodotti_tag pt WHERE pt.tag_id = t.id) AS prodotti_count
-               FROM tag t
-              ORDER BY t.nome'
-        )->fetchAll(PDO::FETCH_ASSOC);
+        $tags = qk_get_tags_with_count($this->pdo);
 
         $this->page(APP_ROOT_DIR . '/app/views/products/_tags.php', [
             'page_title'    => 'Tag Prodotti',
@@ -1384,8 +1246,7 @@ final class ProductsController extends BaseController
         }
 
         try {
-            $stmt = $this->pdo->prepare('DELETE FROM tag WHERE id = :id');
-            $stmt->execute([':id' => $id]);
+            qk_delete_tag($this->pdo, $id);
             redirect_with('products/tags', 'success', 'Tag eliminato correttamente.');
         } catch (Throwable $e) {
             redirect_with('products/tags', 'danger', 'Errore durante l\'eliminazione del tag.');

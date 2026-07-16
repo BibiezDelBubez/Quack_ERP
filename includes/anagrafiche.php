@@ -11,6 +11,24 @@ function qk_db(): PDO
     return $pdo;
 }
 
+/**
+ * Recupera l'indirizzo principale (sede legale/operativa) di un soggetto.
+ * Ritorna array associativo se trovato, altrimenti null.
+ */
+function qk_soggetto_get_indirizzo_principale(PDO $pdo, int $soggetto_id): ?array
+{
+    $st = $pdo->prepare("
+        SELECT * FROM indirizzi 
+        WHERE soggetto_id = ? 
+        ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
+        LIMIT 1
+    ");
+    $st->execute([$soggetto_id]);
+    $ind = $st->fetch(PDO::FETCH_ASSOC);
+    
+    return $ind ?: null;
+}
+
 function qk_null_if_empty(?string $s): ?string
 {
     $s = trim((string) $s);
@@ -948,7 +966,7 @@ function qk_db_user_message(Throwable $e): string
  * NOTA COMPORTAMENTALE (comportamento pre-esistente, non introdotto qui):
  * la versione "fornitore" originale non filtrava affatto per tipo (solo
  * parent_id), mentre la versione "cliente" filtrava tipo IN ('cliente','entrambi').
- * Per non alterare il comportamento esistente, $tipoFiltro � opzionale: null
+ * Per non alterare il comportamento esistente, $tipoFiltro è opzionale: null
  * per il fornitore (nessun filtro, come prima), 'cliente' per il cliente.
  *
  * @return list<array{id:int, nome:string, cognome:string, email:string,
@@ -1004,7 +1022,7 @@ function qk_list_contatti_cliente(PDO $pdo, int $parent_id): array
  */
 function qk_insert_contatto_generico(PDO $pdo, int $parent_id, array $v, string $tipo): int
 {
-    // Verifica che il parent esista ed � del tipo atteso
+    // Verifica che il parent esista ed è del tipo atteso
     $check = $pdo->prepare(
         "SELECT id FROM clienti_fornitori WHERE id = ? AND tipo IN (?, 'entrambi') LIMIT 1"
     );

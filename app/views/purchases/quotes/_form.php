@@ -996,7 +996,11 @@ $statoLabel = [
 
   // Inizializza gli autocomplete per i sostituti se modificabile
   if (CAN_EDIT && !IS_SPONTANEOUS) {
-    const CSRF_TOKEN = document.querySelector('input[name=_csrf]')?.value ?? '';
+    // Corretto 15/07/2026 (Revisione Ciclo Acquisti §3bis, punto B.2): il campo
+    // reale renderizzato da csrf_field() si chiama "csrf_token", non "_csrf" —
+    // il selettore precedente non trovava mai nulla, CSRF_TOKEN era sempre
+    // una stringa vuota. Allineato alla convenzione già usata nel resto dell'app.
+    const CSRF_TOKEN = document.querySelector('input[name=csrf_token]')?.value ?? '';
     document.querySelectorAll('.prod-sostituto-container').forEach(container => {
       const pInput    = container.querySelector('.r-prodotto-label');
       const pHidden   = container.querySelector('.r-prodotto-id');
@@ -1030,7 +1034,7 @@ $statoLabel = [
           try {
             const formData = new FormData();
             formData.append('nome', nome);
-            formData.append('_csrf', CSRF_TOKEN);
+            formData.append('csrf_token', CSRF_TOKEN);
 
             const res = await fetch(<?= json_encode(url('purchases/rfq/api/crea-prodotto')) ?>, {
               method: 'POST',

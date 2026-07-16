@@ -10,7 +10,12 @@ document.addEventListener('DOMContentLoaded', function () {
   const API_PREZZO    = window.QK_RFQ_CONFIG.apiPrezzo;
   const API_FORNITORE_CREA = window.QK_RFQ_CONFIG.apiFornitoreCrea;
   const CAN_EDIT      = window.QK_RFQ_CONFIG.canEdit;
-  const CSRF_TOKEN    = document.querySelector('input[name=_csrf]')?.value ?? '';
+  // Corretto 15/07/2026 (Revisione Ciclo Acquisti §3bis, punto B.2): il campo
+  // reale renderizzato da csrf_field() si chiama "csrf_token", non "_csrf" —
+  // il selettore precedente non trovava mai nulla, quindi CSRF_TOKEN era
+  // sempre una stringa vuota. Allineato alla convenzione già usata in
+  // products-form.js/products-suppliers.js/sales-orders-create.js/sales-quotes.js.
+  const CSRF_TOKEN    = document.querySelector('input[name=csrf_token]')?.value ?? '';
   /* ── Stato globale ───────────────────────────────────────────────────── */
   let fornitoreSel = { id: String(window.QK_RFQ_CONFIG.fornitoreId || ''), nome: '' };
   let rigaIdx      = 0;  // contatore righe per data-idx univoci
@@ -538,7 +543,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const res  = await fetch(API_FORNITORE_CREA, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ _csrf: CSRF_TOKEN, ragione_sociale: ragione, partita_iva: piva }),
+          body: new URLSearchParams({ csrf_token: CSRF_TOKEN, ragione_sociale: ragione, partita_iva: piva }),
         });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error ?? 'Errore sconosciuto');

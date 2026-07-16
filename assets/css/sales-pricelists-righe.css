@@ -1,0 +1,73 @@
+/* ── Inline editing: toggle view/edit via .is-editing su <tr> ── */
+.pl-riga:not(.is-editing) .pl-edit { display: none !important; }
+.pl-riga.is-editing .pl-view       { display: none !important; }
+
+/* ── Layout tabella ── */
+#tbl-prezzi { table-layout: fixed; width: 100%; }
+#tbl-prezzi .pl-td-product { width: 35%; min-width: 220px; }
+#tbl-prezzi .pl-td-um      { width: 65px;  }
+#tbl-prezzi .pl-td-qmin    { width: 100px; text-align: right; }
+#tbl-prezzi .pl-td-prezzo  { width: 120px; text-align: right; }
+#tbl-prezzi .pl-td-sconto  { width: 90px;  text-align: right; }
+#tbl-prezzi .pl-td-note    { width: auto; min-width: 150px; }
+#tbl-prezzi .pl-td-actions { width: 44px;  text-align: right; }
+
+#tbl-prezzi td, #tbl-prezzi th {
+  vertical-align: top !important;
+  padding: .5rem .4rem !important;
+}
+
+/* ── Stile celle view ── */
+.pl-sku {
+  font-family: monospace;
+  font-size: .72rem;
+  color: var(--qk-text-muted);
+  margin-top: 1px;
+}
+.pl-num {
+  font-family: monospace;
+  font-size: .82rem;
+  display: block;
+  padding: .2rem .35rem;
+}
+.pl-note-val {
+  font-size: .8rem;
+  color: var(--qk-text-muted);
+}
+.pl-um-label {
+  font-size: .8rem;
+  color: var(--qk-text-muted);
+}
+
+/* ── Riga in modifica ── */
+.pl-riga.is-editing > td {
+  background-color: var(--qk-accent-light) !important;
+}
+.pl-riga.is-editing > td:first-child {
+  box-shadow: inset 3px 0 0 var(--qk-accent);
+}
+
+/* ── Riga nuova: animazione entrata ── */
+@keyframes pl-row-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.pl-riga-new { animation: pl-row-in .14s ease-out forwards; }
+
+/* ── Empty state ── */
+#pl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .5rem;
+  padding: 2.5rem 1rem;
+  color: var(--qk-text-muted);
+}
+#pl-empty i { font-size: 2rem; opacity: .4; }
+#pl-empty p { margin: 0; font-size: .875rem; }
+
+@keyframes pl-saved-flash {
+    0%   { background-color: var(--qk-success-bg); }
+    100% { background-color: transparent; }
+  }
+  .pl-riga-saved > td { animation: pl-saved-flash .8s ease-out forwards; }

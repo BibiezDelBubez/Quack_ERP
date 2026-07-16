@@ -2,6 +2,10 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/purchases_quotes.php';
+// Spostati in testa da un if() e da un case dentro uno switch — vedi Revisione
+// Ciclo Acquisti §3bis A.2 (require_once condizionale, anti-pattern).
+require_once INCLUDES_DIR . '/purchases_rfq.php';
+require_once INCLUDES_DIR . '/purchases_orders.php';
 
 /**
  * PurchasesQuotesController — Offerte ricevute dai fornitori (ciclo acquisti v2).
@@ -48,7 +52,6 @@ class PurchasesQuotesController extends BaseController
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $rfq_id = (int) get_param('rfq_id', '0');
             if ($rfq_id > 0) {
-                require_once INCLUDES_DIR . '/purchases_rfq.php';
                 $detail = qk_rfq_detail($this->pdo, $rfq_id);
                 if ($detail) {
                     $values['rfq_id']                  = (string)$rfq_id;
@@ -248,7 +251,6 @@ class PurchasesQuotesController extends BaseController
 
                     // Se richiesto, genera subito l'ordine
                     if (post('genera_ordine', '') === '1') {
-                        require_once INCLUDES_DIR . '/purchases_orders.php';
                         $ordine_id = qk_ordine_da_offerta($this->pdo, $id, (int)current_user()['id']);
                         flash_set('success', 'Offerta accettata e ordine generato.');
                         redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);

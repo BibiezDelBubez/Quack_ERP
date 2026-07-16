@@ -6,7 +6,7 @@
 
   const CSRF = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
-  /* ── Utilities HTML escape ───────────────────────────────────────────── */
+  /* â”€â”€ Utilities HTML escape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   function esc(s)     { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function escA(s)    { return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
   function fmtNum(v, d) {
@@ -18,11 +18,11 @@
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 
-    /* ── Sidebar "Foto Principale" — nascondi quando il tab attivo non è "Dati prodotto" ──
+    /* â”€â”€ Sidebar "Foto Principale" â€” nascondi quando il tab attivo non Ã¨ "Dati prodotto" â”€â”€
      *
      * Il pannello .qk-status-panel (foto + stato) occupa spazio fisso nella sidebar.
      * Ha senso solo nel tab principale (Dati prodotto); nei tab Fornitori, ADR, Kit
-     * è rumore visivo e ruba larghezza utile. Lo nascondiamo tramite evento shown.bs.tab.
+     * Ã¨ rumore visivo e ruba larghezza utile. Lo nascondiamo tramite evento shown.bs.tab.
      */
     const statusPanel = document.querySelector('.qk-status-panel');
     const formGrid    = document.querySelector('.qk-form-grid');
@@ -48,14 +48,14 @@
         });
       });
 
-      /* Sincronizza subito con l'eventuale tab già attivo al caricamento */
+      /* Sincronizza subito con l'eventuale tab giÃ  attivo al caricamento */
       const activeTab = document.querySelector('[data-bs-toggle="tab"].active');
       if (activeTab) syncSidebar(activeTab.id);
     }
-    /* ── Fine sidebar toggle ── */
+    /* â”€â”€ Fine sidebar toggle â”€â”€ */
   });
 
-  /* ── Radio card + visibilità tab Kit ────────────────────────────────── */
+  /* â”€â”€ Radio card + visibilitÃ  tab Kit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   const kitTabLi = document.getElementById('ptab-li-kit');
   const kitTabBtn = document.getElementById('ptab-btn-kit');
 
@@ -70,7 +70,7 @@
       if (kitTabLi) {
         const isKit = inp.value === 'kit' && inp.checked;
         kitTabLi.style.display = isKit ? '' : 'none';
-        // Se stiamo nascondendo il tab kit e il tab è attivo, torna a "Dati prodotto"
+        // Se stiamo nascondendo il tab kit e il tab Ã¨ attivo, torna a "Dati prodotto"
         if (!isKit && kitTabBtn?.classList.contains('active')) {
           document.getElementById('ptab-btn-dati')?.click();
         }
@@ -78,9 +78,9 @@
     });
   });
 
-  /* ══════════════════════════════════════════════════════════════════════
-     TAG — M2M chip field stile Odoo
-  ══════════════════════════════════════════════════════════════════════ */
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     TAG â€” M2M chip field stile Odoo
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   (function () {
     const API_TAG    = QkPF.apiTag;
     const field      = document.getElementById('tag-m2m-field');
@@ -129,11 +129,11 @@
         const exact = allTags.some(t => t.nome.toLowerCase() === lq);
         if (!exact) html += `<div class="qk-m2m-option is-create" data-action="create">+ Crea &ldquo;${q}&rdquo;</div>`;
       } else {
-        html += `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nome…)</div>`;
+        html += `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nomeâ€¦)</div>`;
       }
 
       if (!avail.length && !q) html = '<div class="qk-m2m-option is-empty">Nessun tag ancora. Digita un nome e premi Invio per crearne uno.</div>'
-                                     + `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nome…)</div>`;
+                                     + `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nomeâ€¦)</div>`;
 
       dropdown.innerHTML = html;
 
@@ -200,7 +200,7 @@
     }, true);
   })();
 
-  /* ── ADR toggle ──────────────────────────────────────────────────────── */
+  /* â”€â”€ ADR toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   const adrSel = document.getElementById('adr-sostanza-sel');
   const pgWrap = document.getElementById('adr-pg-wrap');
   function toggleAdr() {
@@ -213,7 +213,7 @@
   }
   if (adrSel) adrSel.addEventListener('change', toggleAdr);
 
-  /* ── Foto drop zone ──────────────────────────────────────────────────── */
+  /* â”€â”€ Foto drop zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   const fotoInput   = document.getElementById('foto-input');
   const dropZone    = document.getElementById('foto-drop-zone');
   const prevWrap    = document.getElementById('foto-preview');
@@ -253,7 +253,7 @@
     });
   }
 
-  /* ── Crea categoria AJAX ─────────────────────────────────────────────── */
+  /* â”€â”€ Crea categoria AJAX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   const btnCrea  = document.getElementById('btn-crea-cat');
   const catNome  = document.getElementById('new-cat-nome');
   const catErr   = document.getElementById('new-cat-error');
@@ -269,7 +269,7 @@
   btnCrea?.addEventListener('click', async function () {
     const nome = catNome?.value.trim();
     if (!nome) {
-      if (catErr) { catErr.textContent = 'Il nome è obbligatorio.'; catErr.classList.remove('d-none'); }
+      if (catErr) { catErr.textContent = 'Il nome Ã¨ obbligatorio.'; catErr.classList.remove('d-none'); }
       catNome?.focus(); return;
     }
     this.disabled = true;
@@ -280,7 +280,7 @@
       const out = await res.json();
       if (out.ok) {
         // FIX #2: aggiorna il picker M2O e aggiungi la categoria alla cache interna
-        // così è immediatamente trovabile senza round-trip al server
+        // cosÃ¬ Ã¨ immediatamente trovabile senza round-trip al server
         if (catM2O) {
           catM2O.setValue(out.id, out.nome ?? out.label);
           // Inserisce nella cache interna del QkM2O per la ricerca inline
@@ -300,18 +300,18 @@
     finally { this.disabled = false; this.innerHTML = '<i class="fa-solid fa-plus me-1"></i>Crea'; }
   });
 
-  /* ── Categoria — QkM2O (init rimandato a DOMContentLoaded) ─────────── */
+  /* â”€â”€ Categoria â€” QkM2O (init rimandato a DOMContentLoaded) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   let catM2O = null;
 
 if (QkPF.isEdit) {
-  /* ══════════════════════════════════════════════════════════════════════
-     FORNITORI — gestione metadata fornitore (modale leggero)
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     FORNITORI â€” gestione metadata fornitore (modale leggero)
      I prezzi/scaglioni sono gestiti da products-suppliers.js nel tab.
      Qui gestiamo solo: apertura modale, salvataggio metadata, chiusura.
      Dopo ogni save/delete viene emesso un evento custom (qk:forn-saved /
      qk:forn-deleted) che products-suppliers.js ascolta per aggiornare
      la tabella senza ricaricare la pagina.
-  ══════════════════════════════════════════════════════════════════════ */
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   const API_FORN_SAVE = QkPF.apiFornSave;
   const PRODOTTO_ID   = QkPF.prodottoId;
 
@@ -336,7 +336,7 @@ if (QkPF.isEdit) {
 
   let mfM2O = null;
 
-  /* ── Popola il modale fornitore con i dati del bottone trigger ───── */
+  /* â”€â”€ Popola il modale fornitore con i dati del bottone trigger â”€â”€â”€â”€â”€ */
   modalForn?.addEventListener('show.bs.modal', function (e) {
     const btn  = e.relatedTarget;
     const mode = btn?.dataset.mode ?? 'create';
@@ -368,13 +368,13 @@ if (QkPF.isEdit) {
     }
   });
 
-  /* ── Salva fornitore (metadata): invia AJAX, emette qk:forn-saved ── */
+  /* â”€â”€ Salva fornitore (metadata): invia AJAX, emette qk:forn-saved â”€â”€ */
   btnSalvaForn?.addEventListener('click', async function () {
     mfHideErr();
     if (!mfFornId?.value) { mfShowErr('Seleziona un fornitore.'); return; }
 
     this.disabled  = true;
-    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio…';
+    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggioâ€¦';
 
     try {
       const fd = new FormData();
@@ -391,7 +391,7 @@ if (QkPF.isEdit) {
       fd.append('rrp_max',                      mfRrpMax ? mfRrpMax.value : '');
       fd.append('lead_time_giorni',             mfLeadTime ? mfLeadTime.value : '');
       fd.append('note',                         mfNote ? mfNote.value : '');
-      /* I prezzi sono gestiti da products-suppliers.js — non toccarli qui */
+      /* I prezzi sono gestiti da products-suppliers.js â€” non toccarli qui */
       fd.append('no_prezzi', '1');
 
       const res = await fetch(API_FORN_SAVE, { method: 'POST', body: fd, credentials: 'same-origin' });
@@ -414,9 +414,9 @@ if (QkPF.isEdit) {
     }
   });
 
-  /* ══════════════════════════════════════════════════════════════════════
-     KIT — gestione componenti
-  ══════════════════════════════════════════════════════════════════════ */
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     KIT â€” gestione componenti
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   const API_KIT_SAVE   = QkPF.apiKitSave;
   const API_KIT_DELETE = QkPF.apiKitDelete;
   const KIT_ID         = QkPF.prodottoId;
@@ -430,14 +430,14 @@ if (QkPF.isEdit) {
   const mcEditInfo     = document.getElementById('mc-edit-info');
   const btnSalvaComp   = document.getElementById('btn-salva-componente');
   let   mcM2O          = null;
-  let   mcEditMode     = false; // in edit mode il prodotto è bloccato
+  let   mcEditMode     = false; // in edit mode il prodotto Ã¨ bloccato
 
   const mcShowErr = msg => { if (mcErrorMsg) mcErrorMsg.textContent = msg; mcError?.classList.remove('d-none'); };
   const mcHideErr = ()  => mcError?.classList.add('d-none');
 
-  /* ── Costruisce HTML riga componente ─────────────────────────────────── */
+  /* â”€â”€ Costruisce HTML riga componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   function buildKitRow(row) {
-    const dash = '<span class="qk-text-muted">—</span>';
+    const dash = '<span class="qk-text-muted">â€”</span>';
     return `<tr id="kit-row-${row.componente_id}">
       <td><span class="fw-semibold">${esc(row.nome)}</span></td>
       <td class="font-monospace">${esc(row.sku_interno)}</td>
@@ -463,7 +463,7 @@ if (QkPF.isEdit) {
     </tr>`;
   }
 
-  /* ── Aggiorna badge tab kit ────────────────────────────────────────── */
+  /* â”€â”€ Aggiorna badge tab kit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   function updateKitBadge(delta) {
     const badge = document.getElementById('badge-kit');
     if (!badge) return;
@@ -472,7 +472,7 @@ if (QkPF.isEdit) {
     n > 0 ? badge.classList.remove('d-none') : badge.classList.add('d-none');
   }
 
-  /* ── Assicura che la tabella kit esista nel DOM ──────────────────────── */
+  /* â”€â”€ Assicura che la tabella kit esista nel DOM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   function ensureKitTable() {
     let tbody = document.getElementById('kit-tbody');
     if (tbody) return tbody;
@@ -480,7 +480,7 @@ if (QkPF.isEdit) {
     document.getElementById('kit-table-wrap').innerHTML = `<table class="qk-table" id="kit-table">
       <thead><tr>
         <th>Prodotto</th><th>SKU</th>
-        <th style="width:130px" class="text-end">Quantità</th>
+        <th style="width:130px" class="text-end">QuantitÃ </th>
         <th>Note</th><th class="col-actions"></th>
       </tr></thead>
       <tbody id="kit-tbody"></tbody>
@@ -488,7 +488,7 @@ if (QkPF.isEdit) {
     return document.getElementById('kit-tbody');
   }
 
-  /* ── Apri modal "Aggiungi componente" ─────────────────────────────── */
+  /* â”€â”€ Apri modal "Aggiungi componente" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   document.getElementById('btn-add-componente')?.addEventListener('click', () => {
     if (!modalComp) return;
     mcEditMode = false;
@@ -497,7 +497,7 @@ if (QkPF.isEdit) {
     if (mcQta)     mcQta.value     = '';
     if (mcNote)    mcNote.value    = '';
     mcM2O?.clear();
-    // Riabilita il picker prodotto in modalità creazione
+    // Riabilita il picker prodotto in modalitÃ  creazione
     document.getElementById('mc-prodotto-label')?.removeAttribute('readonly');
     document.getElementById('mc-m2o-wrap')?.removeAttribute('style');
     mcEditInfo?.classList.add('d-none');
@@ -505,7 +505,7 @@ if (QkPF.isEdit) {
     bootstrap.Modal.getOrCreateInstance(modalComp).show();
   });
 
-  /* ── Event delegation: edit componente ──────────────────────────────── */
+  /* â”€â”€ Event delegation: edit componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   document.getElementById('kit-table-wrap')?.addEventListener('click', function(e) {
     const btnEdit = e.target.closest('.btn-edit-componente');
     const btnDel  = e.target.closest('.btn-delete-componente');
@@ -516,19 +516,19 @@ if (QkPF.isEdit) {
       if (mcProdId) mcProdId.value = btnEdit.dataset.componenteId;
       if (mcQta)    mcQta.value    = btnEdit.dataset.quantita;
       if (mcNote)   mcNote.value   = btnEdit.dataset.note;
-      // Blocca il picker prodotto in edit — solo qty e note modificabili
+      // Blocca il picker prodotto in edit â€” solo qty e note modificabili
       mcM2O?.setValue(btnEdit.dataset.componenteId, btnEdit.dataset.nome + ' [' + btnEdit.dataset.sku + ']');
       document.getElementById('mc-prodotto-label')?.setAttribute('readonly', 'readonly');
       document.getElementById('mc-m2o-wrap')?.setAttribute('style', 'pointer-events:none;opacity:.6');
       mcEditInfo?.classList.remove('d-none');
-      document.getElementById('modal-componente').querySelector('.modal-title').textContent = 'Modifica quantità';
+      document.getElementById('modal-componente').querySelector('.modal-title').textContent = 'Modifica quantitÃ ';
       bootstrap.Modal.getOrCreateInstance(modalComp).show();
     }
 
     if (btnDel) {
       const nome = btnDel.dataset.nome;
       const compId = btnDel.dataset.componenteId;
-      if (!confirm(`Rimuovere «${nome}» dal kit?`)) return;
+      if (!confirm(`Rimuovere Â«${nome}Â» dal kit?`)) return;
       (async () => {
         try {
           const fd = new FormData();
@@ -554,13 +554,13 @@ if (QkPF.isEdit) {
     }
   });
 
-  /* ── Salva componente ────────────────────────────────────────────────── */
+  /* â”€â”€ Salva componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   btnSalvaComp?.addEventListener('click', async function () {
     mcHideErr();
     if (!mcProdId?.value) { mcShowErr('Seleziona un prodotto.'); return; }
-    if (!mcQta?.value || parseFloat(mcQta.value) <= 0) { mcShowErr('Inserisci una quantità valida (> 0).'); return; }
+    if (!mcQta?.value || parseFloat(mcQta.value) <= 0) { mcShowErr('Inserisci una quantitÃ  valida (> 0).'); return; }
     this.disabled = true;
-    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio…';
+    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggioâ€¦';
     try {
       const fd = new FormData();
       fd.append('csrf_token',    CSRF);
@@ -592,13 +592,13 @@ if (QkPF.isEdit) {
 
 }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     QkM2O init — rimandato a DOMContentLoaded
-  ══════════════════════════════════════════════════════════════════════ */
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     QkM2O init â€” rimandato a DOMContentLoaded
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   document.addEventListener('DOMContentLoaded', function () {
     if (typeof QkM2O === 'undefined') return;
 
-    /* ── Categoria (sempre, sia create che edit) ────────────────────── */
+    /* â”€â”€ Categoria (sempre, sia create che edit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     const catFullPicker = new QkPicker({
       title:       'Cerca: Categoria',
       apiUrl:      QkPF.apiSearchCat,
@@ -626,7 +626,7 @@ if (QkPF.isEdit) {
 
     if (QkPF.isEdit) {
 
-      /* ── Fornitore (picker nel modale fornitore) ──────────────────── */
+      /* â”€â”€ Fornitore (picker nel modale fornitore) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
       const mfFullPicker = new QkPicker({
         title:       'Cerca: Fornitore',
         apiUrl:      QkPF.apiSearchForn,
@@ -639,7 +639,7 @@ if (QkPF.isEdit) {
         onSelect:    (id, row) => mfM2O?.setValue(id, row.ragione_sociale ?? ''),
       });
 
-      /* Il modale fornitore non gestisce più prezzi/listini (rinviati al tab
+      /* Il modale fornitore non gestisce piÃ¹ prezzi/listini (rinviati al tab
          products-suppliers.js), quindi la M2O non ha hook onSelect/onClear. */
       mfM2O = new QkM2O({
         inputEl:    document.getElementById('mf-fornitore-label'),
@@ -652,7 +652,7 @@ if (QkPF.isEdit) {
         picker:     mfFullPicker,
       });
 
-      /* ── Prodotto picker (modale componente kit) ──────────────────── */
+      /* â”€â”€ Prodotto picker (modale componente kit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
       const mcFullPicker = new QkPicker({
         title:    'Cerca: Prodotto',
         apiUrl:   QkPF.apiSearchProdExclude,
@@ -676,11 +676,11 @@ if (QkPF.isEdit) {
 
     }
 
-    /* ── UoM: azzera "quantità per confezione" al cambio di Stock UoM ─────
-     * (REVISIONE §6.3 Problema 2, punto 3): se il prodotto ha già una UoM
-     * commerciale configurata, il vecchio fattore di conversione non è valido
+    /* â”€â”€ UoM: azzera "quantitÃ  per confezione" al cambio di Stock UoM â”€â”€â”€â”€â”€
+     * (REVISIONE Â§6.3 Problema 2, punto 3): se il prodotto ha giÃ  una UoM
+     * commerciale configurata, il vecchio fattore di conversione non Ã¨ valido
      * per la nuova Stock UoM. Costringiamo l'utente a re-inserirlo
-     * consapevolmente invece di lasciare per sbaglio il vecchio numero — che
+     * consapevolmente invece di lasciare per sbaglio il vecchio numero â€” che
      * il server rifiuterebbe comunque (vedi guardia in qk_update_prodotto()).
      */
     (function () {
@@ -701,7 +701,7 @@ if (QkPF.isEdit) {
             avvisoUomEl = document.createElement('div');
             avvisoUomEl.className = 'qk-form-hint text-danger';
             avvisoUomEl.style.marginTop = '4px';
-            avvisoUomEl.textContent = "Hai cambiato l'unità di stock: inserisci di nuovo quanta unità commerciale corrisponde a 1 unità della nuova unità di stock.";
+            avvisoUomEl.textContent = "Hai cambiato l'unitÃ  di stock: inserisci di nuovo quanta unitÃ  commerciale corrisponde a 1 unitÃ  della nuova unitÃ  di stock.";
             qtaContenutoInput.insertAdjacentElement('afterend', avvisoUomEl);
           }
           avvisoUomEl.style.display = '';
@@ -713,3 +713,646 @@ if (QkPF.isEdit) {
   });
 
 })();
+
+/* ----------------------------------------------------------------------
+   Estratto da _form.php (Matrix Pricing)
+---------------------------------------------------------------------- */
+(function() {
+  const table = document.getElementById('pricing-matrix-table');
+  if (!table) return;
+  const prodottoId = window.QkPF.prodottoId;
+  const csrfToken = window.QkPF.csrfToken;
+  const baseUrl = window.QkPF.baseUrl;
+  
+  const tab1BaseInput = document.querySelector('input[name="prezzo_vendita_base"]');
+  let currentSalesUomMode = 'stock';
+  const salesUomModeSelect = document.getElementById('sales-uom-mode');
+
+  function updatePlaceholders() {
+    const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+    const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+
+    let standardBaseVal = 0;
+    if (tab1BaseInput) {
+      standardBaseVal = parseFloat(tab1BaseInput.value) || 0;
+    } else {
+      const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+      if (standardRow) {
+        const standardBaseCell = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+        standardBaseVal = parseFloat(standardBaseCell.dataset.stockPrice) || 0;
+      }
+    }
+
+    const rows = table.querySelectorAll('.listino-row');
+    rows.forEach(row => {
+      const lid = row.dataset.listinoId;
+      const isStandard = (lid === "1");
+      
+      const baseCell = row.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+      if (!baseCell) return;
+      const baseValStr = baseCell.dataset.stockPrice || '';
+      const listinoBaseVal = baseValStr !== '' ? parseFloat(baseValStr) : (isStandard ? standardBaseVal : null);
+
+      if (!isStandard) {
+        const baseInput = baseCell.querySelector('.cell-price-input');
+        if (baseValStr === '') {
+          let dispVal = standardBaseVal;
+          if (currentSalesUomMode === 'commercial' && hasComm) {
+            dispVal = standardBaseVal / qFactor;
+          }
+          baseInput.placeholder = dispVal.toFixed(4) + ' (Base)';
+        } else {
+          baseInput.placeholder = "—";
+        }
+      }
+
+      const cells = Array.from(row.querySelectorAll('.matrix-cell-wrapper[data-qty]:not([data-qty="0"])'))
+        .sort((a, b) => parseFloat(a.dataset.qty) - parseFloat(b.dataset.qty));
+
+      let lastVal = listinoBaseVal !== null ? listinoBaseVal : standardBaseVal;
+
+      cells.forEach(cell => {
+        const priceInput = cell.querySelector('.cell-price-input');
+        const cellValStr = cell.dataset.stockPrice || '';
+
+        let dispVal = lastVal;
+        if (currentSalesUomMode === 'commercial' && hasComm) {
+          dispVal = lastVal / qFactor;
+        }
+        priceInput.placeholder = dispVal.toFixed(4) + ' (Ered.)';
+
+        if (cellValStr !== '') {
+          lastVal = parseFloat(cellValStr);
+        }
+      });
+    });
+  }
+
+  function updateSalesMatrixUom() {
+    const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+    const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+    
+    table.querySelectorAll('.qty-column-header').forEach(th => {
+      const baseQty = parseFloat(th.dataset.qty);
+      const span = th.querySelector('span');
+      if (!span) return;
+      
+      if (currentSalesUomMode === 'commercial' && hasComm) {
+        const commQty = baseQty * qFactor;
+        span.textContent = \Qtà \ \+\;
+      } else {
+        span.textContent = \Qtà \ \+\;
+      }
+    });
+
+    table.querySelectorAll('.matrix-cell-wrapper').forEach(cell => {
+      const priceInput = cell.querySelector('.cell-price-input');
+      if (!priceInput) return;
+
+      const rawValStr = cell.dataset.stockPrice || '';
+      if (rawValStr !== '') {
+        const rawVal = parseFloat(rawValStr);
+        if (currentSalesUomMode === 'commercial' && hasComm) {
+          priceInput.value = (rawVal / qFactor).toFixed(4);
+        } else {
+          priceInput.value = rawVal.toFixed(4);
+        }
+      } else {
+        priceInput.value = '';
+      }
+    });
+
+    updatePlaceholders();
+  }
+
+  function cacheCellValues(cell) {
+    const priceInput = cell.querySelector('.cell-price-input');
+    const price = priceInput ? priceInput.value.trim() : '';
+    cell.dataset.stockPrice = price; 
+    cell.dataset.lastPrice = price;
+  }
+
+  table.querySelectorAll('.matrix-cell-wrapper').forEach(cell => {
+    cacheCellValues(cell);
+  });
+
+  if (tab1BaseInput) {
+    tab1BaseInput.addEventListener('input', function() {
+      const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+      if (standardRow) {
+        const standardBaseCell = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+        const standardBaseInput = standardBaseCell.querySelector('.cell-price-input');
+        
+        const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+        const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+
+        let val = parseFloat(tab1BaseInput.value) || 0;
+        standardBaseCell.dataset.stockPrice = val.toFixed(4);
+        
+        if (currentSalesUomMode === 'commercial' && hasComm) {
+          standardBaseInput.value = (val / qFactor).toFixed(4);
+        } else {
+          standardBaseInput.value = val.toFixed(4);
+        }
+        
+        updatePlaceholders();
+      }
+    });
+
+    tab1BaseInput.addEventListener('change', function() {
+      const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+      if (standardRow) {
+        const cell = standardRow.querySelector('.matrix-cell-wrapper[data-qty="0"]');
+        handleCellAutosave(cell);
+      }
+    });
+  }
+
+  table.addEventListener('focusout', function(e) {
+    const input = e.target.closest('.cell-price-input');
+    if (input) {
+      const cell = input.closest('.matrix-cell-wrapper');
+      const row = cell.closest('.listino-row');
+      if (row.dataset.listinoId === "1" && cell.dataset.qty === "0" && tab1BaseInput) {
+        const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+        const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+        let displayVal = parseFloat(input.value) || 0;
+        if (currentSalesUomMode === 'commercial' && hasComm) {
+          tab1BaseInput.value = (displayVal * qFactor).toFixed(4);
+        } else {
+          tab1BaseInput.value = displayVal.toFixed(4);
+        }
+      }
+      handleCellAutosave(cell);
+    }
+  });
+
+  table.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      const input = e.target.closest('.cell-price-input');
+      if (input) {
+        input.blur();
+        e.preventDefault();
+      }
+    }
+  });
+
+  async function handleCellAutosave(cell) {
+    const row = cell.closest('.listino-row');
+    const listinoId = row.dataset.listinoId;
+    const qty = cell.dataset.qty;
+    const rigaId = cell.dataset.rigaId;
+
+    const priceInput = cell.querySelector('.cell-price-input');
+    const displayVal = priceInput.value.trim();
+    
+    const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+    const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+
+    let priceVal = displayVal;
+    if (displayVal !== '') {
+      const parsed = parseFloat(displayVal);
+      if (currentSalesUomMode === 'commercial' && hasComm) {
+        priceVal = (parsed * qFactor).toFixed(4);
+      } else {
+        priceVal = parsed.toFixed(4);
+      }
+    }
+    
+    cell.dataset.stockPrice = priceVal;
+
+    const prevPrice = cell.dataset.lastPrice || '';
+    if (priceVal === prevPrice) {
+      return; 
+    }
+
+    if (priceVal === '') {
+      if (rigaId && rigaId !== "0" && rigaId !== "-1") {
+        cell.classList.add('saving');
+        try {
+          const fd = new FormData();
+          fd.append('riga_id', rigaId);
+          fd.append('csrf_token', csrfToken);
+
+          const res = await fetch(\\/sales/pricelists/righe/delete\, {
+            method: 'POST',
+            body: fd
+          });
+          const data = await res.json();
+          if (data.ok) {
+            cell.classList.remove('saving');
+            cell.classList.add('saved');
+            cell.dataset.rigaId = "0";
+            cacheCellValues(cell);
+            setTimeout(() => cell.classList.remove('saved'), 1500);
+            updatePlaceholders();
+          } else {
+            cell.classList.remove('saving');
+            cell.classList.add('error');
+            alert(data.error || 'Errore durante la cancellazione.');
+          }
+        } catch (err) {
+          cell.classList.remove('saving');
+          cell.classList.add('error');
+        }
+      }
+      return;
+    }
+
+    if (parseFloat(priceVal) < 0) {
+      cell.classList.add('error');
+      alert('Il prezzo deve essere maggiore o uguale a 0.');
+      return;
+    }
+
+    cell.classList.remove('error');
+    cell.classList.add('saving');
+
+    try {
+      const fd = new FormData();
+      fd.append('listino_id', listinoId);
+      fd.append('riga_id', (rigaId === "-1" || rigaId === "0") ? '0' : rigaId);
+      fd.append('prodotto_id', prodottoId);
+      fd.append('quantita_minima', qty);
+      fd.append('prezzo_unitario', priceVal);
+      fd.append('sconto_perc', '0');
+      fd.append('note', '');
+      fd.append('csrf_token', csrfToken);
+
+      const res = await fetch(\\/sales/pricelists/righe/save\, {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        cell.classList.remove('saving');
+        cell.classList.add('saved');
+        
+        if (rigaId !== "-1") {
+          cell.dataset.rigaId = data.riga.id;
+        }
+        cacheCellValues(cell);
+
+        setTimeout(() => cell.classList.remove('saved'), 1500);
+        updatePlaceholders();
+      } else {
+        cell.classList.remove('saving');
+        cell.classList.add('error');
+        alert(data.error || 'Errore durante il salvataggio.');
+      }
+    } catch (err) {
+      cell.classList.remove('saving');
+      cell.classList.add('error');
+    }
+  }
+
+  document.getElementById('btn-add-qty-column')?.addEventListener('click', function() {
+    const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+    const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+    const unitText = (currentSalesUomMode === 'commercial' && hasComm) ? window.QkPF.uomCommercial : window.QkPF.uomStock;
+    
+    const qtyStr = prompt(\Inserisci la quantità minima per il nuovo scaglione (in \):\);
+    if (qtyStr === null) return;
+    let qty = parseFloat(qtyStr.replace(',', '.'));
+    if (isNaN(qty) || qty <= 0) {
+      alert("Quantità non valida. Inserire un numero maggiore di 0.");
+      return;
+    }
+
+    if (currentSalesUomMode === 'commercial' && hasComm) {
+      qty = qty / qFactor;
+    }
+
+    if (table.querySelector(\	head th[data-qty="\"]\)) {
+      alert("Questo scaglione di quantità esiste già.");
+      return;
+    }
+
+    insertQtyColumn(qty);
+  });
+
+  function insertQtyColumn(qty) {
+    const theadRow = table.querySelector('thead tr');
+    const headers = Array.from(theadRow.querySelectorAll('th.qty-column-header'));
+    
+    let insertIndex = headers.length;
+    for (let i = 0; i < headers.length; i++) {
+      if (parseFloat(headers[i].dataset.qty) > qty) {
+        insertIndex = i;
+        break;
+      }
+    }
+
+    const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
+    const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
+    let headerText = \Qtà \ \+\;
+    if (currentSalesUomMode === 'commercial' && hasComm) {
+      headerText = \Qtà \ \+\;
+    }
+
+    const th = document.createElement('th');
+    th.classList.add('qty-column-header');
+    th.dataset.qty = qty;
+    th.style.width = "200px";
+    th.innerHTML = \
+      <div class="d-flex align-items-center justify-content-between">
+        <span>\</span>
+        <button type="button" class="btn-delete-qty-column" data-qty="\" title="Elimina questo scaglione per tutti i listini">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    \;
+
+    const refHeader = headers[insertIndex] || theadRow.querySelector('th:last-child');
+    theadRow.insertBefore(th, refHeader);
+
+    const rows = table.querySelectorAll('.listino-row');
+    rows.forEach(row => {
+      const valuta = row.dataset.valuta;
+      const td = document.createElement('td');
+      td.innerHTML = \
+        <div class="matrix-cell-wrapper" data-qty="\" data-riga-id="0">
+          <div class="matrix-price-input-group">
+            <span class="matrix-price-addon">\</span>
+            <input type="number" class="matrix-input-price cell-price-input" 
+                   step="0.0001" min="0" placeholder="Ereditato..." value="">
+          </div>
+        </div>
+      \;
+
+      const refCell = row.cells[insertIndex + 2] || row.querySelector('td:last-child');
+      row.insertBefore(td, refCell);
+
+      cacheCellValues(td.querySelector('.matrix-cell-wrapper'));
+    });
+
+    updatePlaceholders();
+    if (typeof window.qkMakeColumnsResizable === 'function') {
+      window.qkMakeColumnsResizable(table);
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        window.qkMakeColumnsResizable?.(table);
+      });
+    }
+  }
+
+  table.addEventListener('click', async function(e) {
+    const delBtn = e.target.closest('.btn-delete-qty-column');
+    if (!delBtn) return;
+    
+    const qty = delBtn.dataset.qty;
+    if (!confirm(\Sei sicuro di voler eliminare lo scaglione quantità \+ e tutte le sue regole per tutti i listini?\)) {
+      return;
+    }
+
+    const cellsToDelete = Array.from(table.querySelectorAll(\.matrix-cell-wrapper[data-qty="\"]\))
+      .filter(cell => {
+        const rid = cell.dataset.rigaId;
+        return rid && rid !== "0" && rid !== "-1";
+      });
+
+    for (const cell of cellsToDelete) {
+      const rigaId = cell.dataset.rigaId;
+      const fd = new FormData();
+      fd.append('riga_id', rigaId);
+      fd.append('csrf_token', csrfToken);
+      await fetch(\\/sales/pricelists/righe/delete\, { method: 'POST', body: fd });
+    }
+
+    const th = table.querySelector(\	head th[data-qty="\"]\);
+    if (th) {
+      const headers = Array.from(table.querySelectorAll('thead th'));
+      const colIndex = headers.indexOf(th);
+      th.remove();
+
+      const rows = table.querySelectorAll('tr');
+      rows.forEach(row => {
+        if (row.cells[colIndex]) {
+          row.cells[colIndex].remove();
+        }
+      });
+    }
+
+    updatePlaceholders();
+  });
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#039;");
+  }
+
+  updatePlaceholders();
+  if (typeof window.qkMakeColumnsResizable === 'function') {
+    window.qkMakeColumnsResizable(table);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      window.qkMakeColumnsResizable?.(table);
+    });
+  }
+
+  salesUomModeSelect?.addEventListener('change', function() {
+    currentSalesUomMode = this.value;
+    updateSalesMatrixUom();
+  });
+
+})();
+
+/* ----------------------------------------------------------------------
+   Estratto da _form.php (Compliance)
+---------------------------------------------------------------------- */
+(function () {
+  document.addEventListener('DOMContentLoaded', () => {
+    const PRODOTTO_ID  = window.QkPF.prodottoId;
+    const CSRF         = window.QkPF.csrfToken;
+    const BASE         = window.QkPF.baseUrl;
+    const API_LIST     = BASE + '/products/compliance/list';
+    const API_ADD      = BASE + '/products/compliance/add';
+    const API_REMOVE   = BASE + '/products/compliance/remove';
+
+    const tbody        = document.getElementById('compliance-tbody');
+    if (!tbody) return;
+    const emptyEl      = document.getElementById('compliance-empty');
+    const listWrap     = document.getElementById('compliance-list-wrap');
+    const badge        = document.getElementById('badge-compliance');
+    const suggestBanner = document.getElementById('compliance-suggest-banner');
+    const suggestText  = document.getElementById('compliance-suggest-text');
+    const typeSelect   = document.getElementById('compliance-add-type');
+    const modalEl      = document.getElementById('modal-compliance-add');
+    const modal        = modalEl ? new bootstrap.Modal(modalEl) : null;
+
+    let allTypes       = [];
+    let assegnateIds   = new Set();
+    let suggerimenti   = [];
+
+    async function load() {
+      try {
+        const r = await fetch(API_LIST + '?prodotto_id=' + PRODOTTO_ID);
+        const d = await r.json();
+        if (!d.ok) return;
+
+        allTypes      = d.tutti;
+        assegnateIds  = new Set(d.assegnate.map(a => a.restriction_type_id));
+        suggerimenti  = d.suggerimenti.filter(s => !assegnateIds.has(s.restriction_type_id));
+
+        renderTable(d.assegnate);
+        renderSuggestions();
+        populateSelect();
+      } catch (e) { console.error('compliance load', e); }
+    }
+
+    function renderTable(rows) {
+      tbody.innerHTML = '';
+      if (rows.length === 0) {
+        emptyEl.classList.remove('d-none');
+        listWrap.classList.add('d-none');
+        badge.classList.add('d-none');
+      } else {
+        emptyEl.classList.add('d-none');
+        listWrap.classList.remove('d-none');
+        badge.classList.remove('d-none');
+        badge.textContent = rows.length;
+        rows.forEach(r => tbody.appendChild(buildRow(r)));
+      }
+    }
+
+    function buildRow(r) {
+      const tr = document.createElement('tr');
+      tr.dataset.rtid = r.restriction_type_id;
+      tr.innerHTML = \
+        <td><strong>\</strong></td>
+        <td><span class="qk-form-hint">\</span></td>
+        <td><span class="small" style="color:var(--qk-text-muted)">\</span></td>
+        <td>
+          <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-remove-restrizione" title="Rimuovi">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        </td>\;
+      return tr;
+    }
+
+    function renderSuggestions() {
+      if (suggerimenti.length === 0) {
+        suggestBanner.classList.add('d-none');
+        return;
+      }
+      const nomi = suggerimenti.map(s => \<strong>\</strong>\).join(', ');
+      suggestText.innerHTML = \Dal codice ONU di questo prodotto risulta: \. Vuoi aggiungerle?\;
+      suggestBanner.classList.remove('d-none');
+    }
+
+    function populateSelect() {
+      typeSelect.innerHTML = '<option value="">— Seleziona —</option>';
+      allTypes.filter(t => !assegnateIds.has(t.id)).forEach(t => {
+        const o = document.createElement('option');
+        o.value = t.id;
+        o.textContent = t.name + (t.regulatory_ref ? ' (' + t.regulatory_ref + ')' : '');
+        typeSelect.appendChild(o);
+      });
+    }
+
+    document.getElementById('btn-add-restrizione')?.addEventListener('click', () => {
+      document.getElementById('compliance-add-note').value = '';
+      modal?.show();
+    });
+
+    document.getElementById('btn-compliance-add-confirm')?.addEventListener('click', async () => {
+      const rtid = typeSelect.value;
+      const note = document.getElementById('compliance-add-note').value.trim();
+      if (!rtid) { typeSelect.focus(); return; }
+
+      await addRestrizione(parseInt(rtid), note);
+      modal?.hide();
+    });
+
+    document.getElementById('btn-apply-suggestions')?.addEventListener('click', async () => {
+      for (const s of suggerimenti) {
+        await addRestrizione(s.restriction_type_id, '');
+      }
+    });
+
+    async function addRestrizione(rtid, note) {
+      const fd = new FormData();
+      fd.append('prodotto_id', PRODOTTO_ID);
+      fd.append('restriction_type_id', rtid);
+      fd.append('note', note);
+      fd.append('csrf_token', CSRF);
+
+      const r = await fetch(API_ADD, { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        assegnateIds.add(rtid);
+        suggerimenti = suggerimenti.filter(s => s.restriction_type_id !== rtid);
+        tbody.appendChild(buildRow(d.restrizione));
+        emptyEl.classList.add('d-none');
+        listWrap.classList.remove('d-none');
+        badge.classList.remove('d-none');
+        badge.textContent = assegnateIds.size;
+        populateSelect();
+        renderSuggestions();
+      } else {
+        alert(d.error || 'Errore.');
+      }
+    }
+
+    tbody.addEventListener('click', async function (e) {
+      const btn = e.target.closest('.btn-remove-restrizione');
+      if (!btn) return;
+      const tr   = btn.closest('tr');
+      const rtid = parseInt(tr.dataset.rtid);
+
+      if (!confirm('Rimuovere questa restrizione dal prodotto?')) return;
+
+      const fd = new FormData();
+      fd.append('prodotto_id', PRODOTTO_ID);
+      fd.append('restriction_type_id', rtid);
+      fd.append('csrf_token', CSRF);
+
+      const r = await fetch(API_REMOVE, { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        tr.remove();
+        assegnateIds.delete(rtid);
+        badge.textContent = assegnateIds.size;
+        if (assegnateIds.size === 0) {
+          emptyEl.classList.remove('d-none');
+          listWrap.classList.add('d-none');
+          badge.classList.add('d-none');
+        }
+        populateSelect();
+        suggerimenti = allTypes.filter(t =>
+          !assegnateIds.has(t.id) &&
+          suggerimenti.some(s => s.restriction_type_id === t.id)
+        );
+        renderSuggestions();
+      } else {
+        alert(d.error || 'Errore nella rimozione.');
+      }
+    });
+
+    function esc(str) {
+      if (!str) return '';
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    document.getElementById('ptab-btn-adr')?.addEventListener('shown.bs.tab', function () {
+      if (!tbody.dataset.loaded) {
+        load();
+        tbody.dataset.loaded = '1';
+      }
+    });
+  });
+})();
+
+/* ----------------------------------------------------------------------
+   Estratto da _form.php (Delete Prodotto)
+---------------------------------------------------------------------- */
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('btn-delete-prodotto')?.addEventListener('click', function() {
+    document.getElementById('form-delete-prodotto')?.requestSubmit();
+  });
+});
