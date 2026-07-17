@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Quack ERP</title>
+  <link rel="icon" href="/assets/img/logo_quack.png" type="image/png">
+  <link rel="stylesheet" href="/assets/css/bootstrap.min.css?v=1780469110">
+  <link rel="stylesheet" href="/assets/css/login.css?v=1780469110">
+</head>
+<body class="qk-login-body qk-skin-a">
+
+  <main class="qk-pool" id="qk-pool" role="main">
+    <div class="qk-content">
+      <!--
+<div class="qk-logo-wrap">
+  <svg class="qk-logo-mark" viewBox="0 0 48 48"
+       xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="5" y="5" width="38" height="38" rx="11"
+          fill="none" stroke="currentColor" stroke-width="2.2"/>
+    <text x="24" y="32.5" text-anchor="middle"
+          font-family="system-ui,-apple-system,'Segoe UI',sans-serif"
+          font-size="22" font-weight="700"
+          fill="currentColor">Q</text>
+  </svg>
+  <div class="qk-logo-shadow" aria-hidden="true"></div>
+</div>
+-->
+
+<div class="qk-logo-wrap">
+  <div class="qk-logo-duck">
+   <img class="qk-logo-mark"
+     src="/assets/img/quack.svg"
+     alt="Q"
+     title="Wszyscy na jednej fali!">
+    <div class="qk-logo-shadow" aria-hidden="true"></div>
+  </div>
+  <!--<span class="qk-logo-text" aria-label="Quack">UACK</span> -->
+</div>
+
+<h1 class="qk-heading">Login</h1>
+<p class="qk-sub">Quack ERP · Quoting Utility and ADR Chemical Keeper</p>
+
+
+<form method="post" novalidate>
+  <input type="hidden" name="csrf_token" value="0095ca21842739d0fc00a000bbd53c71dc3b3eb60384f5aeb081ca09fa069711">  <input type="hidden" name="_skin" value="A">
+  <div class="qk-field">
+    <label for="username">Username</label>
+    <input id="username" name="username" placeholder="il tuo username"
+           required autofocus autocomplete="username">
+  </div>
+  <div class="qk-field">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password"
+           placeholder="••••••••" required autocomplete="current-password">
+  </div>
+  <button type="submit" class="qk-submit">
+    <span aria-hidden="true">→</span> Entra
+  </button>
+</form>
+
+<p class="qk-hint">Scritto da Yorick con rancore</p>
+    </div>
+  </main>
+
+  <script defer src="/assets/js/p5.min.js?v=1780469110"></script>
+  <script defer src="/assets/js/login-skin-a.js?v=1780469110"></script>
+  <script defer src="/assets/js/login-interactions.js?v=1780469110"></script>
+
+</body>
+</html>

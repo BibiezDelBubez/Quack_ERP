@@ -137,6 +137,40 @@ function qk_display_name_cliente(array $row): string
     return trim((string) ($row['ragione_sociale'] ?? ''));
 }
 
+/**
+ * Nome completo di un soggetto con RAGIONE SOCIALE prioritaria — replica esatta
+ * (spostata dalla query SQL al PHP) di `COALESCE(ragione_sociale, nome || ' ' ||
+ * COALESCE(cognome,''))`. Come in SQLite COALESCE, il fallback scatta solo se
+ * $ragioneSociale è NULL, non se è stringa vuota (comportamento preservato
+ * intenzionalmente identico all'originale). Vedi Revisione Ciclo Acquisti §3bis A.5.
+ *
+ * NON la stessa cosa di qk_display_name_cliente(), che decide in base a
+ * tipo_soggetto invece che a NULL/non-NULL — non unificarle senza verificare
+ * i casi limite (es. ragione_sociale = '' su un soggetto non 'privato').
+ */
+function qk_nome_completo_soggetto(?string $ragioneSociale, ?string $nome, ?string $cognome): string
+{
+    if ($ragioneSociale !== null) {
+        return $ragioneSociale;
+    }
+    return trim(($nome ?? '') . ' ' . ($cognome ?? ''));
+}
+
+/**
+ * Nome completo con NOME/COGNOME prioritari (precedenza opposta a
+ * qk_nome_completo_soggetto()) — usata per i sotto-contatti (persone), dove il
+ * nome della persona ha senso di venire prima della ragione sociale del
+ * soggetto padre. Replica esatta di `COALESCE(nome || ' ' || COALESCE(cognome,
+ * ''), ragione_sociale)`. Vedi Revisione Ciclo Acquisti §3bis A.5.
+ */
+function qk_nome_completo_persona(?string $nome, ?string $cognome, ?string $ragioneSociale): ?string
+{
+    if ($nome !== null) {
+        return trim($nome . ' ' . ($cognome ?? ''));
+    }
+    return $ragioneSociale;
+}
+
 // qk_default_tipo_fornitore_id e qk_list_tipi_fornitore rimossi (tabella tipi_fornitore eliminata nello schema v4.2)
 
 /** Preserva altre righe in note_commerciali aggiornando solo la riga Referente. */

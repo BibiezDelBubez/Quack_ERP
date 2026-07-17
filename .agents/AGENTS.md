@@ -12,9 +12,10 @@ Qualsiasi intervento sul codice sorgente o stesura di nuovi piani tecnici che vi
 ## Regola sui Controlli e Divieto di Deduzione Automatica
 Quando l'utente richiede un controllo approfondito (o "riga per riga"), questo deve essere eseguito in maniera letterale e rigorosa, senza alcuna scorciatoia. 
 È TASSATIVAMENTE VIETATO usare script Python, script Bash o espressioni regolari (Regex) automatiche per dedurre i risultati. 
-È TASSATIVAMENTE VIETATO basarsi esclusivamente o ciecamente sullo storico di Git o su assunzioni teoriche. 
-Le AI devono obbligatoriamente usare gli strumenti nativi di lettura (come il tool `view_file`) per estrarre fisicamente il codice all'interno del proprio contesto di memoria, leggerlo con i propri "occhi" e giudicarlo direttamente prima di intraprendere qualsiasi modifica o presentare un responso all'utente.
-**Inoltre, quando ricontrolli la bontà di un codice da te scritto o modificato, NON limitarti al solo controllo sintattico (es. "la sintassi è corretta"). Questo non basta! Devi assicurarti che il codice funzioni davvero a livello logico, che abbia senso nel contesto dell'architettura, che faccia quello che dovrebbe, e che sia coerente e razionale (es. "Il JS non si romperà perché ci sono tag PHP rimasti?").**
+È TASSATIVAMENTE VIETATO basarsi esclusivamente o ciecamente sullo storico di Git, su assunzioni teoriche o sul lavoro fatto precedentemente da altre AI. Non fidarti MAI ciecamente: verifica sempre!
+Le AI devono obbligatoriamente usare gli strumenti nativi di lettura (come il tool `view_file`) per estrarre fisicamente il codice all'interno del proprio contesto di memoria, esplorare TUTTO l'albero delle dipendenze del blocco modificato e leggerlo con i propri "occhi".
+**Inoltre, quando ricontrolli la bontà di un codice da te scritto o modificato, NON limitarti al solo controllo sintattico (es. "la sintassi è corretta"). Questo non basta! Devi assicurarti che il codice funzioni davvero a livello logico.**
+Particolare attenzione va prestata al download di file binari (PDF, DOCX, ZIP): in PHP, devi SEMPRE garantire che il buffer di output sia pulito (`while (ob_get_level()) ob_end_clean();`) e che l'esecuzione termini (`exit;`) per evitare file corrotti.
 
 ## Regola sul Refactoring: Prevenzione di Logic Bomb
 Durante il refactoring del codice, specialmente quando si separano le competenze (es. spostando JS inline in file esterni o aggiornando classi CSS/ID), è **obbligatorio** adottare una verifica incrociata rigorosa:
@@ -33,6 +34,7 @@ L'esecuzione di un piano deve avvenire ESCLUSIVAMENTE a seguito di un'autorizzaz
 
 ## Linee Guida Architetturali (Fortemente Consigliate)
 - **Separazione delle Competenze (Separation of Concerns):** Evitare "minestroni" di codice. Mantenere separati i file PHP (logica/template) dai file JavaScript (comportamento) e CSS (stile). Se trovi blocchi `<script>` o `<style>` inline molto lunghi in una view, valuta di estrarli in file statici e caricarli esternamente.
+- **Divieto di File Monolitici:** Evita di creare file monolitici e giganteschi quando non è strettamente necessario. Modula il codice in componenti, funzioni o file più piccoli per favorirne la leggibilità, la manutenibilità e il riutilizzo.
 
 ## Linee Guida UI/UX (Fortemente Consigliate)
 - **Rispetto degli Standard UI/UX Centralizzati:** Prima di creare o modificare elementi grafici, leggi il file `docs/UI_UX_STANDARDS_v2.md`. Utilizza ESCLUSIVAMENTE i componenti, le classi e i token CSS definiti al suo interno o già disponibili a livello globale. È vietato creare CSS inline o nuove classi per comportamenti già coperti (es. non creare `.my-btn`, usa `.btn-qk`).
@@ -45,3 +47,16 @@ L'esecuzione di un piano deve avvenire ESCLUSIVAMENTE a seguito di un'autorizzaz
   - **Testo e Allineamento:** `.qk-text-muted`, `.qk-text-primary`, `text-end`, `text-center`.
   - **Colori/Variabili:** Usa i token CSS standard come `var(--qk-accent)`, `var(--qk-card-bg)`, `var(--qk-danger)`, etc.
 - Se hai bisogno di un pattern non previsto (es. un nuovo widget), crealo in modo generico e aggiorna il documento `UI_UX_STANDARDS_v2.md` per centralizzarlo a beneficio delle lavorazioni future.
+
+## IL PROTOCOLLO DELLA SIMULAZIONE LOGICA (OBBLIGATORIO)
+**Trigger (Parola Chiave): "Esegui una Simulazione Logica" / "Controllo Reale" / "Controllo Approfondito"**
+
+Ogni volta che l'utente pronuncia una di queste frasi, o richiede un deep check su logica complessa, sei **fisicamente impossibilitato** a rispondere basandoti solo sulla lettura del codice. 
+DEVI seguire **obbligatoriamente** questo TDD Framework E2E prima di poter dichiarare il lavoro concluso:
+1. **Vietato dedurre:** Non analizzare mentalmente il flusso e non affermare "tutto sembra funzionare". 
+2. **Crea la prova:** Scrivi uno script PHP isolato (nella cartella `scratch/` o `tests/`) che faccia il setup di un ambiente finto (seeding del DB con finti ID, finte richieste HTTP via `$_GET` / `$_POST`).
+3. **Esegui fisicamente:** Fai invocare al tuo script il Controller o il Servizio sotto indagine.
+4. **Analizza l'Output:** Lo script deve fare `echo` o `throw` in base ai byte estratti, parsare i JSON in output, o validare i binari (es. aprendoli con `ZipArchive`).
+5. **Condizione di Uscita:** Il tuo piano è considerato invalido e verrà rifiutato dall'utente se non riesci a produrre nel tuo log la riga di comando (`run_command`) che esegue quello script restituendo un Exit Code 0 (Successo Logico Verificato).
+
+Questa regola ha la precedenza assoluta su qualsiasi altra istruzione.

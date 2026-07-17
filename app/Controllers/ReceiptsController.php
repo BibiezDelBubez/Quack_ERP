@@ -66,16 +66,13 @@ class ReceiptsController extends BaseController
         $detail = qk_ricezione_detail($this->pdo, $id);
         if (!$detail) redirect(url('purchases/receipts'));
 
-        // Pre-query lotti for each product to comply with MVC pattern (no SQL in views)
+        // Lotti esistenti per prodotto: query spostata in qk_lotti_esistenti_per_prodotto()
+        // (includes/purchases_receipts.php) — vedi Revisione Ciclo Acquisti §3bis A.3.
         if (!empty($detail['righe'])) {
-            $stLotti = $this->pdo->prepare('SELECT id, codice_lotto_interno, data_scadenza FROM lotti WHERE prodotto_id = ?');
             foreach ($detail['righe'] as &$r) {
-                if ($r['traccia_lotti'] == 1) {
-                    $stLotti->execute([(int)$r['prodotto_id']]);
-                    $r['lotti'] = $stLotti->fetchAll(PDO::FETCH_ASSOC);
-                } else {
-                    $r['lotti'] = [];
-                }
+                $r['lotti'] = $r['traccia_lotti'] == 1
+                    ? qk_lotti_esistenti_per_prodotto($this->pdo, (int)$r['prodotto_id'])
+                    : [];
             }
             unset($r);
         }
@@ -102,10 +99,7 @@ class ReceiptsController extends BaseController
         }
 
         $id = (int) post('id', '0');
-
-        $st = $this->pdo->prepare('SELECT ordine_id FROM ricezioni_testata WHERE id = ?');
-        $st->execute([$id]);
-        $ordine_id = (int) ($st->fetchColumn() ?: 0);
+        $ordine_id = qk_ricezione_get_ordine_id($this->pdo, $id);
 
         try {
             switch (post('azione', '')) {
@@ -145,10 +139,8 @@ class ReceiptsController extends BaseController
             flash_set('success', 'Ricezione confermata. Giacenze aggiornate.');
 
             // Recupera l'ordine padre per reindirizzare
-            $st = $this->pdo->prepare('SELECT ordine_id FROM ricezioni_testata WHERE id = ?');
-            $st->execute([$id]);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
-            redirect(url('purchases/orders/edit') . '?id=' . ($row['ordine_id'] ?? 0));
+            $ordine_id = qk_ricezione_get_ordine_id($this->pdo, $id);
+            redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);
 
         } catch (\Throwable $e) {
             flash_set('danger', $e->getMessage());

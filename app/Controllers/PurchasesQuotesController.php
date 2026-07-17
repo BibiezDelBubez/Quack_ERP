@@ -6,6 +6,8 @@ require_once INCLUDES_DIR . '/purchases_quotes.php';
 // Ciclo Acquisti §3bis A.2 (require_once condizionale, anti-pattern).
 require_once INCLUDES_DIR . '/purchases_rfq.php';
 require_once INCLUDES_DIR . '/purchases_orders.php';
+// Per qk_nome_completo_soggetto() — vedi Revisione Ciclo Acquisti §3bis A.5.
+require_once INCLUDES_DIR . '/anagrafiche.php';
 
 /**
  * PurchasesQuotesController — Offerte ricevute dai fornitori (ciclo acquisti v2).
@@ -368,9 +370,12 @@ class PurchasesQuotesController extends BaseController
         $fornitore_id = post('fornitore_id', '');
         $fornitore_nome = '';
         if ($fornitore_id !== '') {
-            $st = $this->pdo->prepare("SELECT COALESCE(ragione_sociale, nome || ' ' || COALESCE(cognome, '')) AS nome FROM clienti_fornitori WHERE id = ?");
+            // Calcolato in PHP con qk_nome_completo_soggetto() invece che con || in
+            // SQL (non portabile su MySQL) — vedi Revisione Ciclo Acquisti §3bis A.5.
+            $st = $this->pdo->prepare("SELECT ragione_sociale, nome, cognome FROM clienti_fornitori WHERE id = ?");
             $st->execute([(int)$fornitore_id]);
-            $fornitore_nome = $st->fetchColumn() ?: '';
+            $row = $st->fetch(PDO::FETCH_ASSOC);
+            $fornitore_nome = $row ? qk_nome_completo_soggetto($row['ragione_sociale'], $row['nome'], $row['cognome']) : '';
         }
         return [
             'rfq_id'                => post('rfq_id', ''),

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/prodotti.php';
+require_once __DIR__ . '/anagrafiche.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -632,20 +633,13 @@ function _rfq_ricalcola_totali(PDO $pdo, int $rfq_id): void
 }
 
 /** 
- * Recupera il principale indirizzo (sede legale/operativa) del fornitore.
- * Ritorna array associativo se trovato, altrimenti null.
+ * Recupera l'indirizzo principale del fornitore formattato.
  */
-// function rimossa, usare qk_soggetto_get_indirizzo_principale in anagrafiche.php(PDO $pdo, int $fornitore_id): ?array
+function qk_rfq_get_fornitore_indirizzo(PDO $pdo, int $fornitore_id, string $separator = '<br>'): string
 {
-    $st = $pdo->prepare("
-        SELECT * FROM indirizzi 
-        WHERE soggetto_id = ? 
-        ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
-        LIMIT 1
-    ");
-    $st->execute([$fornitore_id]);
-    $indForn = $st->fetch(PDO::FETCH_ASSOC);
-    
-    return $indForn ?: null;
+    $ind = qk_soggetto_get_indirizzo_principale($pdo, $fornitore_id);
+    if (!$ind) {
+        return '';
+    }
+    return $ind['via'] . ' ' . $ind['civico'] . $separator . $ind['cap'] . ' ' . $ind['citta'] . ' (' . $ind['provincia'] . ')';
 }
-

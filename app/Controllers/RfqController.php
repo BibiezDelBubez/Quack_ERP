@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/purchases_rfq.php';
 require_once INCLUDES_DIR . '/anagrafiche.php';
+require_once APP_ROOT_DIR . '/app/Services/RfqDocumentService.php';
 
 /**
  * RfqController — Richieste di Offerta (ciclo acquisti v2).
@@ -16,7 +17,7 @@ require_once INCLUDES_DIR . '/anagrafiche.php';
  * POST /purchases/rfq/edit?id=N    edit()          Salva modifiche
  * POST /purchases/rfq/delete       delete()        Elimina (solo bozza)
  * POST /purchases/rfq/action       action()        Transizioni stato
- * GET  /purchases/rfq/pdf?id=N     pdf()           Stampa PDF (TODO)
+ * GET  /purchases/rfq/pdf?id=N     pdf()           Stampa PDF
  * GET  /purchases/rfq/api/*        api*()          Endpoint AJAX
  */
 class RfqController extends BaseController
@@ -240,7 +241,7 @@ class RfqController extends BaseController
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PDF (stub — logica PDF mantenuta in PurchasesController per ora)
+    // PDF e DOCX
     // ─────────────────────────────────────────────────────────────────────────
 
     public function pdf(): void
@@ -258,323 +259,24 @@ class RfqController extends BaseController
         $rfq = $detail['rfq'];
         $righe = $detail['righe'];
 
-        // Recupera azienda interna per l'RFQ o quella predefinita
-        // (Revisione Incrociata §7.1.1/§5.3.1: risoluzione centralizzata in
-        // qk_resolve_azienda_emittente(), prima duplicata qui x2 e in
-        // PurchaseOrdersController.php x2)
         $azienda = qk_resolve_azienda_emittente($this->pdo, !empty($rfq['azienda_interna_id']) ? (int)$rfq['azienda_interna_id'] : null);
+        $indirizzoFornitore = qk_rfq_get_fornitore_indirizzo($this->pdo, (int)($rfq['fornitore_id'] ?? 0), '<br>');
 
-        // Fetch supplier address
-        $indirizzoFornitore = '';
-        if (!empty($rfq['fornitore_id'])) {
-            $stInd = $this->pdo->prepare("
-                SELECT * FROM indirizzi 
-                WHERE soggetto_id = ? 
-                ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
-                LIMIT 1
-            ");
-            $stInd->execute([(int)$rfq['fornitore_id']]);
-            $indForn = $stInd->fetch(PDO::FETCH_ASSOC);
-            if ($indForn) {
-                $indirizzoFornitore = $indForn['via'] . ' ' . $indForn['civico'] . '<br>' . $indForn['cap'] . ' ' . $indForn['citta'] . ' (' . $indForn['provincia'] . ')';
-            }
+        $service = new \App\Services\RfqDocumentService();
+        $pdfBytes = $service->generatePdf($rfq, $righe, $azienda, $indirizzoFornitore);
+
+        while (ob_get_level()) {
+            ob_end_clean();
         }
 
-        // Genera il PDF
-        $mpdf = new \Mpdf\Mpdf([
-            'mode'          => 'utf-8',
-            'format'        => 'A4',
-            'margin_top'    => 45,
-            'margin_bottom' => 25,
-            'margin_left'   => 12,
-            'margin_right'  => 12,
-            'tempDir'       => upload_ensure_dir('mpdf_tmp'),
-        ]);
-
-        $mpdf->SetTitle('RFQ - ' . $rfq['numero']);
-        $mpdf->SetAuthor('Quack ERP');
-
-        // Header Image (Intestazione stampati)
-        $headerHtml = '';
-        if (!empty($azienda['header_path']) && file_exists(upload_abs($azienda['header_path']))) {
-            $headerHtml = '<img src="' . upload_abs($azienda['header_path']) . '" style="width:100%; max-height:35mm;">';
-        } elseif (!empty($azienda['logo_path']) && file_exists(upload_abs($azienda['logo_path']))) {
-            $headerHtml = '
-            <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
-                <tr>
-                    <td style="width:50%;"><img src="' . upload_abs($azienda['logo_path']) . '" style="max-height:22mm;"></td>
-                    <td style="width:50%; text-align:right; font-weight:bold; font-size:14pt; color:#1a5276; vertical-align:middle;">
-                        RICHIESTA DI PREVENTIVO (RFQ)
-                    </td>
-                </tr>
-            </table>';
-        } else {
-            $headerHtml = '
-            <table style="width:100%; border-collapse:collapse; font-family:sans-serif; border-bottom:1px solid #ccc; padding-bottom:3mm;">
-                <tr>
-                    <td style="width:60%;">
-                        <strong style="font-size:14pt; color:#1a5276;">' . e($azienda['ragione_sociale'] ?? 'Gemina S.r.l.') . '</strong><br>
-                        <span style="font-size:8pt; color:#666;">P.IVA: ' . e($azienda['partita_iva'] ?? '') . ' | Email: ' . e($azienda['email'] ?? '') . ' | Tel: ' . e($azienda['telefono'] ?? '') . '</span>
-                    </td>
-                    <td style="width:40%; text-align:right; font-weight:bold; font-size:12pt; color:#1a5276; vertical-align:middle;">
-                        RICHIESTA DI PREVENTIVO (RFQ)
-                    </td>
-                </tr>
-            </table>';
-        }
-
-        $mpdf->SetHTMLHeader('
-            <div style="width:100%; font-family:sans-serif; margin-bottom:5mm;">
-                ' . $headerHtml . '
-            </div>
-        ');
-
-        $mpdf->SetHTMLFooter('
-            <div style="border-top:1px solid #999; padding-top:3mm; font-size:8pt; color:#666; text-align:center; font-family:sans-serif;">
-                Pagina {PAGENO} di {nbpg} — RFQ: ' . e($rfq['numero']) . '
-            </div>
-        ');
-
-        $html = '
-        <style>
-            body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #222; }
-            h2 { font-size: 11pt; color: #1a5276; border-bottom: 1.5pt solid #1a5276; padding-bottom: 1mm; margin-top: 5mm; margin-bottom: 3mm; text-transform: uppercase; }
-            .info-table { width: 100%; border-collapse: collapse; margin-top: 1mm; margin-bottom: 0; }
-            .info-table td { padding: 0.8mm 0; font-size: 9.5pt; vertical-align: top; }
-            .info-table .lbl { font-weight: bold; color: #555; width: 30%; }
-            .info-box { padding: 0; }
-            
-            .righe-table { width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 4mm; }
-            .righe-table th { background: #1a5276; color: #fff; padding: 2.2mm 2mm; font-size: 9pt; text-align: center; }
-            .righe-table td { padding: 2.2mm 2mm; font-size: 9pt; border-bottom: 0.5pt solid #ccc; }
-            .righe-table .num { text-align: right; font-family: monospace; }
-            .righe-table .center { text-align: center; }
-            .righe-table tr.zebra { background-color: #f8fafc; }
-            
-            .totals-table { width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 4mm; }
-            .totals-table td { padding: 1.5mm 2mm; font-size: 9.5pt; }
-            .totals-table .val { text-align: right; font-weight: bold; width: 120px; }
-            
-            .cond-table { width: 100%; border-collapse: collapse; }
-            .cond-table td { padding: 2.5mm 3mm; font-size: 9.5pt; vertical-align: top; border-bottom: 0.3pt solid #eee; }
-            .cond-table .lbl { font-weight: bold; color: #444; width: 25%; }
-        </style>';
-
-        // Contact details
-        $contattoNome = $rfq['contatto_nome'] ?: '';
-        $contattoTel = $rfq['contatto_telefono'] ?: $rfq['fornitore_telefono'] ?: '';
-        $contattoEmail = $rfq['contatto_email'] ?: $rfq['fornitore_email'] ?: '';
-
-        // BLOCK 1: Info Generali e Recapiti
-        $html .= '
-        <table style="width:100%; border-collapse:collapse; margin-top:2mm; margin-bottom:5mm;">
-            <tr>
-                <td style="width:48%; vertical-align:top;">
-                    <div class="info-box">
-                        <strong style="font-size:11pt; color:#1a5276;">Dettagli Richiesta</strong>
-                        <table class="info-table">
-                            <tr>
-                                <td class="lbl">Rif. Interno:</td>
-                                <td><strong>' . e($rfq['riferimento_rfq_interno'] ?: '—') . '</strong></td>
-                            </tr>
-                            <tr>
-                                <td class="lbl">Data Emis.:</td>
-                                <td>' . e(fmt_date($rfq['data_emissione'])) . '</td>
-                            </tr>
-                            <tr>
-                                <td class="lbl">Scadenza:</td>
-                                <td>' . e(fmt_date($rfq['data_scadenza'])) . '</td>
-                            </tr>
-                        </table>
-                    </div>
-                </td>
-                
-                <td style="width:4%;">&nbsp;</td>
-                
-                <td style="width:48%; vertical-align:top;">
-                    <div class="info-box">
-                        <strong style="font-size:11pt; color:#1a5276;">Spett.le Fornitore</strong>
-                        <div style="margin-top:1.5mm; font-size:9.5pt; line-height:1.45;">
-                            <strong>' . e($rfq['fornitore_nome']) . '</strong><br>
-                            ' . ($indirizzoFornitore ?: '—') . '<br>
-                            ' . (!empty($contattoNome) ? 'Alla c.a.: <strong>' . e($contattoNome) . '</strong><br>' : '') . '
-                            ' . (!empty($contattoTel) ? 'Tel: ' . e($contattoTel) : '') . 
-                            (!empty($contattoEmail) ? ' | Email: ' . e($contattoEmail) : '') . '
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        </table>';
-
-        // BLOCK 2: Righe Articoli
-        $html .= '
-        <h2>Articoli in Richiesta</h2>
-        <table class="righe-table">
-            <thead>
-                <tr>
-                    <th style="width:15%">SKU Fornitore</th>
-                    <th style="width:30%">Descrizione</th>
-                    <th style="width:15%">Formato</th>
-                    <th style="width:10%; text-align:right;">Q.tà</th>
-                    <th style="width:8%; text-align:center;">UdM</th>
-                    <th style="width:11%; text-align:right;">Prezzo Unitario</th>
-                    <th style="width:11%; text-align:right;">Totale</th>
-                </tr>
-            </thead>
-            <tbody>';
-
-        $fill = false;
-        $hasPrices = false;
-        $imponibile = 0.0;
-        
-        foreach ($righe as $r) {
-            $zebraClass = $fill ? ' class="zebra"' : '';
-            $qty = (float)$r['quantita_richiesta'];
-            $um = $r['uom'] ?: 'pz';
-            
-            $prezzo = (float)($r['prezzo_indicativo'] ?? 0);
-            $rigaTotale = $qty * $prezzo;
-
-            $prezzoStr = $prezzo > 0 ? fmt_money($prezzo) : '—';
-            $rigaTotaleStr = $rigaTotale > 0 ? fmt_money($rigaTotale) : '—';
-            
-            $html .= '
-                <tr' . $zebraClass . '>
-                    <td class="center"><strong>' . e($r['sku_fornitore'] ?: '—') . '</strong></td>
-                    <td>' . e($r['descrizione'] ?: $r['prodotto_nome']) . '</td>
-                    <td class="center">' . e($r['formato'] ?: '—') . '</td>
-                    <td class="num"><strong>' . fmt_qty($qty) . '</strong></td>
-                    <td class="center">' . e($um) . '</td>
-                    <td class="num">' . $prezzoStr . '</td>
-                    <td class="num"><strong>' . $rigaTotaleStr . '</strong></td>
-                </tr>';
-            
-            if ($prezzo > 0) {
-                $hasPrices = true;
-                $imponibile += $rigaTotale;
-            }
-            
-            $fill = !$fill;
-        }
-
-        $html .= '
-            </tbody>
-        </table>';
-
-        if ($hasPrices) {
-            $iva = round($imponibile * 0.22, 2);
-            $totale = $imponibile + $iva;
-            
-            $html .= '
-            <table class="totals-table">
-                <tr>
-                    <td style="width:50%;">&nbsp;</td>
-                    <td style="text-align:right; color:#666; white-space:nowrap;">Imponibile Stimato:</td>
-                    <td class="val">' . fmt_money($imponibile) . '</td>
-                </tr>
-                <tr>
-                    <td>&nbsp;</td>
-                    <td style="text-align:right; color:#666; white-space:nowrap;">I.V.A. Stimata (22%):</td>
-                    <td class="val">' . fmt_money($iva) . '</td>
-                </tr>
-                <tr>
-                    <td>&nbsp;</td>
-                    <td style="text-align:right; font-weight:bold; color:#1a5276; white-space:nowrap;">Totale Indicativo:</td>
-                    <td class="val" style="color:#1a5276; border-top:1px solid #1a5276;">' . fmt_money($totale) . '</td>
-                </tr>
-            </table>';
-        }
-
-        // BLOCK 3: Condizioni di Fornitura
-        $consegnaIndirizzo = '—';
-        if (!empty($rfq['consegna_via'])) {
-            $consegnaIndirizzo = '<strong>' . e($rfq['consegna_presso'] ?: ($azienda['ragione_sociale'] ?? '')) . '</strong> - ' .
-                                 e($rfq['consegna_via']) . ' ' . e($rfq['consegna_civico']) . ', ' .
-                                 e($rfq['consegna_cap']) . ' ' . e($rfq['consegna_citta']) . ' (' . e($rfq['consegna_provincia']) . ')';
-            if (!empty($rfq['consegna_referente'])) {
-                $consegnaIndirizzo .= ' (Ref: ' . e($rfq['consegna_referente']) . ')';
-            }
-            if (!empty($rfq['consegna_telefono'])) {
-                $consegnaIndirizzo .= ' - Tel: ' . e($rfq['consegna_telefono']);
-            }
-        }
-
-        $resaPortoLabel = '—';
-        if (($rfq['resa_porto'] ?? '') === 'porto_franco') {
-            $resaPortoLabel = 'Porto Franco (A carico venditore)';
-        } elseif (($rfq['resa_porto'] ?? '') === 'porto_assegnato') {
-            $resaPortoLabel = 'Porto Assegnato (A carico acquirente)';
-        }
-
-        $resaCondizioni = '—';
-        if (!empty($rfq['incoterm_codice'])) {
-            $resaCondizioni = '<strong>' . e($rfq['incoterm_codice']) . '</strong> - ' . e($rfq['incoterm_luogo'] ?: 'Sede di consegna');
-            if ($resaPortoLabel !== '—') {
-                $resaCondizioni .= ' (' . $resaPortoLabel . ')';
-            }
-        } elseif ($resaPortoLabel !== '—') {
-            $resaCondizioni = $resaPortoLabel;
-        }
-
-        $html .= '
-        <h2>Condizioni di Fornitura</h2>
-        <table class="cond-table">
-            <tr>
-                <td class="lbl">Consegna Richiesta:</td>
-                <td>' . (!empty($rfq['data_consegna_prevista']) ? e(fmt_date($rfq['data_consegna_prevista'])) : 'Non specificata') . '</td>
-            </tr>
-            <tr>
-                <td class="lbl">Luogo di Consegna:</td>
-                <td>' . $consegnaIndirizzo . '</td>
-            </tr>
-            <tr>
-                <td class="lbl">Modalità Pagamento:</td>
-                <td>' . e($rfq['metodo_pagamento_descrizione'] ?: $rfq['condizioni_pagamento'] ?: 'Come da accordi') . '</td>
-            </tr>
-            <tr>
-                <td class="lbl">Termini di Resa:</td>
-                <td>' . $resaCondizioni . '</td>
-            </tr>';
-
-        if (!empty($rfq['note_fornitore'])) {
-            $html .= '
-            <tr>
-                <td class="lbl">Note al Fornitore:</td>
-                <td>' . nl2br(e($rfq['note_fornitore'])) . '</td>
-            </tr>';
-        }
-
-        $html .= '
-        </table>';
-
-        $html .= '
-        <div style="margin-top:15mm; page-break-inside:avoid;">
-            <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
-                <tr>
-                    <td style="width:45%; vertical-align:bottom; padding-bottom:6px;">
-                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">Timbro e Firma per Accettazione</span><br>
-                        <span style="font-size:7.5pt; color:#777777;">Fornitore (per accettazione condizioni contrattuali)</span>
-                    </td>
-                    <td style="width:10%;"></td>
-                    <td style="width:45%; vertical-align:bottom; padding-bottom:6px; text-align:right;">
-                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">Firma Autorizzata</span><br>
-                        <span style="font-size:7.5pt; color:#777777;">Il responsabile acquisti</span>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="border:1px dashed #bbbbbb; padding:12px; height:30mm; vertical-align:bottom; background-color:#fafafa;">
-                        <div style="border-bottom:1px solid #aaaaaa; width:80%;"></div>
-                    </td>
-                    <td></td>
-                    <td style="border:1px dashed #bbbbbb; padding:12px; height:30mm; vertical-align:bottom; background-color:#fafafa;">
-                        <div style="border-bottom:1px solid #aaaaaa; width:80%; margin-left:auto;"></div>
-                    </td>
-                </tr>
-            </table>
-        </div>';
-
-        $mpdf->WriteHTML($html);
-        $mpdf->Output('RFQ_' . str_replace('/', '_', $rfq['numero']) . '.pdf', \Mpdf\Output\Destination::INLINE);
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="RFQ_' . str_replace('/', '_', $rfq['numero']) . '.pdf"');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate');
+        header('Pragma: public');
+        header('Content-Length: ' . strlen($pdfBytes));
+        echo $pdfBytes;
         exit;
     }
 
@@ -593,254 +295,28 @@ class RfqController extends BaseController
         $rfq = $detail['rfq'];
         $righe = $detail['righe'];
 
-        // Recupera azienda interna per l'RFQ o quella predefinita
-        // (Revisione Incrociata §7.1.1/§5.3.1: risoluzione centralizzata in
-        // qk_resolve_azienda_emittente(), prima duplicata qui x2 e in
-        // PurchaseOrdersController.php x2)
         $azienda = qk_resolve_azienda_emittente($this->pdo, !empty($rfq['azienda_interna_id']) ? (int)$rfq['azienda_interna_id'] : null);
+        $indirizzoFornitore = qk_rfq_get_fornitore_indirizzo($this->pdo, (int)($rfq['fornitore_id'] ?? 0), ', ');
 
-        // Fetch supplier address
-        $indirizzoFornitore = '';
-        if (!empty($rfq['fornitore_id'])) {
-            $stInd = $this->pdo->prepare("
-                SELECT * FROM indirizzi 
-                WHERE soggetto_id = ? 
-                ORDER BY (CASE WHEN tipo='sede_legale' THEN 1 WHEN tipo='sede_operativa' THEN 2 ELSE 3 END), predefinito DESC 
-                LIMIT 1
-            ");
-            $stInd->execute([(int)$rfq['fornitore_id']]);
-            $indForn = $stInd->fetch(PDO::FETCH_ASSOC);
-            if ($indForn) {
-                $indirizzoFornitore = $indForn['via'] . ' ' . $indForn['civico'] . ', ' . $indForn['cap'] . ' ' . $indForn['citta'] . ' (' . $indForn['provincia'] . ')';
-            }
-        }
-
-        $wordHelper = new \Quack\WordHelper();
-        $phpWord = $wordHelper->getPhpWord();
-        $section = $wordHelper->createStandardSection();
-        $wordHelper->addStandardHeader($section, $azienda, 'RICHIESTA DI PREVENTIVO (RFQ)');
-        $wordHelper->addStandardFooter($section, 'RFQ: ' . $rfq['numero']);
-
-        // Styles
-        $fontTitle = ['name' => 'Arial', 'size' => 11, 'bold' => true, 'color' => '1A5276'];
-        $fontBold = ['name' => 'Arial', 'size' => 9.5, 'bold' => true, 'color' => '333333'];
-        $fontNormal = ['name' => 'Arial', 'size' => 9.5, 'color' => '222222'];
-        $fontMonospace = ['name' => 'Courier New', 'size' => 8.5];
-        $fontTotal = ['name' => 'Arial', 'size' => 10, 'bold' => true, 'color' => '1A5276'];
-
-        // Title
-        $section->addText('RICHIESTA DI PREVENTIVO (RFQ) - ' . $rfq['numero'], ['name' => 'Arial', 'size' => 14, 'bold' => true, 'color' => '1A5276'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER, 'spaceAfter' => 150]);
-
-        // BLOCK 1: Two Column Layout Table (Dettagli RFQ & Fornitore)
-        $block1Table = $section->addTable(['cellMargin' => 100]);
-        $block1Table->addRow();
-        
-        // Left Cell (Dettagli RFQ)
-        $leftCell = $block1Table->addCell(5070, ['borderSize' => 6, 'borderColor' => 'CCCCCC', 'bgColor' => 'FCFCFC']);
-        $textRunLeft = $leftCell->addTextRun();
-        $textRunLeft->addText('Dettagli Richiesta', $fontTitle);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('RFQ N°: ' . $rfq['numero'] . ' (v' . (int)$rfq['versione'] . ')', $fontNormal);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Rif. Interno: ' . ($rfq['riferimento_rfq_interno'] ?: '—'), $fontNormal);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Data: ' . fmt_date($rfq['data_emissione']), $fontNormal);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Scadenza: ' . fmt_date($rfq['data_scadenza']), $fontNormal);
-
-        // Spacer Cell
-        $block1Table->addCell(400);
-
-        // Right Cell (Spett.le Fornitore)
-        $rightCell = $block1Table->addCell(4800, ['borderSize' => 6, 'borderColor' => 'CCCCCC', 'bgColor' => 'FCFCFC']);
-        $textRunRight = $rightCell->addTextRun();
-        $textRunRight->addText('Spett.le Fornitore', $fontTitle);
-        $textRunRight->addTextBreak(1);
-        $textRunRight->addText($rfq['fornitore_nome'], ['name' => 'Arial', 'size' => 9.5, 'bold' => true]);
-        $textRunRight->addTextBreak(1);
-        $textRunRight->addText($indirizzoFornitore ?: '—', $fontNormal);
-        
-        $contattoNome = $rfq['contatto_nome'] ?: '';
-        $contattoTel = $rfq['contatto_telefono'] ?: $rfq['fornitore_telefono'] ?: '';
-        $contattoEmail = $rfq['contatto_email'] ?: $rfq['fornitore_email'] ?: '';
-        if ($contattoNome) {
-            $textRunRight->addTextBreak(1);
-            $textRunRight->addText('Alla c.a.: ' . $contattoNome, $fontBold);
-        }
-        if ($contattoTel || $contattoEmail) {
-            $textRunRight->addTextBreak(1);
-            $textRunRight->addText('Tel: ' . $contattoTel . ' | Email: ' . $contattoEmail, $fontNormal);
-        }
-
-        $section->addTextBreak(1);
-
-        // BLOCK 2: Articoli
-        $section->addText('Articoli in Richiesta', $fontTitle, ['spaceBefore' => 100, 'spaceAfter' => 100]);
-        
-        $tableGrid = $section->addTable(['cellMargin' => 80]);
-        $thStyle = ['bgColor' => '1A5276', 'borderSize' => 6, 'borderColor' => '1A5276'];
-        $thText = ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => 'FFFFFF'];
-
-        $tableGrid->addRow();
-        $tableGrid->addCell(1600, $thStyle)->addText('SKU Fornitore', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(3240, $thStyle)->addText('Descrizione', $thText);
-        $tableGrid->addCell(1600, $thStyle)->addText('Formato', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(1000, $thStyle)->addText('Q.tà', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableGrid->addCell(600, $thStyle)->addText('UdM', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(1200, $thStyle)->addText('Prezzo Unitario', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableGrid->addCell(1300, $thStyle)->addText('Totale', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        $fill = false;
-        $hasPrices = false;
-        $imponibile = 0.0;
-
-        foreach ($righe as $r) {
-            $rowBg = $fill ? 'F5F7FA' : 'FFFFFF';
-            $tdStyle = ['bgColor' => $rowBg, 'borderBottomSize' => 4, 'borderBottomColor' => 'CCCCCC'];
-            
-            $qty = (float)$r['quantita_richiesta'];
-            $um = $r['uom'] ?: 'pz';
-            
-            $prezzo = (float)($r['prezzo_indicativo'] ?? 0);
-            $rigaTotale = $qty * $prezzo;
-
-            $prezzoStr = $prezzo > 0 ? fmt_money($prezzo) : '—';
-            $rigaTotaleStr = $rigaTotale > 0 ? fmt_money($rigaTotale) : '—';
-
-            $tableGrid->addRow();
-            $tableGrid->addCell(1600, $tdStyle)->addText($r['sku_fornitore'] ?: '—', $fontBold, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-            $tableGrid->addCell(3240, $tdStyle)->addText($r['descrizione'] ?: $r['prodotto_nome'], $fontNormal);
-            $tableGrid->addCell(1600, $tdStyle)->addText($r['formato'] ?: '—', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-            $tableGrid->addCell(1000, $tdStyle)->addText(fmt_qty($qty), $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableGrid->addCell(600, $tdStyle)->addText($um, $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-            $tableGrid->addCell(1200, $tdStyle)->addText($prezzoStr, $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableGrid->addCell(1300, $tdStyle)->addText($rigaTotaleStr, $fontBold, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-            if ($prezzo > 0) {
-                $hasPrices = true;
-                $imponibile += $rigaTotale;
-            }
-
-            $fill = !$fill;
-        }
-
-        if ($hasPrices) {
-            $section->addTextBreak(1);
-            $iva = round($imponibile * 0.22, 2);
-            $totale = $imponibile + $iva;
-
-            $tableTotals = $section->addTable();
-            $tableTotals->addRow();
-            $tableTotals->addCell(7540);
-            $tableTotals->addCell(1800)->addText('Imponibile (Stima):', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableTotals->addCell(1200)->addText(fmt_money($imponibile), $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-            $tableTotals->addRow();
-            $tableTotals->addCell(7540);
-            $tableTotals->addCell(1800)->addText('IVA 22% (Stima):', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableTotals->addCell(1200)->addText(fmt_money($iva), $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-            $tableTotals->addRow();
-            $tableTotals->addCell(7540);
-            $tableTotals->addCell(1800)->addText('Totale Estimato:', $fontTotal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableTotals->addCell(1200, ['borderTopSize' => 6, 'borderTopColor' => '1A5276'])->addText(fmt_money($totale), $fontTotal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        }
-
-        $section->addTextBreak(1);
-
-        // BLOCK 3: Condizioni
-        $section->addText('Condizioni di Fornitura', $fontTitle, ['spaceBefore' => 100, 'spaceAfter' => 100]);
-        $section->addTable(['width' => 10540])->addRow()->addCell(10540, ['borderTopSize' => 10, 'borderTopColor' => '1A5276']);
-
-        $consegnaIndirizzo = '—';
-        if (!empty($rfq['consegna_via'])) {
-            $consegnaIndirizzo = ($rfq['consegna_presso'] ?: ($azienda['ragione_sociale'] ?? '')) . ' - ' .
-                                 $rfq['consegna_via'] . ' ' . $rfq['consegna_civico'] . ' - ' .
-                                 $rfq['consegna_cap'] . ' ' . $rfq['consegna_citta'] . ' (' . $rfq['consegna_provincia'] . ')';
-            if ($rfq['consegna_referente']) {
-                $consegnaIndirizzo .= ' (Ref: ' . $rfq['consegna_referente'] . ')';
-            }
-        }
-
-        $resaPortoLabel = '—';
-        if (($rfq['resa_porto'] ?? '') === 'porto_franco') {
-            $resaPortoLabel = 'Porto Franco (A carico venditore)';
-        } elseif (($rfq['resa_porto'] ?? '') === 'porto_assegnato') {
-            $resaPortoLabel = 'Porto Assegnato (A carico acquirente)';
-        }
-
-        $resaCondizioni = '—';
-        if (!empty($rfq['incoterm_codice'])) {
-            $resaCondizioni = $rfq['incoterm_codice'] . ' - ' . ($rfq['incoterm_luogo'] ?: 'Sede di consegna');
-            if ($resaPortoLabel !== '—') {
-                $resaCondizioni .= ' (' . $resaPortoLabel . ')';
-            }
-        } elseif ($resaPortoLabel !== '—') {
-            $resaCondizioni = $resaPortoLabel;
-        }
-
-        $tableCond = $section->addTable(['cellMargin' => 80]);
-        
-        $tableCond->addRow();
-        $tableCond->addCell(2540)->addText('Consegna Richiesta', $fontBold);
-        $tableCond->addCell(8000)->addText(!empty($rfq['data_consegna_prevista']) ? fmt_date($rfq['data_consegna_prevista']) : 'Non specificata', $fontNormal);
-
-        $tableCond->addRow();
-        $tableCond->addCell(2540)->addText('Luogo di Consegna', $fontBold);
-        $tableCond->addCell(8000)->addText($consegnaIndirizzo, $fontNormal);
-
-        $tableCond->addRow();
-        $tableCond->addCell(2540)->addText('Modalità Pagamento', $fontBold);
-        $tableCond->addCell(8000)->addText($rfq['metodo_pagamento_descrizione'] ?: $rfq['condizioni_pagamento'] ?: 'Come da accordi', $fontNormal);
-
-        $tableCond->addRow();
-        $tableCond->addCell(2540)->addText('Termini di Resa', $fontBold);
-        $tableCond->addCell(8000)->addText($resaCondizioni, $fontNormal);
-
-        if (!empty($rfq['note_fornitore'])) {
-            $tableCond->addRow();
-            $tableCond->addCell(2540)->addText('Note al Fornitore', $fontBold);
-            $tableCond->addCell(8000)->addText($rfq['note_fornitore'], $fontNormal);
-        }
-
-        // BLOCK 4: Riquadri firma/timbro
-        $section->addTextBreak(2);
-        $firmaTable = $section->addTable(['cellMargin' => 120]);
-        
-        // Row 1: Labels
-        $firmaTable->addRow();
-        $cellLabelLeft = $firmaTable->addCell(4770);
-        $cellLabelLeft->addText('TIMBRO E FIRMA PER ACCETTAZIONE', ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => '444444']);
-        $cellLabelLeft->addText('Fornitore (per accettazione condizioni contrattuali)', ['name' => 'Arial', 'size' => 7.5, 'color' => '777777']);
-        
-        $firmaTable->addCell(1000); // spacer
-        
-        $cellLabelRight = $firmaTable->addCell(4770);
-        $cellLabelRight->addText('FIRMA AUTORIZZATA', ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => '444444'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $cellLabelRight->addText('Il responsabile acquisti', ['name' => 'Arial', 'size' => 7.5, 'color' => '777777'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        // Row 2: Stamp/Signature Boxes
-        $firmaTable->addRow(1700, ['exactHeight' => true, 'cantSplit' => true]);
-        
-        $cellStyle = [
-            'borderSize' => 6,
-            'borderColor' => 'CCCCCC',
-            'bgColor' => 'FAFAFA',
-            'valign' => 'bottom',
-        ];
-        
-        $cellBoxLeft = $firmaTable->addCell(4770, $cellStyle);
-        $cellBoxLeft->addTextBreak(2);
-        $cellBoxLeft->addText('____________________________', ['name' => 'Arial', 'size' => 8, 'color' => 'BBBBBB']);
-        
-        $firmaTable->addCell(1000); // spacer
-        
-        $cellBoxRight = $firmaTable->addCell(4770, $cellStyle);
-        $cellBoxRight->addTextBreak(2);
-        $cellBoxRight->addText('____________________________', ['name' => 'Arial', 'size' => 8, 'color' => 'BBBBBB'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
+        $service = new \App\Services\RfqDocumentService();
+        $tempPath = $service->generateDocx($rfq, $righe, $azienda, $indirizzoFornitore);
 
         $filename = "RFQ_" . str_replace('/', '_', $rfq['numero']) . ".docx";
-        $wordHelper->streamDownload($filename);
+        
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate');
+        header('Pragma: public');
+        header('Content-Length: ' . filesize($tempPath));
+        readfile($tempPath);
+        @unlink($tempPath);
+        exit;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

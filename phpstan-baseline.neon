@@ -1,0 +1,37 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Undefined variable\: \$codice»$#'
+			identifier: variable.undefined
+			count: 5
+			path: app/Controllers/AdrController.php
+
+		-
+			message: '#^Function clean_filename not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: app/Controllers/PurchaseOrdersController.php
+
+		-
+			message: '#^Function qk_ordine_forza_chiusura not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: app/Controllers/PurchaseOrdersController.php
+
+		-
+			message: '#^Function qk_pagination not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: app/views/purchases/pricelists_form.php
+
+		-
+			message: '#^Function qk_pagination not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: app/views/sales/pricelists/_righe.php
+
+		-
+			message: '#^File ends with a trailing whitespace\. This may cause problems when running the code in the web browser\. Remove the closing \?\> mark or remove the whitespace\.$#'
+			identifier: whitespace.fileEnd
+			count: 1
+			path: app/views/sales/pricelists/_sidebar.php

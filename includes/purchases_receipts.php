@@ -123,6 +123,40 @@ function qk_ricezione_detail(PDO $pdo, int $id): ?array
     ];
 }
 
+/**
+ * Lotti esistenti per un prodotto, per il picker "Seleziona Lotto" del form di
+ * conferma ricezione (ReceiptsController::edit()). Spostata dal controller —
+ * vedi Revisione Ciclo Acquisti §3bis A.3.
+ *
+ * Deliberatamente DIVERSA da qk_lotti_by_prodotto() (includes/magazzino.php):
+ * questa non filtra per magazzino né per giacenza disponibile — qui serve
+ * semplicemente "tutti i lotti che esistono per questo prodotto", perché
+ * l'operatore deve poter scegliere di imputare il carico a un lotto esistente
+ * indipendentemente dal magazzino in cui quel lotto ha oggi merce disponibile.
+ * Non unificare con qk_lotti_by_prodotto() senza verificare che il filtro per
+ * magazzino non escluda lotti che qui devono restare selezionabili.
+ *
+ * @return array<int, array{id:int, codice_lotto_interno:string, data_scadenza:?string}>
+ */
+function qk_lotti_esistenti_per_prodotto(PDO $pdo, int $prodotto_id): array
+{
+    $st = $pdo->prepare('SELECT id, codice_lotto_interno, data_scadenza FROM lotti WHERE prodotto_id = ?');
+    $st->execute([$prodotto_id]);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * ID dell'ordine collegato a una ricezione (0 se la ricezione non esiste).
+ * Spostata dal controller, dove era duplicata identica in action() e
+ * conferma() — vedi Revisione Ciclo Acquisti §3bis A.3.
+ */
+function qk_ricezione_get_ordine_id(PDO $pdo, int $id): int
+{
+    $st = $pdo->prepare('SELECT ordine_id FROM ricezioni_testata WHERE id = ?');
+    $st->execute([$id]);
+    return (int) ($st->fetchColumn() ?: 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // APERTURA
 // ─────────────────────────────────────────────────────────────────────────────
