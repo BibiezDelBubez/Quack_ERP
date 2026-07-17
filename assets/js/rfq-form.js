@@ -100,7 +100,42 @@ document.addEventListener('DOMContentLoaded', function () {
       uom_comm_prod_id: p.uom_comm_prod_id ?? '',
       quantita_contenuto: p.quantita_contenuto ?? '1',
       formato:       p.formato ?? '',
+      // Fornitore Abituale (REVISIONE Ciclo Acquisti §1.9): fornitore con
+      // ordine_preferenza_fornitore più basso tra quelli attivi, indipendente
+      // dal fornitore scelto in testata. null se il prodotto non ha alcun
+      // fornitore collegato ancora attivo.
+      fornitore_abituale_id:   p.fornitore_abituale_id ?? null,
+      fornitore_abituale_nome: p.fornitore_abituale_nome ?? null,
     }));
+  }
+
+  /* ── Avviso "Fornitore Abituale" (§1.9) ────────────────────────────────
+     Confronta il fornitore abituale del prodotto in riga (salvato sulla riga
+     stessa al momento della selezione, via tr.dataset) con il fornitore
+     scelto in testata (fornitoreSel, variabile di stato globale già esistente
+     per il prezzo). Ricalcolata sia alla selezione del prodotto sia al cambio
+     del fornitore in testata (punto 5 del piano: le righe già presenti vanno
+     rivalutate, non solo le nuove). */
+  function updateFornitoreAbitualeWarning(tr) {
+    const warningBox = tr.querySelector('.r-fornitore-abituale-warning');
+    const warningNome = tr.querySelector('.r-fornitore-abituale-nome');
+    if (!warningBox || !warningNome) return;
+
+    const abitualeId = tr.dataset.fornitoreAbitualeId || '';
+    const abitualeNome = tr.dataset.fornitoreAbitualeNome || '';
+    const testataId = fornitoreSel.id || '';
+
+    const mostraAvviso = abitualeId !== '' && testataId !== '' && String(abitualeId) !== String(testataId);
+    if (mostraAvviso) {
+      warningNome.textContent = abitualeNome;
+      warningBox.classList.remove('d-none');
+    } else {
+      warningBox.classList.add('d-none');
+    }
+  }
+
+  function refreshAllFornitoreAbitualeWarnings() {
+    tbody.querySelectorAll('tr.rfq-riga').forEach(updateFornitoreAbitualeWarning);
   }
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -130,6 +165,11 @@ document.addEventListener('DOMContentLoaded', function () {
             fornitoreSel = { id: '', nome: '' };
           }
           loadFornitoreDettagli();
+          // §1.9, punto 5 del piano: il fornitore abituale è calcolato per
+          // riga al momento della selezione prodotto, ma il confronto con la
+          // testata va rifatto su TUTTE le righe già presenti quando cambia
+          // il fornitore scelto — non solo sulle righe aggiunte dopo.
+          refreshAllFornitoreAbitualeWarnings();
         },
       });
 
@@ -141,6 +181,7 @@ document.addEventListener('DOMContentLoaded', function () {
           fDropdown.style.display = 'none';
           fornitoreSel = { id: '', nome: '' };
           loadFornitoreDettagli();
+          refreshAllFornitoreAbitualeWarnings();
         });
       }
 
@@ -215,6 +256,9 @@ document.addEventListener('DOMContentLoaded', function () {
           const formatoSpan = tr.querySelector('.r-formato');
           if (formatoSpan) formatoSpan.textContent = '—';
           if (ivaInput) ivaInput.value = '22';
+          tr.dataset.fornitoreAbitualeId = '';
+          tr.dataset.fornitoreAbitualeNome = '';
+          updateFornitoreAbitualeWarning(tr);
           recalcRowTotal(tr);
           return;
         }
@@ -226,10 +270,13 @@ document.addEventListener('DOMContentLoaded', function () {
         tr.dataset.uomCommercial = sel.uom_comm || sel.uom_comm_prod || sel.uom || '—';
         tr.dataset.uomCommercialId = sel.uom_comm_id || sel.uom_comm_prod_id || sel.uom_id || '';
         tr.dataset.quantitaContenuto = sel.quantita_contenuto || '1';
-        
+        tr.dataset.fornitoreAbitualeId = sel.fornitore_abituale_id ?? '';
+        tr.dataset.fornitoreAbitualeNome = sel.fornitore_abituale_nome ?? '';
+        updateFornitoreAbitualeWarning(tr);
+
         const formatoSpan = tr.querySelector('.r-formato');
         if (formatoSpan) formatoSpan.textContent = sel.formato || '—';
-        
+
         if (sel.sku_fornitore) skuInput.value  = sel.sku_fornitore;
         if (sel.prezzo)        prezzoInput.value = sel.prezzo;
         if (sel.iva_perc && ivaInput) ivaInput.value = sel.iva_perc;
@@ -273,6 +320,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const formatoSpan = tr.querySelector('.r-formato');
         if (formatoSpan) formatoSpan.textContent = '—';
         if (ivaInput) ivaInput.value = '22';
+        tr.dataset.fornitoreAbitualeId = '';
+        tr.dataset.fornitoreAbitualeNome = '';
+        updateFornitoreAbitualeWarning(tr);
         recalcRowTotal(tr);
       });
     }

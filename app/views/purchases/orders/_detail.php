@@ -22,6 +22,11 @@ $isAnnullato    = $currStato === 'annullato';
 $canSave = !$isCompletato && !$isAnnullato;
 $canEditLogistics = !$isCompletato && !$isAnnullato;
 
+// Tracciabilità manuale "fatturato/da fatturare" (REVISIONE Ciclo Acquisti,
+// 17/07/2026) — mirror esatto di app/views/sales/orders/_detail.php.
+$statoFatturazione = $o['stato_fatturazione'] ?? 'da_fatturare';
+$isFatturato = $statoFatturazione === 'fatturato';
+
 // Find draft reception if any
 $draftRicezione = null;
 foreach ($ricezioni as $rc) {
@@ -106,9 +111,18 @@ foreach ($ricezioni as $rc) {
       </form>
     <?php endif; ?>
 
-    <?php if (!$isCompletato && !$isAnnullato): ?>
+    <?php if (!$isCompletato && !$isAnnullato):
+      // REVISIONE Ciclo Acquisti §1.3 (deciso 14/07/2026, implementato 17/07/2026):
+      // popup di conferma esplicativo quando l'ordine ha già ricezioni parziali —
+      // non un semplice "sei sicuro?". Nessun conteggio numerico aggregato: le
+      // righe possono avere UoM diverse tra loro, un "X su Y" sommato sarebbe
+      // fuorviante.
+      $confermaAnnulla = $isPartRicevuto
+          ? "Questo ordine ha già ricevuto merce parzialmente. Annullandolo, il residuo non ancora ricevuto non arriverà più; quanto già ricevuto resta regolarmente a magazzino. Continuare?"
+          : "Sei sicuro di voler annullare questo ordine?";
+    ?>
       <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline"
-            onsubmit="return confirm('Sei sicuro di voler annullare questo ordine?');">
+            onsubmit="return confirm('<?= e($confermaAnnulla) ?>');">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="azione" value="annulla">
@@ -117,7 +131,27 @@ foreach ($ricezioni as $rc) {
         </button>
       </form>
     <?php endif; ?>
-    
+
+    <?php if (!$isFatturato): ?>
+      <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="segna_fatturato">
+        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm fw-bold">
+          <i class="fa-solid fa-file-invoice-dollar me-1"></i> Segna come Fatturato
+        </button>
+      </form>
+    <?php else: ?>
+      <form action="<?= url('purchases/orders/action') ?>" method="post" class="d-inline">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="segna_da_fatturare">
+        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm text-danger">
+          <i class="fa-solid fa-undo me-1"></i> Ripristina "Da Fatturare"
+        </button>
+      </form>
+    <?php endif; ?>
+
     <a href="<?= url('purchases/orders/docx') . '?id=' . $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm" target="_blank">
       <i class="fa-solid fa-file-word text-primary me-1"></i> Word (DOCX)
     </a>
@@ -182,7 +216,13 @@ foreach ($ricezioni as $rc) {
       <span class="qk-card-title">
         <i class="fa-solid fa-file-circle-check me-2"></i> Ordine d'Acquisto <?= e($o['numero']) ?>
       </span>
-      <span class="badge bg-secondary text-monospace"><?= e($o['valuta']) ?></span>
+      <div class="qk-flex-row qk-gap-sm">
+        <span class="qk-badge <?= $isFatturato ? 'confirmed' : 'draft' ?> fw-bold" style="font-size:0.85rem">
+          <i class="fa-solid <?= $isFatturato ? 'fa-circle-check' : 'fa-hourglass' ?> me-1"></i>
+          Fatturazione: <?= $isFatturato ? 'Fatturato' : 'Da Fatturare' ?>
+        </span>
+        <span class="badge bg-secondary text-monospace"><?= e($o['valuta']) ?></span>
+      </div>
     </div>
 
     <div class="qk-card-body">

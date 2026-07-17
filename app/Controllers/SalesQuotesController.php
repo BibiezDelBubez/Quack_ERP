@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/sales_quotes.php';
+require_once INCLUDES_DIR . '/tabelle_base.php';
 
 final class SalesQuotesController extends BaseController
 {
@@ -165,7 +166,7 @@ final class SalesQuotesController extends BaseController
             $values['azienda_interna_id'] = $defaultAziendaId;
         }
         
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo);
 
         $active_tab    = 'quotes';
         $page_title    = 'Nuovo preventivo';
@@ -290,7 +291,7 @@ final class SalesQuotesController extends BaseController
 
         $numero_offerta = $values['numero_offerta'];
         
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo);
 
         $aziende = qk_aziende_list($this->pdo);
 

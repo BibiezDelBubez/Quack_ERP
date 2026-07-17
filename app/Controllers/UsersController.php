@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once APP_ROOT_DIR . '/includes/utenti.php';
+
 final class UsersController extends BaseController
 {
     public function index(): void
@@ -14,26 +16,7 @@ final class UsersController extends BaseController
         $search = get_param('q');
         $ruolo  = get_param('ruolo');
 
-        $where  = 'WHERE 1=1';
-        $params = [];
-        if ($search !== '') {
-            $where .= ' AND (nome||" "||cognome LIKE :q OR email LIKE :q)';
-            $params[':q'] = '%' . $search . '%';
-        }
-        if ($ruolo !== '') {
-            $where .= ' AND r.codice = :ruolo';
-            $params[':ruolo'] = $ruolo;
-        }
-
-        $stmt = $this->pdo->prepare(
-            "SELECT u.id, u.username, u.nome, u.cognome, u.email, r.codice AS ruolo, u.attivo, u.created_at
-               FROM utenti u
-               JOIN ruoli r ON r.id = u.ruolo_id
-             $where
-             ORDER BY u.cognome, u.nome"
-        );
-        $stmt->execute($params);
-        $utenti = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $utenti = get_all_utenti($this->pdo, $search, $ruolo);
         $total  = count($utenti);
 
         $page_title    = 'Utenti';
@@ -75,18 +58,7 @@ final class UsersController extends BaseController
 
                 if (empty($errors)) {
                     try {
-                        $this->pdo->prepare(
-                            'INSERT INTO utenti (username,nome,cognome,email,password_hash,ruolo_id,attivo)
-                             VALUES (:u,:n,:c,:e,:h,(SELECT id FROM ruoli WHERE codice=:r),:a)'
-                        )->execute([
-                            ':u' => $values['username'],
-                            ':n' => $values['nome'],
-                            ':c' => $values['cognome'],
-                            ':e' => $values['email'],
-                            ':h' => password_hash($pwd, PASSWORD_DEFAULT),
-                            ':r' => $values['ruolo'],
-                            ':a' => (int) $values['attivo'],
-                        ]);
+                        insert_utente($this->pdo, $values, password_hash($pwd, PASSWORD_DEFAULT));
                         redirect_with('users', 'success', 'Utente creato correttamente.');
                     } catch (PDOException $ex) {
                         $errors['_global'] = str_contains($ex->getMessage(), 'UNIQUE')
@@ -118,14 +90,7 @@ final class UsersController extends BaseController
             redirect_with('users', 'danger', 'Utente non trovato.');
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT u.id, u.username, u.nome, u.cognome, u.email, r.codice AS ruolo, u.attivo
-               FROM utenti u
-               JOIN ruoli r ON r.id = u.ruolo_id
-              WHERE u.id = :id LIMIT 1'
-        );
-        $stmt->execute([':id' => $id]);
-        $utente = $stmt->fetch(PDO::FETCH_ASSOC);
+        $utente = get_utente_by_id($this->pdo, $id);
         if (!$utente) {
             redirect_with('users', 'danger', 'Utente non trovato.');
         }
@@ -158,32 +123,8 @@ final class UsersController extends BaseController
 
                 if (empty($errors)) {
                     try {
-                        $base_params = [
-                            ':u'  => $values['username'],
-                            ':n'  => $values['nome'],
-                            ':c'  => $values['cognome'],
-                            ':e'  => $values['email'],
-                            ':r'  => $values['ruolo'],
-                            ':a'  => (int) $values['attivo'],
-                            ':id' => $id,
-                        ];
-                        if ($pwd !== '') {
-                            $this->pdo->prepare(
-                                'UPDATE utenti
-                                    SET username=:u, nome=:n, cognome=:c, email=:e,
-                                        ruolo_id=(SELECT id FROM ruoli WHERE codice=:r),
-                                        attivo=:a, password_hash=:h
-                                  WHERE id=:id'
-                            )->execute($base_params + [':h' => password_hash($pwd, PASSWORD_DEFAULT)]);
-                        } else {
-                            $this->pdo->prepare(
-                                'UPDATE utenti
-                                    SET username=:u, nome=:n, cognome=:c, email=:e,
-                                        ruolo_id=(SELECT id FROM ruoli WHERE codice=:r),
-                                        attivo=:a
-                                  WHERE id=:id'
-                            )->execute($base_params);
-                        }
+                        $hash = ($pwd !== '') ? password_hash($pwd, PASSWORD_DEFAULT) : null;
+                        update_utente_admin($this->pdo, $id, $values, $hash);
 
                         if ($id === (int) ($me['id'] ?? 0)) {
                             $_SESSION['qk_user']['display_name'] = trim($values['nome'] . ' ' . $values['cognome']);
@@ -236,9 +177,7 @@ final class UsersController extends BaseController
             redirect_with('users', 'danger', 'Non puoi eseguire questa operazione sul tuo stesso account.');
         }
 
-        $stmt = $this->pdo->prepare('SELECT id, nome, cognome FROM utenti WHERE id=:id LIMIT 1');
-        $stmt->execute([':id' => $id]);
-        $utente = $stmt->fetch(PDO::FETCH_ASSOC);
+        $utente = get_utente_by_id($this->pdo, $id);
         if (!$utente) {
             redirect_with('users', 'danger', 'Utente non trovato.');
         }
@@ -248,13 +187,13 @@ final class UsersController extends BaseController
         try {
             switch ($action) {
                 case 'disable':
-                    $this->pdo->prepare('UPDATE utenti SET attivo=0 WHERE id=:id')->execute([':id' => $id]);
+                    set_stato_utente($this->pdo, $id, 0);
                     redirect_with('users', 'success', "{$nome_completo} è stato disabilitato.");
                 case 'enable':
-                    $this->pdo->prepare('UPDATE utenti SET attivo=1 WHERE id=:id')->execute([':id' => $id]);
+                    set_stato_utente($this->pdo, $id, 1);
                     redirect_with('users', 'success', "{$nome_completo} è stato riabilitato.");
                 case 'delete':
-                    $this->pdo->prepare('DELETE FROM utenti WHERE id=:id')->execute([':id' => $id]);
+                    delete_utente($this->pdo, $id);
                     redirect_with('users', 'success', "Utente {$nome_completo} eliminato definitivamente.");
                 default:
                     redirect_with('users', 'danger', 'Operazione non riconosciuta.');

@@ -2200,6 +2200,15 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     versione                INTEGER      NOT NULL DEFAULT 1,           -- incrementata ad ogni "nuova versione" dell'ordine (es. ORD/2026/0001 v2)
     ordine_padre_id         INTEGER      REFERENCES ordini_testata(id), -- punta alla versione precedente quando questo ordine è una revisione
 
+    -- Tracciabilità manuale "fatturato/da fatturare" lato Acquisti (REVISIONE
+    -- Ciclo Acquisti, 17/07/2026): mirror esatto di ordini_clienti.stato_fatturazione
+    -- già esistente lato Vendite — stesso nome, stessi due valori, nessuna colonna
+    -- data separata (il pattern originale non ce l'ha). Non è un three-way match
+    -- automatico (importi/quantità non verificati), solo una spunta manuale
+    -- dell'amministrazione. Vedi PurchaseOrdersController (azioni segna_fatturato/
+    -- segna_da_fatturare) e app/views/purchases/orders/_detail.php.
+    stato_fatturazione      TEXT         NOT NULL DEFAULT 'da_fatturare',
+
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME
 );
@@ -2311,10 +2320,17 @@ BEGIN
 END;
 
 -- Inizializzazione sequenze numerazione documenti
+-- BUG CORRETTO (17/07/2026, REVISIONE Ciclo Acquisti, voce "Sequenze Documenti"):
+-- mancava la riga 'ricezione', presente sin dal primo commit del progetto pur
+-- essendo usata da qk_ricezione_apri() (chiamata automaticamente all'invio di
+-- ogni ordine d'acquisto) — su un'installazione fresca da questo schema, il
+-- primo "Conferma e Invia Ordine" sarebbe andato in errore con
+-- "Sequenza 'ricezione' non trovata".
 INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES
-    ('rfq',      'RFQ/', 2026, 0, 4),
-    ('offerta',  'OFF/', 2026, 0, 4),
-    ('ordine',   'ODA/', 2026, 0, 4);
+    ('rfq',       'RFQ/', 2026, 0, 4),
+    ('offerta',   'OFF/', 2026, 0, 4),
+    ('ordine',    'ODA/', 2026, 0, 4),
+    ('ricezione', 'RIC/', 2026, 0, 4);
 
 -- Numerazione trasferimenti tra magazzini (Piano Multi-Magazzino §4.2)
 INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES

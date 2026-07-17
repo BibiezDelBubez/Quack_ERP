@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 final class SettingsController extends BaseController
 {
+    public function __construct(PDO $pdo)
+    {
+        parent::__construct($pdo);
+        require_once INCLUDES_DIR . '/impostazioni.php';
+    }
     public function index(): void
     {
         $page_title    = 'Impostazioni';
@@ -24,10 +29,9 @@ final class SettingsController extends BaseController
         $success = false;
 
         // Recupera i valori esistenti o imposta i default
-        $stmt = $this->pdo->query("SELECT chiave, valore FROM Impostazioni WHERE chiave = 'markup_fallback_default'");
-        $valoreDb = $stmt->fetchColumn();
+        $valoreDb = get_impostazione($this->pdo, 'markup_fallback_default', '20.00');
         $values = [
-            'markup_fallback_default' => $valoreDb !== false ? $valoreDb : '20.00'
+            'markup_fallback_default' => $valoreDb
         ];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -51,11 +55,7 @@ final class SettingsController extends BaseController
                     $normalizedMarkup = number_format((float)str_replace(',', '.', $markup), 2, '.', '');
                     
                     // Upsert per salvataggio sicuro della configurazione in Impostazioni
-                    $sql = (DB_DRIVER === 'mysql')
-                        ? "INSERT INTO Impostazioni (chiave, valore) VALUES ('markup_fallback_default', ?) ON DUPLICATE KEY UPDATE valore = VALUES(valore)"
-                        : "INSERT INTO Impostazioni (chiave, valore) VALUES ('markup_fallback_default', ?) ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore";
-                    $stSave = $this->pdo->prepare($sql);
-                    $stSave->execute([$normalizedMarkup]);
+                    set_impostazione($this->pdo, 'markup_fallback_default', $normalizedMarkup);
 
                     $values['markup_fallback_default'] = $normalizedMarkup;
                     $success = true;
@@ -72,6 +72,69 @@ final class SettingsController extends BaseController
 
         $this->page(APP_ROOT_DIR . '/app/views/settings/generali.php', compact(
             'page_title', 'page_subtitle', 'breadcrumbs', 'values', 'errors', 'success'
+        ));
+    }
+
+    /**
+     * Pagina admin "Sequenze Documenti" (REVISIONE Ciclo Acquisti, 17/07/2026):
+     * lista/modifica delle righe di `sequenze` e azione "Ricrea sequenza
+     * mancante" per un tipo scelto da un elenco chiuso. Aggancia la card
+     * placeholder "Progressivi e Canali" già esistente in settings/index.php,
+     * invece di inventare una nuova sezione (decisione consolidata nel
+     * documento, che in precedenza aveva due formulazioni non allineate).
+     * Non implementa auto-repair silenzioso: qk_next_sequence_number() resta
+     * invariata (continua a lanciare eccezione se la riga manca), qui c'è
+     * solo un percorso guidato per risolverlo da interfaccia.
+     */
+    public function sequenze(): void
+    {
+        $errors  = [];
+        $success = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors['_global'] = 'Token di sicurezza non valido.';
+            } else {
+                $azione = post('azione', '');
+                try {
+                    if ($azione === 'aggiorna') {
+                        qk_sequenza_aggiorna($this->pdo, (int) post('id', '0'), [
+                            'prefisso'        => post('prefisso', ''),
+                            'anno'            => post('anno', ''),
+                            'numero_corrente' => post('numero_corrente', ''),
+                            'padding'         => post('padding', ''),
+                        ]);
+                        $success = 'Sequenza aggiornata.';
+                    } elseif ($azione === 'crea_mancante') {
+                        qk_sequenza_crea_mancante(
+                            $this->pdo,
+                            post('tipo', ''),
+                            post('nuovo_prefisso', ''),
+                            (int) post('nuovo_padding', '4')
+                        );
+                        $success = 'Sequenza ricreata.';
+                    } else {
+                        $errors['_global'] = "Azione '$azione' non riconosciuta.";
+                    }
+                } catch (\Throwable $e) {
+                    $errors['_global'] = $e->getMessage();
+                }
+            }
+        }
+
+        $sequenze = qk_sequenze_list($this->pdo);
+        $tipiEsistenti = array_column($sequenze, 'tipo');
+        $tipiMancanti = array_values(array_diff(QK_SEQUENZE_TIPI_NOTI, $tipiEsistenti));
+
+        $page_title    = 'Sequenze Documenti';
+        $page_subtitle = 'Prefissi e contatori delle numerazioni progressive di ogni documento';
+        $breadcrumbs   = [
+            ['label' => 'Sistema', 'url' => url('settings')],
+            ['label' => 'Sequenze Documenti']
+        ];
+
+        $this->page(APP_ROOT_DIR . '/app/views/settings/sequenze.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'sequenze', 'tipiMancanti', 'errors', 'success'
         ));
     }
 }

@@ -435,7 +435,11 @@ function qk_ordine_annulla(PDO $pdo, int $id): void
     $pdo->beginTransaction();
     try {
         $ordine = _ordine_carica($pdo, $id);
-        if (in_array($ordine['stato'], ['completato', 'annullato'], true)) {
+        // REVISIONE Ciclo Acquisti §1.10 (deciso 14/07/2026): un ordine 'superato'
+        // (sostituito da una revisione più recente via qk_ordine_crea_revisione())
+        // è ormai solo storico e non deve più poter cambiare stato per nessun motivo,
+        // esattamente come completato/annullato.
+        if (in_array($ordine['stato'], ['completato', 'annullato', 'superato'], true)) {
             throw new \RuntimeException("L'ordine non può essere annullato (stato: {$ordine['stato']}).");
         }
         $pdo->prepare("UPDATE ordini_testata SET stato = 'annullato' WHERE id = ?")
@@ -525,6 +529,23 @@ function _ordine_carica(PDO $pdo, int $id): array
 /**
  * Incrementa o decrementa giacenze.quantita_in_arrivo per tutte le righe ordine.
  *
+ * REVISIONE Ciclo Acquisti §1.3 (deciso 14/07/2026, implementato 17/07/2026):
+ * per ogni riga si usa il RESIDUO non ancora ricevuto (in unità di stock), non
+ * la quantità totale originariamente ordinata. qk_ricezione_conferma() decrementa
+ * già quantita_in_arrivo della quantità ricevuta a ogni conferma parziale — se
+ * questa funzione sottraesse di nuovo l'intero totale in fase di annullamento,
+ * si otterrebbe un doppio conteggio che può azzerare erroneamente la giacenza-
+ * in-arrivo dovuta ad ALTRI ordini ancora aperti sullo stesso prodotto/magazzino.
+ * Il fattore di conversione è costante per riga (non cambia tra ricezioni
+ * parziali della stessa riga), quindi la proporzione ricevuta nell'unità
+ * d'ordine si traduce esattamente nella stessa proporzione in unità di stock:
+ * residuo_stock = quantita_stock * (quantita_ordinata - quantita_ricevuta) / quantita_ordinata.
+ * Per i chiamanti '+' (qk_ordine_invia) e per qk_ordine_crea_revisione(),
+ * quantita_ricevuta è sempre 0 in quel momento (verificato sui rispettivi
+ * controlli di stato a monte), quindi il residuo coincide sempre col totale:
+ * nessun cambio di comportamento per quei due casi, la correzione impatta solo
+ * l'annullamento di un ordine 'parzialmente_ricevuto'.
+ *
  * @param string $segno '+' quando l'ordine viene inviato, '-' quando viene annullato
  */
 function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): void
@@ -539,7 +560,7 @@ function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): vo
         $magazzinoId = qk_magazzino_attivo_id($pdo);
     }
 
-    $righe = $pdo->prepare('SELECT prodotto_id, quantita_stock FROM ordini_righe WHERE ordine_id = ?');
+    $righe = $pdo->prepare('SELECT prodotto_id, quantita_stock, quantita_ordinata, quantita_ricevuta FROM ordini_righe WHERE ordine_id = ?');
     $righe->execute([$ordine_id]);
     $op = $segno === '+' ? '+' : '-';
     $st = $pdo->prepare(
@@ -552,7 +573,14 @@ function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): vo
          VALUES (?, ?, 0, 0, MAX(0, ?), 0, CURRENT_TIMESTAMP)"
     );
     foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $qta = $r['quantita_stock'] ?? $r['quantita_ordinata'];
+        $qtaStock     = (float)($r['quantita_stock'] ?? 0);
+        $qtaOrdinata  = (float)($r['quantita_ordinata'] ?? 0);
+        $qtaRicevuta  = (float)($r['quantita_ricevuta'] ?? 0);
+
+        $qta = ($qtaOrdinata > 0)
+            ? max(0.0, $qtaStock * ($qtaOrdinata - $qtaRicevuta) / $qtaOrdinata)
+            : $qtaStock;
+
         $st->execute([$qta, $r['prodotto_id'], $magazzinoId]);
         if ($st->rowCount() === 0) {
             $stIns->execute([$r['prodotto_id'], $magazzinoId, $op === '+' ? $qta : 0]);
@@ -574,10 +602,29 @@ function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
     $pdo->beginTransaction();
     try {
         $ordine = _ordine_carica($pdo, $ordine_id);
-        
+
         // Verifica lo stato: solo ordini già inviati/confermati possono subire amendment
         if ($ordine['stato'] !== 'inviato') {
             throw new \RuntimeException("È possibile revisionare solo ordini in stato 'inviato'.");
+        }
+
+        // REVISIONE Ciclo Acquisti, sez. "Stati ordine/ciclo di vita" (deciso 14/07/2026,
+        // rivisto e implementato 17/07/2026): il solo controllo sullo stato dell'ordine
+        // non basta. qk_ricezione_apri() crea una ricezioni_testata in 'bozza' collegata
+        // all'ordine SENZA aggiornare quantita_ricevuta né lo stato dell'ordine (li tocca
+        // solo qk_ricezione_conferma()) — quindi è possibile aprire una ricezione bozza
+        // mentre l'ordine è ancora 'inviato', poi revisionarlo (ancora permesso), e infine
+        // confermare la ricezione rimasta agganciata alla versione ormai 'superato': i dati
+        // finirebbero sulla versione vecchia, invisibili in quella nuova (davvero attiva) —
+        // "ricezione orfana". Best practice dei grandi ERP (SAP: "se esistono documenti a
+        // valle, meglio creare un nuovo documento invece di modificare quello esistente";
+        // Odoo: mai aggiornare un PO automaticamente durante una ricezione, per non rompere
+        // tracciabilità/responsabilità) — qui si blocca la causa alla radice: niente
+        // revisione finché esiste una ricezione ancora aperta su questo ordine.
+        $stRicApert = $pdo->prepare("SELECT COUNT(*) FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza'");
+        $stRicApert->execute([$ordine_id]);
+        if ((int)$stRicApert->fetchColumn() > 0) {
+            throw new \RuntimeException('Impossibile revisionare: esiste una ricezione ancora in bozza collegata a questo ordine. Completa o annulla quella ricezione prima di creare una nuova revisione.');
         }
 
         // 1. Duplica Snapshot Indirizzo Consegna se presente

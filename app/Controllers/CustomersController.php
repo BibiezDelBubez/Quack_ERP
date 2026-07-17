@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/anagrafiche.php';
+require_once INCLUDES_DIR . '/tabelle_base.php';
 
 /**
  * CustomersController — gestisce le pagine /customers, /customers/create, /customers/edit.
@@ -81,7 +82,7 @@ class CustomersController extends BaseController
 
         $extra_css = ['searchable-select.css'];
 
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo);
 
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
     }
@@ -161,7 +162,7 @@ class CustomersController extends BaseController
 
         $extra_css = ['customers-addresses.css', 'customers-compliance.css', 'searchable-select.css', 'suppliers-contacts.css'];
 
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo);
 
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
     }

@@ -206,7 +206,7 @@ $statoLabel = [
           <label class="qk-form-label">Allegato Preventivo</label>
           <?php if (!empty($values['allegato_path'])): ?>
             <div class="mb-2" class="qk-flex-row qk-gap-sm">
-              <a href="<?= url(ltrim($values['allegato_path'], '/')) ?>" target="_blank" class="btn-qk btn-qk-ghost text-primary py-1 px-2" style="font-size:.82rem; height:auto; display:inline-flex; align-items:center; gap:.25rem">
+              <a href="<?= url('uploads') . '?path=' . urlencode($values['allegato_path']) ?>" target="_blank" class="btn-qk btn-qk-ghost text-primary py-1 px-2" style="font-size:.82rem; height:auto; display:inline-flex; align-items:center; gap:.25rem">
                 <i class="fa-solid fa-file-pdf"></i> Apri allegato
               </a>
               <?php if ($canEdit): ?>

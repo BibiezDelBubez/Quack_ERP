@@ -14,8 +14,15 @@ declare(strict_types=1);
  */
 class FileController extends BaseController
 {
-    /** Cartelle consentite dentro UPLOAD_DIR */
-    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni', 'sds'];
+    /**
+     * Cartelle consentite dentro UPLOAD_DIR.
+     * 'quotes' = allegati offerte fornitore (PurchasesQuotesController::handleUpload(),
+     * upload_dated_subdir('quotes')) — aggiunta il 17/07/2026, era assente: il download
+     * era sempre 403 (vedi REVISIONE Ciclo Acquisti, punto A.7 rivisto). 'offerte' resta
+     * per compatibilità con eventuali percorsi salvati in passato con quel nome, ma non è
+     * più la cartella scritta da nessun punto del codice attuale.
+     */
+    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'quotes', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni', 'sds'];
 
     public function serve(): void
     {

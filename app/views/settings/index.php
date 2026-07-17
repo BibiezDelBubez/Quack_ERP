@@ -65,15 +65,15 @@
     </div>
   </div>
 
-  <!-- Canali di Vendita & Numerazioni (Placeholder) -->
-  <div class="qk-card qk-settings-card qk-settings-card-muted">
+  <!-- Progressivi e Canali (Sequenze Documenti) -->
+  <div class="qk-card qk-settings-card">
     <div class="qk-settings-card-icon"><i class="fa-solid fa-arrow-down-1-9"></i></div>
     <div class="qk-settings-card-body">
       <h3>Progressivi e Canali</h3>
       <p>Configura i prefissi e i contatori delle sequenze numeriche per preventivi, ordini e canali di vendita.</p>
-      <button class="btn-qk btn-qk-secondary btn-qk-sm mt-auto align-self-start" disabled>
-        In arrivo...
-      </button>
+      <a href="<?= url('settings/sequenze') ?>" class="btn-qk btn-qk-secondary btn-qk-sm mt-auto align-self-start">
+        Configura sequenze <i class="fa-solid fa-arrow-right ms-1"></i>
+      </a>
     </div>
   </div>
 

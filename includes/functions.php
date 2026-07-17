@@ -522,6 +522,113 @@ function qk_next_sequence_number(PDO $pdo, string $tipo): string
 }
 
 /**
+ * Elenco chiuso dei tipi di sequenza noti all'applicazione — ogni stringa qui
+ * corrisponde a una chiamata reale a qk_next_sequence_number($pdo, '...') in
+ * qualche punto del codebase (verificato: rfq/offerta/ordine/ricezione in
+ * purchases_common.php e chiamanti; trasferimento in trasferimenti.php;
+ * preventivo/ordine_cliente in sales_quotes.php/sales_orders.php; fattura/
+ * spedizione/documento_trasporto seminate ma non ancora usate da codice reale
+ * al 17/07/2026 — incluse comunque perché già nel seed di baseline).
+ *
+ * Usato SOLO per popolare l'elenco chiuso di "Ricrea sequenza mancante" nella
+ * pagina admin Sequenze Documenti (REVISIONE Ciclo Acquisti, 17/07/2026) — non
+ * un'enumerazione a livello di schema (la tabella `sequenze.tipo` resta TEXT
+ * libero, come sempre).
+ */
+const QK_SEQUENZE_TIPI_NOTI = [
+    'rfq', 'offerta', 'ordine', 'ricezione', 'trasferimento',
+    'preventivo', 'ordine_cliente', 'fattura', 'spedizione', 'documento_trasporto',
+];
+
+/**
+ * Elenco completo delle righe della tabella `sequenze`, per la pagina admin
+ * "Sequenze Documenti" (Impostazioni → Progressivi e Canali).
+ *
+ * @return array<int, array{id:int, tipo:string, prefisso:string, anno:int, numero_corrente:int, padding:int}>
+ */
+function qk_sequenze_list(PDO $pdo): array
+{
+    return $pdo->query('SELECT id, tipo, prefisso, anno, numero_corrente, padding FROM sequenze ORDER BY tipo')
+        ->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Aggiorna una riga esistente di `sequenze` (prefisso/anno/numero_corrente/padding).
+ * Non permette di cambiare `tipo` (identifica la riga, non è un campo editabile —
+ * cambiarlo romperebbe silenziosamente ogni chiamante che usa quel tipo).
+ *
+ * @throws \InvalidArgumentException se i valori non sono validi
+ * @throws \RuntimeException se la riga non esiste
+ */
+function qk_sequenza_aggiorna(PDO $pdo, int $id, array $data): void
+{
+    $prefisso = trim((string)($data['prefisso'] ?? ''));
+    $anno     = (int)($data['anno'] ?? 0);
+    $numero   = (int)($data['numero_corrente'] ?? -1);
+    $padding  = (int)($data['padding'] ?? 0);
+
+    if ($prefisso === '') {
+        throw new \InvalidArgumentException('Il prefisso non può essere vuoto.');
+    }
+    if ($anno < 2000 || $anno > 2100) {
+        throw new \InvalidArgumentException('Anno non valido.');
+    }
+    if ($numero < 0) {
+        throw new \InvalidArgumentException('Il numero corrente non può essere negativo.');
+    }
+    if ($padding < 1 || $padding > 8) {
+        throw new \InvalidArgumentException('Il padding deve essere compreso tra 1 e 8 cifre.');
+    }
+
+    $st = $pdo->prepare('SELECT id FROM sequenze WHERE id = ?');
+    $st->execute([$id]);
+    if (!$st->fetchColumn()) {
+        throw new \RuntimeException('Sequenza non trovata.');
+    }
+
+    $pdo->prepare(
+        'UPDATE sequenze SET prefisso = ?, anno = ?, numero_corrente = ?, padding = ? WHERE id = ?'
+    )->execute([$prefisso, $anno, $numero, $padding, $id]);
+}
+
+/**
+ * Ricrea una riga mancante di `sequenze` per un tipo scelto da un elenco chiuso
+ * (QK_SEQUENZE_TIPI_NOTI), non da testo libero — evita di creare per errore un
+ * tipo mai usato da nessun chiamante reale. Inserisce sempre con
+ * numero_corrente = 0 (mai un auto-repair "indovinato": l'operatore sceglie
+ * esplicitamente prefisso e padding).
+ *
+ * @throws \InvalidArgumentException se il tipo non è nell'elenco chiuso, se
+ *         esiste già una riga per quel tipo, o se i valori non sono validi
+ */
+function qk_sequenza_crea_mancante(PDO $pdo, string $tipo, string $prefisso, int $padding, ?int $anno = null): int
+{
+    if (!in_array($tipo, QK_SEQUENZE_TIPI_NOTI, true)) {
+        throw new \InvalidArgumentException("Tipo di sequenza '$tipo' non riconosciuto.");
+    }
+    $prefisso = trim($prefisso);
+    if ($prefisso === '') {
+        throw new \InvalidArgumentException('Il prefisso non può essere vuoto.');
+    }
+    if ($padding < 1 || $padding > 8) {
+        throw new \InvalidArgumentException('Il padding deve essere compreso tra 1 e 8 cifre.');
+    }
+
+    $st = $pdo->prepare('SELECT COUNT(*) FROM sequenze WHERE tipo = ?');
+    $st->execute([$tipo]);
+    if ((int)$st->fetchColumn() > 0) {
+        throw new \InvalidArgumentException("Esiste già una sequenza per il tipo '$tipo'.");
+    }
+
+    $anno = $anno ?? (int) date('Y');
+    $pdo->prepare(
+        'INSERT INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) VALUES (?, ?, ?, 0, ?)'
+    )->execute([$tipo, $prefisso, $anno, $padding]);
+
+    return (int) $pdo->lastInsertId();
+}
+
+/**
  * Badge di stato per le offerte di vendita.
  * Spostata da quotes/_list.php a functions.php globale.
  */

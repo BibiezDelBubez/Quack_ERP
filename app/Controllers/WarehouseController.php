@@ -770,7 +770,19 @@ class WarehouseController extends BaseController
                 "FROM prodotti p
                  LEFT JOIN giacenze g ON g.prodotto_id = p.id
                  LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                 LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
+                 -- REVISIONE Ciclo Acquisti, sez. Multi-fornitore (deciso 15/07/2026,
+                 -- implementato 17/07/2026): prima 'ordine_preferenza_fornitore = 1'
+                 -- fisso, che restava vuoto se il preferito era disattivato invece di
+                 -- scavalcare al successivo attivo. Stesso pattern già in uso in
+                 -- purchases_rfq.php:127 e RfqController::qk_acquisti_prodotti_search()
+                 -- (fix §1.9) — primo fornitore attivo per ordine di preferenza.
+                 LEFT JOIN prodotti_fornitori pf ON pf.id = (
+                     SELECT pf2.id FROM prodotti_fornitori pf2
+                      JOIN clienti_fornitori cf2 ON cf2.id = pf2.fornitore_id AND cf2.attivo = 1
+                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
+                     ORDER BY pf2.ordine_preferenza_fornitore ASC, pf2.id DESC
+                     LIMIT 1
+                 )
                  LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
                  WHERE p.attivo = 1 $whereExtra
                  GROUP BY p.id
@@ -822,7 +834,15 @@ class WarehouseController extends BaseController
                 "FROM prodotti p
                  JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
                  LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                 LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.ordine_preferenza_fornitore = 1 AND pf.attivo = 1
+                 -- REVISIONE Ciclo Acquisti, sez. Multi-fornitore — vedi commento gemello
+                 -- nel ramo aggregato sopra (stesso fix, stesso pattern, stesso motivo).
+                 LEFT JOIN prodotti_fornitori pf ON pf.id = (
+                     SELECT pf2.id FROM prodotti_fornitori pf2
+                      JOIN clienti_fornitori cf2 ON cf2.id = pf2.fornitore_id AND cf2.attivo = 1
+                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
+                     ORDER BY pf2.ordine_preferenza_fornitore ASC, pf2.id DESC
+                     LIMIT 1
+                 )
                  LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
                  WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
                    " . $whereExtra;

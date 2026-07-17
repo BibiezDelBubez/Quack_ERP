@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/magazzino.php';
+require_once INCLUDES_DIR . '/dashboard.php';
 
 final class DashboardController extends BaseController
 {
@@ -11,51 +12,30 @@ final class DashboardController extends BaseController
         // 1. Operational KPIs
 
         // KPI 1: Active customer orders (to fulfill)
-        $ordini_clienti_evadere = (int) $this->pdo->query(
-            "SELECT COUNT(*) FROM ordini_clienti WHERE stato IN ('in_lavorazione', 'parzialmente_spedito')"
-        )->fetchColumn();
+        $ordini_clienti_evadere = get_kpi_ordini_clienti_evadere($this->pdo);
 
         // KPI 2: Shipments in preparation
-        $spedizioni_preparazione = (int) $this->pdo->query(
-            "SELECT COUNT(*) FROM spedizioni WHERE stato = 'preparazione'"
-        )->fetchColumn();
+        $spedizioni_preparazione = get_kpi_spedizioni_preparazione($this->pdo);
 
         // KPI 3: Understock Warning — nel magazzino attivo (soglia per coppia
         // prodotto-magazzino da quando prodotti.scorta_minima è stata rimossa,
         // vedi Piano Multi-Magazzino §3.5).
-        $stSottoscorta = $this->pdo->prepare("
-            SELECT COUNT(*) FROM prodotti p
-            JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-            WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
-        ");
         $magazzinoAttivoId = qk_magazzino_attivo_id($this->pdo);
-        $stSottoscorta->execute([$magazzinoAttivoId]);
-        $sottoscorta_count = (int) $stSottoscorta->fetchColumn();
+        $sottoscorta_count = get_kpi_prodotti_sottoscorta($this->pdo, $magazzinoAttivoId);
 
         // Fix 4 (§8.5): nome della sede a cui si riferisce il KPI, così non
         // viene letto per errore come dato aziendale aggregato.
-        $stNomeMag = $this->pdo->prepare('SELECT nome FROM magazzini WHERE id = ?');
-        $stNomeMag->execute([$magazzinoAttivoId]);
-        $magazzinoAttivoNome = (string) ($stNomeMag->fetchColumn() ?: '');
+        $magazzinoAttivoNome = get_kpi_nome_magazzino($this->pdo, $magazzinoAttivoId);
 
         // KPI 4: Active supplier orders (incoming goods)
-        $acquisti_in_arrivo = (int) $this->pdo->query(
-            "SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')"
-        )->fetchColumn();
+        $acquisti_in_arrivo = get_kpi_acquisti_in_arrivo($this->pdo);
 
         // KPI 5: Current Month Turnover
         // Nota valute: tutti gli importi vengono sommati indistintamente,
         // senza conversione/isolamento per valuta. Deliberatamente rimandato
         // a una futura versione (vedi docs/Backlog Sviluppi Futuri.md).
         $current_month = date('Y-m');
-        $stKpi5 = $this->pdo->prepare("
-            SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario), 0.0)
-            FROM ordini_clienti_righe r
-            JOIN ordini_clienti o ON o.id = r.ordine_id
-            WHERE o.stato != 'annullato' AND o.data_ordine LIKE ?
-        ");
-        $stKpi5->execute([$current_month . '%']);
-        $monthly_turnover = (float) $stKpi5->fetchColumn();
+        $monthly_turnover = get_kpi_fatturato_mese($this->pdo, $current_month);
 
         // Combine into KPI array
         $kpi = [
@@ -93,27 +73,10 @@ final class DashboardController extends BaseController
         ];
 
         // 2. Recent Sales Orders
-        $stmtSO = $this->pdo->query(
-            "SELECT o.id, o.numero_ordine, o.stato, o.data_ordine,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                    (SELECT COALESCE(SUM(quantita_ordinata * prezzo_unitario), 0.0) FROM ordini_clienti_righe WHERE ordine_id = o.id) AS totale
-             FROM ordini_clienti o
-             JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-             ORDER BY o.created_at DESC
-             LIMIT 5"
-        );
-        $recent_sales_orders = $stmtSO->fetchAll(PDO::FETCH_ASSOC);
+        $recent_sales_orders = get_dashboard_recent_sales_orders($this->pdo, 5);
 
         // 3. Recent Purchase Orders
-        $stmtPO = $this->pdo->query(
-            "SELECT ot.id, ot.numero, ot.stato, ot.data_ordine, ot.totale,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS fornitore_nome
-             FROM ordini_testata ot
-             JOIN clienti_fornitori cf ON cf.id = ot.fornitore_id
-             ORDER BY ot.created_at DESC
-             LIMIT 5"
-        );
-        $recent_purchase_orders = $stmtPO->fetchAll(PDO::FETCH_ASSOC);
+        $recent_purchase_orders = get_dashboard_recent_purchase_orders($this->pdo, 5);
 
         $this->page(APP_ROOT_DIR . '/app/views/dashboard/_index.php', [
             'page_title'             => 'Dashboard',

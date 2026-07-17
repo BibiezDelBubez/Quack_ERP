@@ -11,15 +11,10 @@ class ProfileController extends BaseController
         $ok         = null;
         $active_tab = 'dati';
 
-        /* Carica dati freschi dal DB */
-        $stmt = $this->pdo->prepare(
-            'SELECT u.id, u.username, u.nome, u.cognome, u.email, r.codice AS ruolo
-               FROM utenti u
-               JOIN ruoli r ON r.id = u.ruolo_id
-              WHERE u.id = :id LIMIT 1'
-        );
-        $stmt->execute([':id' => $me['id']]);
-        $utente = $stmt->fetch(PDO::FETCH_ASSOC);
+        require_once APP_ROOT_DIR . '/includes/utenti.php';
+
+        /* Carica dati freschi dal DB tramite Helper */
+        $utente = get_utente_by_id($this->pdo, $me['id']);
 
         if (!$utente) { redirect('dashboard'); }
 
@@ -51,13 +46,11 @@ class ProfileController extends BaseController
 
                     if (empty($errors)) {
                         try {
-                            $this->pdo->prepare('UPDATE utenti SET nome=:n,cognome=:c,email=:e WHERE id=:id')
-                                ->execute([
-                                    ':n'  => $values['nome'],
-                                    ':c'  => $values['cognome'],
-                                    ':e'  => $values['email'],
-                                    ':id' => $me['id'],
-                                ]);
+                            update_dati_utente($this->pdo, $me['id'], [
+                                'nome'    => $values['nome'],
+                                'cognome' => $values['cognome'],
+                                'email'   => $values['email']
+                            ]);
 
                             $_SESSION['qk_user']['display_name'] = trim($values['nome'] . ' ' . $values['cognome']);
 
@@ -80,9 +73,7 @@ class ProfileController extends BaseController
                     $pwd_new     = post('pwd_new');
                     $pwd_confirm = post('pwd_confirm');
 
-                    $row = $this->pdo->prepare('SELECT password_hash FROM utenti WHERE id=:id');
-                    $row->execute([':id' => $me['id']]);
-                    $hash = $row->fetchColumn();
+                    $hash = $utente['password_hash'];
 
                     if (!password_verify($pwd_current, $hash))
                         $errors['pwd_current'] = 'Password attuale non corretta.';
@@ -92,11 +83,7 @@ class ProfileController extends BaseController
                         $errors['pwd_confirm'] = 'Le password non coincidono.';
 
                     if (empty($errors)) {
-                        $this->pdo->prepare('UPDATE utenti SET password_hash=:h WHERE id=:id')
-                            ->execute([
-                                ':h'  => password_hash($pwd_new, PASSWORD_DEFAULT),
-                                ':id' => $me['id'],
-                            ]);
+                        update_password_utente($this->pdo, $me['id'], password_hash($pwd_new, PASSWORD_DEFAULT));
                         $ok = 'Password aggiornata correttamente.';
                     }
                 }

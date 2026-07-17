@@ -131,6 +131,7 @@ return [
     '/theme/set'        => ['type' => 'controller', 'controller' => 'ThemeController', 'action' => 'set', 'auth' => true],
     '/settings'         => ['type' => 'controller', 'controller' => 'SettingsController', 'action' => 'index', 'auth' => true, 'permission' => 'manage_users'],
     '/settings/generali'=> ['type' => 'controller', 'controller' => 'SettingsController', 'action' => 'generali', 'auth' => true, 'permission' => 'manage_users'],
+    '/settings/sequenze'=> ['type' => 'controller', 'controller' => 'SettingsController', 'action' => 'sequenze', 'auth' => true, 'permission' => 'manage_users'],
     '/settings/aziende'        => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'index',  'auth' => true, 'permission' => 'manage_users'],
     '/settings/aziende/create' => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'create', 'auth' => true, 'permission' => 'manage_users'],
     '/settings/aziende/edit'   => ['type' => 'controller', 'controller' => 'AziendeController', 'action' => 'edit',   'auth' => true, 'permission' => 'manage_users'],

@@ -419,19 +419,42 @@ function qk_rfq_invia(PDO $pdo, int $id): void
 
 /**
  * Chiude manualmente una RFQ (bozza o inviata → chiusa).
+ *
+ * REVISIONE Ciclo Acquisti §3 "Cancellazione" (deciso 15/07/2026, implementato
+ * 17/07/2026): a differenza di qk_offerta_accetta(), che rifiuta correttamente
+ * tutte le altre offerte in_valutazione sulla stessa RFQ, questa funzione non
+ * toccava offerte_testata — lasciando le offerte concorrenti orfane in
+ * in_valutazione per sempre su una RFQ ormai chiusa. Ora, dentro la stessa
+ * transazione, vengono rifiutate anche loro, con un motivo distinto
+ * ("RFQ chiusa senza selezione") per non confonderle con un rifiuto di merito
+ * dell'operatore su una singola offerta.
  */
-function qk_rfq_chiudi(PDO $pdo, int $id): void
+function qk_rfq_chiudi(PDO $pdo, int $id, int $utente_id): void
 {
-    $st = $pdo->prepare('SELECT stato FROM rfq_testata WHERE id = ?');
-    $st->execute([$id]);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$row) throw new \RuntimeException('RFQ non trovata.');
-    if (!in_array($row['stato'], ['bozza', 'inviata'], true)) {
-        throw new \RuntimeException('La RFQ non è in uno stato chiudibile.');
+    $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare('SELECT stato FROM rfq_testata WHERE id = ?');
+        $st->execute([$id]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row) throw new \RuntimeException('RFQ non trovata.');
+        if (!in_array($row['stato'], ['bozza', 'inviata'], true)) {
+            throw new \RuntimeException('La RFQ non è in uno stato chiudibile.');
+        }
+        // Chiusura manuale (nessuna offerta accettata) — esito 'annullata', per
+        // distinguerla dalla chiusura automatica di qk_offerta_accetta().
+        $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'annullata' WHERE id = ?")->execute([$id]);
+
+        $pdo->prepare(
+            "UPDATE offerte_testata
+                SET stato = 'rifiutata', valutata_il = CURRENT_TIMESTAMP, valutata_da = ?, motivo_rifiuto = ?
+              WHERE rfq_id = ? AND stato = 'in_valutazione'"
+        )->execute([$utente_id, 'RFQ chiusa senza selezione', $id]);
+
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
     }
-    // Chiusura manuale (nessuna offerta accettata) — esito 'annullata', per
-    // distinguerla dalla chiusura automatica di qk_offerta_accetta().
-    $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'annullata' WHERE id = ?")->execute([$id]);
 }
 
 /**

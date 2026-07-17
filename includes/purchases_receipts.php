@@ -331,6 +331,26 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
         if (!$ricezione) throw new \RuntimeException('Ricezione non trovata o già completata.');
 
         $ordine_id = (int) $ricezione['ordine_id'];
+
+        // REVISIONE Ciclo Acquisti, sez. "Stati ordine/ciclo di vita" (rivisto e
+        // implementato 17/07/2026): seconda linea di difesa (la prima è il blocco in
+        // qk_ordine_crea_revisione() che impedisce di revisionare un ordine con una
+        // ricezione ancora in bozza). Qui si copre anche il caso — distinto — in cui
+        // l'ordine collegato sia stato ANNULLATO (qk_ordine_annulla() oggi non verifica
+        // l'esistenza di ricezioni bozza aperte, esattamente lo stesso buco) mentre questa
+        // ricezione era già aperta. Senza questo controllo, confermare una ricezione
+        // "orfana" scriverebbe quantita_ricevuta/giacenze su un ordine che non è più
+        // quello attivo, e qk_ordine_aggiorna_stato_ricezione() lo farebbe persino
+        // ripassare da 'superato'/'annullato' a 'parzialmente_ricevuto', contraddicendo
+        // l'invariante "uno stato terminale non cambia mai più" (§1.10, già applicata a
+        // qk_ordine_annulla() per lo stato 'superato').
+        $stOrdineStato = $pdo->prepare('SELECT stato FROM ordini_testata WHERE id = ?');
+        $stOrdineStato->execute([$ordine_id]);
+        $statoOrdineAttuale = $stOrdineStato->fetchColumn();
+        if (!in_array($statoOrdineAttuale, ['inviato', 'parzialmente_ricevuto'], true)) {
+            throw new \RuntimeException("Impossibile confermare questa ricezione: l'ordine collegato non è più nello stato corretto (stato attuale: {$statoOrdineAttuale}). È probabile che l'ordine sia stato revisionato o annullato nel frattempo; annulla questa ricezione invece di confermarla.");
+        }
+
         // Magazzino su cui accreditare fisicamente la merce di questa ricezione
         // (fissato all'apertura, vedi qk_ricezione_apri; fallback difensivo se
         // per qualche motivo la riga risultasse senza magazzino_id).

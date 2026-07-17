@@ -6,40 +6,18 @@ final class SalesController extends BaseController
 {
     public function dashboard(): void
     {
+        require_once INCLUDES_DIR . '/sales_dashboard.php';
+
         // 1. KPI Counts
-        $quotes_bozza = (int) $this->pdo->query(
-            "SELECT COUNT(*) FROM preventivi WHERE stato = 'bozza'"
-        )->fetchColumn();
-
-        $quotes_inviati = (int) $this->pdo->query(
-            "SELECT COUNT(*) FROM preventivi WHERE stato = 'inviata'"
-        )->fetchColumn();
-
-        $orders_attivi = (int) $this->pdo->query(
-            "SELECT COUNT(*) FROM ordini_clienti WHERE stato IN ('in_lavorazione', 'parzialmente_spedito', 'spedito')"
-        )->fetchColumn();
+        $quotes_bozza = get_kpi_sales_quotes_bozza($this->pdo);
+        $quotes_inviati = get_kpi_sales_quotes_inviati($this->pdo);
+        $orders_attivi = get_kpi_sales_orders_attivi($this->pdo);
 
         // 2. Recent quotes
-        $stmtQ = $this->pdo->query(
-            "SELECT p.id, p.numero_preventivo, p.stato, p.totale,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome
-             FROM preventivi p
-             JOIN clienti_fornitori cf ON cf.id = p.cliente_id
-             ORDER BY p.created_at DESC
-             LIMIT 5"
-        );
-        $recent_quotes = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+        $recent_quotes = get_recent_sales_quotes_for_dashboard($this->pdo, 5);
 
         // 3. Recent orders
-        $stmtO = $this->pdo->query(
-            "SELECT o.id, o.numero_ordine, o.stato, o.data_ordine,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome
-             FROM ordini_clienti o
-             JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-             ORDER BY o.created_at DESC
-             LIMIT 5"
-        );
-        $recent_orders = $stmtO->fetchAll(PDO::FETCH_ASSOC);
+        $recent_orders = get_recent_sales_orders_for_dashboard($this->pdo, 5);
 
         // View vars
         $active_tab    = 'dashboard';

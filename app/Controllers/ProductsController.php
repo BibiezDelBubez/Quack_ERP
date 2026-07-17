@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/prodotti.php';
+require_once INCLUDES_DIR . '/magazzino.php';
+require_once INCLUDES_DIR . '/anagrafiche.php';
+require_once INCLUDES_DIR . '/tabelle_base.php';
 
 /**
  * ProductsController — /products, /products/create, /products/edit
@@ -71,7 +74,7 @@ final class ProductsController extends BaseController
         }
 
         $categorie             = qk_load_categorie($this->pdo);
-        $unita_misura_list     = $this->pdo->query('SELECT id, codice, descrizione FROM unita_misura ORDER BY descrizione')->fetchAll(PDO::FETCH_ASSOC);
+        $unita_misura_list     = qk_get_unita_misura_lista($this->pdo);
         $adr_sostanze          = qk_load_adr_sostanze($this->pdo);
         $fornitori_disponibili = qk_load_fornitori_disponibili($this->pdo);
         $prodotto_fornitori    = [];
@@ -80,7 +83,7 @@ final class ProductsController extends BaseController
         $all_tags              = qk_load_all_tags($this->pdo);
         $prodotto_tag_ids      = [];
         $kit_componenti        = [];
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 AND is_default = 0 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo, true);
 
         $page_title    = 'Nuovo prodotto';
         $page_subtitle = 'Aggiungi un prodotto al catalogo';
@@ -204,7 +207,7 @@ final class ProductsController extends BaseController
 
         $immagini              = qk_load_prodotto_immagini($this->pdo, $entity_id);
         $categorie             = qk_load_categorie($this->pdo);
-        $unita_misura_list     = $this->pdo->query('SELECT id, codice, descrizione FROM unita_misura ORDER BY descrizione')->fetchAll(PDO::FETCH_ASSOC);
+        $unita_misura_list     = qk_get_unita_misura_lista($this->pdo);
         $adr_sostanze          = qk_load_adr_sostanze($this->pdo);
         $fornitori_disponibili = qk_load_fornitori_disponibili($this->pdo);
         $prodotto_fornitori    = qk_load_prodotto_fornitori($this->pdo, $entity_id);
@@ -223,7 +226,7 @@ final class ProductsController extends BaseController
         ');
         $listini_prezzi_regole->execute([$entity_id]);
         $prezzi_vendita_regole = $listini_prezzi_regole->fetchAll(PDO::FETCH_ASSOC);
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 AND is_default = 0 ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo, true);
 
         $page_title    = e($values['nome']) ?: 'Modifica prodotto';
         $page_subtitle = 'SKU ' . e($values['sku_interno']) . ' · ID #' . $entity_id;

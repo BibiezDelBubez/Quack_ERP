@@ -109,7 +109,11 @@ $dir  = $pag['dir'];
                 <?= e($p['fornitore_nome']) ?>
               <?php endif; ?>
             <?php else: ?>
-              <span class="qk-text-muted">—</span>
+              <!-- REVISIONE Ciclo Acquisti, sez. Multi-fornitore (17/07/2026): testo esplicito
+                   invece del trattino generico, indistinguibile tra "nessun fornitore mai
+                   censito" e "fornitore censito ma disattivato" — stesso testo per entrambi i
+                   casi, come da decisione, non serve differenziarli. -->
+              <span class="qk-text-muted fst-italic">Nessun fornitore attivo</span>
             <?php endif; ?>
           </td>
           <td class="text-end">

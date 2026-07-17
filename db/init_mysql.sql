@@ -1353,6 +1353,7 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     azienda_interna_id INTEGER,
     versione INTEGER NOT NULL DEFAULT 1,
     ordine_padre_id INTEGER,
+    stato_fatturazione VARCHAR(255) NOT NULL DEFAULT 'da_fatturare',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE (numero),
@@ -1838,6 +1839,9 @@ INSERT IGNORE INTO ruoli (id, codice, nome, can_manage_users, can_view_costs, ca
 INSERT IGNORE INTO utenti (id, username, nome, cognome, email, password_hash, ruolo_id, attivo, created_at) VALUES
     (1, 'admin', 'Admin', 'Quack', 'admin@quack.local', '$2y$10$AvqD7AR.9BcN/LAesKP0OuCk4vTZfHxN4a9GvjjlDKzLxTGwAZy6G', 1, 1, '2026-07-14 19:56:08');
 
+-- BUG CORRETTO (17/07/2026, REVISIONE Ciclo Acquisti, voce "Sequenze Documenti"):
+-- mancava la riga 'ricezione' (id 10), stesso gap dello schema SQLite gemello —
+-- qk_ricezione_apri() la richiede all'invio di ogni ordine d'acquisto.
 INSERT IGNORE INTO sequenze (id, tipo, prefisso, anno, numero_corrente, padding) VALUES
     (1, 'preventivo', 'PREV/', 2026, 0, 4),
     (2, 'ordine_cliente', 'ODC/', 2026, 0, 4),
@@ -1847,7 +1851,8 @@ INSERT IGNORE INTO sequenze (id, tipo, prefisso, anno, numero_corrente, padding)
     (6, 'rfq', 'RFQ/', 2026, 0, 4),
     (7, 'offerta', 'OFF/', 2026, 0, 4),
     (8, 'ordine', 'ODA/', 2026, 0, 4),
-    (9, 'trasferimento', 'TRF/', 2026, 0, 4);
+    (9, 'trasferimento', 'TRF/', 2026, 0, 4),
+    (10, 'ricezione', 'RIC/', 2026, 0, 4);
 
 INSERT IGNORE INTO clp_h_statements (codice, testo, tipo) VALUES
     ('H200', 'Esplosivo instabile.', 'fisico'),

@@ -5,6 +5,7 @@ require_once INCLUDES_DIR . '/purchases_quotes.php';
 // Spostati in testa da un if() e da un case dentro uno switch — vedi Revisione
 // Ciclo Acquisti §3bis A.2 (require_once condizionale, anti-pattern).
 require_once INCLUDES_DIR . '/purchases_rfq.php';
+require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/purchases_orders.php';
 // Per qk_nome_completo_soggetto() — vedi Revisione Ciclo Acquisti §3bis A.5.
 require_once INCLUDES_DIR . '/anagrafiche.php';
@@ -128,7 +129,7 @@ class PurchasesQuotesController extends BaseController
             }
         }
 
-        $metodi_pagamento = $this->pdo->query("SELECT * FROM metodi_pagamento WHERE attivo = 1 ORDER BY descrizione")->fetchAll(PDO::FETCH_ASSOC);
+        $metodi_pagamento = qk_get_metodi_pagamento_attivi($this->pdo);
 
         $anteprima_numero = qk_peek_numero_acquisto($this->pdo, 'offerta');
         $page_title       = 'Registra Preventivo';
@@ -220,7 +221,7 @@ class PurchasesQuotesController extends BaseController
             }
         }
 
-        $metodi_pagamento = $this->pdo->query("SELECT * FROM metodi_pagamento WHERE attivo = 1 ORDER BY descrizione")->fetchAll(PDO::FETCH_ASSOC);
+        $metodi_pagamento = qk_get_metodi_pagamento_attivi($this->pdo);
 
         $saved      = get_param('saved', '') === '1';
         $page_title = 'Preventivo ' . $detail['offerta']['numero'];

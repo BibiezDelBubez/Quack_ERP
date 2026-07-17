@@ -184,6 +184,20 @@ class PurchaseOrdersController extends BaseController
                     flash_set('success', 'Ordine annullato.');
                     break;
 
+                // Tracciabilità manuale "fatturato/da fatturare" (REVISIONE Ciclo
+                // Acquisti, 17/07/2026) — mirror esatto di SalesOrdersController
+                // (righe 526-533): semplice UPDATE, nessuna verifica di importi/
+                // quantità collegata, non è un three-way match automatico.
+                case 'segna_fatturato':
+                    $this->pdo->prepare("UPDATE ordini_testata SET stato_fatturazione = 'fatturato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    flash_set('success', 'Ordine segnato come fatturato.');
+                    break;
+
+                case 'segna_da_fatturare':
+                    $this->pdo->prepare("UPDATE ordini_testata SET stato_fatturazione = 'da_fatturare', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    flash_set('success', 'Ordine ripristinato a "Da Fatturare".');
+                    break;
+
                 default:
                     flash_set('danger', "Azione '$azione' non riconosciuta.");
             }

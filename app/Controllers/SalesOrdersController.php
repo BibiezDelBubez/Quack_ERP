@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/sales_orders.php';
+require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/sales_quotes.php';
 
 final class SalesOrdersController extends BaseController
@@ -122,7 +123,7 @@ final class SalesOrdersController extends BaseController
               ORDER BY 2"
         );
         $aziende = $stAz ? $stAz->fetchAll(PDO::FETCH_ASSOC) : [];
-        $listini = $this->pdo->query("SELECT id, nome, valuta FROM listini WHERE attivo = 1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $listini = qk_get_listini_vendita_attivi($this->pdo);
 
         $active_tab    = 'orders';
         $page_title    = 'Nuovo Ordine Cliente';

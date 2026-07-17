@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once INCLUDES_DIR . '/purchases.php';
+require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/purchases_rfq.php';
 require_once INCLUDES_DIR . '/anagrafiche.php';
 require_once APP_ROOT_DIR . '/app/Services/RfqDocumentService.php';
@@ -66,8 +68,8 @@ class RfqController extends BaseController
             $defaultAziendaId = (string)$aziende[0]['id'];
         }
 
-        $incoterms = $this->pdo->query("SELECT * FROM incoterms WHERE attivo = 1 ORDER BY codice")->fetchAll(PDO::FETCH_ASSOC);
-        $metodi_pagamento = $this->pdo->query("SELECT * FROM metodi_pagamento WHERE attivo = 1 ORDER BY descrizione")->fetchAll(PDO::FETCH_ASSOC);
+        $incoterms = qk_get_incoterms_attivi($this->pdo);
+        $metodi_pagamento = qk_get_metodi_pagamento_attivi($this->pdo);
 
         $errors = [];
         $values = $this->defaultValues();
@@ -124,8 +126,8 @@ class RfqController extends BaseController
         }
 
         $aziende = qk_aziende_list($this->pdo);
-        $incoterms = $this->pdo->query("SELECT * FROM incoterms WHERE attivo = 1 ORDER BY codice")->fetchAll(PDO::FETCH_ASSOC);
-        $metodi_pagamento = $this->pdo->query("SELECT * FROM metodi_pagamento WHERE attivo = 1 ORDER BY descrizione")->fetchAll(PDO::FETCH_ASSOC);
+        $incoterms = qk_get_incoterms_attivi($this->pdo);
+        $metodi_pagamento = qk_get_metodi_pagamento_attivi($this->pdo);
 
         $errors = [];
         $values = $this->mapDetailToValues($detail['rfq']);
@@ -219,7 +221,7 @@ class RfqController extends BaseController
                     break;
 
                 case 'chiudi':
-                    qk_rfq_chiudi($this->pdo, $id);
+                    qk_rfq_chiudi($this->pdo, $id, (int)current_user()['id']);
                     flash_set('success', 'RFQ chiusa.');
                     redirect(url('purchases/rfq/edit') . '?id=' . $id);
                     break;
@@ -384,6 +386,12 @@ class RfqController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']);
             return;
         }
+        if (!csrf_verify()) {
+            ob_end_clean();
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido.']);
+            return;
+        }
         $ragione = trim(post('ragione_sociale', ''));
         $piva    = trim(post('partita_iva', ''));
         if ($ragione === '') {
@@ -393,8 +401,13 @@ class RfqController extends BaseController
             return;
         }
         try {
-            require_once INCLUDES_DIR . '/anagrafiche.php';
-            $codice = 'FOR-' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $ragione), 0, 8)) . '-' . rand(100, 999);
+            // B.3 (REVISIONE Ciclo Acquisti, sezione B): il codice fornitore era generato con un
+            // suffisso rand(100,999) — solo 900 valori possibili su una colonna NOT NULL UNIQUE,
+            // senza alcun controllo di unicità. Sostituito con qk_next_codice(), già usata per lo
+            // stesso identico scopo (codice sequenziale PREFISSO-00001) da
+            // qk_persist_soggetto_clienti_fornitori() e dalla creazione contatti/aziende interne —
+            // riuso dell'helper esistente invece di reinventare la generazione codice (DRY).
+            $codice = qk_next_codice($this->pdo, 'FOR');
             $this->pdo->prepare(
                 "INSERT INTO clienti_fornitori
                     (codice, tipo, tipo_soggetto, ragione_sociale, partita_iva, attivo, created_at)
@@ -421,6 +434,12 @@ class RfqController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']);
             return;
         }
+        if (!csrf_verify()) {
+            ob_end_clean();
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido.']);
+            return;
+        }
         $nome = trim(post('nome', ''));
         if ($nome === '') {
             ob_end_clean();
@@ -429,11 +448,20 @@ class RfqController extends BaseController
             return;
         }
         try {
-            $sku = 'NEW-' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $nome), 0, 8)) . '-' . rand(100, 999);
-            $this->pdo->prepare(
-                "INSERT INTO prodotti (sku_interno, nome, attivo, created_at) VALUES (?,?,1,CURRENT_TIMESTAMP)"
-            )->execute([$sku, $nome]);
-            $id = (int) $this->pdo->lastInsertId();
+            // B.1 (REVISIONE Ciclo Acquisti §3bis): l'INSERT manuale precedente ometteva le colonne
+            // NOT NULL "tipo" e "unita_misura_stock_id" — falliva sempre. Riusa qk_crea_prodotto_rapido()
+            // (includes/prodotti.php), già corretta e già in uso da SalesOrdersController::apiCreaProdotto()
+            // per lo stesso identico bug (gemello). Contratto JSON di risposta INVARIATO (ok/id/nome/
+            // sku_interno) perché il chiamante (app/views/purchases/quotes/_form.php) legge esattamente
+            // questi campi — diverso apposta dallo shape di SalesOrdersController, non un'inconsistenza.
+            $id = qk_crea_prodotto_rapido($this->pdo, [
+                'nome'          => $nome,
+                'sku_interno'   => post('sku_interno', ''),
+                'unita_misura'  => post('unita_misura', 'pz'),
+            ]);
+            $stSku = $this->pdo->prepare('SELECT sku_interno FROM prodotti WHERE id = ?');
+            $stSku->execute([$id]);
+            $sku = $stSku->fetchColumn();
             ob_end_clean();
             header('Content-Type: application/json');
             echo json_encode(['ok' => true, 'id' => $id, 'nome' => $nome, 'sku_interno' => $sku]);
@@ -745,23 +773,63 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
               WHERE vf.prodotto_fornitore_id = pf.id) AS prezzo_unitario_uom_id";
     }
 
+    // Fornitore abituale del prodotto (REVISIONE Ciclo Acquisti §1.9, 17/07/2026):
+    // il fornitore con ordine_preferenza_fornitore più basso tra quelli ATTIVI —
+    // stesso identico criterio "ordina e filtra sul primo attivo" già usato in
+    // qk_rfq_detail() (purchases_rfq.php riga 128) e deciso per il punto sul
+    // fallback fornitore disattivato — non un filtro fisso "= 1". Indipendente
+    // da $fornitore_id (quello scelto in testata RFQ): il confronto tra i due
+    // avviene lato frontend (rfq-form.js), qui si restituisce solo il dato.
+    $joinAbituale = "
+      LEFT JOIN prodotti_fornitori pf_ab ON pf_ab.id = (
+          SELECT pf_ab2.id FROM prodotti_fornitori pf_ab2
+           JOIN clienti_fornitori cf_ab2 ON cf_ab2.id = pf_ab2.fornitore_id AND cf_ab2.attivo = 1
+          WHERE pf_ab2.prodotto_id = p.id AND pf_ab2.attivo = 1
+          ORDER BY pf_ab2.ordine_preferenza_fornitore ASC, pf_ab2.id DESC
+          LIMIT 1
+      )
+      LEFT JOIN clienti_fornitori cf_ab ON cf_ab.id = pf_ab.fornitore_id";
+
     $st = $pdo->prepare(
         "SELECT p.id, p.sku_interno, p.nome, um.codice AS uom, p.iva_acquisto_default AS iva_perc,
                 p.unita_misura_stock_id AS uom_id,
                 um_comm_prod.codice AS uom_comm_prod,
                 p.unita_contenuto_id AS uom_comm_prod_id,
                 p.quantita_contenuto,
-                $selectPrezzo
+                $selectPrezzo,
+                cf_ab.id AS fornitore_abituale_id,
+                cf_ab.ragione_sociale AS fornitore_abituale_ragione_sociale,
+                cf_ab.nome AS fornitore_abituale_nome_persona,
+                cf_ab.cognome AS fornitore_abituale_cognome_persona
            FROM prodotti p
       LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
       LEFT JOIN unita_misura um_comm_prod ON um_comm_prod.id = p.unita_contenuto_id
            $joinPrezzo
+           $joinAbituale
           WHERE p.attivo = 1
             AND (p.nome LIKE ? OR p.sku_interno LIKE ? OR p.ean LIKE ?)
           ORDER BY p.nome LIMIT ?"
     );
     $params[] = $limit;
     $st->execute($params);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     ob_end_clean();
-    return $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Calcola il nome visualizzato (ragione sociale prioritaria, stessa funzione
+    // condivisa già usata per lo stesso bisogno altrove in questo controller —
+    // vedi REVISIONE Ciclo Acquisti §3bis A.5) e rimuove i campi grezzi intermedi
+    // dal JSON di risposta.
+    foreach ($rows as &$row) {
+        $row['fornitore_abituale_nome'] = $row['fornitore_abituale_id'] !== null
+            ? qk_nome_completo_soggetto(
+                $row['fornitore_abituale_ragione_sociale'],
+                $row['fornitore_abituale_nome_persona'],
+                $row['fornitore_abituale_cognome_persona']
+              )
+            : null;
+        unset($row['fornitore_abituale_ragione_sociale'], $row['fornitore_abituale_nome_persona'], $row['fornitore_abituale_cognome_persona']);
+    }
+    unset($row);
+
+    return $rows;
 }

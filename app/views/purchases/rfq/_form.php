@@ -906,6 +906,13 @@ $savedOk = isset($saved) && $saved;
         <button type="button" class="qk-m2o-clear d-none r-prodotto-clear">&times;</button>
         <div class="qk-m2o-dropdown shadow-sm r-prodotto-dropdown"></div>
       </div>
+      <!-- Avviso "Fornitore Abituale" (REVISIONE Ciclo Acquisti §1.9, 17/07/2026):
+           mostrato quando il fornitore abituale del prodotto è diverso da quello
+           scelto in testata RFQ. Nascosto di default, popolato via JS. -->
+      <div class="r-fornitore-abituale-warning d-none mt-1" style="font-size:.75rem;color:#8a6d3b;background:#fff3cd;border:1px solid #ffe69c;border-radius:4px;padding:.15rem .4rem;display:inline-block">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>
+        Fornitore Abituale: <strong class="r-fornitore-abituale-nome"></strong>
+      </div>
     </td>
     <td class="col-formato">
       <span class="r-formato qk-text-muted" style="font-size:.85rem">—</span>
