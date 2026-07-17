@@ -46,6 +46,7 @@ if (!empty($magazzini_topbar)) {
             }
         }
     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
         $attivo_magazzino = null;
     }
     if (!$attivo_magazzino) {

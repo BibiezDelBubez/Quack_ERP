@@ -84,6 +84,7 @@ final class PurchasesController extends BaseController
                         $newId = qk_listino_acquisto_crea($this->pdo, $values);
                         redirect_with('purchases/pricelists/edit?id=' . $newId, 'success', 'Listino acquisto salvato correttamente.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -153,6 +154,7 @@ final class PurchasesController extends BaseController
                         qk_listino_acquisto_aggiorna($this->pdo, $id, $values);
                         redirect_with('purchases/pricelists/edit?id=' . $id, 'success', 'Listino acquisto aggiornato correttamente.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -221,6 +223,7 @@ final class PurchasesController extends BaseController
             qk_listino_acquisto_disattiva($this->pdo, $id);
             redirect_with('purchases/pricelists', 'success', 'Listino acquisto eliminato con successo.');
         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             redirect_with('purchases/pricelists', 'danger', "Impossibile eliminare il listino: " . $e->getMessage());
         }
     }

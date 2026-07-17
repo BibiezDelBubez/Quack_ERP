@@ -58,6 +58,7 @@ class PurchaseOrdersController extends BaseController
             $id = qk_ordine_da_offerta($this->pdo, $offerta_id, (int)current_user()['id']);
             redirect(url('purchases/orders/edit') . '?id=' . $id . '&saved=1');
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
             redirect(url('purchases/quotes/edit') . '?id=' . $offerta_id);
         }
@@ -110,6 +111,7 @@ class PurchaseOrdersController extends BaseController
                     $detail = qk_ordine_detail($this->pdo, $id);
                     flash_set('success', 'Ordine aggiornato.');
                 } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                     $errors['_global'] = $e->getMessage();
                 }
             }
@@ -202,6 +204,7 @@ class PurchaseOrdersController extends BaseController
                     flash_set('danger', "Azione '$azione' non riconosciuta.");
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
         }
 

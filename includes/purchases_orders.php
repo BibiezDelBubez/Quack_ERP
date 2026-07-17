@@ -250,6 +250,7 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
         try {
             $magazzinoDestinazioneId = qk_magazzino_attivo_id($pdo);
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             $magazzinoDestinazioneId = null; // dataset senza magazzini seedati: non blocca la creazione ordine
         }
 

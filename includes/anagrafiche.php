@@ -1865,6 +1865,7 @@ function qk_delete_soggetto(PDO $pdo, int $id): string
         $pdo->commit();
         return 'eliminato';
     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
         $pdo->rollBack();
         // Fallback sul soft delete (disattivazione)
         $pdo->prepare("UPDATE clienti_fornitori SET attivo = 0 WHERE id = ?")->execute([$id]);

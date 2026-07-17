@@ -50,6 +50,7 @@ final class MagazziniController extends BaseController
                         $id = qk_insert_magazzino($this->pdo, $values);
                         redirect_with('settings/magazzini', 'success', 'Magazzino creato correttamente.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -108,6 +109,7 @@ final class MagazziniController extends BaseController
                         qk_update_magazzino($this->pdo, $entity_id, $values);
                         redirect_with('settings/magazzini', 'success', 'Magazzino aggiornato.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -145,6 +147,7 @@ final class MagazziniController extends BaseController
                 qk_disattiva_magazzino($this->pdo, $id);
                 redirect_with('settings/magazzini', 'success', 'Magazzino disattivato.');
             } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                 redirect_with('settings/magazzini', 'danger', 'Impossibile disattivare il magazzino: ' . $e->getMessage());
             }
         } else {
@@ -191,6 +194,7 @@ final class MagazziniController extends BaseController
                 qk_imposta_magazzino_predefinito($this->pdo, $id);
                 redirect_with('settings/magazzini', 'success', 'Magazzino predefinito aggiornato.');
             } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                 redirect_with('settings/magazzini', 'danger', $e->getMessage());
             }
         } else {

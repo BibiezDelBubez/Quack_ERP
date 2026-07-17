@@ -65,6 +65,7 @@ class CustomersController extends BaseController
                         $id = qk_insert_cliente($this->pdo, $values);
                         redirect_with('customers/edit?id=' . $id, 'success', 'Cliente creato correttamente.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = qk_db_user_message($e);
                     }
                 }
@@ -139,6 +140,7 @@ class CustomersController extends BaseController
                         qk_update_cliente($this->pdo, $entity_id, $values);
                         redirect_with('customers/edit?id=' . $entity_id, 'success', 'Cliente aggiornato.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = qk_db_user_message($e);
                     }
                 }
@@ -927,6 +929,7 @@ class CustomersController extends BaseController
                 $msg = qk_esito_cancellazione_messaggio($esito, 'cliente', 'il');
                 redirect_with('customers', $msg['type'], $msg['text']);
             } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                 redirect_with('customers', 'danger', 'Errore durante l\'eliminazione del cliente: ' . $e->getMessage());
             }
         } else {

@@ -61,6 +61,7 @@ final class UsersController extends BaseController
                         insert_utente($this->pdo, $values, password_hash($pwd, PASSWORD_DEFAULT));
                         redirect_with('users', 'success', 'Utente creato correttamente.');
                     } catch (PDOException $ex) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $ex->getMessage());
                         $errors['_global'] = str_contains($ex->getMessage(), 'UNIQUE')
                             ? 'Username o email già associati a un altro account.'
                             : 'Errore nel salvataggio. Riprova.';
@@ -133,6 +134,7 @@ final class UsersController extends BaseController
 
                         redirect_with('users', 'success', 'Utente aggiornato correttamente.');
                     } catch (PDOException $ex) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $ex->getMessage());
                         $errors['_global'] = str_contains($ex->getMessage(), 'UNIQUE')
                             ? 'Username o email già associati a un altro account.'
                             : 'Errore nel salvataggio. Riprova.';

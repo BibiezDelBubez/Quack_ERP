@@ -693,6 +693,7 @@ class WarehouseController extends BaseController
                         redirect_with('warehouse/inventories', $flashType, $msg);
 
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $this->pdo->rollBack();
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
@@ -1166,8 +1167,10 @@ class WarehouseController extends BaseController
                             $tipoLabel . ' registrato correttamente (movimento #' . $id . ').'
                         );
                     } catch (\RuntimeException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['quantita'] = $e->getMessage();
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -1330,6 +1333,7 @@ class WarehouseController extends BaseController
                     $_SESSION['magazzino_attivo_id'] = $header['magazzino_origine_id'];
                     redirect_with('warehouse/transfers/view?id=' . $id, 'success', 'Trasferimento diretto registrato: giacenza spostata istantaneamente.');
                 } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                     $errors['_global'] = $e->getMessage();
                 }
             }
@@ -1399,6 +1403,7 @@ class WarehouseController extends BaseController
                     $_SESSION['magazzino_attivo_id'] = $header['magazzino_origine_id'];
                     redirect_with('warehouse/transfers/view?id=' . $id, 'success', 'Trasferimento creato in bozza.');
                 } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                     $errors['_global'] = $e->getMessage();
                 }
             }
@@ -1485,6 +1490,7 @@ class WarehouseController extends BaseController
                     flash_set('danger', "Azione '$azione' non riconosciuta.");
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
         }
 

@@ -175,7 +175,7 @@ function onSpedSelChange() {
 
   if (divSalva) divSalva.style.display = 'none';
   let addr = {};
-  try { addr = JSON.parse(selected.dataset.addr || '{}'); } catch(e){}
+  try { addr = JSON.parse(selected.dataset.addr || '{}'); } catch (e) { console.error('Error:', e); }
   _spedOriginal = { ...addr };
   fillSpedFields(addr);
   document.getElementById('ord-sped-state-badge').innerHTML = ' <span class="qk-badge confirmed" style="font-size:.72rem;">Da anagrafica</span>';
@@ -411,7 +411,7 @@ async function fetchOrdinePrice(tr, item) {
         calcTotali();
       }
     }
-  } catch(e) {}
+  } catch (e) { console.error('Error:', e); }
 }
 
 function calcTotali() {

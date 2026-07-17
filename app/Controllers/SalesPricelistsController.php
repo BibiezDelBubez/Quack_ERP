@@ -129,6 +129,7 @@ final class SalesPricelistsController extends BaseController
                         $newId = (int)$this->pdo->lastInsertId();
                         redirect_with('sales/pricelists/edit?id=' . $newId, 'success', 'Listino creato. Ora puoi aggiungere i prezzi prodotto.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -225,6 +226,7 @@ final class SalesPricelistsController extends BaseController
                         ]);
                         redirect_with('sales/pricelists/edit?id=' . $id, 'success', 'Listino aggiornato.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore: ' . $e->getMessage();
                     }
                 }
@@ -351,6 +353,7 @@ final class SalesPricelistsController extends BaseController
             $this->pdo->prepare("DELETE FROM listini WHERE id = :id")->execute([':id' => $id]);
             redirect_with('sales/pricelists', 'success', 'Listino eliminato.');
         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             redirect_with('sales/pricelists', 'danger', 'Impossibile eliminare: ' . $e->getMessage());
         }
     }

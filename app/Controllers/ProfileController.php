@@ -59,6 +59,7 @@ class ProfileController extends BaseController
                             $utente['cognome']  = $values['cognome'];
                             $utente['email']    = $values['email'];
                         } catch (PDOException $ex) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $ex->getMessage());
                             $errors['_global'] = str_contains($ex->getMessage(), 'UNIQUE')
                                 ? 'Email già in uso da un altro account.'
                                 : 'Errore nel salvataggio. Riprova.';

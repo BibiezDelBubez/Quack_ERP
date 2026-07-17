@@ -58,6 +58,7 @@ final class AziendeController extends BaseController
                             redirect_with('settings/aziende', 'success', 'Azienda creata correttamente.');
                         }
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -158,6 +159,7 @@ final class AziendeController extends BaseController
                             redirect_with('settings/aziende', 'success', 'Azienda aggiornata.');
                         }
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -209,6 +211,7 @@ final class AziendeController extends BaseController
                 $msg = qk_esito_cancellazione_messaggio($esito, 'azienda', 'la');
                 redirect_with('settings/aziende', $msg['type'], $msg['text']);
             } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                 redirect_with('settings/aziende', 'danger', 'Impossibile eliminare l\'azienda: ' . $e->getMessage());
             }
         } else {

@@ -1383,6 +1383,7 @@ function qk_delete_category(PDO $pdo, int $id): array
         $pdo->prepare('DELETE FROM categorie_prodotto WHERE id = :id')->execute([':id' => $id]);
         return ['ok' => true, 'immagine_path' => $img];
     } catch (PDOException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
         return ['ok' => false, 'error' => 'Impossibile eliminare questa categoria poiché è associata ad uno o più prodotti.'];
     }
 }

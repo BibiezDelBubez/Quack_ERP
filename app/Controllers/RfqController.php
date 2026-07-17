@@ -93,6 +93,7 @@ class RfqController extends BaseController
                         $id = qk_rfq_save($this->pdo, $values, $righe, (int)current_user()['id']);
                         redirect(url('purchases/rfq/edit') . '?id=' . $id . '&saved=1');
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -158,6 +159,7 @@ class RfqController extends BaseController
                         $righe  = $detail['righe'];
                         flash_set('success', 'RFQ salvata.');
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -188,6 +190,7 @@ class RfqController extends BaseController
             qk_rfq_delete($this->pdo, $id);
             flash_set('success', 'RFQ eliminata.');
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
         }
         redirect(url('purchases/rfq'));
@@ -237,6 +240,7 @@ class RfqController extends BaseController
                     redirect(url('purchases/rfq/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
             redirect(url('purchases/rfq/edit') . '?id=' . $id);
         }

@@ -59,6 +59,7 @@ class SuppliersController extends BaseController
                         $id = qk_insert_fornitore($this->pdo, $values);
                         redirect_with('suppliers/edit?id=' . $id, 'success', 'Fornitore creato correttamente.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = qk_db_user_message($e);
                     }
                 }
@@ -121,6 +122,7 @@ class SuppliersController extends BaseController
                         qk_update_fornitore($this->pdo, $entity_id, $values);
                         redirect_with('suppliers/edit?id=' . $entity_id, 'success', 'Fornitore aggiornato.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = qk_db_user_message($e);
                     }
                 }
@@ -442,6 +444,7 @@ class SuppliersController extends BaseController
                 $msg = qk_esito_cancellazione_messaggio($esito, 'fornitore', 'il');
                 redirect_with('suppliers', $msg['type'], $msg['text']);
             } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                 redirect_with('suppliers', 'danger', 'Errore durante l\'eliminazione del fornitore: ' . $e->getMessage());
             }
         } else {

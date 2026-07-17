@@ -31,6 +31,7 @@ switch (DB_DRIVER) {
                 PDO::ATTR_EMULATE_PREPARES   => false,
             ]);
         } catch (PDOException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             $msg = APP_ENV === 'development'
                 ? htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')
                 : 'Errore interno. Contatta il supporto.';
@@ -191,6 +192,7 @@ switch (DB_DRIVER) {
             }
 
         } catch (PDOException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             $msg = APP_ENV === 'development'
                 ? htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')
                 : 'Errore interno. Contatta il supporto.';

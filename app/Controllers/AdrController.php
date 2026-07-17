@@ -118,6 +118,7 @@ final class AdrController extends BaseController
                         $this->insertCodice($values);
                         redirect_with('adr?tab=codici', 'success', 'Codice ONU ' . $values['codice_onu'] . ' aggiunto correttamente.');
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         // \Throwable e non solo PDOException: insertCodice() ora può
                         // propagare anche errori non-SQL (vedi il suo catch interno) —
                         // vogliamo comunque mostrare un errore leggibile invece di un
@@ -178,6 +179,7 @@ final class AdrController extends BaseController
                         $this->updateCodice($id, $values);
                         redirect_with('adr/codici/edit?id=' . $id, 'success', 'Codice ONU aggiornato.');
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e instanceof PDOException ? $this->dbMessage($e) : $e->getMessage();
                     }
                 }
@@ -226,6 +228,7 @@ final class AdrController extends BaseController
             $this->pdo->commit();
             redirect_with('adr?tab=codici', 'success', 'Codice ONU eliminato.');
         } catch (PDOException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -577,6 +580,7 @@ final class AdrController extends BaseController
                             ->execute([':c' => $codice]);
                         $ok = "Classe $codice eliminata.";
                     } catch (PDOException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         if ((string)$e->getCode() === '23000') {
                             $errors['classe'] = "Impossibile eliminare la classe $codice: è attualmente in uso (es. nei Codici ONU).";
                         } else {
@@ -718,6 +722,7 @@ final class AdrController extends BaseController
                     break;
             }
         } catch (PDOException $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             $errors['_global'] = $this->dbMessage($e);
         }
 
@@ -904,6 +909,7 @@ final class AdrController extends BaseController
                     $this->pdo->exec('RELEASE SAVEPOINT sp_import_row');
                     $inserted++;
                 } catch (\Throwable $rowEx) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $rowEx->getMessage());
                     $this->pdo->exec('ROLLBACK TO SAVEPOINT sp_import_row');
                     $skipped++;
                     $rowErrors[] = 'Riga ' . ($i + 1) . ': ' . ($rowEx instanceof PDOException ? $this->dbMessage($rowEx) : $rowEx->getMessage()) . ' — saltata.';
@@ -986,6 +992,7 @@ final class AdrController extends BaseController
                     $this->pdo->exec('RELEASE SAVEPOINT sp_import_row');
                     $inserted++;
                 } catch (\Throwable $rowEx) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $rowEx->getMessage());
                     $this->pdo->exec('ROLLBACK TO SAVEPOINT sp_import_row');
                     $skipped++;
                     $rowErrors[] = 'Riga ' . ($i + 1) . ': ' . ($rowEx instanceof PDOException ? $this->dbMessage($rowEx) : $rowEx->getMessage()) . ' — saltata.';

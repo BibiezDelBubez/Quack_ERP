@@ -109,6 +109,7 @@ final class SalesOrdersController extends BaseController
                         flash_set('success', 'Ordine ' . e($values['numero_ordine']) . ' creato con successo!');
                         redirect(url('sales/orders/edit') . '?id=' . $ordineId);
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore durante la creazione: ' . $e->getMessage();
                     }
                 }
@@ -413,6 +414,7 @@ final class SalesOrdersController extends BaseController
                     ]);
                     flash_set('success', 'Ordine aggiornato correttamente.');
                 } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                     flash_set('error', 'Errore: ' . $e->getMessage());
                 }
             }
@@ -539,6 +541,7 @@ final class SalesOrdersController extends BaseController
                     flash_set('error', "Azione '$azione' non riconosciuta.");
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('error', $e->getMessage());
         }
 

@@ -50,6 +50,7 @@ class ReceiptsController extends BaseController
             $id = qk_ricezione_apri($this->pdo, $ordine_id, (int)current_user()['id']);
             redirect(url('purchases/receipts/edit') . '?id=' . $id);
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
             redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);
         }
@@ -112,6 +113,7 @@ class ReceiptsController extends BaseController
                     flash_set('danger', "Azione '" . post('azione', '') . "' non riconosciuta.");
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
         }
 
@@ -143,6 +145,7 @@ class ReceiptsController extends BaseController
             redirect(url('purchases/orders/edit') . '?id=' . $ordine_id);
 
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
             redirect(url('purchases/receipts/edit') . '?id=' . $id);
         }

@@ -280,6 +280,7 @@ function qk_schema_status(PDO $pdo): array {
             'last_applied_at' => $last['applied_at']  ?? null,
         ];
     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
         return ['count' => 0, 'last_migration' => null, 'last_applied_at' => null];
     }
 }

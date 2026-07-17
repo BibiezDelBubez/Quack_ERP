@@ -108,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $success = true;
     } catch (Exception $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }

@@ -117,6 +117,7 @@ final class SettingsController extends BaseController
                         $errors['_global'] = "Azione '$azione' non riconosciuta.";
                     }
                 } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                     $errors['_global'] = $e->getMessage();
                 }
             }

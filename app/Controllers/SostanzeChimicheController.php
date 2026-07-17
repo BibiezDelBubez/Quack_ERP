@@ -84,6 +84,7 @@ final class SostanzeChimicheController extends BaseController
                         $id = $this->insertSostanza($v);
                         redirect_with('adr/sostanze/edit?id=' . $id, 'success', 'Sostanza chimica creata.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -135,6 +136,7 @@ final class SostanzeChimicheController extends BaseController
                         $this->updateSostanza($id, $v);
                         redirect_with('adr/sostanze/edit?id=' . $id, 'success', 'Sostanza chimica aggiornata.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -276,6 +278,7 @@ final class SostanzeChimicheController extends BaseController
 
             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'success', "Scheda SDS ({$lingua}) caricata.");
         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             @unlink($destAbs);
             redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Errore DB: ' . $e->getMessage());
         }

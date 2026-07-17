@@ -212,7 +212,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: 'theme=' + encodeURIComponent(saved)
-        }).catch(function () {});
+        }).catch(function(e) { console.error('Promise Error:', e); });
 
         // Sincronizza gli elementi visuali renderizzati inizialmente da PHP
         document.querySelectorAll('[data-theme-set]').forEach(function (btn) {
@@ -242,7 +242,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: 'theme=' + encodeURIComponent(theme)
-        }).catch(function () {}); // silently ignore if not available
+        }).catch(function(e) { console.error('Promise Error:', e); }); // silently ignore if not available
 
         // Update active checkmark
         document.querySelectorAll('[data-theme-set]').forEach(function (btn) {

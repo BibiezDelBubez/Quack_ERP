@@ -67,6 +67,7 @@ final class ProductsController extends BaseController
                         }
                         redirect_with('products/edit?id=' . $id, 'success', 'Prodotto creato correttamente.');
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = qk_prodotti_db_message($e);
                     }
                 }
@@ -199,6 +200,7 @@ final class ProductsController extends BaseController
 
                         redirect_with('products/edit?id=' . $entity_id, 'success', $msg);
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = qk_prodotti_db_message($e);
                     }
                 }
@@ -282,6 +284,7 @@ final class ProductsController extends BaseController
             $this->pdo->commit();
             redirect_with('products', 'success', 'Prodotto eliminato definitivamente.');
         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             $this->pdo->rollBack();
             // Fallback: lo archiviamo (disattiviamo)
             try {
@@ -526,6 +529,7 @@ final class ProductsController extends BaseController
             $this->pdo->commit();
             redirect_with('products/edit?id=' . $newProductId, 'success', 'Prodotto duplicato con successo. Stai modificando la copia.');
         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -1074,6 +1078,7 @@ final class ProductsController extends BaseController
                             redirect_with('products/categories', 'success', $msg);
                         }
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -1212,6 +1217,7 @@ final class ProductsController extends BaseController
                         $msg = $id ? 'Tag aggiornato con successo.' : 'Tag creato con successo.';
                         redirect_with('products/tags', 'success', $msg);
                     } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -1252,6 +1258,7 @@ final class ProductsController extends BaseController
             qk_delete_tag($this->pdo, $id);
             redirect_with('products/tags', 'success', 'Tag eliminato correttamente.');
         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             redirect_with('products/tags', 'danger', 'Errore durante l\'eliminazione del tag.');
         }
     }

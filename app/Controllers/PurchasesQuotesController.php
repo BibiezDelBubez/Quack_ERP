@@ -123,6 +123,7 @@ class PurchasesQuotesController extends BaseController
                         $id = qk_offerta_save($this->pdo, $values, $righe, (int)current_user()['id']);
                         redirect(url('purchases/quotes/edit') . '?id=' . $id . '&saved=1');
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -215,6 +216,7 @@ class PurchasesQuotesController extends BaseController
                         $values = $this->mapDetailToValues($detail['offerta']);
                         flash_set('success', 'Offerta salvata.');
                     } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = $e->getMessage();
                     }
                 }
@@ -276,6 +278,7 @@ class PurchasesQuotesController extends BaseController
                     redirect(url('purchases/quotes/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('danger', $e->getMessage());
             redirect(url('purchases/quotes/edit') . '?id=' . $id);
         }

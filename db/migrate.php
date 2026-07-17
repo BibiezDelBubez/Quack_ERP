@@ -56,6 +56,7 @@ try {
         ");
     }
 } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
     die('<b>Errore creando schema_migrations:</b> ' . htmlspecialchars($e->getMessage()));
 }
 

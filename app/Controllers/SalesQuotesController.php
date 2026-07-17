@@ -140,6 +140,7 @@ final class SalesQuotesController extends BaseController
                             
                             redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' salvato correttamente.');
                         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                             $errors['_global'] = 'Errore database: ' . $e->getMessage();
                         }
                     }
@@ -282,6 +283,7 @@ final class SalesQuotesController extends BaseController
                             
                             redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' modificato correttamente.');
                         } catch (Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                             $errors['_global'] = 'Errore database: ' . $e->getMessage();
                         }
                     }
@@ -368,6 +370,7 @@ final class SalesQuotesController extends BaseController
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
             }
         } catch (\Throwable $e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
             flash_set('error', $e->getMessage());
             redirect(url('sales/quotes/edit') . '?id=' . $id);
         }

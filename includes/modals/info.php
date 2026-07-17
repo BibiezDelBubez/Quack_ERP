@@ -24,14 +24,16 @@ if (DB_DRIVER === 'mysql') {
     if (isset($pdo)) {
         try {
             $_info_sqlite_ver = $pdo->query('SELECT VERSION()')->fetchColumn();
-        } catch (Exception $_e) {}
+        } catch (Exception $_e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $_e->getMessage());}
     }
     $_info_db_path = DB_MYSQL_HOST . ':' . DB_MYSQL_PORT . '/' . DB_MYSQL_NAME;
 } else {
     if (isset($pdo)) {
         try {
             $_info_sqlite_ver = $pdo->query('SELECT sqlite_version()')->fetchColumn();
-        } catch (Exception $_e) {}
+        } catch (Exception $_e) {
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $_e->getMessage());}
     }
 
     $_db_file = DB_DIR . '/database.sqlite';
