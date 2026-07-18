@@ -407,3 +407,125 @@ Nei sistemi di fascia alta, la gestione dello storage si basa su tre pilastri:
 **Di cosa si tratta.** Attualmente, in vari punti del gestionale (come ad esempio in `ProfileController.php` per l'aggiornamento di Nome e Cognome), i dati inseriti dall'utente vengono salvati nel database senza un'adeguata sanitizzazione (viene eseguito solo un `trim()`). Se un utente malintenzionato inserisce codice HTML o JavaScript malevolo (es. `<script>...</script>`), questo potrebbe essere eseguito nel browser di altri utenti (come l'Amministratore) quando visualizzano quei dati. Questa � una vulnerabilit� nota come Stored XSS.
 **Stato attuale.** Il framework proprietario non ha un middleware o una funzione di sanitizzazione automatica per tutti gli input di testo.
 **Perch� � rimandato.** Non trattandosi di un ERP esposto al pubblico ma di un software ad uso interno, il rischio di un attacco XSS interno � mitigato, sebbene non nullo. L'implementazione corretta richiede l'introduzione di una funzione globale di sanitizzazione (es. `strip_tags()` o librerie specifiche per l'escape dell'HTML) che avvolga automaticamente tutti gli input testuali prima di passarli a PDO, operazione che richiede un refactoring moderato del `BaseController` o delle funzioni helper di input.
+
+---
+
+### 19. `ordini_righe.tolleranza_esubero_perc` non impostabile da nessuna interfaccia
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 5; [Ciclo Acquisti/Ciclo Acquisti - Schema Dati e API.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Schema%20Dati%20e%20API.md), §5.
+
+**Di cosa si tratta.** Il campo esiste (`DECIMAL(5,2) NOT NULL DEFAULT 0` su `ordini_righe`) ed è effettivamente usato in `qk_ricezione_apri()` per calcolare la quantità massima ricevibile oltre l'ordinato — ma nessun punto dell'interfaccia (RFQ, Offerta, Ordine) permette di impostarlo a un valore diverso da zero (verificato: zero occorrenze di "tolleranza" in `app/views/`). Di fatto oggi nessun ordine può mai avere un margine di esubero tollerato.
+
+**Perché è rimandato.** Non è chiaro nemmeno se il campo debba essere impostabile in RFQ, Offerta o Ordine, né chi tra sistema/articolo/fornitore debba avere l'ultima parola (una gerarchia a tre livelli era stata proposta nei documenti sorgente ma mai realizzata) — nessuna decisione presa. Da riprendere quando emergerà un caso reale di consegna in eccesso da gestire con tolleranza esplicita.
+
+---
+
+### 20. Generalizzazione di `offerte_testata.motivo_rifiuto` in campo "Motivi Decisione"
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 6.
+
+**Di cosa si tratta.** `motivo_rifiuto` è popolato oggi solo sui rifiuti (singoli o di massa). Il motivo per cui un'offerta è stata *accettata* invece di un'altra può finire solo nel campo libero `note_interne`, non in un campo strutturato analogo.
+
+**Perché è rimandato.** Nessuna decisione esplicita presa (né "sì, generalizzare" né "no, è over-engineering"). Da valutare solo se emerge un bisogno concreto di reportistica su "perché è stata scelta questa offerta e non un'altra".
+
+---
+
+### 21. Rinominazione delle tabelle del ciclo Acquisti con prefisso di dominio
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 7; REVISIONE Ciclo Acquisti §1.1.
+
+**Di cosa si tratta.** Nota di refactoring, non funzionale. I nomi reali (`rfq_*`, `offerte_*`, `ordini_*`) non rendono a colpo d'occhio il dominio di appartenenza rispetto a un'eventuale collisione futura con le tabelle gemelle di Vendite (es. `ordini_testata` acquisti vs `ordini_clienti` vendite).
+
+**Perché è rimandato.** Non bloccante, non impegnato. Da valutare in un piano di naming più ampio, se e quando servirà (es. un prefisso esplicito `acq_`/`vnd_`).
+
+---
+
+### 22. 🐛 BUG — "Forza Chiusura Ordine" chiama una funzione inesistente
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 8; [Ciclo Acquisti/Ciclo Acquisti - Flusso Operativo.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Flusso%20Operativo.md), §4.7.
+
+**Di cosa si tratta.** Il pulsante "Forza Chiusura Ordine" (`app/views/purchases/orders/_detail.php`), pensato per riconciliare un ordine dopo un carico manuale fuori flusso, aziona `PurchaseOrdersController` → `qk_ordine_forza_chiusura()` — **funzione che non esiste nel codebase** (confermato anche dal baseline PHPStan, "Function not found"). Cliccare il pulsante oggi produce un fatal error.
+
+**Diverso dalle altre voci di questo documento**: non è una funzionalità deliberatamente rimandata, è un difetto attivo su un pulsante già visibile in produzione.
+
+**Perché è rimandato.** Da decidere: implementare `qk_ordine_forza_chiusura()` (e cosa deve fare esattamente — solo cambiare stato, o anche scrivere una riga fittizia in `ricezioni_testata` con nota "riconciliazione manuale" per lasciare traccia, come suggerito dai documenti sorgente originali), oppure rimuovere il pulsante dall'interfaccia finché la funzione non esiste. Nessuna delle due opzioni è stata ancora scelta.
+
+---
+
+### 23. `offerte_testata` senza campo "riferimento interno" (a differenza di RFQ e Ordine)
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 9; [Ciclo Acquisti/Ciclo Acquisti - Schema Dati e API.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Schema%20Dati%20e%20API.md), §6.1.
+
+**Di cosa si tratta.** `rfq_testata` e `ordini_testata` hanno entrambe `riferimento_rfq_interno` (testo libero, ricercabile). `offerte_testata` non ha un campo equivalente: solo `riferimento_fornitore` (il riferimento assegnato dal fornitore, non un campo libero nostro).
+
+**Perché è rimandato.** Non è chiaro se sia una scelta consapevole (l'offerta eredita comunque la ricercabilità passando dalla RFQ collegata) o una dimenticanza in fase di schema. Priorità bassa, nessuna decisione presa.
+
+---
+
+### 24. Auto-aggiornamento del catalogo fornitori (prezzo negoziato) alla conferma ordine
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 10.
+
+**Di cosa si tratta.** I documenti sorgente originali descrivevano un comportamento: alla conferma di un ordine, il sistema aggiorna automaticamente (UPSERT) il legame `prodotti_fornitori`/il prezzo con quanto appena negoziato. Verificato: `qk_ordine_da_offerta()` non fa mai riferimento a `prodotti_fornitori` — nessun auto-apprendimento prezzo.
+
+**Perché è rimandato.** Idea di design mai realizzata, non un bug. Introdurrebbe una domanda non banale ("il prezzo appena pattuito diventa subito il prezzo di riferimento futuro, anche se era una condizione una tantum?") da decidere con calma, non implicitamente. Nessuna decisione presa se vale la pena costruirla.
+
+---
+
+### 25. Nessun cruscotto di confronto tra offerte multiple sulla stessa RFQ
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 11; [Ciclo Acquisti/Ciclo Acquisti - Flusso Operativo.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Flusso%20Operativo.md), §2.4.
+
+**Di cosa si tratta.** I documenti sorgente descrivevano una schermata di confronto affiancato (matrice prodotti × fornitori, punteggio automatico, "aggiudica per riga"). Verificato: non esiste — `PurchasesQuotesController` gestisce accettazione/rifiuto offerta per offerta, intera.
+
+**Perché è rimandato.** Non è un bug, è un limite di interfaccia noto. Con poche offerte concorrenti (il caso tipico per questo cliente) il confronto manuale resta gestibile. Nessuna decisione presa se costruirlo — da valutare se in futuro il numero di fornitori contattati in parallelo cresce.
+
+---
+
+### 26. Nessuna interfaccia per riprogrammare la data di consegna di una tranche residua (Auto-Split)
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 12; [Ciclo Acquisti/Ciclo Acquisti - Flusso Operativo.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Flusso%20Operativo.md), §4.4.
+
+**Di cosa si tratta.** `ordini_righe_pianificazione.data_consegna_prevista` esiste nello schema, ma è scritta solo alla creazione della tranche e aggiornata automaticamente solo per `quantita_ricevuta`/`stato`. Nessun endpoint permette di modificarla a mano dopo la creazione — utile quando il fornitore comunica un ritardo su un residuo già pianificato.
+
+**Perché è rimandato.** Nessun caso d'uso ha ancora reso urgente questa funzionalità — oggi l'unico modo di riflettere un ritardo comunicato è una nota libera. Da riprendere se il bisogno diventa concreto.
+
+---
+
+### 27. Nessun blocco alla generazione ordine se un "prodotto sostitutivo" non è ancora risolto in anagrafica
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 13.
+
+**Di cosa si tratta.** `qk_ordine_da_offerta()` non controlla mai `flag_sostituto` — copia le righe offerta→ordine indiscriminatamente. È quindi possibile generare (e ricevere merce per) un ordine che contiene ancora un prodotto "segnaposto" non risolto in anagrafica, con le conseguenze già note per questo tipo di prodotto minimale (nessuna classificazione ADR, nessuna tracciabilità lotti — vedi CLAUDE.md del progetto).
+
+**Perché è rimandato.** Diverso dalle altre voci: qui il rischio non è solo "funzionalità mancante" ma un dato riconosciuto come incompleto che può proseguire nel flusso in un dominio (ADR/chimici) dove l'incompletezza ha conseguenze reali. Da decidere se aggiungere il blocco — non ancora deciso.
+
+---
+
+### 28. Navigazione tra documenti collegati — solo parziale
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 14; [Ciclo Acquisti/Ciclo Acquisti - Flusso Operativo.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Flusso%20Operativo.md), §3.7.
+
+**Di cosa si tratta.** Ricezione→Ordine e Ordine→Ricezioni esistono come link cliccabili; Ordine→Offerta/RFQ di origine è solo testo statico, non un link.
+
+**Perché è rimandato.** Priorità bassa, usabilità non blocco funzionale.
+
+---
+
+### 29. Nessun avviso "prodotto non nel catalogo di questo fornitore"
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 15.
+
+**Di cosa si tratta.** Diverso dal caso "prodotto sostitutivo assente dall'intera anagrafica": qui il prodotto esiste in anagrafica, ma non ha (ancora) un legame `prodotti_fornitori` con il fornitore selezionato in RFQ/Offerta/Ordine. I documenti sorgente proponevano un avviso non bloccante con possibilità di creare il legame al volo.
+
+**Perché è rimandato.** Non è chiaro se sia utile in pratica (il fallback "ultimo prezzo pagato" funziona comunque indipendentemente da questo legame). Priorità bassa, da valutare solo se emerge un caso reale di confusione operativa.
+
+---
+
+### 30. Bug potenziale (in codice morto): sovrapposizione tra listini sugli scaglioni di prezzo
+
+**Fonte:** [Ciclo Acquisti/Ciclo Acquisti - Domande Aperte - Backlog.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Domande%20Aperte%20-%20Backlog.md), voce 16; [Ciclo Acquisti/Ciclo Acquisti - Schema Dati e API.md](Ciclo%20Acquisti/Ciclo%20Acquisti%20-%20Schema%20Dati%20e%20API.md), §2.2.
+
+**Di cosa si tratta.** Il fix "Listino Fantasma" (10/07/2026) risolve la sovrapposizione tra listini attivi solo per il prezzo base (`quantita_minima = 0`, tramite la vista `v_prezzo_acquisto_base_fornitore`). La stessa classe di bug resta non corretta per gli scaglioni di prezzo (`quantita_minima_stock > 0`) dentro `qk_get_purchase_price()`: le query ordinano solo per soglia, senza tie-break sulla data di validità — se un vecchio listino non viene chiuso esplicitamente, quale dei due prezzi venga restituito non è deterministico.
+
+**Perché è rimandato.** `qk_get_purchase_price()` è codice morto, mai raggiunto dalla UI reale — il bug è solo latente. Da correggere (stesso pattern del fix già fatto sulla vista) prima di ricollegare questa funzione a un qualunque punto vivo dell'interfaccia, non prima.
