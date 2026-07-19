@@ -114,6 +114,7 @@ return [
     '/warehouse/inventories'          => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'inventari',       'auth' => true],
     '/warehouse/inventories/create'   => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'createInventario','auth' => true, 'permission' => 'manage_warehouse'],
     '/warehouse/reorder'              => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'reorder',         'auth' => true],
+    '/warehouse/scadenze'             => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'scadenze',        'auth' => true],
     '/warehouse/min-stock'            => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'minStock',        'auth' => true],
     '/warehouse/min-stock/save'       => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'saveMinStock',    'auth' => true, 'permission' => 'manage_warehouse'],
     '/warehouse/api/prodotto-info'    => ['type' => 'controller', 'controller' => 'WarehouseController', 'action' => 'apiProdottoInfo',     'auth' => true],

@@ -1389,6 +1389,14 @@ CREATE TABLE IF NOT EXISTS spedizioni (
     ordine_id               INTEGER      NOT NULL REFERENCES ordini_clienti(id),
     data_spedizione         DATE         NOT NULL,
     indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
+    -- Magazzino di partenza reale (Revisione Gestione Magazzino e Lotti §3): prima
+    -- non esisteva alcun campo, la spedizione dipendeva silenziosamente dal magazzino
+    -- attivo di sessione al momento della creazione. Ora è un campo esplicito scelto
+    -- sul form "Nuova Spedizione" (precompilato col magazzino attivo, ma visibile e
+    -- modificabile), e viene usato per congelare il mittente sul DDT alla creazione
+    -- (vedi documenti_trasporto.mittente_* sotto) — mai per una risoluzione dal vivo
+    -- in fase di stampa.
+    magazzino_id            INTEGER      REFERENCES magazzini(id),
     vettore                 VARCHAR(100),
     tracking                VARCHAR(100),
     stato                   TEXT         NOT NULL DEFAULT 'preparazione'
@@ -1433,6 +1441,24 @@ CREATE TABLE IF NOT EXISTS documenti_trasporto (
     peso_lordo_kg              DECIMAL(10,3),
     stato                      TEXT          NOT NULL DEFAULT 'bozza'
                                               CHECK (stato IN ('bozza','emesso','consegnato')),
+    -- Mittente congelato alla creazione del DDT (Revisione Gestione Magazzino e Lotti
+    -- §3, stesso principio di preventivi/ordini_clienti.azienda_* — vedi
+    -- qk_resolve_azienda_emittente_stampa() in includes/document_common.php e
+    -- docs/Guide Anagrafiche Clienti, Fornitori, Indirizzi/00, §3.3). Calcolato una
+    -- sola volta da spedizioni.magazzino_id -> magazzini.azienda_interna_id/
+    -- indirizzo_id, MAI ricalcolato in stampa: se l'anagrafica dell'azienda interna
+    -- o il suo indirizzo cambiano in seguito, un DDT già emesso deve continuare a
+    -- mostrare il mittente reale del giorno dell'emissione, non quello attuale —
+    -- altrimenti un documento di trasporto già consegnato "cambierebbe" retroattivamente,
+    -- un problema di conformità ADR/fiscale, non solo estetico. NULL sui DDT storici
+    -- pre-migrazione: qk_resolve_mittente_ddt_stampa() ricade sulla risoluzione dal
+    -- vivo solo in quel caso legacy.
+    mittente_ragione_sociale  VARCHAR(255),
+    mittente_partita_iva      VARCHAR(30),
+    mittente_codice_fiscale   VARCHAR(30),
+    mittente_indirizzo        VARCHAR(255),
+    mittente_telefono         VARCHAR(30),
+    mittente_email            VARCHAR(150),
     creato_da                  INTEGER       NOT NULL REFERENCES utenti(id),
     created_at                 DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at                 DATETIME

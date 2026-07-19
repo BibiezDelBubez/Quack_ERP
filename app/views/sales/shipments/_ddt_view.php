@@ -28,18 +28,12 @@ $isAdr = !empty(array_filter($righe, fn($r) => (int)$r['is_adr'] === 1));
   <!-- Intestazione -->
   <div class="qk-ddt-header">
     <div class="qk-ddt-mittente">
-      <div class="qk-ddt-company-name"><?= e($d['mittente_nome'] ?? 'Azienda') ?></div>
-      <?php if (!empty($d['mittente_via'])): ?>
-        <div class="qk-ddt-address-line">
-          <?= e($d['mittente_via']) ?><?= !empty($d['mittente_civico']) ? ', ' . e($d['mittente_civico']) : '' ?>
-        </div>
-        <div class="qk-ddt-address-line">
-          <?= e($d['mittente_cap'] ?? '') ?> <?= e($d['mittente_citta'] ?? '') ?>
-          <?= !empty($d['mittente_provincia']) ? '(' . e($d['mittente_provincia']) . ')' : '' ?>
-        </div>
+      <div class="qk-ddt-company-name"><?= e($mittente['ragione_sociale'] ?? 'Azienda') ?></div>
+      <?php if (!empty($mittente['indirizzo'])): ?>
+        <div class="qk-ddt-address-line"><?= e($mittente['indirizzo']) ?></div>
       <?php endif; ?>
-      <?php if (!empty($d['mittente_piva'])): ?>
-        <div class="qk-ddt-address-line">P.IVA: <?= e($d['mittente_piva']) ?></div>
+      <?php if (!empty($mittente['partita_iva'])): ?>
+        <div class="qk-ddt-address-line">P.IVA: <?= e($mittente['partita_iva']) ?></div>
       <?php endif; ?>
     </div>
     <div class="qk-ddt-titolo-wrap">

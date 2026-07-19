@@ -1045,6 +1045,7 @@ CREATE TABLE IF NOT EXISTS spedizioni (
     ordine_id INTEGER NOT NULL,
     data_spedizione DATE NOT NULL,
     indirizzo_spedizione_id INTEGER,
+    magazzino_id INTEGER,
     vettore VARCHAR(100),
     tracking VARCHAR(100),
     stato VARCHAR(22) NOT NULL DEFAULT 'preparazione' CHECK (stato IN ('preparazione', 'spedita', 'consegnata', 'reso')),
@@ -1054,7 +1055,8 @@ CREATE TABLE IF NOT EXISTS spedizioni (
     UNIQUE (numero_spedizione),
     CONSTRAINT fk_spedizioni_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
     CONSTRAINT fk_spedizioni_indirizzo_spedizione_id FOREIGN KEY (indirizzo_spedizione_id) REFERENCES indirizzi(id),
-    CONSTRAINT fk_spedizioni_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id)
+    CONSTRAINT fk_spedizioni_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id),
+    CONSTRAINT fk_spedizioni_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS spedizioni_righe (
@@ -1097,6 +1099,12 @@ CREATE TABLE IF NOT EXISTS documenti_trasporto (
     numero_colli INTEGER,
     peso_lordo_kg DECIMAL(10,3),
     stato VARCHAR(20) NOT NULL DEFAULT 'bozza' CHECK (stato IN ('bozza', 'emesso', 'consegnato')),
+    mittente_ragione_sociale VARCHAR(255),
+    mittente_partita_iva VARCHAR(30),
+    mittente_codice_fiscale VARCHAR(30),
+    mittente_indirizzo VARCHAR(255),
+    mittente_telefono VARCHAR(30),
+    mittente_email VARCHAR(150),
     creato_da INTEGER NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,

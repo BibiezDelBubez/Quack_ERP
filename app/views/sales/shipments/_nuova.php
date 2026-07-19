@@ -9,6 +9,8 @@
  *   $lottiPerProdotto array   — [prodotto_id => [...lotti]]
  *   $orderId         int
  *   $includiScaduti  bool     — stato corrente del toggle "Includi lotti scaduti" (Tappa 4.4)
+ *   $magazzini       array    — magazzini attivi selezionabili (Revisione Gestione Magazzino e Lotti §3)
+ *   $magazzinoSpedId int      — magazzino di spedizione corrente (precompilato dal magazzino attivo, sovrascrivibile)
  */
 
 // Quante righe hanno lotti sufficienti server-side (per il progress badge iniziale)
@@ -280,6 +282,25 @@ $totRighe = count($righe);
 
         <div class="qk-pp-divider"></div>
 
+        <!-- Magazzino di spedizione (Revisione Gestione Magazzino e Lotti §3): campo
+             esplicito, precompilato col magazzino attivo di sessione ma sempre visibile
+             e modificabile — stesso principio già applicato a "Nuovo movimento". Cambiarlo
+             ricarica la pagina per riproporre i lotti FEFO della nuova sede. -->
+        <div class="qk-pp-panel-section">
+          <div class="qk-form-group mb-0">
+            <label class="qk-form-label">Magazzino di spedizione <span class="required">*</span></label>
+            <select name="magazzino_id" id="pp-select-magazzino" class="qk-form-control">
+              <?php foreach ($magazzini as $mg): ?>
+              <option value="<?= (int)$mg['id'] ?>" <?= $magazzinoSpedId === (int)$mg['id'] ? 'selected' : '' ?>>
+                <?= e($mg['nome']) ?>
+              </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+
+        <div class="qk-pp-divider"></div>
+
         <!-- Riepilogo stato allocazione -->
         <div class="qk-pp-panel-section">
           <div class="qk-pp-panel-label">Stato allocazione</div>
@@ -386,6 +407,7 @@ window.QkPickPack = {
   totRighe:        <?= $totRighe ?>,
   righeOk:         <?= $righeConLotti ?>,
   includiScaduti:  <?= $includiScaduti ? 'true' : 'false' ?>,
+  magazzinoId:     <?= (int)$magazzinoSpedId ?>,
   reloadUrlBase:   <?= json_encode(url('sales/shipments/new') . '?order_id=' . $orderId) ?>,
 };
 </script>

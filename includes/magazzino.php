@@ -599,6 +599,69 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
 }
 
 /**
+ * Quando si attiva `traccia_lotti` (0 -> 1) su un prodotto che ha già giacenza in uno
+ * o più magazzini, quella giacenza esistente non appartiene a nessun lotto — da quel
+ * momento in poi il prodotto lavora "a lotti" (FEFO, selezione lotto in spedizione),
+ * ma lo stock già presente resterebbe altrimenti invisibile a quei meccanismi
+ * (Revisione Gestione Magazzino e Lotti §4, simmetrico al blocco già esistente per
+ * la direzione opposta — disabilitare traccia_lotti con lotti ancora aperti).
+ *
+ * Crea un lotto "di conversione" per ciascun magazzino con giacenza > 0, che assorbe
+ * l'intera quantità esistente in quella sede (origine_tipo = 'rettifica', nessun
+ * fornitore/DDT associato: sono dati storici non disponibili). Nessuna azione se il
+ * prodotto non ha giacenza da nessuna parte — il cambio resta libero come oggi.
+ *
+ * @return int numero di lotti di conversione creati (0 = nessuna giacenza da convertire)
+ */
+function qk_crea_lotti_conversione_iniziale(PDO $pdo, int $prodottoId, int $utente_id): int
+{
+    $st = $pdo->prepare(
+        'SELECT magazzino_id, quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND quantita_disponibile > 0.0005'
+    );
+    $st->execute([$prodottoId]);
+    $righe = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (empty($righe)) {
+        return 0;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $data = date('Ymd');
+        $stLotto = $pdo->prepare(
+            "INSERT INTO lotti (codice_lotto_interno, prodotto_id, origine_tipo, quantita_ricevuta, note, creato_da)
+             VALUES (?, ?, 'rettifica', ?, ?, ?)"
+        );
+        $stGiacLotto = $pdo->prepare(
+            'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP)'
+        );
+
+        foreach ($righe as $r) {
+            $magazzinoId = (int) $r['magazzino_id'];
+            $qta         = (float) $r['quantita_disponibile'];
+
+            $stLotto->execute([
+                sprintf('INIZIALE-%d-%s', $magazzinoId, $data),
+                $prodottoId,
+                $qta,
+                'Lotto generato automaticamente per convertire la giacenza già presente al momento dell\'attivazione della tracciabilità lotti su questo prodotto.',
+                $utente_id,
+            ]);
+            $lottoId = (int) $pdo->lastInsertId();
+
+            $stGiacLotto->execute([$lottoId, $magazzinoId, $qta]);
+        }
+
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+
+    return count($righe);
+}
+
+/**
  * Storico movimenti con paginazione e filtri.
  *
  * @return array{rows: list<array<string, mixed>>, total: int}
@@ -1308,10 +1371,19 @@ function qk_imposta_magazzino_predefinito(PDO $pdo, int $id): void
  *
  * Guard:
  *  - non si può disattivare l'ultimo magazzino attivo rimasto nel sistema;
+ *  - non si può disattivare un magazzino con giacenza residua (Piano §3.7
+ *    punto 2, Revisione Gestione Magazzino e Lotti §1: senza questo
+ *    controllo la merce restava a sistema ma diventava irraggiungibile dai
+ *    normali flussi operativi — FEFO, selettori — senza alcun avviso).
+ *    Nessun conteggio aggregato della quantità nel messaggio: i prodotti
+ *    coinvolti possono avere unità di misura diverse tra loro, sommarle
+ *    sarebbe fuorviante (stesso principio già adottato per il popup di
+ *    annullamento ordine parzialmente ricevuto, Ciclo Acquisti REVISIONE
+ *    §1.3) — si conta solo quanti prodotti hanno ancora giacenza;
  *  - se il magazzino disattivato era quello predefinito, il predefinito
  *    passa automaticamente al primo altro magazzino attivo rimasto.
  *
- * @throws \RuntimeException se è l'ultimo magazzino attivo
+ * @throws \RuntimeException se è l'ultimo magazzino attivo o se ha giacenza residua
  */
 function qk_disattiva_magazzino(PDO $pdo, int $id): void
 {
@@ -1332,6 +1404,17 @@ function qk_disattiva_magazzino(PDO $pdo, int $id): void
         $attiviCount = (int) $pdo->query("SELECT COUNT(*) FROM magazzini WHERE attivo = 1")->fetchColumn();
         if ($attiviCount <= 1) {
             throw new \RuntimeException('Impossibile disattivare l\'unico magazzino attivo: deve sempre esisterne almeno uno.');
+        }
+
+        $stGiac = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE magazzino_id = ? AND quantita_disponibile > 0.0005");
+        $stGiac->execute([$id]);
+        $prodottiConGiacenza = (int) $stGiac->fetchColumn();
+        if ($prodottiConGiacenza > 0) {
+            throw new \RuntimeException(sprintf(
+                'ci sono ancora %d prodott%s con giacenza residua su questo magazzino. Trasferisci lo stock su un altro magazzino prima di disattivarlo.',
+                $prodottiConGiacenza,
+                $prodottiConGiacenza === 1 ? 'o' : 'i'
+            ));
         }
 
         $pdo->prepare("UPDATE magazzini SET attivo = 0, predefinito = 0 WHERE id = ?")->execute([$id]);

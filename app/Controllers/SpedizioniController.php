@@ -129,18 +129,26 @@ final class SpedizioniController extends BaseController
             redirect(url('sales/orders/edit') . '?id=' . $orderId);
         }
 
+        // Magazzino di spedizione: campo esplicito sulla pagina (Revisione Gestione
+        // Magazzino e Lotti §3), precompilato col magazzino attivo di sessione ma
+        // sempre scelto/confermato dall'operatore — non più un'approssimazione
+        // silenziosa (vedi Magazzino Attivo - Analisi e Alternative.md, Fix 1, stesso
+        // pattern già applicato a "Nuovo movimento"). Se il parametro passato non
+        // corrisponde a un magazzino attivo esistente, si ricade sul default.
+        $magazzini = qk_magazzini_list($this->pdo, true);
+        $magazzinoParam = get_param('magazzino_id', '');
+        if ($magazzinoParam !== '' && in_array((int)$magazzinoParam, array_column($magazzini, 'id'), true)) {
+            $magazzinoSpedId = (int) $magazzinoParam;
+        } else {
+            $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
+        }
+
         // Carica lotti disponibili per tutti i prodotti con traccia_lotti in un solo query.
-        // Disponibilità FEFO scoperta per magazzino attivo (Piano Multi-Magazzino §3.8/§4.13):
-        // finché non esiste un selettore magazzino dedicato per le spedizioni, la spedizione
-        // viene creata dal magazzino attivo (stessa approssimazione usata in
-        // SalesOrdersController::createShipment per lo scarico effettivo).
-        //
         // Lotti scaduti (Tappa 4.4): esclusi per default dalla pre-allocazione FEFO — non
         // ha senso proporre in automatico un lotto scaduto per una spedizione. L'utente può
         // includerli esplicitamente con il toggle "Includi lotti scaduti" (?includi_scaduti=1),
         // pensato per casi eccezionali (es. smaltimento/reso) — mai come default silenzioso.
         $includiScaduti = get_param('includi_scaduti', '0') === '1';
-        $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
         $prodIds = array_unique(array_filter(array_column($righe, 'prodotto_id')));
         $lottiPerProdotto = [];
         if (!empty($prodIds)) {
@@ -193,27 +201,17 @@ final class SpedizioniController extends BaseController
 
         $st = $this->pdo->prepare("
             SELECT d.*,
-                   s.numero_spedizione, s.vettore AS s_vettore, s.tracking,
+                   s.numero_spedizione, s.vettore AS s_vettore, s.tracking, s.magazzino_id AS spedizione_magazzino_id,
                    o.numero_ordine,
                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS destinatario_nome,
                    cf.partita_iva AS destinatario_piva,
                    cf.codice_fiscale AS destinatario_cf,
-                   a.via, a.civico, a.cap, a.citta, a.provincia, a.nazione, a.nome_sede,
-                   mit.ragione_sociale AS mittente_nome,
-                   mit.partita_iva    AS mittente_piva,
-                   mita.via           AS mittente_via,
-                   mita.civico        AS mittente_civico,
-                   mita.cap           AS mittente_cap,
-                   mita.citta         AS mittente_citta,
-                   mita.provincia     AS mittente_provincia
+                   a.via, a.civico, a.cap, a.citta, a.provincia, a.nazione, a.nome_sede
             FROM documenti_trasporto d
             JOIN ordini_clienti o ON o.id = d.ordine_id
             JOIN clienti_fornitori cf ON cf.id = d.destinatario_id
             LEFT JOIN indirizzi a ON a.id = d.indirizzo_destinazione_id
             LEFT JOIN spedizioni s ON s.id = d.spedizione_id
-            LEFT JOIN aziende_interne az ON az.id = 1
-            LEFT JOIN clienti_fornitori mit ON mit.id = az.soggetto_id
-            LEFT JOIN indirizzi mita ON mita.soggetto_id = az.soggetto_id AND mita.predefinito = 1
             WHERE d.id = ?
         ");
         $st->execute([$id]);
@@ -223,6 +221,11 @@ final class SpedizioniController extends BaseController
             flash_set('error', 'DDT non trovato.');
             redirect(url('sales/shipments'));
         }
+
+        // Mittente: letto dallo snapshot congelato alla creazione del DDT
+        // (Revisione Gestione Magazzino e Lotti §3), mai ricalcolato dal vivo — fallback
+        // dal magazzino di spedizione solo per DDT legacy privi delle colonne mittente_*.
+        $mittente = qk_resolve_mittente_ddt_stampa($this->pdo, $ddt, $ddt['spedizione_magazzino_id'] ? (int)$ddt['spedizione_magazzino_id'] : null);
 
         $stRighe = $this->pdo->prepare("
             SELECT r.*,

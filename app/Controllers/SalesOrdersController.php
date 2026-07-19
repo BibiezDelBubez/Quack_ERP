@@ -555,9 +555,13 @@ final class SalesOrdersController extends BaseController
         if ($prodottoId <= 0) { echo json_encode(['error' => 'prodotto_id mancante']); exit; }
 
         // Disponibilità per magazzino (Piano Multi-Magazzino §3.8): legge da
-        // lotti_giacenze scoped al magazzino attivo, non più dal campo
-        // aggregato legacy lotti.quantita_disponibile (rimosso, §3.9).
-        $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+        // lotti_giacenze scoped al magazzino di spedizione scelto sul form
+        // (Revisione Gestione Magazzino e Lotti §3) — con fallback sul magazzino
+        // attivo di sessione solo se il chiamante non lo passa esplicitamente.
+        $magazzinoId = (int)get_param('magazzino_id', '0');
+        if ($magazzinoId <= 0) {
+            $magazzinoId = qk_magazzino_attivo_id($this->pdo);
+        }
 
         // Lotti scaduti (Tappa 4.4): esclusi per default — inclusi solo se il
         // chiamante passa esplicitamente includi_scaduti=1 (toggle lato UI).
@@ -591,8 +595,18 @@ final class SalesOrdersController extends BaseController
         $lottiPost           = $_POST['lotti'] ?? [];
         $quantitaNoLottoPost = $_POST['quantita_no_lotto'] ?? [];
 
+        // Magazzino di spedizione: campo esplicito sul form "Nuova Spedizione"
+        // (Revisione Gestione Magazzino e Lotti §3), non più risolto silenziosamente
+        // dal magazzino attivo di sessione. Viene scritto su spedizioni.magazzino_id e
+        // usato per congelare il mittente sul DDT (vedi qk_calcola_mittente_ddt sotto).
+        $magazzinoSpedId = (int)post('magazzino_id', '0');
+
         $this->pdo->beginTransaction();
         try {
+            if ($magazzinoSpedId <= 0) {
+                throw new \Exception("Seleziona il magazzino di spedizione.");
+            }
+
             $st = $this->pdo->prepare("SELECT * FROM ordini_clienti WHERE id = ?");
             $st->execute([$orderId]);
             $order = $st->fetch(PDO::FETCH_ASSOC);
@@ -646,9 +660,9 @@ final class SalesOrdersController extends BaseController
             $userId  = (int)(current_user()['id'] ?? 0);
 
             $this->pdo->prepare("
-                INSERT INTO spedizioni (numero_spedizione, ordine_id, data_spedizione, indirizzo_spedizione_id, vettore, tracking, stato, creato_da, created_at)
-                VALUES (?, ?, CURRENT_DATE, ?, ?, ?, 'spedita', ?, CURRENT_TIMESTAMP)
-            ")->execute([$numSped, $orderId, $indirizzoSpedizioneId, $vettore ?: null, $tracking ?: null, $userId]);
+                INSERT INTO spedizioni (numero_spedizione, ordine_id, data_spedizione, indirizzo_spedizione_id, magazzino_id, vettore, tracking, stato, creato_da, created_at)
+                VALUES (?, ?, CURRENT_DATE, ?, ?, ?, ?, 'spedita', ?, CURRENT_TIMESTAMP)
+            ")->execute([$numSped, $orderId, $indirizzoSpedizioneId, $magazzinoSpedId, $vettore ?: null, $tracking ?: null, $userId]);
             $spedizioneId = (int)$this->pdo->lastInsertId();
 
             // Gestione Upload Foto Spedizione (Pallet)
@@ -695,16 +709,20 @@ final class SalesOrdersController extends BaseController
             $countDdt = (int)$this->pdo->query("SELECT COUNT(*) FROM documenti_trasporto")->fetchColumn();
             $numDdt   = 'DDT/' . date('Y') . '/' . str_pad((string)($countDdt + 1), 4, '0', STR_PAD_LEFT);
 
-            $this->pdo->prepare("
-                INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, creato_da, created_at, updated_at)
-                VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ")->execute([$numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg, $userId]);
-            $ddtId = (int)$this->pdo->lastInsertId();
+            // Mittente congelato alla creazione, mai ricalcolato in stampa (Revisione
+            // Gestione Magazzino e Lotti §3): stesso principio di
+            // qk_resolve_azienda_emittente_stampa() per preventivi/ordini_clienti.
+            $mittente = qk_calcola_mittente_ddt($this->pdo, $magazzinoSpedId);
 
-            // Magazzino di spedizione: finché non esiste un selettore dedicato per le
-            // spedizioni (Piano Multi-Magazzino §4.13/§3.10), si usa il magazzino attivo
-            // come approssimazione interim, coerente con la prenotazione stock (§4.4).
-            $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
+            $this->pdo->prepare("
+                INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, mittente_ragione_sociale, mittente_partita_iva, mittente_codice_fiscale, mittente_indirizzo, mittente_telefono, mittente_email, creato_da, created_at, updated_at)
+                VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ")->execute([
+                $numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg,
+                $mittente['ragione_sociale'], $mittente['partita_iva'], $mittente['codice_fiscale'], $mittente['indirizzo'], $mittente['telefono'], $mittente['email'],
+                $userId,
+            ]);
+            $ddtId = (int)$this->pdo->lastInsertId();
 
             $stInsSpedRiga = $this->pdo->prepare("INSERT INTO spedizioni_righe (spedizione_id, ordine_riga_id, prodotto_id, lotto_id, quantita, note) VALUES (?, ?, ?, ?, ?, '')");
             $stInsDdtRiga  = $this->pdo->prepare("INSERT INTO documenti_trasporto_righe (documento_trasporto_id, prodotto_id, descrizione, quantita, unita_misura_id, lotto_id, codice_lotto, is_adr, numero_onu, classe_adr, packing_group, posizione_riga, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')");

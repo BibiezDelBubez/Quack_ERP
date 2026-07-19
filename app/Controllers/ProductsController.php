@@ -170,6 +170,19 @@ final class ProductsController extends BaseController
                         if (!empty($_FILES['foto_principale']['name'])) {
                             qk_salva_immagine_prodotto($this->pdo, $entity_id, $_FILES['foto_principale']);
                         }
+
+                        // Attivazione traccia_lotti (0 -> 1) su un prodotto con giacenza già
+                        // esistente: converte lo stock "orfano" in un lotto per magazzino,
+                        // invece di lasciarlo invisibile a FEFO/selezione lotto da questo
+                        // momento in poi (Revisione Gestione Magazzino e Lotti §4).
+                        $lottiConversioneCreati = 0;
+                        if (($loaded['traccia_lotti'] ?? '0') === '0' && $values['traccia_lotti'] === '1') {
+                            $lottiConversioneCreati = qk_crea_lotti_conversione_iniziale(
+                                $this->pdo,
+                                $entity_id,
+                                (int) (current_user()['id'] ?? 0)
+                            );
+                        }
                         // Sync tag
                         $raw_tags = $_POST['tag_ids'] ?? [];
                         $tag_ids  = array_map('intval', (array) $raw_tags);
@@ -196,6 +209,14 @@ final class ProductsController extends BaseController
                             if (!empty($parti)) {
                                 $msg .= ' Ricalcolati per il cambio di unità di stock: ' . implode(', ', $parti) . '.';
                             }
+                        }
+                        if ($lottiConversioneCreati > 0) {
+                            $msg .= sprintf(
+                                ' Creat%s %d lott%s di conversione per la giacenza già presente (uno per magazzino con stock).',
+                                $lottiConversioneCreati === 1 ? 'o' : 'i',
+                                $lottiConversioneCreati,
+                                $lottiConversioneCreati === 1 ? 'o' : 'i'
+                            );
                         }
 
                         redirect_with('products/edit?id=' . $entity_id, 'success', $msg);

@@ -230,6 +230,13 @@ function qk_trasferimento_registra_partenza(PDO $pdo, int $id, int $utente_id): 
             $prodottoId = (int) $r['prodotto_id'];
             $lottoId = $r['lotto_id'] ? (int) $r['lotto_id'] : null;
 
+            // Revisione Gestione Magazzino e Lotti §2: stesso blocco già applicato a
+            // movimento manuale/ricezione/spedizione, mancava sui trasferimenti — un
+            // trasferimento scarica/carica giacenza esattamente come le altre 3 operazioni.
+            if (qk_inventario_bloccato($pdo, $origineId, $prodottoId)) {
+                throw new \RuntimeException('È in corso un inventario fisico su uno dei prodotti di questo trasferimento, nel magazzino di origine. Completa o annulla l\'inventario prima di avviare la partenza.');
+            }
+
             _qk_trasferimento_scarica_origine($pdo, $prodottoId, $lottoId, $origineId, $qta);
 
             $pdo->prepare(
@@ -370,6 +377,12 @@ function qk_conferma_arrivo_trasferimento(PDO $pdo, int $id, array $quantitaArri
             $arrivata = array_key_exists($rigaId, $quantitaArrivata) ? (float) $quantitaArrivata[$rigaId] : $richiesta;
             if ($arrivata < 0) $arrivata = 0.0;
             $nota = trim((string) ($noteDiscrepanza[$rigaId] ?? ''));
+
+            // Revisione Gestione Magazzino e Lotti §2: stesso blocco della partenza,
+            // qui sul magazzino di destinazione.
+            if (qk_inventario_bloccato($pdo, $destinazioneId, $prodottoId)) {
+                throw new \RuntimeException('È in corso un inventario fisico su uno dei prodotti di questo trasferimento, nel magazzino di destinazione. Completa o annulla l\'inventario prima di confermare l\'arrivo.');
+            }
 
             _qk_trasferimento_carica_destinazione($pdo, $prodottoId, $lottoId, $destinazioneId, $arrivata);
 

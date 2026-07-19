@@ -418,3 +418,93 @@ function qk_resolve_azienda_emittente_stampa(PDO $pdo, array $documento): array
         'logo_path'       => $aziendaLive['logo_path'] ?? null,
     ];
 }
+
+/**
+ * Calcola il mittente (azienda interna + indirizzo) a partire dal magazzino di
+ * spedizione, da congelare su documenti_trasporto.mittente_* al momento della
+ * creazione del DDT — mai da ricalcolare in stampa (Revisione Gestione Magazzino
+ * e Lotti §3, stesso principio di qk_resolve_azienda_emittente_stampa() sopra).
+ *
+ * Se il magazzino non ha un'azienda interna assegnata (magazzini.azienda_interna_id
+ * è nullable) o non è indicato, ricade su qk_azienda_predefinita() — stesso fallback
+ * già usato per preventivi/ordini/RFQ. Se il magazzino non ha un indirizzo assegnato,
+ * ricade sulla sede legale dell'azienda risolta.
+ */
+function qk_calcola_mittente_ddt(PDO $pdo, ?int $magazzinoId): array
+{
+    $azienda = null;
+    $indirizzoRow = null;
+
+    if ($magazzinoId) {
+        $st = $pdo->prepare('SELECT azienda_interna_id, indirizzo_id FROM magazzini WHERE id = ?');
+        $st->execute([$magazzinoId]);
+        $mg = $st->fetch(PDO::FETCH_ASSOC);
+
+        if ($mg && $mg['azienda_interna_id']) {
+            $st2 = $pdo->prepare(
+                "SELECT cf.* FROM aziende_interne az
+                  JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
+                 WHERE az.id = ?"
+            );
+            $st2->execute([(int) $mg['azienda_interna_id']]);
+            $azienda = $st2->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        if ($mg && $mg['indirizzo_id']) {
+            $st3 = $pdo->prepare('SELECT * FROM indirizzi WHERE id = ?');
+            $st3->execute([(int) $mg['indirizzo_id']]);
+            $indirizzoRow = $st3->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+    }
+
+    // $azienda qui è sempre solo cf.* (nessuna collisione di colonna 'id' con az.*):
+    // qk_azienda_predefinita() invece unisce cf.*+az.*, quindi per il soggetto_id da
+    // usare nel fallback indirizzo si legge sempre 'soggetto_id', mai 'id' (che in quel
+    // caso sarebbe l'id di aziende_interne, non di clienti_fornitori).
+    $soggettoIdPerIndirizzo = $azienda['id'] ?? null;
+    if (!$azienda) {
+        $azienda = qk_azienda_predefinita($pdo) ?: [];
+        $soggettoIdPerIndirizzo = $azienda['soggetto_id'] ?? null;
+    }
+
+    if (!$indirizzoRow && $soggettoIdPerIndirizzo) {
+        $st4 = $pdo->prepare(
+            "SELECT * FROM indirizzi WHERE soggetto_id = ? AND tipo = 'sede_legale'
+              ORDER BY predefinito DESC, id ASC LIMIT 1"
+        );
+        $st4->execute([(int) $soggettoIdPerIndirizzo]);
+        $indirizzoRow = $st4->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    return [
+        'ragione_sociale' => $azienda['ragione_sociale'] ?? null,
+        'partita_iva'     => $azienda['partita_iva'] ?? null,
+        'codice_fiscale'  => $azienda['codice_fiscale'] ?? null,
+        'indirizzo'       => qk_format_indirizzo_stringa($indirizzoRow),
+        'telefono'        => $azienda['telefono'] ?? null,
+        'email'           => $azienda['email'] ?? null,
+    ];
+}
+
+/**
+ * Risolve il mittente da mostrare in stampa sul DDT, rispettando la storicità: legge
+ * prima le colonne congelate `mittente_*` su documenti_trasporto, con fallback dal
+ * vivo (via qk_calcola_mittente_ddt()) solo per DDT legacy privi di quelle colonne.
+ *
+ * @param array $ddt         riga di documenti_trasporto (deve includere le colonne mittente_*)
+ * @param int|null $magazzinoId  spedizioni.magazzino_id collegato al DDT, usato solo nel
+ *                                ramo legacy (documenti già congelati non lo consultano)
+ */
+function qk_resolve_mittente_ddt_stampa(PDO $pdo, array $ddt, ?int $magazzinoId): array
+{
+    if (!empty($ddt['mittente_ragione_sociale'])) {
+        return [
+            'ragione_sociale' => $ddt['mittente_ragione_sociale'],
+            'partita_iva'     => $ddt['mittente_partita_iva'] ?? null,
+            'codice_fiscale'  => $ddt['mittente_codice_fiscale'] ?? null,
+            'indirizzo'       => $ddt['mittente_indirizzo'] ?? null,
+            'telefono'        => $ddt['mittente_telefono'] ?? null,
+            'email'           => $ddt['mittente_email'] ?? null,
+        ];
+    }
+    return qk_calcola_mittente_ddt($pdo, $magazzinoId);
+}

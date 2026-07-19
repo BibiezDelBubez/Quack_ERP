@@ -8,7 +8,8 @@
  *   .totRighe        (int)     — numero totale righe
  *   .righeOk         (int)     — righe già allocate correttamente (da PHP)
  *   .includiScaduti  (bool)    — stato corrente del toggle "Includi lotti scaduti" (Tappa 4.4)
- *   .reloadUrlBase   (string)  — URL pagina corrente (senza includi_scaduti) per il toggle
+ *   .magazzinoId     (int)     — magazzino di spedizione corrente (Revisione Gestione Magazzino e Lotti §3)
+ *   .reloadUrlBase   (string)  — URL pagina corrente (solo order_id) per il toggle/selettore magazzino
  */
 
 /* global QkPickPack, bootstrap */
@@ -164,7 +165,8 @@
     async function fetchLotti(prodId) {
       try {
         const includi = cfg.includiScaduti ? '1' : '0';
-        const res  = await fetch(cfg.apiLotti + '?prodotto_id=' + prodId + '&includi_scaduti=' + includi);
+        const url = cfg.apiLotti + '?prodotto_id=' + prodId + '&includi_scaduti=' + includi + '&magazzino_id=' + cfg.magazzinoId;
+        const res  = await fetch(url);
         const data = await res.json();
         return data.lotti || [];
       } catch {
@@ -172,13 +174,30 @@
       }
     }
 
+    /* ── Ricarica la pagina preservando lo stato di entrambi i controlli
+       (toggle scaduti + selettore magazzino), qualunque dei due sia cambiato —
+       altrimenti cambiare l'uno resetterebbe silenziosamente l'altro. ── */
+    function ricaricaConStato() {
+      if (!cfg.reloadUrlBase) return;
+      const includiEl   = document.getElementById('pp-toggle-scaduti');
+      const magazzinoEl = document.getElementById('pp-select-magazzino');
+      const includi     = includiEl ? (includiEl.checked ? '1' : '0') : (cfg.includiScaduti ? '1' : '0');
+      const magazzinoId = magazzinoEl ? magazzinoEl.value : cfg.magazzinoId;
+      const sep = cfg.reloadUrlBase.includes('?') ? '&' : '?';
+      window.location.href = cfg.reloadUrlBase + sep + 'includi_scaduti=' + includi + '&magazzino_id=' + magazzinoId;
+    }
+
     /* ── Toggle "Includi lotti scaduti" — ricarica la pagina con il nuovo stato ── */
     const toggleScaduti = document.getElementById('pp-toggle-scaduti');
-    if (toggleScaduti && cfg.reloadUrlBase) {
-      toggleScaduti.addEventListener('change', function () {
-        const sep = cfg.reloadUrlBase.includes('?') ? '&' : '?';
-        window.location.href = cfg.reloadUrlBase + sep + 'includi_scaduti=' + (this.checked ? '1' : '0');
-      });
+    if (toggleScaduti) {
+      toggleScaduti.addEventListener('change', ricaricaConStato);
+    }
+
+    /* ── Selettore magazzino di spedizione (Revisione Gestione Magazzino e Lotti §3)
+       — cambiarlo ricarica la pagina per riproporre i lotti FEFO della nuova sede. ── */
+    const selectMagazzino = document.getElementById('pp-select-magazzino');
+    if (selectMagazzino) {
+      selectMagazzino.addEventListener('change', ricaricaConStato);
     }
 
     /* ── Event: cambio quantità lotto ───────────────────────────────────── */

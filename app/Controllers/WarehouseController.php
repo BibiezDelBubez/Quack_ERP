@@ -893,6 +893,106 @@ class WarehouseController extends BaseController
         ));
     }
 
+    /* ── Lotti in scadenza ─────────────────────────────────────────────────
+     * Revisione Gestione Magazzino e Lotti §5: prima non esisteva alcun report
+     * proattivo sulle scadenze imminenti — solo l'esclusione automatica dei lotti
+     * già scaduti al momento della spedizione (Tappa 4.4). Report separato, in
+     * sola lettura: mostra i lotti già scaduti o in scadenza entro la soglia
+     * scelta, con giacenza ancora residua (un lotto esaurito non serve più
+     * attenzione). Stesso pattern del selettore magazzino di reorder()/stock()
+     * (0 = tutti i magazzini, sempre esplicito in pagina). */
+    public function scadenze(): void
+    {
+        $base   = url('warehouse/scadenze');
+        $search = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
+
+        $magazzinoParam = get_param('magazzino_id', '0');
+        if ($magazzinoParam === '0' || $magazzinoParam === '') {
+            $magazzinoId = 0;
+        } else {
+            $candidato = (int) $magazzinoParam;
+            $stChk = $this->pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
+            $stChk->execute([$candidato]);
+            $magazzinoId = $stChk->fetchColumn() ? $candidato : 0;
+        }
+        $magazzini = qk_magazzini_list($this->pdo, true);
+
+        // Soglia di preavviso in giorni: non solo "già scaduto" (che il sistema già
+        // gestisce da solo alla spedizione), ma "sta per scadere" — l'informazione
+        // che oggi non esiste da nessuna parte.
+        $giorniValidi = [7, 15, 30, 60, 90];
+        $giorni = (int) get_param('giorni', '30');
+        if (!in_array($giorni, $giorniValidi, true)) {
+            $giorni = 30;
+        }
+        // Data soglia calcolata in PHP, mai con funzioni data SQLite-specifiche
+        // (JULIANDAY/DATE con modificatori) o con || per costruirla in SQL: qui deve
+        // restare portabile SQLite/MySQL (CLAUDE.md, regola sulla concatenazione).
+        $sogliaData = date('Y-m-d', strtotime("+{$giorni} days"));
+
+        $where  = ['l.data_scadenza IS NOT NULL', 'lg.quantita_disponibile > 0.0005', 'l.data_scadenza <= ?'];
+        $params = [$sogliaData];
+        if ($magazzinoId > 0) {
+            $where[]  = 'lg.magazzino_id = ?';
+            $params[] = $magazzinoId;
+        }
+        if ($search !== '') {
+            $where[]  = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
+            $like     = '%' . $search . '%';
+            $params[] = $like;
+            $params[] = $like;
+        }
+        $whereSql = implode(' AND ', $where);
+
+        $sortColMap = [
+            'scadenza'  => 'l.data_scadenza',
+            'prodotto'  => 'p.nome',
+            'magazzino' => 'mg.nome',
+            'quantita'  => 'lg.quantita_disponibile',
+        ];
+        $pag     = qk_pagination_params(array_keys($sortColMap), 'scadenza', 'asc');
+        $sortCol = $sortColMap[$pag['sort']];
+
+        $stmtC = $this->pdo->prepare(
+            "SELECT COUNT(*)
+               FROM lotti l
+               JOIN lotti_giacenze lg ON lg.lotto_id = l.id
+               JOIN prodotti p ON p.id = l.prodotto_id
+               JOIN magazzini mg ON mg.id = lg.magazzino_id
+              WHERE $whereSql"
+        );
+        $stmtC->execute($params);
+        $total = (int) $stmtC->fetchColumn();
+
+        $stmtQ = $this->pdo->prepare(
+            "SELECT l.id AS lotto_id, l.codice_lotto_interno, l.codice_lotto_fornitore, l.data_scadenza,
+                    p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
+                    mg.id AS magazzino_id, mg.nome AS magazzino_nome,
+                    lg.quantita_disponibile, u.codice AS uom
+               FROM lotti l
+               JOIN lotti_giacenze lg ON lg.lotto_id = l.id
+               JOIN prodotti p ON p.id = l.prodotto_id
+               JOIN magazzini mg ON mg.id = lg.magazzino_id
+          LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+              WHERE $whereSql
+              ORDER BY $sortCol COLLATE NOCASE {$pag['dir']}
+              LIMIT {$pag['limit']} OFFSET {$pag['offset']}"
+        );
+        $stmtQ->execute($params);
+        $lotti = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+
+        $page_title    = 'Lotti in scadenza';
+        $page_subtitle = 'Lotti già scaduti o in scadenza entro ' . $giorni . ' giorni';
+        $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Lotti in scadenza']];
+        $active_tab    = 'scadenze';
+        $extra_css = ['warehouse.css'];
+
+        $this->page(APP_ROOT_DIR . '/app/views/warehouse/scadenze.php', compact(
+            'page_title', 'page_subtitle', 'breadcrumbs', 'extra_css', 'active_tab',
+            'search', 'lotti', 'total', 'base', 'pag', 'magazzini', 'magazzinoId', 'giorni', 'giorniValidi'
+        ));
+    }
+
     /* ── Soglie di riordino (scorta minima per magazzino) ────────────────────
      * Piano Multi-Magazzino Parte 5, §5.2: modello Odoo (griglia editabile
      * inline), unica fonte di verità già su giacenze.scorta_minima. Due
