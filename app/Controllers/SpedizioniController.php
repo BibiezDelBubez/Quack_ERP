@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/magazzino.php';
+require_once INCLUDES_DIR . '/document_common.php';
 
 final class SpedizioniController extends BaseController
 {

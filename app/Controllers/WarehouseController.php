@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/magazzino.php';
 require_once INCLUDES_DIR . '/trasferimenti.php';
+require_once INCLUDES_DIR . '/inventario.php';
 
 /**
  * WarehouseController — modulo Magazzino.
@@ -22,62 +23,21 @@ class WarehouseController extends BaseController
 
     public function dashboard(): void
     {
-        // 1. Calcola il Valore Magazzino: Somma di (giacenze.quantita_disponibile * costo_acquisto)
-        // Da v_costo_acquisto_prodotti (fix "Listino Fantasma", audit/MASTER_AUDIT_REPORT.md)
-        // — vedi commento esteso in db/init_sqlite.sql §14b.
-        $valore_magazzino = (float) $this->pdo->query("
-            SELECT SUM(g.quantita_disponibile * COALESCE(vc.costo_acquisto, 0.0))
-            FROM giacenze g
-            LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = g.prodotto_id
-        ")->fetchColumn();
-
-        // 2. Conta i prodotti Sottoscorta NEL MAGAZZINO ATTIVO (la soglia è per
-        //    coppia prodotto-magazzino, non più un valore unico di prodotto —
-        //    vedi Piano Multi-Magazzino §3.5). Finché non esiste un selettore
-        //    magazzino in UI (§3.3/§3.10), la dashboard generale mostra il
-        //    sottoscorta della sede attiva di sessione/predefinita.
+        // KPI della dashboard estratti in includes/magazzino.php (Piano
+        // refactor MVC/DRY, Fase 3, microtappa 3.1) — il sottoscorta usa ora
+        // qk_stock_counters(), già condivisa con stock()/scadenze(), invece
+        // di una formula duplicata inline (stesso $magazzinoAttivoId, stesso
+        // risultato: verificato che entrambe le query concordano perché un
+        // prodotto senza riga giacenze ha comunque scorta_minima=0, che fallisce
+        // sempre la condizione "scorta_minima > 0" di qk_sottoscorta_where(),
+        // quindi INNER JOIN vs LEFT JOIN non cambiava il conteggio).
         $magazzinoAttivoId = qk_magazzino_attivo_id($this->pdo);
-        $stSotto = $this->pdo->prepare("
-            SELECT COUNT(*) FROM prodotti p
-            JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-            WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
-        ");
-        $stSotto->execute([$magazzinoAttivoId]);
-        $sottoscorta_count = (int) $stSotto->fetchColumn();
-
-        // 3. Conta la merce in Arrivo (ordini acquisto pendenti)
-        $in_arrivo_count = (int) $this->pdo->query("
-            SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')
-        ")->fetchColumn();
-
-        // 4. Conta la merce in Partenza (spedizioni non ancora completate/consegnate)
-        $in_partenza_count = (int) $this->pdo->query("
-            SELECT COUNT(*) FROM spedizioni WHERE stato IN ('preparazione', 'spedita')
-        ")->fetchColumn();
-
-        // 5. Ultimi 5 movimenti logistici
-        $stmtM = $this->pdo->query("
-            SELECT m.created_at, m.tipo_movimento, m.quantita,
-                   p.nome AS prodotto_nome, u.codice AS uom
-            FROM movimenti_magazzino m
-            JOIN prodotti p ON p.id = m.prodotto_id
-            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-            ORDER BY m.id DESC LIMIT 5
-        ");
-        $recent_movements = $stmtM->fetchAll(PDO::FETCH_ASSOC);
-
-        // 6. Primi 5 prodotti vicini al sottoscorta nel magazzino attivo
-        $stmtU = $this->pdo->prepare("
-            SELECT p.nome, COALESCE(g.quantita_disponibile, 0) AS quantita_disponibile, g.scorta_minima, u.codice AS uom
-            FROM prodotti p
-            JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-            LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-            WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
-            ORDER BY (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) ASC
-            LIMIT 5
-        ");
-        $stmtU->execute([$magazzinoAttivoId]);
-        $understock_items = $stmtU->fetchAll(PDO::FETCH_ASSOC);
+        $valore_magazzino  = qk_valore_magazzino($this->pdo);
+        $sottoscorta_count = qk_stock_counters($this->pdo, $magazzinoAttivoId)['sottoscorta'];
+        $in_arrivo_count   = qk_ordini_acquisto_in_arrivo_count($this->pdo);
+        $in_partenza_count = qk_spedizioni_in_partenza_count($this->pdo);
+        $recent_movements  = qk_movimenti_recenti($this->pdo, 5);
+        $understock_items  = qk_prodotti_vicino_sottoscorta($this->pdo, $magazzinoAttivoId, 5);
 
         $page_title    = 'Magazzino';
         $page_subtitle = 'Panoramica e KPI operativi';
@@ -103,20 +63,9 @@ class WarehouseController extends BaseController
 
         // Fix 2 (Magazzino Attivo - Analisi e Alternative.md, §8.3): filtro
         // magazzino sempre esplicito in pagina, mai un'aggregazione silenziosa.
-        // '' → default comodo sul magazzino attivo; '0' → scelta esplicita
-        // "Tutti i magazzini" (aggregato SUM, §8.0); intero → sede specifica,
-        // validata attiva altrimenti si ricade sul default.
-        $magazzinoParam = get_param('magazzino_id', '');
-        if ($magazzinoParam === '') {
-            $magazzinoId = qk_magazzino_attivo_id($this->pdo);
-        } elseif ($magazzinoParam === '0') {
-            $magazzinoId = 0;
-        } else {
-            $candidato = (int) $magazzinoParam;
-            $stChk = $this->pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
-            $stChk->execute([$candidato]);
-            $magazzinoId = $stChk->fetchColumn() ? $candidato : qk_magazzino_attivo_id($this->pdo);
-        }
+        // Risoluzione condivisa in qk_risolvi_magazzino_filtro() (audit MVC/DRY,
+        // Revisione Gestione Magazzino e Lotti — prima duplicata in 3 punti).
+        $magazzinoId = qk_risolvi_magazzino_filtro($this->pdo, get_param('magazzino_id', ''));
         // Opzione A (§9.5): una scelta esplicita di sede su questa pagina
         // aggiorna la sessione come effetto collaterale, così resta "ricordata"
         // per precompilare le altre schermate — non esiste più un selettore
@@ -167,6 +116,12 @@ class WarehouseController extends BaseController
             }
         }
 
+        // Contatori per le pill Sottoscorta/Esauriti — spostati dalla view al
+        // service layer (audit MVC/DRY, Revisione Gestione Magazzino e Lotti).
+        $contatori    = qk_stock_counters($this->pdo, $magazzinoId);
+        $nSottoscorta = $contatori['sottoscorta'];
+        $nEsauriti    = $contatori['esauriti'];
+
         $page_title    = 'Giacenze Magazzino';
         $page_subtitle = 'Situazione disponibilità e giacenze — ' . $nomeMagazzinoScelto;
         $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Giacenze']];
@@ -178,7 +133,7 @@ class WarehouseController extends BaseController
         $this->page(APP_ROOT_DIR . '/app/views/warehouse/stock.php', compact(
             'page_title', 'page_subtitle', 'breadcrumbs', 'page_actions', 'extra_css',
             'search', 'filter', 'stock', 'ordini_in_arrivo', 'nInArrivo', 'total', 'pag',
-            'magazzini', 'magazzinoId'
+            'magazzini', 'magazzinoId', 'nSottoscorta', 'nEsauriti'
         ));
     }
 
@@ -242,36 +197,9 @@ class WarehouseController extends BaseController
         $page    = $pag['page'];
         $limit   = $pag['limit'];
         $offset  = $pag['offset'];
-        $sortCol = $sortColMap[$sort];
-
-        // ── WHERE dinamico ───────────────────────────────────────────────────
-        $where  = [];
-        $params = [];
-        if ($search !== '') {
-            $where[]  = "(u.username LIKE ? OR i.note LIKE ?)";
-            $params[] = "%$search%";
-            $params[] = "%$search%";
-        }
-        if (in_array($stato, ['bozza', 'convalidato'], true)) {
-            $where[]  = "i.stato = ?";
-            $params[] = $stato;
-        }
-        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-        $stmtC = $this->pdo->prepare("SELECT COUNT(*) FROM inventari i JOIN utenti u ON u.id = i.creato_da " . $whereSql);
-        $stmtC->execute($params);
-        $total = (int)$stmtC->fetchColumn();
-
-        $stmtQ = $this->pdo->prepare(
-            "SELECT i.*, u.username AS creatore_username
-             FROM inventari i
-             JOIN utenti u ON u.id = i.creato_da
-             " . $whereSql . "
-             ORDER BY " . $sortCol . " " . $dir . "
-             LIMIT " . $limit . " OFFSET " . $offset
-        );
-        $stmtQ->execute($params);
-        $inventari = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
+        // Count/lista estratti in includes/inventario.php (Fase 3, microtappa 3.2).
+        $total     = qk_inventari_count($this->pdo, $search, $stato);
+        $inventari = qk_inventari_list($this->pdo, $search, $stato, $sort, $dir, $limit, $offset);
 
         $page_title    = 'Inventario Fisico';
         $page_subtitle = 'Gestione e convalida dei conteggi fisici';
@@ -361,57 +289,24 @@ class WarehouseController extends BaseController
         } else {
             // Nuova sessione: prendiamo i prodotti con le giacenze teoriche NEL
             // MAGAZZINO di questo inventario — tutti, oppure solo quelli della
-            // categoria scelta se è un cycle count (Tappa 4.3). Se un prodotto
-            // gestisce lotti, splittiamo le giacenze teoriche per lotto
-            // (lotti_giacenze, per sede — vedi §3.1), non più sul campo
-            // aggregato lotti.quantita_disponibile.
-            $condCategoria = $categoriaFiltroId ? 'AND p.categoria_id = ?' : '';
-            $paramsInv = [$magazzinoInventarioId, $magazzinoInventarioId];
-            if ($categoriaFiltroId) {
-                $paramsInv[] = $categoriaFiltroId;
-            }
-            $stmtInv = $this->pdo->prepare("
-                SELECT p.id AS prodotto_id, p.nome AS nome_prodotto, p.sku_interno, u.codice AS uom,
-                       l.id AS lotto_id, l.codice_lotto_interno,
-                       CASE WHEN p.traccia_lotti = 1 THEN COALESCE(lg.quantita_disponibile, 0)
-                            ELSE COALESCE(g.quantita_disponibile, 0)
-                       END AS giacenza_teorica
-                FROM prodotti p
-                LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-                LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                LEFT JOIN lotti l ON l.prodotto_id = p.id AND (p.traccia_lotti = 1)
-                LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
-                WHERE p.attivo = 1 AND p.tipo != 'kit' $condCategoria
-                ORDER BY p.nome COLLATE NOCASE, l.codice_lotto_interno ASC
-            ");
-            $stmtInv->execute($paramsInv);
-            $prodotti_inventario = $stmtInv->fetchAll(PDO::FETCH_ASSOC);
+            // categoria scelta se è un cycle count (Tappa 4.3). Estratto in
+            // qk_inventario_prodotti_scope() (Piano refactor "God Object",
+            // microtappa 2.4).
+            $prodotti_inventario = qk_inventario_prodotti_scope($this->pdo, $magazzinoInventarioId, $categoriaFiltroId);
 
             // Guardia (Tappa 4.3): nessun'altra bozza già aperta su questo
-            // magazzino deve coprire uno di questi stessi prodotti — due cycle
-            // count su categorie diverse possono coesistere, ma non su prodotti
-            // in comune (altrimenti si "pestano i piedi" a vicenda).
-            if (!empty($prodotti_inventario)) {
-                $prodIds = array_values(array_unique(array_column($prodotti_inventario, 'prodotto_id')));
-                $in = implode(',', array_map('intval', $prodIds));
-                $stOverlap = $this->pdo->prepare("
-                    SELECT i.id, cat.nome AS categoria_nome
-                    FROM inventari i
-                    JOIN inventari_righe ir ON ir.inventario_id = i.id
-                    LEFT JOIN categorie_prodotto cat ON cat.id = i.categoria_filtro_id
-                    WHERE i.magazzino_id = ? AND i.stato = 'bozza' AND ir.prodotto_id IN ($in)
-                    LIMIT 1
-                ");
-                $stOverlap->execute([$magazzinoInventarioId]);
-                $overlap = $stOverlap->fetch(PDO::FETCH_ASSOC);
-                if ($overlap) {
-                    $scopeLabel = $overlap['categoria_nome'] ? ('categoria "' . $overlap['categoria_nome'] . '"') : 'tutti i prodotti';
-                    redirect_with(
-                        'warehouse/inventories',
-                        'danger',
-                        'Esiste già un inventario in bozza (#' . $overlap['id'] . ', ' . $scopeLabel . ') che copre uno o più di questi prodotti in questo magazzino. Completa o annulla quello prima di aprirne un altro sugli stessi prodotti.'
-                    );
-                }
+            // magazzino deve coprire uno di questi stessi prodotti. Solo per il
+            // redirect immediato lato UI — il controllo che conta davvero contro
+            // le race condition è quello ripetuto dentro il lock applicativo, in
+            // qk_convalida_inventario() (stessa funzione condivisa, microtappa 2.4).
+            $overlap = qk_inventario_verifica_sovrapposizione($this->pdo, $magazzinoInventarioId, $prodotti_inventario);
+            if ($overlap) {
+                $scopeLabel = $overlap['categoria_nome'] ? ('categoria "' . $overlap['categoria_nome'] . '"') : 'tutti i prodotti';
+                redirect_with(
+                    'warehouse/inventories',
+                    'danger',
+                    'Esiste già un inventario in bozza (#' . $overlap['id'] . ', ' . $scopeLabel . ') che copre uno o più di questi prodotti in questo magazzino. Completa o annulla quello prima di aprirne un altro sugli stessi prodotti.'
+                );
             }
         }
 
@@ -460,241 +355,43 @@ class WarehouseController extends BaseController
                 }
 
                 if (empty($errors)) {
+                    // Normalizza le quantità contate (virgola->punto, cast a float)
+                    // QUI, prima del confine col service layer — qk_convalida_inventario()
+                    // non deve mai ricevere $_POST grezzo (vedi Piano refactor "God
+                    // Object", vincolo su $inputRighe).
+                    $righeNormalizzate = [];
+                    foreach ($inputRighe as $key => $valRiga) {
+                        $righeNormalizzate[$key] = (float) str_replace(',', '.', (string) $valRiga);
+                    }
+
                     try {
-                        $this->pdo->beginTransaction();
                         $utente_id = (int)(current_user()['id'] ?? 0);
-                        $avvisiRiservata = [];
 
-                        if (!$id) {
-                            // Lock applicativo (Tappa 4.3): il controllo di sovrapposizione
-                            // qui sotto è un check-then-act (SELECT poi, più tardi, INSERT) — una
-                            // semplice transazione NON basta a renderlo atomico: due richieste
-                            // concorrenti potrebbero entrambe superare la SELECT prima che una
-                            // delle due scriva (race "phantom read"). Un vincolo PRIMARY KEY,
-                            // invece, viene sempre controllato in modo atomico dal motore
-                            // all'INSERT: la seconda richiesta concorrente sullo stesso magazzino
-                            // fallisce/si accoda deterministicamente. La riga di lock viene
-                            // rilasciata (DELETE) più sotto, nella stessa transazione, subito
-                            // dopo l'inserimento della testata — non è un lock persistente.
-                            try {
-                                $this->pdo->prepare('INSERT INTO inventario_creazione_lock (magazzino_id) VALUES (?)')
-                                    ->execute([$magazzinoInventarioId]);
-                            } catch (PDOException $eLock) {
-                                throw new \RuntimeException('Un\'altra creazione di inventario per questo magazzino è in corso in questo momento. Riprova tra qualche istante.');
-                            }
+                        // Facade transazionale (Piano refactor "God Object", microtappa 2.3,
+                        // includes/inventario.php): unico punto che apre/chiude la transazione
+                        // — lock, guardia ripetuta, CRUD, PASS1, PASS2, cambio stato sono tutti
+                        // dentro. Verificata contro tests/manual/suite_create_inventario.php
+                        // (tutti gli scenari A-M) prima e dopo l'estrazione.
+                        $risultato = qk_convalida_inventario($this->pdo, $id, [
+                            'azione'              => $azione,
+                            'data_inventario'     => $data_inventario,
+                            'note'                => $note,
+                            'magazzino_id'        => $magazzinoInventarioId,
+                            'categoria_filtro_id' => $categoriaFiltroId,
+                            'prodotti_inventario' => $prodotti_inventario,
+                            'righe'               => $righeNormalizzate,
+                        ], $utente_id);
 
-                            // Ripeti la guardia anti-sovrapposizione (già fatta sopra, fuori
-                            // transazione, solo per il redirect immediato in caso di GET/preview)
-                            // QUI DENTRO alla transazione, ora sotto la copertura del lock appena
-                            // preso: nessun'altra richiesta concorrente può essere arrivata fin
-                            // qui nel frattempo per lo stesso magazzino.
-                            if (!empty($prodotti_inventario)) {
-                                $prodIdsChk = array_values(array_unique(array_column($prodotti_inventario, 'prodotto_id')));
-                                $inChk = implode(',', array_map('intval', $prodIdsChk));
-                                $stOverlapChk = $this->pdo->prepare("
-                                    SELECT i.id, cat.nome AS categoria_nome
-                                    FROM inventari i
-                                    JOIN inventari_righe ir ON ir.inventario_id = i.id
-                                    LEFT JOIN categorie_prodotto cat ON cat.id = i.categoria_filtro_id
-                                    WHERE i.magazzino_id = ? AND i.stato = 'bozza' AND ir.prodotto_id IN ($inChk)
-                                    LIMIT 1
-                                ");
-                                $stOverlapChk->execute([$magazzinoInventarioId]);
-                                $overlapChk = $stOverlapChk->fetch(PDO::FETCH_ASSOC);
-                                if ($overlapChk) {
-                                    $scopeLabelChk = $overlapChk['categoria_nome'] ? ('categoria "' . $overlapChk['categoria_nome'] . '"') : 'tutti i prodotti';
-                                    throw new \RuntimeException(
-                                        'Esiste già un inventario in bozza (#' . $overlapChk['id'] . ', ' . $scopeLabelChk . ') che copre uno o più di questi prodotti in questo magazzino. Completa o annulla quello prima di aprirne un altro sugli stessi prodotti.'
-                                    );
-                                }
-                            }
-
-                            // Inserisci testata (magazzino e categoria filtro fissati alla
-                            // creazione, non più cambiabili dopo)
-                            $stmt = $this->pdo->prepare("
-                                INSERT INTO inventari (data_inventario, magazzino_id, categoria_filtro_id, note, creato_da, stato)
-                                VALUES (?, ?, ?, ?, ?, 'bozza')
-                            ");
-                            $stmt->execute([$data_inventario, $magazzinoInventarioId, $categoriaFiltroId, $note, $utente_id]);
-                            $id = (int)$this->pdo->lastInsertId();
-
-                            // Rilascia il lock: la testata è scritta (dentro questa stessa
-                            // transazione), quindi da qui in poi una nuova creazione concorrente
-                            // vedrebbe comunque questa bozza tramite la guardia di sovrapposizione
-                            // sopra — non serve più tenere occupato il lock fino al commit finale.
-                            $this->pdo->prepare('DELETE FROM inventario_creazione_lock WHERE magazzino_id = ?')
-                                ->execute([$magazzinoInventarioId]);
-                        } else {
-                            // Aggiorna testata
-                            $stmt = $this->pdo->prepare("
-                                UPDATE inventari SET data_inventario = ?, note = ? WHERE id = ?
-                            ");
-                            $stmt->execute([$data_inventario, $note, $id]);
-                            // Rimuovi vecchie righe temporaneamente
-                            $this->pdo->prepare("DELETE FROM inventari_righe WHERE inventario_id = ?")->execute([$id]);
-                        }
-
-                        // Reinserisci righe
-                        $stmtIns = $this->pdo->prepare("
-                            INSERT INTO inventari_righe (inventario_id, prodotto_id, lotto_id, giacenza_teorica, quantita_contata)
-                            VALUES (?, ?, ?, ?, ?)
-                        ");
-
-                        foreach ($prodotti_inventario as $p) {
-                            $key = $p['prodotto_id'] . ':' . ($p['lotto_id'] ?? '');
-                            $contata = isset($inputRighe[$key]) ? (float)str_replace(',', '.', $inputRighe[$key]) : (float)$p['giacenza_teorica'];
-                            $lottoId = $p['lotto_id'] ? (int)$p['lotto_id'] : null;
-
-                            $stmtIns->execute([$id, $p['prodotto_id'], $lottoId, $p['giacenza_teorica'], $contata]);
-                        }
-
-                        // Convalida: genera i movimenti logistici e allinea le giacenze
-                        if ($azione === 'convalida') {
-                            // Recupera le righe appena salvate
-                            $stmtRighe = $this->pdo->prepare("SELECT * FROM inventari_righe WHERE inventario_id = ?");
-                            $stmtRighe->execute([$id]);
-                            $righeSalvate = $stmtRighe->fetchAll(PDO::FETCH_ASSOC);
-
-                            // PASS 1 (Tappa 4.3): valida TUTTI gli scostamenti prima di
-                            // applicare qualsiasi rettifica. Una giacenza che andrebbe
-                            // negativa blocca l'intera convalida (segnala un errore di
-                            // conteggio o un movimento mancante da indagare, non va
-                            // "corretta" automaticamente). Una giacenza che scenderebbe
-                            // sotto la quantità già riservata per ordini in corso non
-                            // blocca — è un fatto fisico reale, non un errore — ma va
-                            // segnalata chiaramente, altrimenti si scopre solo quando la
-                            // spedizione fallisce.
-                            //
-                            // IMPORTANTE: un prodotto a lotti ha UNA riga per lotto in
-                            // inventari_righe, ma giacenze.quantita_disponibile è un
-                            // aggregato PER PRODOTTO (somma di tutti i lotti). Controllare
-                            // ogni riga isolatamente contro lo stesso valore di giacenza
-                            // (mai aggiornato in questo PASS, che è di sola lettura) è
-                            // sbagliato quando un prodotto ha più lotti in conteggio nella
-                            // stessa sessione: due delta negativi indipendenti possono
-                            // sembrare entrambi innocui presi da soli, ma sommati insieme
-                            // portano la giacenza reale sotto zero — cosa che il PASS 2
-                            // (che invece rilegge la giacenza aggiornata a ogni riga)
-                            // applicherebbe comunque, senza che PASS 1 l'avesse rilevato.
-                            // Per questo qui sommiamo prima i delta PER PRODOTTO, poi
-                            // controlliamo il totale cumulato una sola volta a prodotto.
-                            $deltaPerProdotto = [];
-                            foreach ($righeSalvate as $riga) {
-                                $delta = (float)$riga['quantita_contata'] - (float)$riga['giacenza_teorica'];
-                                if (abs($delta) < 0.0001) {
-                                    continue;
-                                }
-                                $pid = (int) $riga['prodotto_id'];
-                                $deltaPerProdotto[$pid] = ($deltaPerProdotto[$pid] ?? 0.0) + $delta;
-                            }
-
-                            $stNomeProdotto = $this->pdo->prepare('SELECT nome FROM prodotti WHERE id = ?');
-                            $stGiacChk = $this->pdo->prepare("SELECT quantita_disponibile, quantita_riservata FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
-                            $violazioniNegative = [];
-                            foreach ($deltaPerProdotto as $pid => $deltaTotale) {
-                                if (abs($deltaTotale) < 0.0001) {
-                                    continue;
-                                }
-                                $stGiacChk->execute([$pid, $magazzinoInventarioId]);
-                                $giacChk = $stGiacChk->fetch(PDO::FETCH_ASSOC);
-                                $qtaCorrenteChk = $giacChk ? (float)$giacChk['quantita_disponibile'] : 0.0;
-                                $riservataChk   = $giacChk ? (float)$giacChk['quantita_riservata']   : 0.0;
-                                $nuovaQtaChk    = $qtaCorrenteChk + $deltaTotale;
-
-                                $stNomeProdotto->execute([$pid]);
-                                $nomeProdotto = (string) ($stNomeProdotto->fetchColumn() ?: ('#' . $pid));
-
-                                if ($nuovaQtaChk < -0.0001) {
-                                    $violazioniNegative[] = sprintf('"%s": giacenza risultante %.3f', $nomeProdotto, $nuovaQtaChk);
-                                } elseif ($nuovaQtaChk < $riservataChk - 0.0001) {
-                                    $avvisiRiservata[] = sprintf('"%s": disponibile %.3f dopo la rettifica, ma %.3f già riservata per ordini in corso', $nomeProdotto, $nuovaQtaChk, $riservataChk);
-                                }
-                            }
-                            if (!empty($violazioniNegative)) {
-                                throw new \RuntimeException(
-                                    'Impossibile convalidare: alcune rettifiche porterebbero la giacenza sotto zero — ' .
-                                    implode('; ', $violazioniNegative) . '. Verifica il conteggio prima di riprovare.'
-                                );
-                            }
-
-                            // PASS 2: applica le rettifiche (nessuna violazione trovata sopra)
-                            foreach ($righeSalvate as $riga) {
-                                $delta = (float)$riga['quantita_contata'] - (float)$riga['giacenza_teorica'];
-                                if (abs($delta) < 0.0001) {
-                                    continue; // nessuna rettifica necessaria
-                                }
-
-                                $quantitaAssoluta = abs($delta);
-
-                                // 1. Crea il movimento di magazzino, per QUESTO magazzino.
-                                // `quantita` resta la magnitudine (invariante di schema);
-                                // `quantita_delta` porta il segno per la UI storico movimenti
-                                // (vedi stesso pattern in qk_insert_movimento_manuale).
-                                $stmtMov = $this->pdo->prepare("
-                                    INSERT INTO movimenti_magazzino
-                                    (prodotto_id, lotto_id, magazzino_id, tipo_movimento, quantita, quantita_delta, documento_tipo, documento_id, canale_origine, note, creato_da)
-                                    VALUES (?, ?, ?, 'rettifica', ?, ?, 'inventario', ?, 'manuale', ?, ?)
-                                ");
-                                $noteMov = sprintf("Rettifica da inventario #%d. Scostamento: %+.3f", $id, $delta);
-                                $stmtMov->execute([
-                                    $riga['prodotto_id'],
-                                    $riga['lotto_id'],
-                                    $magazzinoInventarioId,
-                                    $quantitaAssoluta,
-                                    $delta,
-                                    $id,
-                                    $noteMov,
-                                    $utente_id
-                                ]);
-                                $movimentoId = (int)$this->pdo->lastInsertId();
-
-                                // Associa il movimento alla riga
-                                $this->pdo->prepare("UPDATE inventari_righe SET movimento_id = ? WHERE id = ?")->execute([$movimentoId, $riga['id']]);
-
-                                // 2. Aggiorna la giacenza di QUESTO magazzino
-                                $stGiac = $this->pdo->prepare("SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
-                                $stGiac->execute([$riga['prodotto_id'], $magazzinoInventarioId]);
-                                $giac = $stGiac->fetch(PDO::FETCH_ASSOC);
-
-                                if ($giac) {
-                                    $nuovaQta = (float)$giac['quantita_disponibile'] + $delta;
-                                    $this->pdo->prepare("UPDATE giacenze SET quantita_disponibile = ?, updated_at = datetime('now') WHERE id = ?")
-                                              ->execute([$nuovaQta, $giac['id']]);
-                                } else {
-                                    $this->pdo->prepare("INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                                                         VALUES (?, ?, ?, 0, 0, 0, datetime('now'))")
-                                              ->execute([$riga['prodotto_id'], $magazzinoInventarioId, $delta]);
-                                }
-
-                                // 3. Aggiorna quantità disponibile del lotto in QUESTO magazzino
-                                //    (lotti_giacenze, non più il campo aggregato lotti.quantita_disponibile)
-                                if ($riga['lotto_id']) {
-                                    $this->pdo->prepare("
-                                        INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-                                        VALUES (?, ?, ?, datetime('now'))
-                                        ON CONFLICT(lotto_id, magazzino_id) DO UPDATE SET
-                                            quantita_disponibile = quantita_disponibile + excluded.quantita_disponibile,
-                                            updated_at = excluded.updated_at
-                                    ")->execute([$riga['lotto_id'], $magazzinoInventarioId, $delta]);
-                                }
-                            }
-
-                            // Segna inventario come convalidato
-                            $this->pdo->prepare("UPDATE inventari SET stato = 'convalidato' WHERE id = ?")->execute([$id]);
-                        }
-
-                        $this->pdo->commit();
                         $msg = $azione === 'convalida' ? 'Inventario convalidato e rettifiche applicate con successo.' : 'Bozza inventario salvata con successo.';
                         $flashType = 'success';
-                        if ($azione === 'convalida' && !empty($avvisiRiservata)) {
-                            $msg .= ' ATTENZIONE — sotto-copertura ordini: ' . implode('; ', $avvisiRiservata) . '.';
+                        if ($azione === 'convalida' && !empty($risultato['avvisi_riservata'])) {
+                            $msg .= ' ATTENZIONE — sotto-copertura ordini: ' . implode('; ', $risultato['avvisi_riservata']) . '.';
                             $flashType = 'warning';
                         }
                         redirect_with('warehouse/inventories', $flashType, $msg);
 
                     } catch (\Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
-                        $this->pdo->rollBack();
                         $errors['_global'] = 'Errore durante il salvataggio: ' . $e->getMessage();
                     }
                 }
@@ -728,17 +425,7 @@ class WarehouseController extends BaseController
 
         // Fix 3 (§8.4): stesso pattern di risoluzione del Fix 2 (§8.3) — filtro
         // magazzino sempre esplicito in pagina, mai un'aggregazione silenziosa.
-        $magazzinoParam = get_param('magazzino_id', '');
-        if ($magazzinoParam === '') {
-            $magazzinoId = qk_magazzino_attivo_id($this->pdo);
-        } elseif ($magazzinoParam === '0') {
-            $magazzinoId = 0;
-        } else {
-            $candidato = (int) $magazzinoParam;
-            $stChk = $this->pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
-            $stChk->execute([$candidato]);
-            $magazzinoId = $stChk->fetchColumn() ? $candidato : qk_magazzino_attivo_id($this->pdo);
-        }
+        $magazzinoId = qk_risolvi_magazzino_filtro($this->pdo, get_param('magazzino_id', ''));
         if ($magazzinoId > 0) {
             $_SESSION['magazzino_attivo_id'] = $magazzinoId; // Opzione A, §9.5
         }
@@ -770,21 +457,8 @@ class WarehouseController extends BaseController
             $baseSql =
                 "FROM prodotti p
                  LEFT JOIN giacenze g ON g.prodotto_id = p.id
-                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                 -- REVISIONE Ciclo Acquisti, sez. Multi-fornitore (deciso 15/07/2026,
-                 -- implementato 17/07/2026): prima 'ordine_preferenza_fornitore = 1'
-                 -- fisso, che restava vuoto se il preferito era disattivato invece di
-                 -- scavalcare al successivo attivo. Stesso pattern già in uso in
-                 -- purchases_rfq.php:127 e RfqController::qk_acquisti_prodotti_search()
-                 -- (fix §1.9) — primo fornitore attivo per ordine di preferenza.
-                 LEFT JOIN prodotti_fornitori pf ON pf.id = (
-                     SELECT pf2.id FROM prodotti_fornitori pf2
-                      JOIN clienti_fornitori cf2 ON cf2.id = pf2.fornitore_id AND cf2.attivo = 1
-                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
-                     ORDER BY pf2.ordine_preferenza_fornitore ASC, pf2.id DESC
-                     LIMIT 1
-                 )
-                 LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
+                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id"
+                 . qk_join_fornitore_preferito_sql('p') . "
                  WHERE p.attivo = 1 $whereExtra
                  GROUP BY p.id
                 HAVING " . qk_sottoscorta_having('g');
@@ -834,17 +508,8 @@ class WarehouseController extends BaseController
             $baseSql =
                 "FROM prodotti p
                  JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                 -- REVISIONE Ciclo Acquisti, sez. Multi-fornitore — vedi commento gemello
-                 -- nel ramo aggregato sopra (stesso fix, stesso pattern, stesso motivo).
-                 LEFT JOIN prodotti_fornitori pf ON pf.id = (
-                     SELECT pf2.id FROM prodotti_fornitori pf2
-                      JOIN clienti_fornitori cf2 ON cf2.id = pf2.fornitore_id AND cf2.attivo = 1
-                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
-                     ORDER BY pf2.ordine_preferenza_fornitore ASC, pf2.id DESC
-                     LIMIT 1
-                 )
-                 LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id
+                 LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id"
+                 . qk_join_fornitore_preferito_sql('p') . "
                  WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
                    " . $whereExtra;
 
@@ -874,6 +539,16 @@ class WarehouseController extends BaseController
 
             $pag = compact('page', 'limit', 'sort', 'dir');
         }
+
+        // Quantità consigliata per il riordino: alimenta anche gli URL applicativi
+        // (creazione RFQ pre-compilata), non è solo presentazione — spostata qui
+        // dalla view (Fase 3, microtappa 3.6). Calcolo puro post-fetch, identico
+        // per entrambi i rami (aggregato/per-sede): entrambi espongono
+        // scorta_minima/qta_libera con lo stesso significato.
+        foreach ($proposals as &$p) {
+            $p['qta_consigliata'] = max(0, (float) $p['scorta_minima'] - (float) $p['qta_libera']);
+        }
+        unset($p);
 
         $nomeMagazzinoScelto = 'tutti i magazzini';
         if ($magazzinoId !== 0) {
@@ -906,14 +581,12 @@ class WarehouseController extends BaseController
         $base   = url('warehouse/scadenze');
         $search = trim(filter_input(INPUT_GET, 'q', FILTER_DEFAULT) ?? '');
 
-        $magazzinoParam = get_param('magazzino_id', '0');
-        if ($magazzinoParam === '0' || $magazzinoParam === '') {
-            $magazzinoId = 0;
-        } else {
-            $candidato = (int) $magazzinoParam;
-            $stChk = $this->pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
-            $stChk->execute([$candidato]);
-            $magazzinoId = $stChk->fetchColumn() ? $candidato : 0;
+        // Stesso pattern di risoluzione di stock()/reorder() (Fix 2/3, §8.3-8.4),
+        // per coerenza tra le tre schermate con filtro magazzino esplicito: '' →
+        // magazzino attivo di sessione, '0' → scelta esplicita "Tutti i magazzini".
+        $magazzinoId = qk_risolvi_magazzino_filtro($this->pdo, get_param('magazzino_id', ''));
+        if ($magazzinoId > 0) {
+            $_SESSION['magazzino_attivo_id'] = $magazzinoId; // Opzione A, §9.5
         }
         $magazzini = qk_magazzini_list($this->pdo, true);
 
@@ -981,6 +654,17 @@ class WarehouseController extends BaseController
         $stmtQ->execute($params);
         $lotti = $stmtQ->fetchAll(PDO::FETCH_ASSOC);
 
+        // giorni_rimanenti/scaduto: calcolo puro post-fetch, spostato dalla view
+        // (Fase 3, microtappa 3.7) — stesso pattern già usato sopra per $sogliaData
+        // (data calcolata in PHP, non con funzioni SQLite-specifiche).
+        $oggi = date('Y-m-d');
+        foreach ($lotti as &$l) {
+            $giorniRimanenti = (int) round((strtotime($l['data_scadenza']) - strtotime($oggi)) / 86400);
+            $l['giorni_rimanenti'] = $giorniRimanenti;
+            $l['scaduto'] = $giorniRimanenti < 0;
+        }
+        unset($l);
+
         $page_title    = 'Lotti in scadenza';
         $page_subtitle = 'Lotti già scaduti o in scadenza entro ' . $giorni . ' giorni';
         $breadcrumbs   = [['label' => 'Magazzino', 'url' => url('warehouse')], ['label' => 'Lotti in scadenza']];
@@ -1022,49 +706,11 @@ class WarehouseController extends BaseController
             $prodottoFiltro = $stP->fetch(PDO::FETCH_ASSOC) ?: null;
         }
 
+        // Query estratte in includes/magazzino.php (Fase 3, microtappa 3.3).
         if ($prodottoFiltro) {
-            // Pivot: un prodotto, tutte le sedi (radici fisiche + virtuali/conto_terzi/conto_lavoro,
-            // stesso set usato nel form del trasferimento: una soglia ha senso anche per una sede virtuale).
-            $st = $this->pdo->prepare(
-                "SELECT m.id AS magazzino_id, m.nome AS magazzino_nome, m.codice AS magazzino_codice,
-                        p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
-                        u.codice AS uom,
-                        COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
-                        COALESCE(g.scorta_minima, 0) AS scorta_minima
-                   FROM magazzini m
-                   LEFT JOIN prodotti p ON p.id = ?
-                   LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                   LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = m.id
-                  WHERE m.attivo = 1
-                  ORDER BY m.predefinito DESC, m.nome COLLATE NOCASE"
-            );
-            $st->execute([$prodottoIdFiltro]);
-            $righe = $st->fetchAll(PDO::FETCH_ASSOC);
+            $righe = qk_min_stock_per_prodotto($this->pdo, $prodottoIdFiltro);
         } else {
-            // Vista standard: un magazzino, tutti i prodotti attivi (LEFT JOIN
-            // su giacenze: un prodotto mai movimentato in questa sede compare
-            // comunque, con soglia 0 modificabile da subito).
-            $where = ['p.attivo = 1'];
-            $params = [$magazzinoId];
-            if ($search !== '') {
-                $where[] = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
-                $like = '%' . $search . '%';
-                $params[] = $like;
-                $params[] = $like;
-            }
-            $st = $this->pdo->prepare(
-                "SELECT p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
-                        u.codice AS uom,
-                        COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
-                        COALESCE(g.scorta_minima, 0) AS scorta_minima
-                   FROM prodotti p
-                   LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
-                   LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-                  WHERE " . implode(' AND ', $where) . "
-                  ORDER BY p.nome COLLATE NOCASE"
-            );
-            $st->execute($params);
-            $righe = $st->fetchAll(PDO::FETCH_ASSOC);
+            $righe = qk_min_stock_per_magazzino($this->pdo, $magazzinoId, $search);
         }
 
         $page_title    = 'Soglie di riordino';
@@ -1100,23 +746,8 @@ class WarehouseController extends BaseController
         $scortaMinima = (float) $scortaStr;
 
         try {
-            // Upsert su giacenze: la coppia (prodotto_id, magazzino_id) può non
-            // esistere ancora (prodotto mai movimentato in questa sede) — in tal
-            // caso la crea con giacenza 0, esattamente come già fa il primo
-            // movimento manuale (qk_insert_movimento_manuale).
-            $this->pdo->prepare(
-                "INSERT INTO giacenze (prodotto_id, magazzino_id, scorta_minima, updated_at)
-                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                 ON CONFLICT(prodotto_id, magazzino_id)
-                 DO UPDATE SET scorta_minima = excluded.scorta_minima, updated_at = CURRENT_TIMESTAMP"
-            )->execute([$prodottoId, $magazzinoId, $scortaMinima]);
-
-            $st = $this->pdo->prepare(
-                "SELECT COALESCE(quantita_disponibile,0) AS qta_disponibile, scorta_minima
-                   FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?"
-            );
-            $st->execute([$prodottoId, $magazzinoId]);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
+            // Estratto in includes/magazzino.php (Fase 3, microtappa 3.3).
+            $row = qk_upsert_scorta_minima($this->pdo, $prodottoId, $magazzinoId, $scortaMinima);
 
             echo json_encode(['ok' => true, 'row' => $row]);
         } catch (Throwable $e) {
@@ -1386,6 +1017,48 @@ class WarehouseController extends BaseController
      * virtuale/conto_terzi/conto_lavoro deve poter comparire come origine o
      * destinazione qui, esattamente come nel form del trasferimento pieno.
      */
+    /**
+     * Parsing condiviso del form trasferimento (pieno o diretto) — stesso set
+     * di campi POST, stessa costruzione di $values/$header/$righe. Estratto
+     * da createTransfer()/trasferimentoDiretto() (dedup post-audit §6.2: i
+     * due metodi erano quasi identici, ~55 righe duplicate, differendo solo
+     * nella funzione di servizio chiamata e nel messaggio di esito).
+     *
+     * @return array{0: array, 1: array, 2: array} [$values, $header, $righe]
+     */
+    private function parseTrasferimentoForm(): array
+    {
+        $values = [
+            'magazzino_origine_id'      => post('magazzino_origine_id', ''),
+            'magazzino_destinazione_id' => post('magazzino_destinazione_id', ''),
+            'data_richiesta'            => post('data_richiesta', date('Y-m-d')),
+            'note'                      => post('note', ''),
+        ];
+
+        $prodottiPost = $_POST['riga_prodotto_id'] ?? [];
+        $lottiPost    = $_POST['riga_lotto_id'] ?? [];
+        $qtaPost      = $_POST['riga_quantita'] ?? [];
+
+        $righe = [];
+        foreach ($prodottiPost as $i => $pid) {
+            if (empty($pid)) continue;
+            $righe[] = [
+                'prodotto_id'         => (int) $pid,
+                'lotto_id'            => !empty($lottiPost[$i]) ? (int) $lottiPost[$i] : null,
+                'quantita_richiesta'  => (float) ($qtaPost[$i] ?? 0),
+            ];
+        }
+
+        $header = [
+            'magazzino_origine_id'      => (int) $values['magazzino_origine_id'],
+            'magazzino_destinazione_id' => (int) $values['magazzino_destinazione_id'],
+            'data_richiesta'            => $values['data_richiesta'],
+            'note'                      => $values['note'],
+        ];
+
+        return [$values, $header, $righe];
+    }
+
     public function trasferimentoDiretto(): void
     {
         $errors = [];
@@ -1402,32 +1075,9 @@ class WarehouseController extends BaseController
             if (!csrf_verify()) {
                 $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
             } else {
-                $values['magazzino_origine_id']      = post('magazzino_origine_id', '');
-                $values['magazzino_destinazione_id'] = post('magazzino_destinazione_id', '');
-                $values['data_richiesta']            = post('data_richiesta', date('Y-m-d'));
-                $values['note']                      = post('note', '');
-
-                $prodottiPost = $_POST['riga_prodotto_id'] ?? [];
-                $lottiPost    = $_POST['riga_lotto_id'] ?? [];
-                $qtaPost      = $_POST['riga_quantita'] ?? [];
-
-                $righe = [];
-                foreach ($prodottiPost as $i => $pid) {
-                    if (empty($pid)) continue;
-                    $righe[] = [
-                        'prodotto_id'         => (int) $pid,
-                        'lotto_id'            => !empty($lottiPost[$i]) ? (int) $lottiPost[$i] : null,
-                        'quantita_richiesta'  => (float) ($qtaPost[$i] ?? 0),
-                    ];
-                }
+                [$values, $header, $righe] = $this->parseTrasferimentoForm();
 
                 try {
-                    $header = [
-                        'magazzino_origine_id'      => (int) $values['magazzino_origine_id'],
-                        'magazzino_destinazione_id' => (int) $values['magazzino_destinazione_id'],
-                        'data_richiesta'            => $values['data_richiesta'],
-                        'note'                      => $values['note'],
-                    ];
                     $id = qk_registra_trasferimento_diretto($this->pdo, $header, $righe, (int) current_user()['id']);
                     // Opzione A (§9.5): stesso effetto collaterale di createTransfer().
                     $_SESSION['magazzino_attivo_id'] = $header['magazzino_origine_id'];
@@ -1470,32 +1120,9 @@ class WarehouseController extends BaseController
             if (!csrf_verify()) {
                 $errors['_global'] = 'Sessione scaduta. Ricarica la pagina e riprova.';
             } else {
-                $values['magazzino_origine_id']      = post('magazzino_origine_id', '');
-                $values['magazzino_destinazione_id'] = post('magazzino_destinazione_id', '');
-                $values['data_richiesta']            = post('data_richiesta', date('Y-m-d'));
-                $values['note']                      = post('note', '');
-
-                $prodottiPost = $_POST['riga_prodotto_id'] ?? [];
-                $lottiPost    = $_POST['riga_lotto_id'] ?? [];
-                $qtaPost      = $_POST['riga_quantita'] ?? [];
-
-                $righe = [];
-                foreach ($prodottiPost as $i => $pid) {
-                    if (empty($pid)) continue;
-                    $righe[] = [
-                        'prodotto_id'         => (int) $pid,
-                        'lotto_id'            => !empty($lottiPost[$i]) ? (int) $lottiPost[$i] : null,
-                        'quantita_richiesta'  => (float) ($qtaPost[$i] ?? 0),
-                    ];
-                }
+                [$values, $header, $righe] = $this->parseTrasferimentoForm();
 
                 try {
-                    $header = [
-                        'magazzino_origine_id'      => (int) $values['magazzino_origine_id'],
-                        'magazzino_destinazione_id' => (int) $values['magazzino_destinazione_id'],
-                        'data_richiesta'            => $values['data_richiesta'],
-                        'note'                      => $values['note'],
-                    ];
                     $id = qk_insert_trasferimento($this->pdo, $header, $righe, (int) current_user()['id']);
                     // Opzione A (§9.5): la scelta esplicita dell'origine aggiorna
                     // la sessione come effetto collaterale — è la sede da cui

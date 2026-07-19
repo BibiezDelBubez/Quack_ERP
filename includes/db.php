@@ -52,6 +52,19 @@ switch (DB_DRIVER) {
             // in MySQL/InnoDB sono sempre attive, questa riga si applica solo qui)
             $pdo->exec('PRAGMA foreign_keys = ON;');
 
+            // Journal mode WAL: applicato qui, ad ogni connessione, invece di fare
+            // affidamento solo sulla riga PRAGMA journal_mode presente in testa a
+            // db/init_sqlite.sql. Motivo: SQLite non permette di passare a WAL mode
+            // mentre è aperta una transazione — l'auto-setup qui sotto esegue TUTTO
+            // lo script schema dentro un'unica transazione (beginTransaction più giù),
+            // quindi eseguire quella riga come parte dello script falliva con
+            // "cannot change into wal mode from within a transaction" su ogni
+            // creazione di un database completamente nuovo. Impostarlo qui, fuori da
+            // qualunque transazione, e a ogni connessione (non solo alla creazione),
+            // è anche più robusto: funziona anche se il file .sqlite è stato creato
+            // in altro modo (es. db/crea_db.php, import manuale) senza passare da qui.
+            $pdo->exec('PRAGMA journal_mode = WAL;');
+
             // ── Auto-setup: crea lo schema se la tabella utenti non esiste ──────────
             $exists = $pdo
                 ->query("SELECT name FROM sqlite_master WHERE type='table' AND name='utenti'")
@@ -151,7 +164,7 @@ switch (DB_DRIVER) {
 
                             if (!$in_trigger) {
                                 $stmt = trim($buf);
-                                if ($stmt !== '') {
+                                if ($stmt !== '' && stripos($stmt, 'pragma journal_mode') !== 0) {
                                     $statements[] = $stmt;
                                 }
                                 $buf = '';
@@ -166,7 +179,7 @@ switch (DB_DRIVER) {
                 }
 
                 $stmt = trim($buf);
-                if ($stmt !== '') {
+                if ($stmt !== '' && stripos($stmt, 'pragma journal_mode') !== 0) {
                     $statements[] = $stmt;
                 }
 

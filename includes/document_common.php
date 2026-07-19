@@ -441,13 +441,12 @@ function qk_calcola_mittente_ddt(PDO $pdo, ?int $magazzinoId): array
         $mg = $st->fetch(PDO::FETCH_ASSOC);
 
         if ($mg && $mg['azienda_interna_id']) {
-            $st2 = $pdo->prepare(
-                "SELECT cf.* FROM aziende_interne az
-                  JOIN clienti_fornitori cf ON cf.id = az.soggetto_id
-                 WHERE az.id = ?"
-            );
-            $st2->execute([(int) $mg['azienda_interna_id']]);
-            $azienda = $st2->fetch(PDO::FETCH_ASSOC) ?: null;
+            // Riusa qk_azienda_interna_by_id() (includes/anagrafiche.php) invece di
+            // duplicare la query inline (Fase 3, microtappa 3.4) — stesso filtro
+            // (nessun attivo=1: un id esplicito resta valido anche per documenti
+            // storici, vedi il docblock di qk_azienda_interna_by_id()), quindi
+            // nessun cambio di comportamento sul risultato.
+            $azienda = qk_azienda_interna_by_id($pdo, (int) $mg['azienda_interna_id']);
         }
         if ($mg && $mg['indirizzo_id']) {
             $st3 = $pdo->prepare('SELECT * FROM indirizzi WHERE id = ?');
@@ -456,15 +455,14 @@ function qk_calcola_mittente_ddt(PDO $pdo, ?int $magazzinoId): array
         }
     }
 
-    // $azienda qui è sempre solo cf.* (nessuna collisione di colonna 'id' con az.*):
-    // qk_azienda_predefinita() invece unisce cf.*+az.*, quindi per il soggetto_id da
-    // usare nel fallback indirizzo si legge sempre 'soggetto_id', mai 'id' (che in quel
-    // caso sarebbe l'id di aziende_interne, non di clienti_fornitori).
-    $soggettoIdPerIndirizzo = $azienda['id'] ?? null;
+    // qk_azienda_interna_by_id() e qk_azienda_predefinita() uniscono entrambe
+    // cf.*+az.* (colonna 'id' duplicata: vince az.id) — il soggetto_id da usare
+    // nel fallback indirizzo è quindi SEMPRE 'soggetto_id' (unica a quella chiave,
+    // presente solo su az.*), mai 'id'.
     if (!$azienda) {
         $azienda = qk_azienda_predefinita($pdo) ?: [];
-        $soggettoIdPerIndirizzo = $azienda['soggetto_id'] ?? null;
     }
+    $soggettoIdPerIndirizzo = $azienda['soggetto_id'] ?? null;
 
     if (!$indirizzoRow && $soggettoIdPerIndirizzo) {
         $st4 = $pdo->prepare(

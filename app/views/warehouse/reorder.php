@@ -85,7 +85,7 @@ $dir  = $pag['dir'];
         </tr>
         <?php else: ?>
         <?php foreach ($proposals as $p): ?>
-        <?php $qtaConsigliata = max(0, $p['scorta_minima'] - $p['qta_libera']); ?>
+        <?php $qtaConsigliata = $p['qta_consigliata']; ?>
         <tr>
           <td><code><?= e($p['sku_interno']) ?></code></td>
           <td class="fw-semibold">

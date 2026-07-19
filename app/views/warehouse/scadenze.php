@@ -8,7 +8,6 @@
  */
 $sort = $pag['sort'];
 $dir  = $pag['dir'];
-$oggi = date('Y-m-d');
 ?>
 
 <?php $active_tab = 'scadenze'; include __DIR__ . '/_subnav.php'; ?>
@@ -90,8 +89,9 @@ $oggi = date('Y-m-d');
           </td>
         </tr>
         <?php else: foreach ($lotti as $l):
-          $giorniRimanenti = (int) round((strtotime($l['data_scadenza']) - strtotime($oggi)) / 86400);
-          $scaduto = $giorniRimanenti < 0;
+          // giorni_rimanenti/scaduto calcolati dal controller (Fase 3, microtappa 3.7).
+          $giorniRimanenti = $l['giorni_rimanenti'];
+          $scaduto = $l['scaduto'];
         ?>
         <tr>
           <td class="font-monospace"><?= e($l['codice_lotto_interno'] ?: $l['codice_lotto_fornitore'] ?: ('#' . $l['lotto_id'])) ?></td>

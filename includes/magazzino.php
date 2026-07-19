@@ -2,11 +2,30 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/anagrafiche.php';
+// L'anagrafica magazzini (CRUD tabella `magazzini`) è stata estratta in
+// includes/magazzini_anagrafica.php (audit MVC/DRY, Revisione Gestione
+// Magazzino e Lotti §6/piano refactor) — questo file resta il punto di
+// ingresso primario per i 13 chiamanti esistenti nel progetto (tutti fanno
+// require_once di magazzino.php), quindi richiede a cascata il file estratto
+// invece di spostare l'onere sui chiamanti. Questo file NON usa più
+// direttamente nulla di includes/anagrafiche.php (verificato con grep prima
+// dello split: le uniche chiamate a funzioni di quel file erano dentro il
+// blocco anagrafica-magazzini, ora spostato) — il require arriva solo
+// tramite magazzini_anagrafica.php.
+require_once __DIR__ . '/magazzini_anagrafica.php';
 
 // =============================================================================
 // magazzino.php
-// Funzioni DB per il modulo Magazzino di Quack.
+// Funzioni DB per il modulo Magazzino di Quack: giacenze/stock/riordino, lotti,
+// movimenti magazzino, più gli helper condivisi (qk_magazzino_attivo_id,
+// qk_risolvi_magazzino_filtro, qk_sottoscorta_where/having, qk_stock_counters)
+// usati anche fuori dal dominio Magazzino (Vendite/Acquisti/Prodotti/Dashboard
+// — qk_magazzino_attivo_id ha 18 chiamanti esterni sparsi nel progetto).
+//
+// Lotti e movimenti restano insieme in questo file (non separabili senza un
+// require incrociato: qk_insert_movimento_manuale chiama qk_insert_lotto_manuale
+// per un carico su lotto nuovo). L'anagrafica magazzini è invece in un file a
+// parte (vedi sopra) perché isolabile senza dipendenze incrociate.
 //
 // Responsabilità:
 //   - Lettura giacenze e storico movimenti
@@ -164,6 +183,32 @@ function qk_magazzino_attivo_id(PDO $pdo): int
 }
 
 /**
+ * Risolve il parametro `magazzino_id` ricevuto da una schermata con filtro
+ * esplicito in pagina (Giacenze/Riordino/Lotti in scadenza — Fix 2/3, §8.3-8.4
+ * di "Magazzino Attivo - Analisi e Alternative.md"):
+ *  - `''` (non specificato) → magazzino attivo di sessione (default comodo iniziale);
+ *  - `'0'` (scelta esplicita) → 0, "Tutti i magazzini" (aggregato);
+ *  - un intero → quella sede, se attiva; altrimenti si ricade sul default di sessione.
+ *
+ * Estratta per eliminare 3 copie quasi identiche dello stesso blocco in
+ * `WarehouseController` (`stock()`, `reorder()`, `scadenze()`) — audit MVC/DRY,
+ * Revisione Gestione Magazzino e Lotti.
+ */
+function qk_risolvi_magazzino_filtro(PDO $pdo, string $magazzinoParam): int
+{
+    if ($magazzinoParam === '') {
+        return qk_magazzino_attivo_id($pdo);
+    }
+    if ($magazzinoParam === '0') {
+        return 0;
+    }
+    $candidato = (int) $magazzinoParam;
+    $st = $pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
+    $st->execute([$candidato]);
+    return $st->fetchColumn() ? $candidato : qk_magazzino_attivo_id($pdo);
+}
+
+/**
  * Frammento SQL condiviso per il criterio di sottoscorta: giacenza libera
  * (disponibile - riservata) inferiore alla soglia impostata per QUESTA coppia
  * (prodotto, magazzino) su `giacenze.scorta_minima` — unica fonte di verità
@@ -248,6 +293,240 @@ function _qk_stock_having(string $filter): string
         'in_arrivo'   => 'SUM(COALESCE(g.quantita_in_arrivo,0)) > 0',
         default       => '1=1',
     };
+}
+
+/**
+ * Contatori per le pill "Sottoscorta"/"Esauriti" della schermata Giacenze:
+ * rispettano lo stesso magazzino scelto in pagina (0 = aggregato su tutte le
+ * sedi). Estratta dalla view `stock.php` (audit MVC/DRY, Revisione Gestione
+ * Magazzino e Lotti): una view non deve interrogare il database direttamente.
+ *
+ * @return array{sottoscorta: int, esauriti: int}
+ */
+function qk_stock_counters(PDO $pdo, int $magazzino_id): array
+{
+    if ($magazzino_id === 0) {
+        $sottoscorta = (int) $pdo->query(
+            "SELECT COUNT(*) FROM (
+                SELECT p.id FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id
+                 WHERE p.attivo = 1 GROUP BY p.id HAVING " . qk_sottoscorta_having('g') . "
+             ) t"
+        )->fetchColumn();
+        $esauriti = (int) $pdo->query(
+            "SELECT COUNT(*) FROM (
+                SELECT p.id FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id
+                 WHERE p.attivo = 1 GROUP BY p.id HAVING SUM(COALESCE(g.quantita_disponibile,0)) <= 0
+             ) t"
+        )->fetchColumn();
+        return ['sottoscorta' => $sottoscorta, 'esauriti' => $esauriti];
+    }
+
+    $stSc = $pdo->prepare(
+        "SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+          WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g')
+    );
+    $stSc->execute([$magazzino_id]);
+
+    $stEs = $pdo->prepare(
+        "SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+          WHERE p.attivo = 1 AND COALESCE(g.quantita_disponibile, 0) <= 0"
+    );
+    $stEs->execute([$magazzino_id]);
+
+    return ['sottoscorta' => (int) $stSc->fetchColumn(), 'esauriti' => (int) $stEs->fetchColumn()];
+}
+
+/**
+ * Valore economico corrente del magazzino: SUM(giacenza * costo_acquisto),
+ * su TUTTE le sedi (KPI aziendale complessivo, non per singolo magazzino).
+ * Da v_costo_acquisto_prodotti (fix "Listino Fantasma",
+ * audit/MASTER_AUDIT_REPORT.md — vedi commento esteso in db/init_sqlite.sql
+ * §14b). Estratto da WarehouseController::dashboard() (Piano refactor
+ * MVC/DRY, Fase 3, microtappa 3.1).
+ */
+function qk_valore_magazzino(PDO $pdo): float
+{
+    return (float) $pdo->query("
+        SELECT SUM(g.quantita_disponibile * COALESCE(vc.costo_acquisto, 0.0))
+        FROM giacenze g
+        LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = g.prodotto_id
+    ")->fetchColumn();
+}
+
+/**
+ * Numero di ordini di acquisto ancora da ricevere (in tutto o in parte) —
+ * KPI aziendale complessivo, non scoping-ato per magazzino (un ordine può
+ * consegnare su sedi diverse). Estratto da WarehouseController::dashboard()
+ * (Fase 3, microtappa 3.1).
+ */
+function qk_ordini_acquisto_in_arrivo_count(PDO $pdo): int
+{
+    return (int) $pdo->query("
+        SELECT COUNT(*) FROM ordini_testata WHERE stato IN ('inviato', 'parzialmente_ricevuto')
+    ")->fetchColumn();
+}
+
+/**
+ * Numero di spedizioni non ancora consegnate — KPI aziendale complessivo,
+ * stesso motivo di qk_ordini_acquisto_in_arrivo_count() (Fase 3, microtappa 3.1).
+ */
+function qk_spedizioni_in_partenza_count(PDO $pdo): int
+{
+    return (int) $pdo->query("
+        SELECT COUNT(*) FROM spedizioni WHERE stato IN ('preparazione', 'spedita')
+    ")->fetchColumn();
+}
+
+/**
+ * Ultimi movimenti di magazzino registrati (tutte le sedi), per la dashboard
+ * KPI. Estratto da WarehouseController::dashboard() (Fase 3, microtappa 3.1).
+ */
+function qk_movimenti_recenti(PDO $pdo, int $limit = 5): array
+{
+    $stmt = $pdo->prepare("
+        SELECT m.created_at, m.tipo_movimento, m.quantita,
+               p.nome AS prodotto_nome, u.codice AS uom
+        FROM movimenti_magazzino m
+        JOIN prodotti p ON p.id = m.prodotto_id
+        LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+        ORDER BY m.id DESC LIMIT ?
+    ");
+    $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Prodotti più vicini/sotto la soglia di sottoscorta, NEL MAGAZZINO indicato,
+ * ordinati dal più critico. Estratto da WarehouseController::dashboard()
+ * (Fase 3, microtappa 3.1) — stessa formula di qk_sottoscorta_where(),
+ * riusata invece di riscritta inline.
+ */
+function qk_prodotti_vicino_sottoscorta(PDO $pdo, int $magazzinoId, int $limit = 5): array
+{
+    $stmt = $pdo->prepare("
+        SELECT p.nome, COALESCE(g.quantita_disponibile, 0) AS quantita_disponibile, g.scorta_minima, u.codice AS uom
+        FROM prodotti p
+        JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+        LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+        WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g') . "
+        ORDER BY (COALESCE(g.quantita_disponibile, 0) - COALESCE(g.quantita_riservata, 0)) ASC
+        LIMIT ?
+    ");
+    $stmt->bindValue(1, $magazzinoId, PDO::PARAM_INT);
+    $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Soglie di riordino di UN prodotto su TUTTE le sedi (radici fisiche +
+ * virtuali/conto_terzi/conto_lavoro — stesso set del form trasferimento: una
+ * soglia ha senso anche per una sede virtuale). Estratto da
+ * WarehouseController::minStock() (Fase 3, microtappa 3.3).
+ */
+function qk_min_stock_per_prodotto(PDO $pdo, int $prodottoId): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT m.id AS magazzino_id, m.nome AS magazzino_nome, m.codice AS magazzino_codice,
+                p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
+                u.codice AS uom,
+                COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                COALESCE(g.scorta_minima, 0) AS scorta_minima
+           FROM magazzini m
+           LEFT JOIN prodotti p ON p.id = ?
+           LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+           LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = m.id
+          WHERE m.attivo = 1
+          ORDER BY m.predefinito DESC, m.nome COLLATE NOCASE"
+    );
+    $stmt->execute([$prodottoId]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Soglie di riordino di TUTTI i prodotti attivi in UN magazzino (vista
+ * standard di WarehouseController::minStock(), Fase 3, microtappa 3.3).
+ * LEFT JOIN su giacenze: un prodotto mai movimentato in questa sede compare
+ * comunque, con soglia 0 modificabile da subito.
+ */
+function qk_min_stock_per_magazzino(PDO $pdo, int $magazzinoId, string $search = ''): array
+{
+    $where = ['p.attivo = 1'];
+    $params = [$magazzinoId];
+    if ($search !== '') {
+        $where[] = '(p.nome LIKE ? OR p.sku_interno LIKE ?)';
+        $like = '%' . $search . '%';
+        $params[] = $like;
+        $params[] = $like;
+    }
+    $stmt = $pdo->prepare(
+        "SELECT p.id AS prodotto_id, p.nome AS prodotto_nome, p.sku_interno,
+                u.codice AS uom,
+                COALESCE(g.quantita_disponibile, 0) AS qta_disponibile,
+                COALESCE(g.scorta_minima, 0) AS scorta_minima
+           FROM prodotti p
+           LEFT JOIN unita_misura u ON u.id = p.unita_misura_stock_id
+           LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
+          WHERE " . implode(' AND ', $where) . "
+          ORDER BY p.nome COLLATE NOCASE"
+    );
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Upsert della scorta minima per la coppia (prodotto, magazzino) — crea la
+ * riga giacenze con giacenza 0 se non esiste ancora (prodotto mai
+ * movimentato in questa sede), stesso comportamento del primo movimento
+ * manuale (qk_insert_movimento_manuale). Ritorna lo stato aggiornato
+ * (qta_disponibile, scorta_minima) per il refresh lato UI. Estratto da
+ * WarehouseController::saveMinStock() (Fase 3, microtappa 3.3).
+ */
+function qk_upsert_scorta_minima(PDO $pdo, int $prodottoId, int $magazzinoId, float $scortaMinima): array
+{
+    $pdo->prepare(
+        "INSERT INTO giacenze (prodotto_id, magazzino_id, scorta_minima, updated_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(prodotto_id, magazzino_id)
+         DO UPDATE SET scorta_minima = excluded.scorta_minima, updated_at = CURRENT_TIMESTAMP"
+    )->execute([$prodottoId, $magazzinoId, $scortaMinima]);
+
+    $stmt = $pdo->prepare(
+        "SELECT COALESCE(quantita_disponibile,0) AS qta_disponibile, scorta_minima
+           FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?"
+    );
+    $stmt->execute([$prodottoId, $magazzinoId]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Frammento SQL del JOIN "fornitore preferito, primo ATTIVO per ordine di
+ * preferenza" (REVISIONE Ciclo Acquisti, sez. Multi-fornitore, fix §1.9): dato
+ * un prodotto, seleziona il prodotto_fornitore con priorità più alta tra i
+ * fornitori attivi — non il primo in assoluto, che potrebbe essere disattivato
+ * e lasciare il campo vuoto invece di scavalcare al successivo attivo.
+ * Estratto da WarehouseController::reorder() (Fase 3, microtappa 3.9 — dedup
+ * post-audit §6.1: era duplicato identico tra il ramo aggregato e quello
+ * per-sede dello stesso metodo).
+ *
+ * Non unifica le copie analoghe in purchases_rfq.php/RfqController.php (stesso
+ * pattern, ma fuori dal dominio Magazzino di questo piano — dedup cross-dominio
+ * da valutare a parte).
+ *
+ * @param string $prodottoAlias alias SQL della tabella prodotti nella query chiamante (es. 'p')
+ */
+function qk_join_fornitore_preferito_sql(string $prodottoAlias = 'p'): string
+{
+    return "
+                 LEFT JOIN prodotti_fornitori pf ON pf.id = (
+                     SELECT pf2.id FROM prodotti_fornitori pf2
+                      JOIN clienti_fornitori cf2 ON cf2.id = pf2.fornitore_id AND cf2.attivo = 1
+                     WHERE pf2.prodotto_id = {$prodottoAlias}.id AND pf2.attivo = 1
+                     ORDER BY pf2.ordine_preferenza_fornitore ASC, pf2.id DESC
+                     LIMIT 1
+                 )
+                 LEFT JOIN clienti_fornitori cf ON cf.id = pf.fornitore_id";
 }
 
 function qk_stock_count(PDO $pdo, string $search = '', string $filter = 'all', ?int $magazzino_id = null): int
@@ -520,6 +799,15 @@ function qk_prodotto_stock_info(PDO $pdo, int $prodotto_id, ?int $magazzino_id =
  *                                false = tutti i lotti del prodotto, incluse le sedi con 0 in questo
  *                                magazzino (per rettifica / carico su lotto esistente non ancora presente qui)
  * @return list<array<string, mixed>>
+ *
+ * NOTA (Piano refactor MVC/DRY, Fase 3, microtappa 3.8 — predisposizione non
+ * esecutiva): SpedizioniController::nuova() e
+ * SalesOrdersController::apiLottiDisponibili() hanno ciascuno una propria
+ * query FEFO quasi identica a questa (stessa logica "lotti con giacenza
+ * disponibile in questo magazzino, ordinati per scadenza"), invece di
+ * riusare questa funzione. Un parametro tipo `includiScaduti` qui potrebbe
+ * assorbire entrambe, eliminando 3 copie della stessa query — non fatto ora,
+ * rimandato esplicitamente (bassa priorità, pre-esistente a questo piano).
  */
 function qk_lotti_by_prodotto(PDO $pdo, int $prodotto_id, bool $solo_disponibili = false, ?int $magazzino_id = null): array
 {
@@ -740,17 +1028,31 @@ function qk_movements_list(
     $stRows->execute([...$params, $limit, $offset]);
 
     $rows = array_map(static function (array $r): array {
-        // Il segno convenzionale: carico/reso_fornitore/svincolo = positivo; gli altri = negativo
+        // Il segno convenzionale: carico/reso_fornitore/svincolo = positivo; gli altri = negativo.
+        // La rettifica può essere sia un aumento che una diminuzione: la direzione
+        // non è deducibile dal solo tipo_movimento, quindi usa il segno di
+        // quantita_delta (popolata solo per le rettifiche, vedi migrazione
+        // 2026_07_10_movimenti_quantita_delta). Per rettifiche storiche precedenti
+        // al fix, dove quantita_delta è NULL, si ricade sulla lista statica (Fase 3,
+        // microtappa 3.5 — logica allineata a quella già presente, ma inattiva, in
+        // app/views/warehouse/movements.php: qui il valore arrivava sempre assente).
         $positivi = ['carico', 'reso_fornitore', 'svincolo'];
-        $segno    = in_array($r['tipo_movimento'], $positivi, true) ? '+' : '-';
-        // La rettifica è neutra (mostreremo il delta calcolato)
-        if ($r['tipo_movimento'] === 'rettifica') $segno = '±';
+        if ($r['tipo_movimento'] === 'rettifica' && $r['quantita_delta'] !== null) {
+            $segno = ((float) $r['quantita_delta']) >= 0 ? '+' : '-';
+            $quantitaMostrata = abs((float) $r['quantita_delta']);
+        } else {
+            $segno = in_array($r['tipo_movimento'], $positivi, true) ? '+' : '-';
+            $quantitaMostrata = (float) $r['quantita'];
+        }
+        $qtaClass = $segno === '+' ? 'qk-text-success' : 'qk-text-danger';
 
         return [
             'id'                    => (int)    $r['id'],
             'tipo_movimento'        => (string) $r['tipo_movimento'],
             'quantita'              => (float)  $r['quantita'],
             'segno'                 => $segno,
+            'quantita_mostrata'     => $quantitaMostrata,
+            'qta_class'             => $qtaClass,
             'canale_origine'        => (string) ($r['canale_origine']         ?? ''),
             'documento_tipo'        => (string) ($r['documento_tipo']         ?? ''),
             'documento_id'          => $r['documento_id'] ? (int) $r['documento_id'] : null,
@@ -1043,400 +1345,11 @@ function qk_prodotti_search_stock(PDO $pdo, string $q, int $limit = 20): array
     }, $st->fetchAll(PDO::FETCH_ASSOC));
 }
 
-// =============================================================================
-// ANAGRAFICA MAGAZZINI (Piano Multi-Magazzino §3.3, §3.8, §3.10)
-// Stesso stile CRUD di qk_aziende_list/qk_insert_azienda/qk_update_azienda in
-// includes/anagrafiche.php, adattato alla tabella `magazzini` (autonoma, non
-// appoggiata a clienti_fornitori).
-// =============================================================================
-
-/**
- * Lista magazzini per anagrafica e selettori (topbar, form documento).
- *
- * @param bool $soloAttivi         se true (default), esclude i magazzini disattivati
- *                                 (usato nei selettori: un magazzino disattivato non
- *                                 deve poter essere scelto per nuove operazioni, ma
- *                                 resta visibile nell'anagrafica con $soloAttivi=false)
- * @param bool $soloRadiciFisiche  se true, restituisce solo magazzini tipo='fisico'
- *                                 AND parent_id IS NULL (Trasferimenti tra Magazzini
- *                                 come Documento.md, §7.2): usato SOLO dal selettore
- *                                 di sessione in header.php — una sede virtuale/
- *                                 conto_terzi/conto_lavoro non deve mai diventare la
- *                                 sede "attiva" di lavoro, ma deve restare selezionabile
- *                                 come origine/destinazione di un trasferimento
- *                                 (PurchaseOrdersController, WarehouseController::
- *                                 createTransfer/trasferimentoDiretto NON passano questo flag).
- */
-function qk_magazzini_list(PDO $pdo, bool $soloAttivi = false, bool $soloRadiciFisiche = false): array
-{
-    $sql = "SELECT m.id, m.codice, m.nome, m.tipo, m.predefinito, m.attivo, m.note,
-                   m.azienda_interna_id, m.indirizzo_id, m.parent_id, m.soggetto_esterno_id,
-                   ai.ragione_sociale AS azienda_interna_nome,
-                   i.citta AS indirizzo_citta, i.via AS indirizzo_via,
-                   pm.nome AS parent_nome,
-                   COALESCE(NULLIF(cf.ragione_sociale, ''), TRIM(cf.nome || ' ' || COALESCE(cf.cognome, ''))) AS soggetto_esterno_nome
-              FROM magazzini m
-              LEFT JOIN aziende_interne az2 ON az2.id = m.azienda_interna_id
-              LEFT JOIN clienti_fornitori ai ON ai.id = az2.soggetto_id
-              LEFT JOIN indirizzi i ON i.id = m.indirizzo_id
-              LEFT JOIN magazzini pm ON pm.id = m.parent_id
-              LEFT JOIN clienti_fornitori cf ON cf.id = m.soggetto_esterno_id";
-    $where = [];
-    if ($soloAttivi) {
-        $where[] = 'm.attivo = 1';
-    }
-    if ($soloRadiciFisiche) {
-        $where[] = "m.tipo = 'fisico' AND m.parent_id IS NULL";
-    }
-    if ($where) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
-    }
-    $sql .= " ORDER BY m.predefinito DESC, m.nome COLLATE NOCASE";
-
-    return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
-}
-
-/**
- * Radice fisica di un magazzino (Trasferimenti tra Magazzini come Documento.md,
- * §7.1): COALESCE(parent_id, id). Due magazzini con la stessa radice fisica
- * possono usare il trasferimento diretto istantaneo invece del documento con transito.
- */
-function qk_magazzini_radice_fisica(PDO $pdo, int $id): int
-{
-    $st = $pdo->prepare('SELECT COALESCE(parent_id, id) FROM magazzini WHERE id = ?');
-    $st->execute([$id]);
-    $radice = $st->fetchColumn();
-    if ($radice === false) {
-        throw new \RuntimeException('Magazzino non trovato.');
-    }
-    return (int) $radice;
-}
-
-/**
- * True se due magazzini condividono la stessa radice fisica (§7.2, Regola A):
- * criterio che decide se lo spostamento tra loro può essere un trasferimento
- * diretto istantaneo o richiede il documento di trasferimento con transito.
- */
-function qk_magazzino_stessa_radice(PDO $pdo, int $idA, int $idB): bool
-{
-    return qk_magazzini_radice_fisica($pdo, $idA) === qk_magazzini_radice_fisica($pdo, $idB);
-}
-
-/**
- * Carica un singolo magazzino per il form di modifica.
- */
-function qk_load_magazzino_form(PDO $pdo, int $id): ?array
-{
-    $st = $pdo->prepare(
-        "SELECT m.*, i.via, i.civico, i.cap, i.citta, i.provincia, i.nazione
-           FROM magazzini m
-           LEFT JOIN indirizzi i ON i.id = m.indirizzo_id
-          WHERE m.id = ?"
-    );
-    $st->execute([$id]);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$row) return null;
-
-    return [
-        'id'                  => (int) $row['id'],
-        'codice'              => (string) $row['codice'],
-        'nome'                => (string) $row['nome'],
-        'tipo'                => (string) $row['tipo'],
-        'azienda_interna_id'  => $row['azienda_interna_id'] !== null ? (int) $row['azienda_interna_id'] : null,
-        'indirizzo_id'        => $row['indirizzo_id'] !== null ? (int) $row['indirizzo_id'] : null,
-        'parent_id'           => $row['parent_id'] !== null ? (int) $row['parent_id'] : null,
-        'soggetto_esterno_id' => $row['soggetto_esterno_id'] !== null ? (int) $row['soggetto_esterno_id'] : null,
-        'predefinito'         => (bool) $row['predefinito'],
-        'attivo'              => (bool) $row['attivo'],
-        'note'                => (string) ($row['note'] ?? ''),
-        'via'                 => (string) ($row['via'] ?? ''),
-        'civico'              => (string) ($row['civico'] ?? ''),
-        'cap'                 => (string) ($row['cap'] ?? ''),
-        'citta'               => (string) ($row['citta'] ?? ''),
-        'provincia'           => (string) ($row['provincia'] ?? ''),
-        'nazione'             => (string) ($row['nazione'] ?: 'IT'),
-    ];
-}
-
-/**
- * Trova o crea/aggiorna l'indirizzo (tipo='magazzino') del sito, appoggiato al
- * soggetto dell'azienda interna proprietaria — riusa le funzioni indirizzi
- * consolidate del §3.2 invece di duplicarne la logica INSERT/UPDATE qui.
- * Nessuna azienda interna scelta ⇒ nessun indirizzo gestito (torna null,
- * `magazzini.indirizzo_id` resta invariato/nullo).
- */
-function _qk_magazzino_sync_indirizzo(PDO $pdo, ?int $azienda_interna_id, ?int $indirizzo_id_esistente, array $v): ?int
-{
-    if (!$azienda_interna_id) {
-        return null;
-    }
-
-    $via = trim((string) ($v['via'] ?? ''));
-    $cap = trim((string) ($v['cap'] ?? ''));
-    $citta = trim((string) ($v['citta'] ?? ''));
-    if ($via === '' && $cap === '' && $citta === '') {
-        return $indirizzo_id_esistente; // nessun dato indirizzo inserito, lascia invariato
-    }
-
-    $st = $pdo->prepare('SELECT soggetto_id FROM aziende_interne WHERE id = ?');
-    $st->execute([$azienda_interna_id]);
-    $soggetto_id = (int) $st->fetchColumn();
-    if (!$soggetto_id) {
-        throw new \RuntimeException('Azienda interna non valida per l\'indirizzo del magazzino.');
-    }
-
-    $indirizzoV = [
-        'tipo'        => 'magazzino',
-        'nome_sede'   => $v['nome'] ?? '',
-        'predefinito' => false,
-        'via'         => $via !== '' ? $via : '—',
-        'civico'      => $v['civico'] ?? '',
-        'cap'         => $cap !== '' ? $cap : '00000',
-        'citta'       => $citta !== '' ? $citta : '—',
-        'provincia'   => $v['provincia'] ?? '',
-        'nazione'     => $v['nazione'] ?: 'IT',
-    ];
-
-    if ($indirizzo_id_esistente) {
-        qk_update_indirizzo($pdo, $indirizzo_id_esistente, $soggetto_id, $indirizzoV);
-        return $indirizzo_id_esistente;
-    }
-
-    return qk_insert_indirizzo($pdo, $soggetto_id, $indirizzoV);
-}
-
-/**
- * Inserisce un nuovo magazzino. Se $v['predefinito'] è true, azzera il flag
- * sugli altri (garantito anche a livello DB dall'indice UNIQUE parziale, ma lo
- * facciamo esplicitamente qui per non affidarci solo al vincolo per dare un
- * errore leggibile invece di una eccezione SQL grezza).
- */
-function qk_insert_magazzino(PDO $pdo, array $v): int
-{
-    $pdo->beginTransaction();
-    try {
-        if (!empty($v['predefinito'])) {
-            $pdo->query("UPDATE magazzini SET predefinito = 0");
-        }
-
-        $aziendaInternaId = !empty($v['azienda_interna_id']) ? (int) $v['azienda_interna_id'] : null;
-        $parentId = !empty($v['parent_id']) ? (int) $v['parent_id'] : null;
-        $soggettoEsternoId = !empty($v['soggetto_esterno_id']) ? (int) $v['soggetto_esterno_id'] : null;
-        $indirizzoId = _qk_magazzino_sync_indirizzo($pdo, $aziendaInternaId, null, $v);
-
-        $st = $pdo->prepare(
-            "INSERT INTO magazzini (codice, nome, tipo, azienda_interna_id, indirizzo_id, parent_id, soggetto_esterno_id, predefinito, attivo, note, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)"
-        );
-        $st->execute([
-            trim((string) $v['codice']),
-            trim((string) $v['nome']),
-            $v['tipo'],
-            $aziendaInternaId,
-            $indirizzoId,
-            $parentId,
-            $soggettoEsternoId,
-            (int) !empty($v['predefinito']),
-            (int) ($v['attivo'] ?? true),
-            trim((string) ($v['note'] ?? '')) ?: null,
-        ]);
-        $id = (int) $pdo->lastInsertId();
-
-        // Se è il primo magazzino mai creato (dataset senza seed), forzalo
-        // comunque a predefinito: non deve mai esistere un sistema con
-        // magazzini ma senza nessuno predefinito (qk_magazzino_attivo_id ne
-        // dipende). Solo se è un fisico radice: un virtuale/conto_terzi/
-        // conto_lavoro non può mai diventare il predefinito di sistema (§7.2) —
-        // in pratica non capita mai come primo record, perché un virtuale
-        // richiede un parent_id che punti a un fisico già esistente, ma il
-        // guard resta per coerenza con le altre 3 funzioni di fallback.
-        $count = (int) $pdo->query("SELECT COUNT(*) FROM magazzini WHERE predefinito = 1")->fetchColumn();
-        if ($count === 0 && $v['tipo'] === 'fisico' && $parentId === null) {
-            $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$id]);
-        }
-
-        $pdo->commit();
-        return $id;
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-}
-
-function qk_update_magazzino(PDO $pdo, int $id, array $v): void
-{
-    $pdo->beginTransaction();
-    try {
-        if (!empty($v['predefinito'])) {
-            $pdo->prepare("UPDATE magazzini SET predefinito = 0 WHERE id != ?")->execute([$id]);
-        }
-
-        $stCur = $pdo->prepare('SELECT azienda_interna_id, indirizzo_id FROM magazzini WHERE id = ?');
-        $stCur->execute([$id]);
-        $cur = $stCur->fetch(PDO::FETCH_ASSOC);
-        if (!$cur) {
-            throw new \RuntimeException('Magazzino non trovato.');
-        }
-
-        $aziendaInternaId = !empty($v['azienda_interna_id']) ? (int) $v['azienda_interna_id'] : null;
-        $parentId = !empty($v['parent_id']) ? (int) $v['parent_id'] : null;
-        $soggettoEsternoId = !empty($v['soggetto_esterno_id']) ? (int) $v['soggetto_esterno_id'] : null;
-        // L'indirizzo esistente è riusabile solo se l'azienda interna non è cambiata
-        // (altrimenti apparterrebbe al soggetto sbagliato): in quel caso se ne crea uno nuovo.
-        $indirizzoEsistente = ($aziendaInternaId === (int) ($cur['azienda_interna_id'] ?? 0))
-            ? ($cur['indirizzo_id'] !== null ? (int) $cur['indirizzo_id'] : null)
-            : null;
-        $indirizzoId = _qk_magazzino_sync_indirizzo($pdo, $aziendaInternaId, $indirizzoEsistente, $v);
-
-        $st = $pdo->prepare(
-            "UPDATE magazzini SET
-                codice = ?, nome = ?, tipo = ?, azienda_interna_id = ?, indirizzo_id = ?,
-                parent_id = ?, soggetto_esterno_id = ?, predefinito = ?, attivo = ?, note = ?
-             WHERE id = ?"
-        );
-        $st->execute([
-            trim((string) $v['codice']),
-            trim((string) $v['nome']),
-            $v['tipo'],
-            $aziendaInternaId,
-            $indirizzoId,
-            $parentId,
-            $soggettoEsternoId,
-            (int) !empty($v['predefinito']),
-            (int) !empty($v['attivo']),
-            trim((string) ($v['note'] ?? '')) ?: null,
-            $id,
-        ]);
-
-        // Non deve mai restare un sistema senza alcun magazzino predefinito
-        // (es. se l'utente toglie la spunta "predefinito" dall'unico che la
-        // aveva, senza assegnarla a un altro): riassegna al primo attivo fisico
-        // radice (§7.2) — un virtuale/conto_terzi/conto_lavoro non può mai
-        // diventare il predefinito di sistema.
-        $count = (int) $pdo->query("SELECT COUNT(*) FROM magazzini WHERE predefinito = 1")->fetchColumn();
-        if ($count === 0) {
-            $fallbackId = $pdo->query("SELECT id FROM magazzini WHERE attivo = 1 AND tipo = 'fisico' AND parent_id IS NULL ORDER BY id LIMIT 1")->fetchColumn();
-            if ($fallbackId) {
-                $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$fallbackId]);
-            }
-        }
-
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-}
-
-/**
- * Imposta un magazzino come predefinito (scorciatoia usata dall'anagrafica
- * per l'azione rapida "rendi predefinito" nella lista, senza aprire il form).
- */
-function qk_imposta_magazzino_predefinito(PDO $pdo, int $id): void
-{
-    $pdo->beginTransaction();
-    try {
-        $st = $pdo->prepare("SELECT attivo, tipo, parent_id FROM magazzini WHERE id = ?");
-        $st->execute([$id]);
-        $row = $st->fetch(PDO::FETCH_ASSOC);
-        if ($row === false) {
-            throw new \RuntimeException('Magazzino non trovato.');
-        }
-        if (!$row['attivo']) {
-            throw new \RuntimeException('Impossibile impostare come predefinito un magazzino disattivato.');
-        }
-        // Solo un fisico radice può essere il predefinito di sistema (§7.2):
-        // una sede virtuale/conto_terzi/conto_lavoro non ha senso come sede
-        // "attiva" preselezionata per nuove operazioni.
-        if ($row['tipo'] !== 'fisico' || $row['parent_id'] !== null) {
-            throw new \RuntimeException('Solo un magazzino fisico radice può essere impostato come predefinito.');
-        }
-
-        $pdo->query("UPDATE magazzini SET predefinito = 0");
-        $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$id]);
-
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-}
-
-/**
- * Disattiva (soft-delete) un magazzino. Mai cancellazione fisica: è
- * referenziato da `giacenze`, `lotti_giacenze`, `movimenti_magazzino`
- * storici (Piano Multi-Magazzino §3.7, stesso principio già applicato a
- * qk_delete_azienda per le aziende interne — qui il guard è più stringente
- * perché un magazzino senza sostituto blocca qk_magazzino_attivo_id()).
- *
- * Guard:
- *  - non si può disattivare l'ultimo magazzino attivo rimasto nel sistema;
- *  - non si può disattivare un magazzino con giacenza residua (Piano §3.7
- *    punto 2, Revisione Gestione Magazzino e Lotti §1: senza questo
- *    controllo la merce restava a sistema ma diventava irraggiungibile dai
- *    normali flussi operativi — FEFO, selettori — senza alcun avviso).
- *    Nessun conteggio aggregato della quantità nel messaggio: i prodotti
- *    coinvolti possono avere unità di misura diverse tra loro, sommarle
- *    sarebbe fuorviante (stesso principio già adottato per il popup di
- *    annullamento ordine parzialmente ricevuto, Ciclo Acquisti REVISIONE
- *    §1.3) — si conta solo quanti prodotti hanno ancora giacenza;
- *  - se il magazzino disattivato era quello predefinito, il predefinito
- *    passa automaticamente al primo altro magazzino attivo rimasto.
- *
- * @throws \RuntimeException se è l'ultimo magazzino attivo o se ha giacenza residua
- */
-function qk_disattiva_magazzino(PDO $pdo, int $id): void
-{
-    $pdo->beginTransaction();
-    try {
-        $st = $pdo->prepare("SELECT predefinito, attivo FROM magazzini WHERE id = ?");
-        $st->execute([$id]);
-        $row = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
-            $pdo->rollBack();
-            return;
-        }
-        if (!$row['attivo']) {
-            $pdo->rollBack();
-            return; // già disattivato, nessuna operazione
-        }
-
-        $attiviCount = (int) $pdo->query("SELECT COUNT(*) FROM magazzini WHERE attivo = 1")->fetchColumn();
-        if ($attiviCount <= 1) {
-            throw new \RuntimeException('Impossibile disattivare l\'unico magazzino attivo: deve sempre esisterne almeno uno.');
-        }
-
-        $stGiac = $pdo->prepare("SELECT COUNT(*) FROM giacenze WHERE magazzino_id = ? AND quantita_disponibile > 0.0005");
-        $stGiac->execute([$id]);
-        $prodottiConGiacenza = (int) $stGiac->fetchColumn();
-        if ($prodottiConGiacenza > 0) {
-            throw new \RuntimeException(sprintf(
-                'ci sono ancora %d prodott%s con giacenza residua su questo magazzino. Trasferisci lo stock su un altro magazzino prima di disattivarlo.',
-                $prodottiConGiacenza,
-                $prodottiConGiacenza === 1 ? 'o' : 'i'
-            ));
-        }
-
-        $pdo->prepare("UPDATE magazzini SET attivo = 0, predefinito = 0 WHERE id = ?")->execute([$id]);
-
-        if ($row['predefinito']) {
-            $fallbackId = $pdo->query("SELECT id FROM magazzini WHERE attivo = 1 AND tipo = 'fisico' AND parent_id IS NULL ORDER BY id LIMIT 1")->fetchColumn();
-            if ($fallbackId) {
-                $pdo->prepare("UPDATE magazzini SET predefinito = 1 WHERE id = ?")->execute([$fallbackId]);
-            }
-        }
-
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-}
-
-/**
- * Riattiva un magazzino precedentemente disattivato.
- */
-function qk_riattiva_magazzino(PDO $pdo, int $id): void
-{
-    $pdo->prepare("UPDATE magazzini SET attivo = 1 WHERE id = ?")->execute([$id]);
-}
+// L'anagrafica magazzini (10 funzioni CRUD sulla tabella `magazzini`) vive ora
+// in includes/magazzini_anagrafica.php, richiesto in testa a questo file — vedi
+// il commento in cima per il ragionamento sullo split (audit MVC/DRY, Revisione
+// Gestione Magazzino e Lotti §6/piano refactor). Nessuno split ulteriore di
+// giacenze/lotti/movimenti/cross-cutting sotto: (a) e (b)/(c) hanno una
+// dipendenza funzionale reale (qk_insert_movimento_manuale chiama
+// qk_insert_lotto_manuale), e gli helper cross-cutting hanno troppi chiamanti
+// esterni al dominio Magazzino per essere spostati senza rompere require altrove.

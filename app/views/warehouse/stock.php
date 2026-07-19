@@ -3,8 +3,11 @@
  * warehouse/_stock.php
  * Panoramica giacenze: lista prodotti con stock corrente o merce in arrivo.
  * Variabili attese: $stock (array), $ordini_in_arrivo (array), $nInArrivo (int),
- * $search (string), $filter (string), $magazzini (array), $magazzinoId (int)
- * — Fix 2, Magazzino Attivo - Analisi e Alternative.md §8.3.
+ * $search (string), $filter (string), $magazzini (array), $magazzinoId (int),
+ * $nSottoscorta (int), $nEsauriti (int)
+ * — Fix 2, Magazzino Attivo - Analisi e Alternative.md §8.3. I contatori
+ * sottoscorta/esauriti sono calcolati dal controller (qk_stock_counters(),
+ * includes/magazzino.php) — una view non deve interrogare il database.
  */
 $filterLabels = [
     'in_stock'    => 'Con giacenza',
@@ -14,39 +17,6 @@ $filterLabels = [
     'in_arrivo'   => 'Merce in arrivo',
 ];
 
-// Contatori per le pill sottoscorta/esauriti: rispettano lo stesso magazzino
-// scelto sopra (o l'aggregato se $magazzinoId === 0) — coerenti con qk_stock_*()
-// invece delle query indipendenti scritte a mano che c'erano prima (bug: quella
-// per "sottoscorta" leggeva ancora p.scorta_minima, colonna rimossa da
-// prodotti col multi-magazzino, §3.5 — non era mai stata aggiornata).
-if ($magazzinoId === 0) {
-    $nSottoscorta = (int) $pdo->query(
-        "SELECT COUNT(*) FROM (
-            SELECT p.id FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id
-             WHERE p.attivo = 1 GROUP BY p.id HAVING " . qk_sottoscorta_having('g') . "
-         ) t"
-    )->fetchColumn();
-    $nEsauriti = (int) $pdo->query(
-        "SELECT COUNT(*) FROM (
-            SELECT p.id FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id
-             WHERE p.attivo = 1 GROUP BY p.id HAVING SUM(COALESCE(g.quantita_disponibile,0)) <= 0
-         ) t"
-    )->fetchColumn();
-} else {
-    $stSc = $pdo->prepare(
-        "SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-          WHERE p.attivo = 1 AND " . qk_sottoscorta_where('g')
-    );
-    $stSc->execute([$magazzinoId]);
-    $nSottoscorta = (int) $stSc->fetchColumn();
-
-    $stEs = $pdo->prepare(
-        "SELECT COUNT(*) FROM prodotti p LEFT JOIN giacenze g ON g.prodotto_id = p.id AND g.magazzino_id = ?
-          WHERE p.attivo = 1 AND COALESCE(g.quantita_disponibile, 0) <= 0"
-    );
-    $stEs->execute([$magazzinoId]);
-    $nEsauriti = (int) $stEs->fetchColumn();
-}
 $base = url('warehouse/stock');
 ?>
 
