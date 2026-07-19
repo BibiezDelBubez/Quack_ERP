@@ -148,7 +148,8 @@ function qk_insert_trasferimento(PDO $pdo, array $header, array $righe, int $ute
         throw new \RuntimeException('Il magazzino di origine e di destinazione non possono coincidere.');
     }
     $righeValide = array_values(array_filter($righe, static function (array $r): bool {
-        return !empty($r['prodotto_id']) && (float) ($r['quantita_richiesta'] ?? 0) > 0;
+        $qta = str_replace(',', '.', (string)($r['quantita_richiesta'] ?? '0'));
+        return !empty($r['prodotto_id']) && bccomp($qta, '0', 3) > 0;
     }));
     if (empty($righeValide)) {
         throw new \RuntimeException('Inserisci almeno una riga con prodotto e quantità valida.');
@@ -185,8 +186,8 @@ function qk_insert_trasferimento(PDO $pdo, array $header, array $righe, int $ute
             $stRiga->execute([
                 $trasferimentoId,
                 (int) $r['prodotto_id'],
-                !empty($r['lotto_id']) ? (int) $r['lotto_id'] : null,
-                (float) $r['quantita_richiesta'],
+                empty($r['lotto_id']) ? null : (int) $r['lotto_id'],
+                str_replace(',', '.', (string)$r['quantita_richiesta']),
             ]);
         }
 
@@ -226,7 +227,8 @@ function qk_trasferimento_registra_partenza(PDO $pdo, int $id, int $utente_id): 
         $origineId = (int) $t['magazzino_origine_id'];
 
         foreach ($righe as $r) {
-            $qta = (float) $r['quantita_richiesta'];
+            $qta = (string) $r['quantita_richiesta'];
+            if (bccomp($qta, '0', 3) <= 0) continue;
             $prodottoId = (int) $r['prodotto_id'];
             $lottoId = $r['lotto_id'] ? (int) $r['lotto_id'] : null;
 
@@ -261,17 +263,17 @@ function qk_trasferimento_registra_partenza(PDO $pdo, int $id, int $utente_id): 
 }
 
 /** @internal Scarica prodotto/lotto dal magazzino di origine, con controllo disponibilità. */
-function _qk_trasferimento_scarica_origine(PDO $pdo, int $prodottoId, ?int $lottoId, int $magazzinoId, float $qta): void
+function _qk_trasferimento_scarica_origine(PDO $pdo, int $prodottoId, ?int $lottoId, int $magazzinoId, string $qta): void
 {
     // 1. Giacenza aggregata (prodotto, magazzino)
     $stGiac = $pdo->prepare('SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?');
     $stGiac->execute([$prodottoId, $magazzinoId]);
     $giac = $stGiac->fetch(PDO::FETCH_ASSOC);
-    $qtaCorrente = $giac ? (float) $giac['quantita_disponibile'] : 0.0;
+    $qtaCorrente = $giac ? (string) ($giac['quantita_disponibile'] ?? '0') : '0.000';
 
-    if ($qtaCorrente < $qta) {
+    if (bccomp($qtaCorrente, $qta, 3) < 0) {
         throw new \RuntimeException(sprintf(
-            'Giacenza insufficiente nel magazzino di origine per il prodotto #%d: disponibile %.3f, richiesto %.3f.',
+            'Giacenza insufficiente nel magazzino di origine per il prodotto #%d: disponibile %s, richiesto %s.',
             $prodottoId, $qtaCorrente, $qta
         ));
     }
@@ -286,11 +288,11 @@ function _qk_trasferimento_scarica_origine(PDO $pdo, int $prodottoId, ?int $lott
         $stLg = $pdo->prepare('SELECT quantita_disponibile FROM lotti_giacenze WHERE lotto_id = ? AND magazzino_id = ?');
         $stLg->execute([$lottoId, $magazzinoId]);
         $qtaLotto = $stLg->fetchColumn();
-        $qtaLottoCorrente = $qtaLotto !== false ? (float) $qtaLotto : 0.0;
+        $qtaLottoCorrente = $qtaLotto !== false ? (string) $qtaLotto : '0.000';
 
-        if ($qtaLottoCorrente < $qta) {
+        if (bccomp($qtaLottoCorrente, $qta, 3) < 0) {
             throw new \RuntimeException(sprintf(
-                'Giacenza insufficiente nel lotto selezionato nel magazzino di origine: disponibile %.3f, richiesto %.3f.',
+                'Giacenza insufficiente nel lotto selezionato nel magazzino di origine: disponibile %s, richiesto %s.',
                 $qtaLottoCorrente, $qta
             ));
         }
@@ -309,9 +311,9 @@ function _qk_trasferimento_scarica_origine(PDO $pdo, int $prodottoId, ?int $lott
 }
 
 /** @internal Carica prodotto/lotto nel magazzino di destinazione (upsert). */
-function _qk_trasferimento_carica_destinazione(PDO $pdo, int $prodottoId, ?int $lottoId, int $magazzinoId, float $qta): void
+function _qk_trasferimento_carica_destinazione(PDO $pdo, int $prodottoId, ?int $lottoId, int $magazzinoId, string $qta): void
 {
-    if ($qta <= 0) return;
+    if (bccomp($qta, '0', 3) <= 0) return;
 
     $stGiac = $pdo->prepare('SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?');
     $stGiac->execute([$prodottoId, $magazzinoId]);
@@ -344,7 +346,7 @@ function _qk_trasferimento_carica_destinazione(PDO $pdo, int $prodottoId, ?int $
  * conta, Piano §4.2): la differenza in meno genera una rettifica a
  * destinazione con nota, non un blocco dell'operazione.
  *
- * @param array<int,float>  $quantitaArrivata  riga_id => quantità arrivata (default: quantita_richiesta se assente)
+ * @param array<int,string>  $quantitaArrivata  riga_id => quantità arrivata (default: quantita_richiesta se assente)
  * @param array<int,string> $noteDiscrepanza   riga_id => nota, usata solo se la quantità differisce
  */
 function qk_conferma_arrivo_trasferimento(PDO $pdo, int $id, array $quantitaArrivata, array $noteDiscrepanza, int $utente_id): void
@@ -373,9 +375,9 @@ function qk_conferma_arrivo_trasferimento(PDO $pdo, int $id, array $quantitaArri
             $rigaId = (int) $r['id'];
             $prodottoId = (int) $r['prodotto_id'];
             $lottoId = $r['lotto_id'] ? (int) $r['lotto_id'] : null;
-            $richiesta = (float) $r['quantita_richiesta'];
-            $arrivata = array_key_exists($rigaId, $quantitaArrivata) ? (float) $quantitaArrivata[$rigaId] : $richiesta;
-            if ($arrivata < 0) $arrivata = 0.0;
+            $richiesta = (string) $r['quantita_richiesta'];
+            $arrivata = array_key_exists($rigaId, $quantitaArrivata) ? str_replace(',', '.', (string)$quantitaArrivata[$rigaId]) : $richiesta;
+            if (bccomp($arrivata, '0', 3) < 0) $arrivata = '0.000';
             $nota = trim((string) ($noteDiscrepanza[$rigaId] ?? ''));
 
             // Revisione Gestione Magazzino e Lotti §2: stesso blocco della partenza,
@@ -453,7 +455,7 @@ function qk_annulla_trasferimento(PDO $pdo, int $id, int $utente_id): void
             $stRighe = $pdo->prepare('SELECT * FROM trasferimenti_magazzino_righe WHERE trasferimento_id = ?');
             $stRighe->execute([$id]);
             foreach ($stRighe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-                $qta = (float) $r['quantita_richiesta'];
+                $qta = (string) $r['quantita_richiesta'];
                 $prodottoId = (int) $r['prodotto_id'];
                 $lottoId = $r['lotto_id'] ? (int) $r['lotto_id'] : null;
 
@@ -521,7 +523,7 @@ function qk_registra_trasferimento_diretto(PDO $pdo, array $header, array $righe
     $stRighe->execute([$id]);
     $quantitaArrivata = [];
     foreach ($stRighe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $quantitaArrivata[(int) $r['id']] = (float) $r['quantita_richiesta'];
+        $quantitaArrivata[(int) $r['id']] = (string) $r['quantita_richiesta'];
     }
     qk_conferma_arrivo_trasferimento($pdo, $id, $quantitaArrivata, [], $utente_id);
 

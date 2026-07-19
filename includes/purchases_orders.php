@@ -331,9 +331,9 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
         foreach ($stRighe->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $prodotto_id = $r['prodotto_id'];
             $um_id = $r['unita_misura_id'];
-            $qta = (float)$r['quantita_offerta'];
+            $qta = (string)$r['quantita_offerta'];
 
-            $pu = (float)($r['prezzo_unitario'] ?? 0);
+            $pu = (string)($r['prezzo_unitario'] ?? '0');
 
             // Conversione quantità e prezzo in UoM stock (centralizzata in qk_uom_converti_riga)
             $uomResult = qk_uom_converti_riga($pdo, $prodotto_id ? (int)$prodotto_id : null, $um_id ? (int)$um_id : null, $qta, $pu);
@@ -499,12 +499,12 @@ function qk_ordine_aggiorna_stato_ricezione(PDO $pdo, int $ordine_id): void
     );
     $st->execute([$ordine_id]);
     $row    = $st->fetch(PDO::FETCH_ASSOC);
-    $totOrd = (float)$row['tot_ord'];
-    $totRic = (float)$row['tot_ric'];
+    $totOrd = (string)($row['tot_ord'] ?? '0');
+    $totRic = (string)($row['tot_ric'] ?? '0');
 
-    if ($totRic <= 0) {
+    if (bccomp($totRic, '0', 3) <= 0) {
         $stato = 'inviato';
-    } elseif ($totRic >= $totOrd) {
+    } elseif (bccomp($totRic, $totOrd, 3) >= 0) {
         $stato = 'completato';
     } else {
         $stato = 'parzialmente_ricevuto';
@@ -574,13 +574,21 @@ function _ordine_aggiorna_in_arrivo(PDO $pdo, int $ordine_id, string $segno): vo
          VALUES (?, ?, 0, 0, MAX(0, ?), 0, CURRENT_TIMESTAMP)"
     );
     foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $qtaStock     = (float)($r['quantita_stock'] ?? 0);
-        $qtaOrdinata  = (float)($r['quantita_ordinata'] ?? 0);
-        $qtaRicevuta  = (float)($r['quantita_ricevuta'] ?? 0);
+        $qtaStock     = (string)($r['quantita_stock'] ?? '0');
+        $qtaOrdinata  = (string)($r['quantita_ordinata'] ?? '0');
+        $qtaRicevuta  = (string)($r['quantita_ricevuta'] ?? '0');
 
-        $qta = ($qtaOrdinata > 0)
-            ? max(0.0, $qtaStock * ($qtaOrdinata - $qtaRicevuta) / $qtaOrdinata)
-            : $qtaStock;
+        if (bccomp($qtaOrdinata, '0', 3) > 0) {
+            $diff = bcsub($qtaOrdinata, $qtaRicevuta, 3);
+            if (bccomp($diff, '0', 3) <= 0) {
+                $qta = '0.000';
+            } else {
+                $moltiplicato = bcmul($qtaStock, $diff, 6);
+                $qta = bcdiv($moltiplicato, $qtaOrdinata, 3);
+            }
+        } else {
+            $qta = $qtaStock;
+        }
 
         $st->execute([$qta, $r['prodotto_id'], $magazzinoId]);
         if ($st->rowCount() === 0) {

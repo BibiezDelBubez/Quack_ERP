@@ -432,8 +432,8 @@ final class SostanzeChimicheController extends BaseController
 
         $sostanzaId        = (int) post('sostanza_id');
         $restrictionTypeId = (int) post('restriction_type_id');
-        $concMin           = post('concentrazione_min') !== '' ? (float) post('concentrazione_min') : null;
-        $concMax           = post('concentrazione_max') !== '' ? (float) post('concentrazione_max') : null;
+        $concMin           = post('concentrazione_min') !== '' ? str_replace(',', '.', (string) post('concentrazione_min')) : null;
+        $concMax           = post('concentrazione_max') !== '' ? str_replace(',', '.', (string) post('concentrazione_max')) : null;
         $note              = trim(post('note', '')) ?: null;
 
         if ($sostanzaId <= 0 || $restrictionTypeId <= 0) {
@@ -694,7 +694,7 @@ final class SostanzeChimicheController extends BaseController
     private function bindParams(array $v): array
     {
         $n = fn($x) => ($x === '' || $x === null) ? null : trim((string) $x);
-        $d = fn($x) => ($x === '' || $x === null) ? null : (float) str_replace(',', '.', (string) $x);
+        $d = fn($x) => ($x === '' || $x === null) ? null : str_replace(',', '.', (string) $x);
         return [
             ':nome'              => trim($v['nome']),
             ':codice_cas'        => $n($v['codice_cas'] ?? ''),

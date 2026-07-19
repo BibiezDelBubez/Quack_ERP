@@ -218,9 +218,11 @@ function qk_ricezione_apri(PDO $pdo, int $ordine_id, int $utente_id): int
              VALUES (?,?,?,?,?,0,?,?,?)'
         );
         foreach ($righe->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $massimo   = (float)$r['quantita_ordinata'] * (1 + (float)$r['tolleranza_esubero_perc'] / 100);
-            $rimanente = max(0.0, round($massimo - (float)$r['quantita_ricevuta'], 3));
-            if ($rimanente <= 0) continue; // riga già completata
+            $tolleranzaFactor = bcdiv((string)($r['tolleranza_esubero_perc'] ?? '0'), '100', 4);
+            $moltiplicatore = bcadd('1', $tolleranzaFactor, 4);
+            $massimo = bcmul((string)($r['quantita_ordinata'] ?? '0'), $moltiplicatore, 3);
+            $rimanente = bcsub($massimo, (string)($r['quantita_ricevuta'] ?? '0'), 3);
+            if (bccomp($rimanente, '0.000', 3) <= 0) continue; // riga già completata
 
             /*
              * =========================================================================
@@ -370,14 +372,14 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
 
             $input        = $righeInput[$rigaId] ?? [];
             $qtaAccettata = isset($input['quantita_accettata'])
-                ? (float)$input['quantita_accettata']
-                : (float)$riga['quantita_accettata'];
+                ? str_replace(',', '.', (string)$input['quantita_accettata'])
+                : (string)$riga['quantita_accettata'];
             $qtaRifiutata = isset($input['quantita_rifiutata'])
-                ? (float)$input['quantita_rifiutata']
-                : 0.0;
+                ? str_replace(',', '.', (string)$input['quantita_rifiutata'])
+                : '0.000';
             $motivoRifiuto = $input['motivo_rifiuto'] ?? '';
 
-            if ($qtaAccettata < 0 || $qtaRifiutata < 0) {
+            if (bccomp($qtaAccettata, '0', 3) < 0 || bccomp($qtaRifiutata, '0', 3) < 0) {
                 throw new \RuntimeException('La quantità accettata o rifiutata non può essere negativa (tentativo di scarico irregolare).');
             }
 
@@ -399,7 +401,7 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
             $orderRiga = $stOrderUm->fetch(PDO::FETCH_ASSOC);
 
             $um_id = $orderRiga ? $orderRiga['unita_misura_id'] : null;
-            $quantita_contenuto_snapshot = $orderRiga ? (float)$orderRiga['quantita_contenuto_snapshot'] : 1.0;
+            $quantita_contenuto_snapshot = $orderRiga ? (string)($orderRiga['quantita_contenuto_snapshot'] ?? '1.000') : '1.000';
             $num_factor_snapshot = $orderRiga ? (int)($orderRiga['num_factor_snapshot'] ?? 1) : 1;
             $den_factor_snapshot = $orderRiga ? (int)($orderRiga['den_factor_snapshot'] ?? 1) : 1;
 
@@ -409,9 +411,9 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
 
                 if ((int)$um_id === $unita_misura_stock_id) {
                     $quantita_stock = $qtaAccettata;
-                } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $quantita_contenuto_snapshot > 0) {
+                } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && bccomp($quantita_contenuto_snapshot, '0', 3) > 0) {
                     // High-precision division using BCMath to maintain consistency with historical order UoM factor
-                    $quantita_stock = (float)bcdiv((string)$qtaAccettata, (string)$quantita_contenuto_snapshot, 3);
+                    $quantita_stock = bcdiv($qtaAccettata, $quantita_contenuto_snapshot, 3);
                 }
             } elseif ($prodUm) {
                 $unita_misura_stock_id = (int)$prodUm['unita_misura_stock_id'];
@@ -426,7 +428,7 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                   WHERE id = ?'
             )->execute([$qtaAccettata, $qtaRifiutata, $motivoRifiuto, $quantita_stock, $unita_misura_stock_id, $quantita_contenuto_snapshot, $num_factor_snapshot, $den_factor_snapshot, $rigaId]);
 
-            if ($qtaAccettata <= 0) continue;
+            if (bccomp($qtaAccettata, '0', 3) <= 0) continue;
 
             // Gestione lotto (usando quantita_stock), nel magazzino di questa ricezione
             $lotto_id = _ricezione_gestisci_lotto(
@@ -505,7 +507,7 @@ function _ricezione_gestisci_lotto(
     int    $fornitore_id,
     int    $ordine_id,
     int    $ricezione_riga_id,
-    float  $qta,
+    string $qta,
     array  $lottoData,
     int    $utente_id,
     int    $magazzino_id
@@ -575,7 +577,7 @@ function _ricezione_gestisci_lotto(
 /**
  * Inserisce o aggiorna la giacenza disponibile di un prodotto NEL MAGAZZINO indicato.
  */
-function _ricezione_upsert_giacenza(PDO $pdo, int $prodotto_id, int $magazzino_id, float $delta): void
+function _ricezione_upsert_giacenza(PDO $pdo, int $prodotto_id, int $magazzino_id, string $delta): void
 {
     $exists = $pdo->prepare('SELECT id FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?');
     $exists->execute([$prodotto_id, $magazzino_id]);
@@ -599,7 +601,7 @@ function _ricezione_upsert_giacenza(PDO $pdo, int $prodotto_id, int $magazzino_i
  * Se la quantità ricevuta supera la tranche corrente, crea uno split automatico
  * per l'eccesso.
  */
-function _ricezione_avanza_pianificazione(PDO $pdo, int $ordine_riga_id, float $qtaRicevuta): void
+function _ricezione_avanza_pianificazione(PDO $pdo, int $ordine_riga_id, string $qtaRicevuta): void
 {
     $st = $pdo->prepare(
         "SELECT * FROM ordini_righe_pianificazione
@@ -611,19 +613,19 @@ function _ricezione_avanza_pianificazione(PDO $pdo, int $ordine_riga_id, float $
     if (!$tranche) return;
 
     $trancheId      = (int)$tranche['id'];
-    $giàRicevuta    = (float)$tranche['quantita_ricevuta'];
-    $pianificata    = (float)$tranche['quantita_pianificata'];
-    $totaleRicevuta = $giàRicevuta + $qtaRicevuta;
+    $giàRicevuta    = (string)$tranche['quantita_ricevuta'];
+    $pianificata    = (string)$tranche['quantita_pianificata'];
+    $totaleRicevuta = bcadd($giàRicevuta, $qtaRicevuta, 3);
 
-    if ($totaleRicevuta >= $pianificata) {
+    if (bccomp($totaleRicevuta, $pianificata, 3) >= 0) {
         $pdo->prepare(
             "UPDATE ordini_righe_pianificazione
                 SET quantita_ricevuta = ?, stato = 'completata'
               WHERE id = ?"
         )->execute([$totaleRicevuta, $trancheId]);
 
-        $eccesso = round($totaleRicevuta - $pianificata, 3);
-        if ($eccesso > 0.001) {
+        $eccesso = bcsub($totaleRicevuta, $pianificata, 3);
+        if (bccomp($eccesso, '0.000', 3) > 0) {
             // Split automatico per l'eccesso rispetto alla tranche
             $pdo->prepare(
                 "INSERT INTO ordini_righe_pianificazione
