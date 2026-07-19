@@ -526,25 +526,7 @@ foreach ($ricezioni as $rc) {
     </div>
   </div>
 
-  <script>
-  function switchOrdineTab(tabId) {
-    document.querySelectorAll('.qk-nav-tabs .nav-link').forEach(btn => {
-      btn.classList.remove('active');
-    });
-    const activeBtn = document.getElementById('tab-ordine-' + tabId + '-btn');
-    if (activeBtn) activeBtn.classList.add('active');
-
-    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
-      pane.classList.add('d-none');
-      pane.classList.remove('active');
-    });
-    const activePane = document.getElementById('pane-ordine-' + tabId);
-    if (activePane) {
-      activePane.classList.remove('d-none');
-      activePane.classList.add('active');
-    }
-  }
-  </script>
+  
 
   <!-- Note ed allegati -->
   <div class="qk-form-grid mb-4">
@@ -621,3 +603,5 @@ foreach ($ricezioni as $rc) {
   <?php endif; ?>
 
 </form>
+
+<script src="<?= url('public/assets/js/purchases/orders_detail.js') ?>"></script>

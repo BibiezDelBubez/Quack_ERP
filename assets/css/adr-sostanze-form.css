@@ -1,0 +1,55 @@
+.h-chip { display:inline-block; padding:3px 8px; border:1px solid var(--qk-border); border-radius:4px; font-size:0.75rem; font-weight:600; cursor:pointer; transition:all .15s; user-select:none; }
+.h-chip:hover { border-color:var(--qk-accent); color:var(--qk-accent); }
+.h-chip-active { background:var(--qk-accent); border-color:var(--qk-accent); color:var(--qk-card-bg); }
+
+/* ── Restrizioni compliance ───────────────────────────────────── */
+.qkr-card {
+  background: var(--qk-card-bg);
+  border: 1px solid var(--qk-card-border);
+  border-radius: var(--qk-radius, 6px);
+  padding: 1rem 1.25rem;
+  margin-bottom: .75rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  transition: border-color .15s;
+}
+.qkr-card:hover { border-color: var(--qk-accent); }
+.qkr-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: .9rem;
+}
+.qkr-icon--direct    { background: rgba(239,68,68,.12); color: var(--qk-danger); }
+.qkr-icon--inherited { background: var(--qk-accent-light, rgba(0,120,255,.1)); color: var(--qk-accent); }
+.qkr-body { flex: 1; min-width: 0; }
+.qkr-name { font-weight: 600; font-size: .9rem; color: var(--qk-text-primary); }
+.qkr-ref  { font-size: .78rem; color: var(--qk-text-muted); margin-top: 1px; }
+.qkr-meta { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
+.qkr-pill {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .72rem; font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--qk-bg-subtle);
+  border: 1px solid var(--qk-border);
+  color: var(--qk-text-secondary);
+}
+.qkr-conc { font-size: .78rem; color: var(--qk-text-secondary); margin-top: .25rem; }
+.qkr-note { font-size: .78rem; color: var(--qk-text-muted); font-style: italic; margin-top: .2rem; }
+.qkr-source-badge {
+  font-size: .7rem; font-weight: 600; padding: 2px 7px;
+  border-radius: 4px; letter-spacing: .03em;
+}
+.qkr-source-badge--direct    { background: color-mix(in srgb,var(--qk-danger) 12%,transparent); color:var(--qk-danger-hover, #b91c1c); }
+.qkr-source-badge--inherited { background: color-mix(in srgb,var(--qk-accent) 10%,transparent); color:var(--qk-accent); }
+
+/* Pannello aggiungi inline */
+.qkr-add-panel {
+  background: var(--qk-bg-subtle);
+  border: 1px dashed var(--qk-border);
+  border-radius: var(--qk-radius, 6px);
+  padding: 1rem 1.25rem;
+  margin-bottom: .75rem;
+}

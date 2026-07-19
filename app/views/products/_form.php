@@ -637,275 +637,7 @@ window.QkPF = {
             </div>
           </div>
 
-          <style>
-            .pl-riga-deleted-soft td {
-              background-color: var(--qk-danger-bg, rgba(239, 68, 68, 0.08)) !important;
-            }
-            .pl-riga-deleted-soft.fade-out td {
-              opacity: 0;
-              transition: opacity 0.4s ease-out;
-            }
-            #rrp-drawer {
-              width: 750px !important;
-              right: -800px;
-              transition: right 0.3s ease-in-out;
-            }
-            #rrp-drawer.open {
-              right: 0;
-            }
-            .pricing-matrix-container {
-              overflow-x: auto;
-              margin-top: 1rem;
-              border-radius: var(--qk-radius);
-              border: 1px solid #cbd5e1;
-              background: #fff;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            }
-            .pricing-matrix-table {
-              width: auto;
-              border-collapse: collapse;
-              font-size: 0.82rem;
-              background: #fff;
-              table-layout: fixed;
-            }
-            .pricing-matrix-table th, .pricing-matrix-table td {
-              border: 1px solid #cbd5e1;
-              padding: 0;
-              vertical-align: middle;
-              overflow: visible; /* Per consentire la visualizzazione dei popover */
-            }
-            .pricing-matrix-table th {
-              background: #f8f9fa;
-              font-weight: 600;
-              color: var(--qk-text-primary);
-              text-align: left;
-              border-bottom: 2px solid #cbd5e1;
-              padding: 0.6rem 0.8rem;
-            }
-            .pricing-matrix-table td.listino-info-cell {
-              background: #f8fafc;
-              font-weight: 600;
-              color: var(--qk-text-primary);
-              padding: 0.6rem 0.8rem;
-            }
-            .matrix-cell-wrapper {
-              position: relative;
-              background: #f8fafc;
-              border: none;
-              border-radius: 0;
-              padding: 0.6rem 0.8rem;
-              transition: all 0.2s ease;
-              width: 100%;
-              height: 100%;
-              display: flex;
-              align-items: center;
-            }
-            .matrix-cell-wrapper:hover {
-              background: #e2e8f0;
-            }
-            .matrix-cell-wrapper:focus-within {
-              background: #fff;
-              outline: 2px solid var(--qk-primary);
-              outline-offset: -2px;
-            }
-            .matrix-price-input-group {
-              display: flex;
-              align-items: center;
-              background: transparent;
-              width: 100%;
-            }
-            .matrix-price-addon {
-              font-size: 0.75rem;
-              font-weight: 600;
-              color: #64748b;
-              padding-left: 4px;
-              user-select: none;
-            }
-             .matrix-input-price {
-              border: none;
-              background: transparent;
-              padding: 4px 6px;
-              font-family: monospace;
-              font-size: 0.88rem;
-              font-weight: 600;
-              flex: 1;
-              min-width: 0;
-              text-align: right;
-              color: #1e293b;
-            }
-            .matrix-input-price::placeholder {
-              color: #a0aec0;
-              opacity: 0.8;
-              font-weight: 400;
-            }
-            .matrix-input-price:focus {
-              outline: none;
-            }
-            .btn-cell-details {
-              background: none;
-              border: none;
-              color: #94a3b8;
-              cursor: pointer;
-              padding: 2px 6px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              transition: color 0.2s, background-color 0.2s;
-              border-radius: 4px;
-            }
-            .btn-cell-details:hover {
-              color: var(--qk-primary);
-              background-color: rgba(13, 110, 253, 0.08);
-            }
-            .btn-cell-details.has-details {
-              color: var(--qk-primary);
-              background-color: rgba(13, 110, 253, 0.12);
-            }
-
-            /* Stile Popover per Dettagli Cella */
-            .matrix-cell-popover {
-              position: absolute;
-              top: 100%;
-              left: 50%;
-              transform: translateX(-50%);
-              margin-top: 8px;
-              width: 210px;
-              background: #fff;
-              border: 1px solid #cbd5e1;
-              border-radius: 8px;
-              box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-              z-index: 1050;
-              padding: 10px;
-              text-align: left;
-            }
-            .matrix-popover-arrow {
-              position: absolute;
-              top: -6px;
-              left: 50%;
-              transform: translateX(-50%) rotate(45deg);
-              width: 10px;
-              height: 10px;
-              background: #fff;
-              border-top: 1px solid #cbd5e1;
-              border-left: 1px solid #cbd5e1;
-            }
-            .matrix-popover-content {
-              display: flex;
-              flex-direction: column;
-              gap: 8px;
-            }
-
-            .matrix-cell-wrapper.saving {
-              border-color: #ffc107;
-              background: #fffef0;
-            }
-            .matrix-cell-wrapper.saved {
-              border-color: #28a745;
-              background: #f0fff4;
-              animation: matrix-flash-green 1s ease;
-            }
-            .matrix-cell-wrapper.error {
-              border-color: #dc3545;
-              background: #fff5f5;
-            }
-            @keyframes matrix-flash-green {
-              0% { box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.4); }
-              100% { box-shadow: 0 0 0 0 transparent; }
-            }
-            .btn-delete-qty-column {
-              background: none;
-              border: none;
-              color: var(--qk-danger);
-              cursor: pointer;
-              padding: 0 4px;
-              border-radius: 3px;
-              font-size: 0.75rem;
-            }
-            .btn-delete-qty-column:hover {
-              background: rgba(220, 53, 69, 0.1);
-            }
-
-            /* Flat Grid (Excel-like) CSS styled like Odoo */
-            .qks-master-table {
-              width: 100%;
-              border-collapse: collapse;
-              table-layout: fixed;
-              font-family: inherit;
-            }
-            .qks-master-table th, .qks-master-table td {
-              border-bottom: 1px solid #e2e8f0;
-              padding: 0 !important;
-              vertical-align: middle;
-            }
-            .qks-master-table th {
-              padding: 8px 10px !important;
-              background-color: #f8fafc;
-              font-weight: 700;
-              font-size: 0.78rem;
-              text-transform: uppercase;
-              letter-spacing: 0.03em;
-              color: #475569;
-              border-bottom: 2px solid #cbd5e1;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-            }
-            .qks-master-table tbody tr:hover {
-              background-color: rgba(241, 245, 249, 0.6);
-            }
-            .flat-grid-td {
-              position: relative;
-              height: 40px;
-              overflow: hidden;
-            }
-            .flat-grid-td[data-col="fornitore"] {
-              overflow: visible !important;
-            }
-            .qks-master-table th[data-col="pref"],
-            .qks-master-table td[data-col="pref"] {
-              width: 45px !important;
-              min-width: 45px !important;
-              max-width: 45px !important;
-              text-align: center !important;
-            }
-            .flat-grid-input {
-              display: block !important;
-              box-sizing: border-box !important;
-              width: 100%;
-              min-width: 0 !important;
-              height: 100%;
-              border: none !important;
-              background: transparent !important;
-              padding: 0 10px;
-              outline: none !important;
-              box-shadow: none !important;
-              border-radius: 0;
-              font-size: 0.85rem;
-              color: #1e293b;
-              transition: background-color 0.15s;
-            }
-            .flat-grid-input:focus {
-              background-color: #fff !important;
-              outline: 2px solid var(--qk-primary) !important;
-              outline-offset: -2px;
-              z-index: 2;
-              position: relative;
-            }
-            select.flat-grid-input {
-              appearance: auto;
-              cursor: pointer;
-            }
-            #fornitori-col-toggler {
-              text-transform: none !important;
-              letter-spacing: normal !important;
-              font-weight: 400 !important;
-            }
-            #rrp-tbody input, #rrp-tbody select {
-              padding-left: 6px !important;
-              padding-right: 6px !important;
-              font-size: 0.82rem !important;
-            }
-          </style>
+          <link rel="stylesheet" href="<?= asset('css/products-form.css') ?>?v=<?= time() ?>">
 
           <?php
           // Estrai tutti gli scaglioni di quantità (escluso 0)
@@ -963,12 +695,12 @@ window.QkPF = {
             </div>
             
             <div class="qk-card-body p-3">
-              <div class="pricing-matrix-container">
-                <table class="pricing-matrix-table" id="pricing-matrix-table">
+              <div class="qk-table-wrap mt-3 pricing-matrix-container">
+                <table class="qk-table pricing-matrix-table" id="pricing-matrix-table">
                   <thead>
                     <tr>
-                      <th style="width: 250px; background: #e2e8f0; color: #1e293b; border-bottom: 2px solid #cbd5e1;">Listino (Valuta)</th>
-                      <th style="width: 200px; background: #f1f5f9; color: #0f172a; border-bottom: 2px solid #cbd5e1; font-weight: 700; text-align: center;">PREZZO BASE [Qtà 0+]</th>
+                      <th style="width: 250px; background: var(--qk-hover-bg, rgba(241, 245, 249, 0.6)); color: var(--qk-text-primary); border-bottom: 2px solid var(--qk-border);">Listino (Valuta)</th>
+                      <th style="width: 200px; background: #f1f5f9; color: #0f172a; border-bottom: 2px solid var(--qk-border); font-weight: 700; text-align: center;">PREZZO BASE [Qtà 0+]</th>
                       <?php foreach ($qty_tiers as $qty): ?>
                       <th class="qty-column-header" data-qty="<?= $qty ?>" style="width: 200px;">
                         <div class="d-flex align-items-center justify-content-between">
@@ -980,7 +712,7 @@ window.QkPF = {
                       </th>
                       <?php endforeach; ?>
                       <!-- Bottone aggiunta scaglione in testata -->
-                      <th style="width: 60px; text-align: center; border-bottom: 2px solid #cbd5e1; background: #f8f9fa;">
+                      <th style="width: 60px; text-align: center; border-bottom: 2px solid var(--qk-border); background: var(--qk-table-head-bg);">
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-add-qty-column" title="Aggiungi scaglione (colonna)" style="padding: 2px 6px; font-size: 0.75rem;">
                           <i class="fa-solid fa-plus"></i>
                         </button>
@@ -1003,7 +735,7 @@ window.QkPF = {
                     <tr class="listino-row" data-listino-id="<?= $lid ?>" data-valuta="<?= e($listino['valuta']) ?>">
                       <td class="listino-info-cell" style="<?= $isStandard ? 'background: #f1f5f9; border-left: 4px solid var(--qk-primary);' : '' ?>">
                         <div class="d-flex flex-column gap-1">
-                          <span style="font-size: 0.85rem; font-weight: 700; color: #1e293b;"><?= e($listino['nome']) ?></span>
+                          <span style="font-size: 0.85rem; font-weight: 700; color: var(--qk-text-primary);"><?= e($listino['nome']) ?></span>
                           <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-light text-dark border" style="font-size: 0.68rem;"><?= e($listino['valuta']) ?></span>
                             <?php if ($isStandard): ?>
@@ -1045,7 +777,7 @@ window.QkPF = {
                       </td>
                       <?php endforeach; ?>
                       <!-- Cella vuota per colonna bottone "+" -->
-                      <td style="background: #f8f9fa; border-left: none; border-right: none;"></td>
+                      <td style="background: var(--qk-table-head-bg); border-left: none; border-right: none;"></td>
                     </tr>
                     <?php endforeach; ?>
                   </tbody>
@@ -1102,7 +834,7 @@ window.QkPF = {
                </div>
                <div id="rrp-drawer-alert" class="qk-alert qk-alert-danger d-none mb-3"></div>
                <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem; table-layout: fixed;">
-                    <thead style="background: #f8fafc;">
+                    <thead style="background: var(--qk-table-head-bg);">
                         <tr>
                             <th>Fonte (Fornitore)</th>
                             <th data-col="rrp-min" style="width: 90px; text-align: right;">Prezzo Min</th>

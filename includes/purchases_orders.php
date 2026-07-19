@@ -785,3 +785,44 @@ function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
         throw $e;
     }
 }
+
+/**
+ * Verifica se l'ordine ha tutte le righe con quantità e prezzo maggiori di zero.
+ * (Estratto dal Controller)
+ */
+function qk_ordine_check_righe_valide(PDO $pdo, int $ordine_id): bool
+{
+    $stCheck = $pdo->prepare("SELECT COUNT(*) FROM ordini_righe WHERE ordine_id = ? AND (prezzo_unitario <= 0 OR quantita_ordinata <= 0)");
+    $stCheck->execute([$ordine_id]);
+    return ((int)$stCheck->fetchColumn() === 0);
+}
+
+/**
+ * Verifica se esiste una ricezione in bozza per l'ordine.
+ * (Estratto dal Controller)
+ */
+function qk_ordine_has_ricezione_bozza(PDO $pdo, int $ordine_id): bool
+{
+    $stCheckRec = $pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
+    $stCheckRec->execute([$ordine_id]);
+    return (bool)$stCheckRec->fetch();
+}
+
+/**
+ * Segna l'ordine come fatturato.
+ * (Estratto dal Controller)
+ */
+function qk_ordine_segna_fatturato(PDO $pdo, int $ordine_id): void
+{
+    $pdo->prepare("UPDATE ordini_testata SET stato_fatturazione = 'fatturato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$ordine_id]);
+}
+
+/**
+ * Segna l'ordine come da fatturare.
+ * (Estratto dal Controller)
+ */
+function qk_ordine_segna_da_fatturare(PDO $pdo, int $ordine_id): void
+{
+    $pdo->prepare("UPDATE ordini_testata SET stato_fatturazione = 'da_fatturare', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$ordine_id]);
+}
+

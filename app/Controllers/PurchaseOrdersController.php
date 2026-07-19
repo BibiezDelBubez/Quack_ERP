@@ -150,9 +150,7 @@ class PurchaseOrdersController extends BaseController
 
                 case 'invia':
                     // Verification
-                    $stCheck = $this->pdo->prepare('SELECT COUNT(*) FROM ordini_righe WHERE ordine_id = ? AND (prezzo_unitario <= 0 OR quantita_ordinata <= 0)');
-                    $stCheck->execute([$id]);
-                    if ((int)$stCheck->fetchColumn() > 0) {
+                    if (!qk_ordine_check_righe_valide($this->pdo, $id)) {
                         throw new \RuntimeException("Non è possibile confermare l'ordine: tutte le righe devono avere una quantità e un prezzo unitario maggiori di zero.");
                     }
 
@@ -162,9 +160,7 @@ class PurchaseOrdersController extends BaseController
                         qk_ordine_invia($this->pdo, $id);
 
                         // Create dynamic reception (require spostato in testa al file)
-                        $stCheckRec = $this->pdo->prepare("SELECT id FROM ricezioni_testata WHERE ordine_id = ? AND stato = 'bozza' LIMIT 1");
-                        $stCheckRec->execute([$id]);
-                        if (!$stCheckRec->fetch()) {
+                        if (!qk_ordine_has_ricezione_bozza($this->pdo, $id)) {
                             qk_ricezione_apri($this->pdo, $id, (int)current_user()['id']);
                         }
 
@@ -191,12 +187,12 @@ class PurchaseOrdersController extends BaseController
                 // (righe 526-533): semplice UPDATE, nessuna verifica di importi/
                 // quantità collegata, non è un three-way match automatico.
                 case 'segna_fatturato':
-                    $this->pdo->prepare("UPDATE ordini_testata SET stato_fatturazione = 'fatturato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    qk_ordine_segna_fatturato($this->pdo, $id);
                     flash_set('success', 'Ordine segnato come fatturato.');
                     break;
 
                 case 'segna_da_fatturare':
-                    $this->pdo->prepare("UPDATE ordini_testata SET stato_fatturazione = 'da_fatturare', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    qk_ordine_segna_da_fatturare($this->pdo, $id);
                     flash_set('success', 'Ordine ripristinato a "Da Fatturare".');
                     break;
 
