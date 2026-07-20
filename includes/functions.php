@@ -636,11 +636,11 @@ function qk_sequenza_crea_mancante(PDO $pdo, string $tipo, string $prefisso, int
 function prev_stato_badge(string $stato): string {
     $map = [
         'bozza'     => ['draft', 'Bozza'],
-        'inviata'   => ['confirmed', 'Inviata'],
-        'accettata' => ['active', 'Accettata'],
-        'rifiutata' => ['cancelled', 'Rifiutata'],
-        'scaduta'   => ['warning', 'Scaduta'],
-        'annullata' => ['cancelled', 'Annullata']
+        'inviato'   => ['confirmed', 'Inviato'],
+        'accettato' => ['active', 'Accettato'],
+        'rifiutato' => ['cancelled', 'Rifiutato'],
+        'scaduto'   => ['warning', 'Scaduto'],
+        'annullato' => ['cancelled', 'Annullato']
     ];
     [$cls, $lbl] = $map[$stato] ?? ['draft', ucfirst($stato)];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';

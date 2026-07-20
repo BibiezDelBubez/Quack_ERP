@@ -134,7 +134,7 @@ final class SalesQuotesController extends BaseController
                             $id      = qk_insert_offerta($this->pdo, $values, $righe, $user_id);
                             
                             // If order was generated / accepted, we log compliance transactions if any
-                            if (($values['stato'] ?? '') === 'accettata') {
+                            if (($values['stato'] ?? '') === 'accettato') {
                                 qk_compliance_log_transactions($this->pdo, $id, $righe);
                             }
                             
@@ -277,7 +277,7 @@ final class SalesQuotesController extends BaseController
 
                             qk_update_offerta($this->pdo, $id, $values, $righe, $user_id);
                             
-                            if (($values['stato'] ?? '') === 'accettata') {
+                            if (($values['stato'] ?? '') === 'accettato') {
                                 qk_compliance_log_transactions($this->pdo, $id, $righe);
                             }
                             
@@ -336,7 +336,7 @@ final class SalesQuotesController extends BaseController
         try {
             switch ($azione) {
                 case 'invia':
-                    $this->pdo->prepare("UPDATE preventivi SET stato = 'inviata', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $this->pdo->prepare("UPDATE preventivi SET stato = 'inviato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
                     flash_set('success', 'Preventivo segnato come Inviato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;
@@ -360,7 +360,7 @@ final class SalesQuotesController extends BaseController
                     break;
 
                 case 'rifiuta':
-                    $this->pdo->prepare("UPDATE preventivi SET stato = 'rifiutata', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    $this->pdo->prepare("UPDATE preventivi SET stato = 'rifiutato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
                     flash_set('success', 'Preventivo segnato come Rifiutato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;

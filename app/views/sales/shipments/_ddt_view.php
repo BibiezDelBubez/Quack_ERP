@@ -68,18 +68,18 @@ $isAdr = !empty(array_filter($righe, fn($r) => (int)$r['is_adr'] === 1));
     <div class="qk-ddt-block">
       <div class="qk-ddt-block-label">DESTINATARIO</div>
       <div class="qk-ddt-block-content">
-        <strong><?= e($d['destinatario_nome']) ?></strong><br>
-        <?php if (!empty($d['nome_sede'])): ?>
-          <?= e($d['nome_sede']) ?><br>
+        <strong><?= e($destinatario['ragione_sociale']) ?></strong><br>
+        <?php if (!empty($destinatario['nome_sede'])): ?>
+          <?= e($destinatario['nome_sede']) ?><br>
         <?php endif; ?>
-        <?php if (!empty($d['via'])): ?>
-          <?= e($d['via']) ?><?= !empty($d['civico']) ? ', ' . e($d['civico']) : '' ?><br>
-          <?= e($d['cap'] ?? '') ?> <?= e($d['citta'] ?? '') ?>
-          <?= !empty($d['provincia']) ? '(' . e($d['provincia']) . ')' : '' ?><br>
-          <?= e($d['nazione'] ?? 'Italia') ?>
+        <?php if (!empty($destinatario['via'])): ?>
+          <?= e($destinatario['via']) ?><?= !empty($destinatario['civico']) ? ', ' . e($destinatario['civico']) : '' ?><br>
+          <?= e($destinatario['cap'] ?? '') ?> <?= e($destinatario['citta'] ?? '') ?>
+          <?= !empty($destinatario['provincia']) ? '(' . e($destinatario['provincia']) . ')' : '' ?><br>
+          <?= e($destinatario['nazione'] ?? 'Italia') ?>
         <?php endif; ?>
-        <?php if (!empty($d['destinatario_piva'])): ?>
-          <br>P.IVA: <?= e($d['destinatario_piva']) ?>
+        <?php if (!empty($destinatario['partita_iva'])): ?>
+          <br>P.IVA: <?= e($destinatario['partita_iva']) ?>
         <?php endif; ?>
       </div>
     </div>

@@ -756,8 +756,8 @@ function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
             throw new Exception("Preventivo originale non trovato.");
         }
 
-        // 2. Mark original quote as storico = 1, stato = 'annullata'
-        $stUp = $pdo->prepare("UPDATE preventivi SET storico = 1, stato = 'annullata', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
+        // 2. Mark original quote as storico = 1, stato = 'annullato'
+        $stUp = $pdo->prepare("UPDATE preventivi SET storico = 1, stato = 'annullato', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stUp->execute([$id]);
 
         // 3. Compute new revision number
@@ -898,12 +898,12 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         $quota = $detail['offerta'];
         $righe = $detail['righe'];
 
-        if ($quota['stato'] === 'accettata') {
+        if ($quota['stato'] === 'accettato') {
             throw new Exception("Il preventivo è già stato accettato.");
         }
 
-        // 1. Update preventivo status to 'accettata'
-        $stUp = $pdo->prepare("UPDATE preventivi SET stato = 'accettata', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
+        // 1. Update preventivo status to 'accettato'
+        $stUp = $pdo->prepare("UPDATE preventivi SET stato = 'accettato', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stUp->execute([$id]);
 
         // 2. Generate ODC number

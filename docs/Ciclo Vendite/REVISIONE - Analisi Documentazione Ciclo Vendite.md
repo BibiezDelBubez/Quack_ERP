@@ -53,6 +53,8 @@ La parte "da Preventivo a Spedizione" del Manuale è quindi quella corretta *ris
 
 Se il CHECK dello schema fosse davvero applicato sul DB in uso, **ogni invio di preventivo fallirebbe** con violazione di vincolo — cosa che evidentemente non accade, visto che il flusso preventivi è usato. La spiegazione più probabile è che il file DB reale sia stato creato da una versione precedente dello schema (senza CHECK, o con i valori femminili) e che `init_sqlite.sql` sia stato riscritto dopo con i valori maschili mai allineati al codice: cioè **lo schema autorevole dichiara un vincolo che il database vivo non ha**. Va deciso quale dei due è giusto (il femminile del codice, coerente con "offerta/quotazione", o il maschile dello schema, coerente con "preventivo") e allineare l'altro — su un DB SQLite esistente cambiare un CHECK richiede ricreare la tabella, quindi non è una correzione banale da fare di sfuggita. Da decidere insieme prima della riscrittura documentale, perché la guida definitiva deve dichiarare un solo set di valori.
 
+> **✅ RISOLTO il 20/07/2026** — vedi `PIANO - Uniformare Genere Grammaticale Stati Preventivo.md` nella stessa cartella per il dettaglio completo (analisi, verifica, correzione, test). Scelto il **maschile** (coincide con lo schema, zero migrazione DB, il database reale usato dall'utente era comunque solo di test). Corretti tutti i punti di scrittura/lettura elencati sopra, più due punti scoperti solo durante la verifica riga-per-riga finale (non presenti nell'audit iniziale): il bottone "Salva e invia" in `_form.php` (scriveva `stato='inviata'` in un secondo punto, bypassando l'azione `invia`) e la funzione `prev_stato_badge()` in `includes/functions.php` (badge di stato nella lista preventivi, mappa femminile separata da quella già censita in `sales_dashboard.php`). Corretto anche, come effetto collaterale dello stesso intervento, il bug funzionale in `SalesPricelistsController.php:343` (il filtro "escludi annullati/rifiutati" non escludeva mai nulla perché confrontava con valori maschili contro dati scritti in femminile). Verificato con test funzionali reali (non solo `php -l`): `tests/manual/suite_preventivo_stato_genere_confirm.php` (8/8 assert) più le 7 suite preesistenti rieseguite senza regressioni (129 assert). **Bug indipendente scoperto durante il test**, non corretto in questo intervento: `qk_preventivo_nuova_versione()` (`includes/sales_quotes.php`) copia anche `numero_preventivo` (colonna `UNIQUE`) nel nuovo INSERT prima di rinominarlo, quindi fallisce sempre con `UNIQUE constraint failed` — il bottone "Crea Nuova Versione" è oggi non funzionante, indipendentemente dal genere degli stati. Segnalato all'utente, in attesa di decisione separata.
+
 ### 1.3 "Guida alla Gestione dei Listini Vendita ERP" (righe 753-1150 del Manuale): proposta generica che non corrisponde allo schema reale, e l'argomento è già coperto meglio altrove
 
 - **Manuale, righe 824-873**: propone uno schema `listini` / `listini_regole` (con `tipo_calcolo IN ('fixed','discount','formula')`) / `clienti_listini`.
@@ -69,16 +71,98 @@ Se il CHECK dello schema fosse davvero applicato sul DB in uso, **ogni invio di 
   - B1 (JOIN `prodotti_fornitori` in `qk_search_prodotti_sales()`) → **fatto** (`includes/sales_quotes.php:106-112`).
   - B2 (`apiOttieniPrezzo()` restituisce `rrp_min`/`rrp_max`/`costo_unitario`) → **fatto**, e con qualche campo in più non previsto dal piano (`rrp_unita_misura_id`, `unita_misura_id`) (`SalesPricelistsController.php:665-701`).
   - F1/F2 (colonne Costo/Range RRP/Delta nella tabella righe preventivo) → **fatto** (`app/views/sales/quotes/_form.php`, header colonne righe 431-437).
-  - F3 (box Margine €/% nei totali) → i box esistono nel form (`box-margine-euro`, `box-margine-perc`, righe 488-498), ma **non ho verificato** se la logica del semaforo verde/giallo/rosso con soglie da `Impostazioni` (righe 1502-1513 del Manuale) sia realmente implementata lato JS, o se sia rimasta un box semplice senza colore dinamico — punto da verificare se ti interessa saperlo con certezza.
+  - F3 (box Margine €/% nei totali) → i box esistono nel form (`box-margine-euro`, `box-margine-perc`, righe 488-498) e il semaforo verde/giallo/rosso **è realmente implementato** lato JS (`assets/js/sales-quotes.js:567-591`: verde ≥20%, giallo ≥10%, rosso sotto) — **ma le soglie 20/10 sono scritte a mano nel JS**, non lette da `Impostazioni` come dichiara il Manuale (righe 1502-1505: *"Queste soglie possono essere inserite in `Impostazioni`... per renderle configurabili senza toccare il codice"*). Verificato: nessuna chiave `margine_soglia_verde`/`margine_soglia_giallo` esiste nel seed di `Impostazioni` (`db/init_sqlite.sql:1908-1962`), nessun codice PHP o JS le legge. L'infrastruttura per farlo esiste già ed è collaudata su un caso analogo — `markup_fallback_default`, configurabile da `SettingsController::generali()` con l'helper `get_impostazione()`/`set_impostazione()` (`includes/impostazioni.php`) — semplicemente non è stata collegata al semaforo margine. Trovata anche un'incoerenza collaterale non documentata: il form ordine diretto (`assets/js/sales-orders-create.js:450-462`) non ha affatto il semaforo a tre soglie sul box percentuale, solo un verde/rosso binario basato sul segno del margine in euro — stesso concetto, due implementazioni diverse tra preventivo e ordine.
   - B3 (guard `can_view_costs`) → non ancora verificato nel dettaglio (indicato "Facoltativo" nello stesso piano).
-- **Verdetto**: nessuna vera contraddizione — è lo stesso schema già visto due volte in Gestione Magazzino e Lotti (piani scritti "da fare" che nel frattempo sono realtà). Il documento va riscritto in tono di stato-di-fatto ("l'ERP oggi fa così"), non di piano, mantenendo solo gli eventuali residui reali (il punto F3 del semaforo, da verificare) come lavoro aperto dichiarato tale.
+- **Verdetto**: nessuna vera contraddizione sul resto — è lo stesso schema già visto due volte in Gestione Magazzino e Lotti (piani scritti "da fare" che nel frattempo sono realtà). Il documento va riscritto in tono di stato-di-fatto ("l'ERP oggi fa così"), non di piano. Sul punto F3 (soglie semaforo), il gap è reale e ho scritto il piano di correzione qui sotto, da eseguire più tardi.
+
+---
+
+## PIANO — Soglie del semaforo margine configurabili da Impostazioni (§1.4, da eseguire)
+
+> Stato: 🔲 **DA ESEGUIRE**. Scritto il 20/07/2026, esecuzione rimandata su richiesta esplicita — nessun file toccato.
+
+### 1. Analisi tecnica completa, verificata riga per riga
+
+**1.1 Cosa esiste oggi**
+
+- `assets/js/sales-quotes.js:567-591` — box "Margine %" nel form preventivo: soglie `20`/`10` scritte a mano nel confronto `if (marginPerc >= 20) ... else if (marginPerc >= 10) ... else ...`. Il box "Margine €" (righe 547-565) usa invece un semaforo binario (verde/rosso in base al segno), non a tre soglie — coerente col fatto che un margine in euro negativo è sempre un problema, non serve una soglia "gialla" lì. Nessun cambiamento previsto su questo box.
+- `assets/js/sales-orders-create.js:450-462` — box margine del form ordine diretto: nessun semaforo a tre soglie, solo verde/rosso binario applicato **sia** al box € **sia** al box %, in base al solo segno del margine in euro. Stesso concetto delle vendite, implementazione diversa e più povera di quella preventivi.
+- `includes/impostazioni.php` — helper generico già esistente e in uso: `get_impostazione(PDO $pdo, string $chiave, ?string $default): ?string` e `set_impostazione(PDO $pdo, string $chiave, string $valore): void`, letti/scritti sulla tabella chiave/valore `Impostazioni` (`db/init_sqlite.sql:1505-1508`).
+- `app/Controllers/SettingsController.php::generali()` (righe 26-76) — controller già funzionante che gestisce `markup_fallback_default` con questo esatto pattern: legge il valore con default, valida il POST (numerico, range 0-1000), lo salva con `set_impostazione()`. Vista corrispondente: `app/views/settings/generali.php`, card "Margini e Pricing di Fallback".
+- `app/views/sales/quotes/_form.php:867-876` — la vista già inietta un oggetto di configurazione dal PHP al JS: `window.QK_QUOTES_CONFIG = { csrf, preloadedRighe, quoteStato, listini }`. È il punto naturale per aggiungere le due soglie, senza inventare un nuovo meccanismo di passaggio dati.
+- `app/views/sales/orders/_create.php:571-576` — stesso pattern, oggetto `window.QK_ORDERS_CREATE_CONFIG = { csrf }`, oggi minimale.
+- `SalesQuotesController.php` — due punti che popolano `_form.php`: `create()` (righe ~151-190, passa un array esplicito, non `get_defined_vars()`) e `edit()` (righe ~294-320, stesso pattern esplicito). Entrambi vanno toccati separatamente per aggiungere le due soglie all'array passato alla vista.
+- `SalesOrdersController.php::create()` (righe 92-139) usa `$this->page(..., get_defined_vars())`: basta definire due variabili locali prima della chiamata, nessun array da editare a mano.
+
+**1.2 Cosa deve cambiare**
+
+1. Due nuove chiavi in `Impostazioni`: `margine_soglia_verde` (default `20`), `margine_soglia_giallo` (default `10`) — stessi nomi già usati come esempio nel Manuale (riga 1505), nessuna invenzione.
+2. Card "Margini e Pricing di Fallback" in `settings/generali.php` estesa con due nuovi campi numerici, stesso trattamento di `markup_fallback_default` (validazione, salvataggio, hint).
+3. `SalesQuotesController::create()` ed `edit()` leggono le due soglie con `get_impostazione()` e le passano alla vista.
+4. `SalesOrdersController::create()` fa lo stesso (nuove due variabili locali, `get_defined_vars()` le include automaticamente).
+5. `window.QK_QUOTES_CONFIG` e `window.QK_ORDERS_CREATE_CONFIG` includono le due soglie.
+6. `sales-quotes.js` legge le soglie da `window.QK_QUOTES_CONFIG` invece dei numeri fissi `20`/`10`.
+7. `sales-orders-create.js` guadagna lo stesso semaforo a tre colori sul box %, leggendo le stesse soglie da `window.QK_ORDERS_CREATE_CONFIG` — risolve anche l'incoerenza collaterale trovata al punto 1.1, non solo la configurabilità.
+
+**1.3 Implicazioni da considerare**
+
+- **Nessun impatto sullo schema esistente**: `Impostazioni` è chiave/valore, aggiungere righe non tocca nessuna struttura. Nessuna migrazione di schema necessaria (a differenza dei due piani precedenti), solo un `INSERT OR IGNORE` nel seed — ma dato che il DB di test verrà sostituito e i valori di default sono comunque forniti via `get_impostazione($pdo, 'chiave', '20')` con fallback applicativo, l'assenza della riga in un DB già esistente non causa errori: si comporta esattamente come oggi finché l'utente non salva la pagina Impostazioni almeno una volta.
+- **Validazione dei valori**: le due soglie devono avere senso relativo (verde > giallo, altrimenti il semaforo si inverte in modo silenzioso e fuorviante — es. se qualcuno imposta verde=10 e giallo=20, un margine del 15% risulterebbe "rosso" invece che in una fascia intermedia sensata). Va aggiunta una validazione esplicita nel controller (`soglia_verde > soglia_giallo`), non lasciata all'utente.
+- **Duplicazione JS non eliminata, solo sincronizzata**: il piano non unifica i due file JS (`sales-quotes.js` e `sales-orders-create.js`) in una funzione condivisa — sarebbe un refactor più ampio, fuori dallo scope minimo per risolvere il gap documentale. Le soglie diventano configurabili e coerenti tra i due form, ma la logica di calcolo resta scritta due volte. Se in futuro si vuole un file di utility JS condiviso tra i form vendita, è un intervento a parte.
+- **Retrocompatibilità dei default**: finché nessuno tocca la pagina Impostazioni, i default applicativi (`20`/`10`) restano gli stessi già in uso oggi — nessuna modifica di comportamento visibile finché non si cambia esplicitamente un valore.
+
+### 2. Domande aperte — da rispondere prima dell'esecuzione
+
+1. **Nomi delle chiavi**: vanno bene `margine_soglia_verde`/`margine_soglia_giallo` (stessi nomi del Manuale), o preferisci altri nomi?
+2. **Estensione al form ordine**: il piano include anche il fix dell'incoerenza sul form ordine (aggiungere il semaforo a tre colori, oggi assente). Confermi che va incluso nello stesso intervento, o lo tieni separato/rimandato?
+3. **Validazione soglia verde > soglia giallo**: confermi che va aggiunta come controllo esplicito lato server (con messaggio d'errore se violata), non solo lasciata alla buona fede di chi compila il form?
+
+### 3. Piano a fasi
+
+**Fase 1 — Rilettura immediatamente pre-modifica.** Rileggere con lo strumento di lettura tutti i file elencati al §1.1/§1.2 subito prima di ciascuna modifica.
+
+**Fase 2 — Schema/seed.** Aggiungere le due chiavi con `INSERT OR IGNORE INTO Impostazioni` nel blocco già esistente in `db/init_sqlite.sql` (accanto a `markup_fallback_default`), replicare in `db/init_mysql.sql`. Verificare con una query diretta su un DB fresco che le righe esistano con i valori di default corretti.
+
+**Fase 3 — Backend Impostazioni.** Estendere `SettingsController::generali()`: lettura dei due nuovi valori con default, validazione (numerico, range sensato, verde > giallo), salvataggio con `set_impostazione()`. Estendere `settings/generali.php` con i due nuovi campi nella card esistente. Test: submit valido, submit con verde ≤ giallo (deve dare errore), submit con valore non numerico (deve dare errore) — replicando lo stesso schema di test già usato per `markup_fallback_default` se esiste, altrimenti scritto da zero.
+
+**Fase 4 — Lettura e iniezione nei form vendita.** `SalesQuotesController::create()`/`edit()` leggono le due soglie e le aggiungono all'array passato a `_form.php`; `SalesOrdersController::create()` fa lo stesso con variabili locali. Le viste aggiungono le due soglie a `window.QK_QUOTES_CONFIG`/`window.QK_ORDERS_CREATE_CONFIG`. Test: verificare che l'HTML generato contenga i valori corretti nell'oggetto JS iniettato (grep sull'output renderizzato, non solo lettura del codice).
+
+**Fase 5 — JS preventivo.** `sales-quotes.js` legge le soglie da `window.QK_QUOTES_CONFIG.margineSogliaVerde`/`.margineSogliaGiallo` invece dei numeri fissi, con un fallback locale (`20`/`10`) se la config non le fornisce (robustezza, non deve rompersi se qualcosa nella catena di iniezione fallisce). Test manuale/scriptato: con soglie modificate (es. verde=25/giallo=15), un margine del 22% deve risultare giallo invece che verde come sarebbe con le soglie di default.
+
+**Fase 6 — JS ordine (se confermato al §2.2).** `sales-orders-create.js` guadagna la stessa logica a tre soglie sul box %, leggendo `window.QK_ORDERS_CREATE_CONFIG`. Il box € mantiene il binario verde/rosso (nessun cambiamento lì, coerente col preventivo). Test: stesso scenario della Fase 5, replicato sul form ordine.
+
+**Fase 7 — Verifica visiva.** Rendering delle due pagine (form preventivo, form ordine, pagina Impostazioni Generali) con dati di test, controllo che i box mostrino colori/percentuali corretti nei tre scenari (verde/giallo/rosso) e che il form Impostazioni salvi e ricarichi correttamente i valori.
+
+**Fase 8 — Non regressione.** Rieseguire tutte le suite esistenti in `tests/manual/` per assicurarsi che nessuna sia stata toccata indirettamente (nessuna oggi copre `impostazioni.php`/`SettingsController.php`, ma va comunque confermato che l'intera batteria resti verde).
+
+**Fase 9 — Documentazione.** Aggiornare questa sezione (§1.4) marcandola risolta con riferimento all'esecuzione, aggiornare eventualmente `Manuale_Definitivo_Ciclo_Vendite.md`/RRP se la riscrittura complessiva è già in corso a quel punto.
+
+### 4. Checklist atomica
+
+*(vuota, si compila durante l'esecuzione)*
+
+- [ ] Risposte al §2 ricevute
+- [ ] Fase 1 — file riconfermati
+- [ ] Fase 2 — chiavi aggiunte a `Impostazioni` (SQLite + MySQL), verificate su DB fresco
+- [ ] Fase 3 — `SettingsController::generali()` e vista estesi, validazione verde>giallo testata
+- [ ] Fase 4 — soglie iniettate in `QK_QUOTES_CONFIG`/`QK_ORDERS_CREATE_CONFIG`, verificato nell'HTML renderizzato
+- [ ] Fase 5 — `sales-quotes.js` legge le soglie da config, testato con soglie non-default
+- [ ] Fase 6 — `sales-orders-create.js` guadagna il semaforo a tre soglie (se confermato)
+- [ ] Fase 7 — verifica visiva completata sulle tre pagine coinvolte
+- [ ] Fase 8 — nessuna regressione sulle suite esistenti
+- [ ] Fase 9 — documentazione aggiornata
+
+### 5. Piano di rollback
+
+Nessuna modifica distruttiva: le due chiavi in `Impostazioni` sono additive (nessuna riga esistente toccata), i valori di default applicativi coincidono con le soglie hardcoded attuali (comportamento identico finché nessuno le modifica esplicitamente), e le modifiche JS aggiungono una lettura di configurazione con fallback locale invece di rimuovere la logica esistente. Rollback, se necessario: revert dei file di codice (controller, viste, JS) — le eventuali righe `Impostazioni` aggiunte possono restare inutilizzate senza alcun effetto collaterale.
 
 ### 1.5 "Indirizzi e contatti nel ciclo vendite" (righe 99-751 del Manuale): ampiamente ridondante con una guida già rivista, e nasconde un gap reale
 
 - **Ripetizione cross-cartella**: la sezione "Come lo risolvono i principali ERP" (righe 125-176, confronto Odoo/SAP B1/D365 BC/D365 F&O/NetSuite/Oracle Fusion) e il "pattern comune a tre strati" (righe 179-189, FK live / snapshot / override) sono lo stesso identico contenuto — con la stessa terminologia — già presente e già verificato in `Guide Anagrafiche Clienti, Fornitori, Indirizzi/00 - Anagrafica Unica, Indirizzi e Aziende Interne - Guida Completa.md`, che tratta esplicitamente anche il caso vendite (riga 127 di quel documento: *"Lato spedizione, in fase di preventivo: la selezione è sempre manuale..."*). Non è solo un'assonanza tematica, è la stessa ricerca duplicata in due cartelle.
 - **Contraddizione con la struttura reale**, non solo ripetizione: il documento afferma (riga 296) che *"la stessa struttura a due livelli [FK + snapshot] si replica su `ordini_clienti`, `spedizioni` e `documenti_trasporto`. Ogni documento è autosufficiente per la stampa."* — verificato sullo schema reale, questo è vero solo per `ordini_clienti` (che infatti ha lo stesso identico blocco di colonne snapshot di `preventivi`, aggiunto il 14/07/2026 proprio per eliminare un'asimmetria, come documentato in `Guide Anagrafiche/Revisione Incrociata - Concetti Ripetuti e Incongruenze.md`). **`spedizioni` e `documenti_trasporto` non hanno alcuna colonna snapshot lato destinatario/indirizzo di consegna**: hanno solo la FK (`spedizioni.indirizzo_spedizione_id`, `documenti_trasporto.indirizzo_destinazione_id`), nessun campo testuale `consegna_via`/`cliente_ragione_sociale` congelato. L'unico snapshot presente su `documenti_trasporto` è quello del **mittente** (6 colonne `mittente_*`, aggiunte il 19/07/2026 proprio per risolvere il bug del mittente hardcoded — vedi Gestione Magazzino e Lotti REVISIONE §1.10).
 - **Perché è rilevante, non solo teorico — VERIFICATO, il gap è reale**: la stessa guida enuncia come regola vincolante (righe 189, 694, 748-749) *"la stampa legge sempre lo snapshot, mai la FK"* e include persino un item di checklist per testarlo (riga 749: *"Testare la stampa con un documento il cui cliente ha cambiato indirizzo in anagrafica: il PDF deve mostrare ancora quello vecchio"*). Verificato su `SpedizioniController::ddtView()` (righe 203-217): la stampa del DDT legge il **destinatario in JOIN live** — `JOIN clienti_fornitori cf ON cf.id = d.destinatario_id` (nome/P.IVA/CF dal vivo) e `LEFT JOIN indirizzi a ON a.id = d.indirizzo_destinazione_id` (via/civico/cap/città dal vivo). Un cambio di indirizzo o ragione sociale del cliente **dopo** l'emissione del DDT altera silenziosamente un documento già stampato/consegnato — esattamente il bug già trovato e corretto per il mittente il 19/07/2026 (il mittente sullo stesso DDT è invece correttamente congelato nelle colonne `mittente_*` e letto via `qk_resolve_mittente_ddt_stampa()`, riga 229: le due metà dello stesso documento seguono due filosofie opposte). Il DDT è tra l'altro il documento dove questo pesa di più: accompagna fisicamente la merce ed è un documento con rilevanza fiscale/legale.
-- **Verdetto**: la sezione va drasticamente ridotta (il confronto ERP e il pattern generale rimandano a "00 - Anagrafica Unica...", non vanno ripetuti), mantenendo solo le parti specifiche del ciclo vendite (simulazione FASE 1-5, casi 2.A-2.E/3.A-3.E/4.A-4.D/5.A-5.D, che sono contenuto originale e utile) — stesso trattamento già dato a `ricerca_indirizzo_consegna_preventivi.md` nella revisione Acquisti (ritirato, sostituito da un rimando alla guida dedicata). Il gap reale su spedizioni/DDT lato consegna è una domanda aperta per te: lo trattiamo ora (stesso pattern già usato per il mittente) o lo segnaliamo come "limite noto" per dopo?
+- **Verdetto**: la sezione va drasticamente ridotta (il confronto ERP e il pattern generale rimandano a "00 - Anagrafica Unica...", non vanno ripetuti), mantenendo solo le parti specifiche del ciclo vendite (simulazione FASE 1-5, casi 2.A-2.E/3.A-3.E/4.A-4.D/5.A-5.D, che sono contenuto originale e utile) — stesso trattamento già dato a `ricerca_indirizzo_consegna_preventivi.md` nella revisione Acquisti (ritirato, sostituito da un rimando alla guida dedicata).
+- **✅ RISOLTO il 20/07/2026** — il gap sul destinatario del DDT (in JOIN live invece che congelato) è stato corretto: vedi `PIANO - Congelare Destinatario sul DDT.md`. `documenti_trasporto` ha ora 10 colonne `destinatario_*` (stesso pattern già usato per `mittente_*`), popolate alla creazione del DDT copiando i valori già congelati su `ordini_clienti`, lette in stampa da `qk_resolve_destinatario_ddt_stampa()` (`includes/document_common.php`) con fallback dal vivo solo per DDT legacy privi delle colonne. Verificato con test automatici (21 asserzioni, 2 nuove suite) e con confronto diretto dell'HTML renderizzato prima/dopo un cambio di anagrafica cliente: il documento resta identico. Resta valido, e non affrontato da questo intervento (fuori scope per decisione esplicita), il gap analogo su `spedizioni` (che non ha comunque un ruolo nella stampa di alcun documento verso il cliente).
 
 ### 1.6 `compliance-restrizioni-vendita.md`: dichiara "da implementare" un controllo in realtà già parzialmente costruito
 
@@ -153,7 +237,7 @@ Passata dedicata, fase per fase, a caccia di casi limite che nessun documento e/
 
 ### Fase DDT
 
-- **D1 — Destinatario in JOIN live [GAP CODICE]**: già dettagliato in §1.5 — metà DDT congelata (mittente), metà viva (destinatario).
+- **D1 — Destinatario in JOIN live [GAP CODICE] — ✅ RISOLTO il 20/07/2026**: già dettagliato in §1.5 — metà DDT congelata (mittente), metà viva (destinatario). Corretto, vedi `PIANO - Congelare Destinatario sul DDT.md`: ora entrambe le metà del documento seguono la stessa filosofia (colonne piatte congelate alla creazione).
 - **D2 — DDT immutabile ma con numerazione fragile [OK a metà]**: nessuna modifica/rigenerazione possibile dopo l'emissione (bene, di fatto immutabile); la numerazione però è `'DDT/' + anno + progressivo` calcolato con `COUNT(*) totale` sulla tabella (`:709-710`) — non riparte per anno (a cavallo d'anno il progressivo continua dal totale storico) ed è soggetta a race condition su creazioni concorrenti (mitigata solo dal vincolo UNIQUE, che farebbe fallire la seconda transazione). Nessun documento descrive lo schema di numerazione DDT.
 - **D3 — Snapshot ADR sulle righe DDT [OK a metà, GAP DOC]**: i dati ADR (`numero_onu`, `classe_adr`, `packing_group`) vengono correttamente denormalizzati alla creazione da `prodotto_classificazioni_adr`/`adr_codici_onu` (classificazione corrente, `:762`) — ma **solo per le righe con lotto tracciato**: nel ramo non-lotto le righe DDT sono sempre `is_adr=0` (`:838`). Un prodotto ADR senza tracciamento lotti (caso raro ma non impossibile a schema: `is_adr` e `traccia_lotti` sono flag indipendenti) viaggerebbe con DDT privo di indicazioni ADR — rilevante perché qui è materia di conformità trasporto, non di comodità. Da verificare se il vincolo "ADR ⇒ traccia_lotti" sia garantito altrove (validazione anagrafica prodotto?) o sia un buco reale.
 
@@ -186,8 +270,8 @@ Stesso principio già applicato ad Acquisti e Magazzino: un'unica guida omnicomp
 
 Riprendo qui, in un unico elenco, i punti del §1 dove serve una tua decisione (non solo una correzione meccanica):
 
-1. **§1.2** — il bug apparente `stato = 'annullata'`/`'accettata'` in `includes/sales_quotes.php` (valori che violano il CHECK constraint): vuoi che lo verifichi con un'esecuzione reale per capire se è un bug vivo o se c'è qualcosa che lo maschera?
-2. **§1.5** — gap sullo snapshot indirizzo di consegna mancante su `spedizioni`/`documenti_trasporto`: lo trattiamo ora (stesso pattern già usato per il mittente DDT) o lo segnaliamo come limite noto per dopo?
+1. **§1.2** — ✅ **RISOLTO il 20/07/2026**, vedi `PIANO - Uniformare Genere Grammaticale Stati Preventivo.md`. Era un bug vivo, confermato con esecuzione reale: su uno schema fresco creato da `db/init_sqlite.sql` un `UPDATE` con i valori femminili scritti dal codice fallisce davvero contro il CHECK.
+2. **§1.5** — ✅ **RISOLTO il 20/07/2026**, vedi `PIANO - Congelare Destinatario sul DDT.md`. Il destinatario del DDT è ora congelato alla creazione (colonne `destinatario_*`), stesso pattern del mittente. Il gap analogo su `spedizioni` resta non affrontato (fuori scope, per decisione esplicita: `spedizioni` non ha ruolo nella stampa di alcun documento verso il cliente).
 3. **§1.4** — vuoi che verifichi se il semaforo margine (verde/giallo/rosso) è davvero implementato lato JS o è solo previsto?
 4. **§3.2** — vuoi che verifichi se esiste un meccanismo di revisione per gli ordini clienti già confermati, prima di scrivere la guida definitiva?
 5. **§4, nota sul contenitore best practice unico** — lo affrontiamo ora, dopo Vendite, o lasciamo ogni cartella col proprio file locale?

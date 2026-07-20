@@ -3,9 +3,9 @@
  * sales/quotes/_list.php
  * Variabili: $offers, $total, $search, $status, $dal, $al, $pag
  */
-$statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviata' => 'Inviata',
-                'accettata' => 'Accettata', 'rifiutata' => 'Rifiutata',
-                'scaduta' => 'Scaduta', 'annullata' => 'Annullata'];
+$statiLabels = ['' => 'Tutti', 'bozza' => 'Bozza', 'inviato' => 'Inviato',
+                'accettato' => 'Accettato', 'rifiutato' => 'Rifiutato',
+                'scaduto' => 'Scaduto', 'annullato' => 'Annullato'];
 $base = url('sales/quotes');
 $sort = $pag['sort']; $dir = $pag['dir'];
 $hasFilters = $search !== '' || $dal !== '' || $al !== '';

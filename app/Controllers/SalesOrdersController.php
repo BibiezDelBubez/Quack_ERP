@@ -714,12 +714,30 @@ final class SalesOrdersController extends BaseController
             // qk_resolve_azienda_emittente_stampa() per preventivi/ordini_clienti.
             $mittente = qk_calcola_mittente_ddt($this->pdo, $magazzinoSpedId);
 
+            // Destinatario congelato alla creazione, stesso principio del mittente
+            // sopra (Revisione Ciclo Vendite §1.5, PIANO - Congelare Destinatario sul
+            // DDT.md). Non serve ricalcolare nulla: $order (righe 610-612) contiene
+            // già cliente_ragione_sociale/cliente_partita_iva/cliente_codice_fiscale e
+            // consegna_via/civico/cap/citta/provincia/nazione/presso, congelati lì al
+            // momento della creazione dell'ordine — li copiamo semplicemente in avanti.
+            $destRagioneSociale = $order['cliente_ragione_sociale'] ?? null;
+            $destPartitaIva     = $order['cliente_partita_iva'] ?? null;
+            $destCodiceFiscale  = $order['cliente_codice_fiscale'] ?? null;
+            $destVia            = $order['consegna_via'] ?? null;
+            $destCivico         = $order['consegna_civico'] ?? null;
+            $destCap            = $order['consegna_cap'] ?? null;
+            $destCitta          = $order['consegna_citta'] ?? null;
+            $destProvincia      = $order['consegna_provincia'] ?? null;
+            $destNazione        = $order['consegna_nazione'] ?? null;
+            $destNomeSede       = $order['consegna_presso'] ?? null;
+
             $this->pdo->prepare("
-                INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, mittente_ragione_sociale, mittente_partita_iva, mittente_codice_fiscale, mittente_indirizzo, mittente_telefono, mittente_email, creato_da, created_at, updated_at)
-                VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, mittente_ragione_sociale, mittente_partita_iva, mittente_codice_fiscale, mittente_indirizzo, mittente_telefono, mittente_email, destinatario_ragione_sociale, destinatario_partita_iva, destinatario_codice_fiscale, destinatario_via, destinatario_civico, destinatario_cap, destinatario_citta, destinatario_provincia, destinatario_nazione, destinatario_nome_sede, creato_da, created_at, updated_at)
+                VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ")->execute([
                 $numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg,
                 $mittente['ragione_sociale'], $mittente['partita_iva'], $mittente['codice_fiscale'], $mittente['indirizzo'], $mittente['telefono'], $mittente['email'],
+                $destRagioneSociale, $destPartitaIva, $destCodiceFiscale, $destVia, $destCivico, $destCap, $destCitta, $destProvincia, $destNazione, $destNomeSede,
                 $userId,
             ]);
             $ddtId = (int)$this->pdo->lastInsertId();

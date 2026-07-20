@@ -8,11 +8,11 @@
 function preventivo_badge_dash(string $stato): string {
     $map = [
         'bozza'     => ['draft',     'Bozza'],
-        'inviata'   => ['confirmed', 'Inviata'],
-        'accettata' => ['delivered', 'Accettata'],
-        'rifiutata' => ['pending',   'Rifiutata'],
-        'scaduta'   => ['pending',   'Scaduta'],
-        'annullata' => ['draft',     'Annullata'],
+        'inviato'   => ['confirmed', 'Inviato'],
+        'accettato' => ['delivered', 'Accettato'],
+        'rifiutato' => ['pending',   'Rifiutato'],
+        'scaduto'   => ['pending',   'Scaduto'],
+        'annullato' => ['draft',     'Annullato'],
     ];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';
@@ -47,7 +47,7 @@ function ordine_badge_dash(string $stato): string {
     </div>
   </a>
 
-  <a href="<?= url('sales/quotes?status=inviata') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
+  <a href="<?= url('sales/quotes?status=inviato') ?>" class="qk-kpi-card text-decoration-none" style="color: inherit;">
     <div class="qk-kpi-icon warning">
       <i class="fa-solid fa-paper-plane"></i>
     </div>

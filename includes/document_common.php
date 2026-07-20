@@ -506,3 +506,78 @@ function qk_resolve_mittente_ddt_stampa(PDO $pdo, array $ddt, ?int $magazzinoId)
     }
     return qk_calcola_mittente_ddt($pdo, $magazzinoId);
 }
+
+/**
+ * Risolve dal vivo i dati del destinatario (cliente + indirizzo di consegna)
+ * per un DDT — usata SOLO come fallback legacy da qk_resolve_destinatario_ddt_stampa()
+ * per documenti privi delle colonne congelate destinatario_*. Estratta dalla
+ * query che prima viveva solo dentro SpedizioniController::ddtView() (Revisione
+ * Ciclo Vendite §1.5, PIANO - Congelare Destinatario sul DDT.md, 20/07/2026).
+ *
+ * A differenza di qk_calcola_mittente_ddt() (un solo campo indirizzo pre-formattato),
+ * restituisce i campi indirizzo strutturati: è così che il template di stampa
+ * (_ddt_view.php) li consuma.
+ *
+ * @param int      $destinatarioId          documenti_trasporto.destinatario_id
+ * @param int|null $indirizzoDestinazioneId documenti_trasporto.indirizzo_destinazione_id
+ */
+function qk_calcola_destinatario_ddt(PDO $pdo, int $destinatarioId, ?int $indirizzoDestinazioneId): array
+{
+    $st = $pdo->prepare(
+        "SELECT COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS ragione_sociale,
+                cf.partita_iva, cf.codice_fiscale
+           FROM clienti_fornitori cf
+          WHERE cf.id = ?"
+    );
+    $st->execute([$destinatarioId]);
+    $cliente = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $indirizzo = [];
+    if ($indirizzoDestinazioneId) {
+        $st2 = $pdo->prepare("SELECT via, civico, cap, citta, provincia, nazione, nome_sede FROM indirizzi WHERE id = ?");
+        $st2->execute([$indirizzoDestinazioneId]);
+        $indirizzo = $st2->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    return [
+        'ragione_sociale' => $cliente['ragione_sociale'] ?? null,
+        'partita_iva'     => $cliente['partita_iva'] ?? null,
+        'codice_fiscale'  => $cliente['codice_fiscale'] ?? null,
+        'via'             => $indirizzo['via'] ?? null,
+        'civico'          => $indirizzo['civico'] ?? null,
+        'cap'             => $indirizzo['cap'] ?? null,
+        'citta'           => $indirizzo['citta'] ?? null,
+        'provincia'       => $indirizzo['provincia'] ?? null,
+        'nazione'         => $indirizzo['nazione'] ?? null,
+        'nome_sede'       => $indirizzo['nome_sede'] ?? null,
+    ];
+}
+
+/**
+ * Risolve i dati del destinatario da mostrare in stampa sul DDT, rispettando
+ * la storicità: legge prima le colonne congelate `destinatario_*` su
+ * documenti_trasporto, con fallback dal vivo (qk_calcola_destinatario_ddt())
+ * solo per DDT legacy privi di quelle colonne. Mirror esatto di
+ * qk_resolve_mittente_ddt_stampa() sopra.
+ *
+ * @param array $ddt riga di documenti_trasporto (deve includere le colonne
+ *        destinatario_*, destinatario_id, indirizzo_destinazione_id)
+ */
+function qk_resolve_destinatario_ddt_stampa(PDO $pdo, array $ddt): array
+{
+    if (!empty($ddt['destinatario_ragione_sociale'])) {
+        return [
+            'ragione_sociale' => $ddt['destinatario_ragione_sociale'],
+            'partita_iva'     => $ddt['destinatario_partita_iva'] ?? null,
+            'codice_fiscale'  => $ddt['destinatario_codice_fiscale'] ?? null,
+            'via'             => $ddt['destinatario_via'] ?? null,
+            'civico'          => $ddt['destinatario_civico'] ?? null,
+            'cap'             => $ddt['destinatario_cap'] ?? null,
+            'citta'           => $ddt['destinatario_citta'] ?? null,
+            'provincia'       => $ddt['destinatario_provincia'] ?? null,
+            'nazione'         => $ddt['destinatario_nazione'] ?? null,
+            'nome_sede'       => $ddt['destinatario_nome_sede'] ?? null,
+        ];
+    }
+    return qk_calcola_destinatario_ddt($pdo, (int)$ddt['destinatario_id'], !empty($ddt['indirizzo_destinazione_id']) ? (int)$ddt['indirizzo_destinazione_id'] : null);
+}

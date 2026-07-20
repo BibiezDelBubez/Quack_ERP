@@ -1459,6 +1459,23 @@ CREATE TABLE IF NOT EXISTS documenti_trasporto (
     mittente_indirizzo        VARCHAR(255),
     mittente_telefono         VARCHAR(30),
     mittente_email            VARCHAR(150),
+    -- Destinatario congelato alla creazione del DDT, stesso principio e stessa
+    -- motivazione del mittente sopra (Revisione Ciclo Vendite §1.5, PIANO -
+    -- Congelare Destinatario sul DDT.md). Copiato da ordini_clienti.cliente_*/
+    -- consegna_* (già congelati lì dal 14/07/2026), non ricalcolato: vedi
+    -- qk_resolve_destinatario_ddt_stampa() in includes/document_common.php.
+    -- NULL sui DDT storici pre-migrazione: quella funzione ricade sulla
+    -- risoluzione dal vivo (qk_calcola_destinatario_ddt()) solo in quel caso.
+    destinatario_ragione_sociale VARCHAR(255),
+    destinatario_partita_iva     VARCHAR(30),
+    destinatario_codice_fiscale  VARCHAR(30),
+    destinatario_via             VARCHAR(150),
+    destinatario_civico          VARCHAR(10),
+    destinatario_cap             VARCHAR(10),
+    destinatario_citta           VARCHAR(100),
+    destinatario_provincia       CHAR(2),
+    destinatario_nazione         CHAR(2),
+    destinatario_nome_sede       VARCHAR(100),
     creato_da                  INTEGER       NOT NULL REFERENCES utenti(id),
     created_at                 DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at                 DATETIME

@@ -63,13 +63,13 @@ Quando il cliente accetta un'offerta:
 
 Nel settore chimico, la spedizione della merce richiede la tracciabilità assoluta del lotto.
 
-### **Assegnazione dei Lotti (`ordini_clienti_righe_lotti`)**
+### **Assegnazione dei Lotti (`spedizioni_righe.lotto_id`)**
 
 Al momento della preparazione della spedizione:
 
 * L'operatore seleziona quali lotti fisici prelevare per coprire la quantità ordinata.
 * Il sistema supporta lo **split multi-lotto**: se servono 100 kg, l'operatore può prelevare 60 kg dal *Lotto A* e 40 kg dal *Lotto B*.
-* Il database memorizza questa associazione nella tabella `ordini_clienti_righe_lotti`.
+* Il database memorizza questa associazione sulla riga di spedizione, nel campo `spedizioni_righe.lotto_id` — non esiste una tabella dedicata sull'ordine: la scelta del lotto avviene solo alla spedizione, non alla conferma ordine. Vedi il capitolo "Spedizioni e Assegnazione Lotti" più avanti in questo Manuale per il dettaglio (FEFO, split multi-lotto).
 
 ### **Spedizione e DDT**
 
@@ -622,7 +622,7 @@ Sistema carica contatti del cliente
 ### FASE 4 — Invio del preventivo (cambio di stato)
 
 ```
-Operatore clicca "Invia preventivo" (stato bozza → inviata)
+Operatore clicca "Invia preventivo" (stato bozza → inviato)
     │
     ├── [CASO 4.A] Tutti i dati sono presenti e corretti
     │       → Il backend cristallizza lo snapshot (se non già fatto)
@@ -642,7 +642,7 @@ Operatore clicca "Invia preventivo" (stato bozza → inviata)
     │           2. Creare un nuovo preventivo da zero
     │
     └── [CASO 4.D] Il preventivo scade senza risposta
-            → Lo stato passa a 'scaduta' (automaticamente o manualmente)
+            → Lo stato passa a 'scaduto' (automaticamente o manualmente)
             → Lo snapshot resta immutato per eventuali recuperi storici
 ```
 

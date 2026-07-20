@@ -29,11 +29,11 @@ $can_edit = ($stato === 'bozza');
         Inserisci i dettagli del preventivo per il cliente, aggiungi i prodotti, e clicca su "Salva bozza" o "Salva e invia".
       <?php elseif ($stato === 'bozza'): ?>
         Il preventivo è in Bozza. Clicca su <strong>"Invia al Cliente"</strong> per inviare il preventivo e segnarlo come inviato.
-      <?php elseif ($stato === 'inviata'): ?>
+      <?php elseif ($stato === 'inviato'): ?>
         Il preventivo è stato inviato al cliente. Quando il cliente accetta, clicca su <strong>"Accetta e Crea Ordine"</strong> per generare l'ordine di vendita. Se il cliente lo rifiuta, clicca su <strong>"Rifiuta"</strong>.
-      <?php elseif ($stato === 'accettata'): ?>
+      <?php elseif ($stato === 'accettato'): ?>
         Questo preventivo è stato accettato ed è stato generato l'ordine di vendita collegato.
-      <?php elseif ($stato === 'rifiutata'): ?>
+      <?php elseif ($stato === 'rifiutato'): ?>
         Questo preventivo è stato rifiutato dal cliente. Puoi creare una nuova versione se desideri inviare una proposta aggiornata.
       <?php else: ?>
         Questo preventivo è in stato <strong><?= e($stato) ?></strong>.
@@ -49,7 +49,7 @@ $can_edit = ($stato === 'bozza');
       <button type="submit" form="form-offerta" name="stato" value="bozza" class="btn-qk btn-qk-primary">
         <i class="fa-solid fa-floppy-disk"></i> Salva bozza
       </button>
-      <button type="submit" form="form-offerta" name="stato" value="inviata" class="btn-qk btn-qk-success">
+      <button type="submit" form="form-offerta" name="stato" value="inviato" class="btn-qk btn-qk-success">
         <i class="fa-solid fa-paper-plane"></i> Salva e invia
       </button>
       <a href="<?= url('sales/quotes') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
@@ -66,7 +66,7 @@ $can_edit = ($stato === 'bozza');
           </button>
         </form>
       <?php else: ?>
-        <?php if (in_array($stato, ['inviata', 'rifiutata', 'scaduta', 'annullata'])): ?>
+        <?php if (in_array($stato, ['inviato', 'rifiutato', 'scaduto', 'annullato'])): ?>
           <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
@@ -76,7 +76,7 @@ $can_edit = ($stato === 'bozza');
             </button>
           </form>
         <?php endif; ?>
-        <?php if ($stato === 'inviata'): ?>
+        <?php if ($stato === 'inviato'): ?>
           <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Confermare l\'accettazione del preventivo e creare l\'ordine cliente?')">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
@@ -85,7 +85,7 @@ $can_edit = ($stato === 'bozza');
               <i class="fa-solid fa-circle-check"></i> Accetta e Crea Ordine
             </button>
           </form>
-        <?php elseif ($stato === 'accettata' && !empty($linkedOrder)): ?>
+        <?php elseif ($stato === 'accettato' && !empty($linkedOrder)): ?>
           <span class="qk-badge py-2 px-3 fw-bold qk-flex-row" style="font-size: 0.85rem; height: 31px; background: var(--qk-success-bg); color: var(--qk-success); border: 1px solid rgba(16, 185, 129, 0.2);">
             <i class="fa-solid fa-check-double me-1"></i> Ordine Generato: 
             <a href="<?= url('sales/orders/edit?id=' . $linkedOrder['id']) ?>" class="fw-bold text-decoration-underline ms-1" style="color: var(--qk-success);"><?= e($linkedOrder['numero_ordine']) ?></a>
@@ -113,7 +113,7 @@ $can_edit = ($stato === 'bozza');
   </div>
 
   <div class="qk-sticky-action-bar-right">
-    <?php if (isset($id) && $id > 0 && $stato === 'inviata'): ?>
+    <?php if (isset($id) && $id > 0 && $stato === 'inviato'): ?>
       <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Segnare il preventivo come rifiutato?')">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -132,15 +132,15 @@ $can_edit = ($stato === 'bozza');
       <?php
       $steps = [
         ['bozza',     'Bozza'],
-        ['inviata',   'Inviata'],
-        ['accettata', 'Accettata'],
+        ['inviato',   'Inviato'],
+        ['accettato', 'Accettato'],
       ];
-      if ($stato === 'rifiutata') {
-          $steps[] = ['rifiutata', 'Rifiutata'];
-      } elseif ($stato === 'scaduta') {
-          $steps[] = ['scaduta', 'Scaduta'];
-      } elseif ($stato === 'annullata') {
-          $steps[] = ['annullata', 'Annullata'];
+      if ($stato === 'rifiutato') {
+          $steps[] = ['rifiutato', 'Rifiutato'];
+      } elseif ($stato === 'scaduto') {
+          $steps[] = ['scaduto', 'Scaduto'];
+      } elseif ($stato === 'annullato') {
+          $steps[] = ['annullato', 'Annullato'];
       }
       
       $currentIdx = 0;
@@ -281,7 +281,7 @@ $can_edit = ($stato === 'bozza');
                 <input type="text" class="qk-form-control" value="Bozza" readonly style="background-color: var(--qk-bg-subtle); cursor: not-allowed;">
               <?php else: ?>
                 <select name="stato" class="qk-form-control">
-                  <?php foreach (['bozza'=>'Bozza','inviata'=>'Inviata','accettata'=>'Accettata','rifiutata'=>'Rifiutata','scaduta'=>'Scaduta','annullata'=>'Annullata'] as $k => $lbl): ?>
+                  <?php foreach (['bozza'=>'Bozza','inviato'=>'Inviato','accettato'=>'Accettato','rifiutato'=>'Rifiutato','scaduto'=>'Scaduto','annullato'=>'Annullato'] as $k => $lbl): ?>
                   <option value="<?= e($k) ?>" <?= ($v['stato'] ?? 'bozza') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
                   <?php endforeach; ?>
                 </select>

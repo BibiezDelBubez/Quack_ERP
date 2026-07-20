@@ -13,12 +13,12 @@ function get_kpi_sales_quotes_bozza(PDO $pdo): int
 }
 
 /**
- * Ritorna il numero di preventivi (sales quotes) inviati ("inviata").
+ * Ritorna il numero di preventivi (sales quotes) inviati ("inviato").
  */
 function get_kpi_sales_quotes_inviati(PDO $pdo): int
 {
     return (int) $pdo->query(
-        "SELECT COUNT(*) FROM preventivi WHERE stato = 'inviata'"
+        "SELECT COUNT(*) FROM preventivi WHERE stato = 'inviato'"
     )->fetchColumn();
 }
 

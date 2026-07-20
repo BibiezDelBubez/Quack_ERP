@@ -203,15 +203,9 @@ final class SpedizioniController extends BaseController
         $st = $this->pdo->prepare("
             SELECT d.*,
                    s.numero_spedizione, s.vettore AS s_vettore, s.tracking, s.magazzino_id AS spedizione_magazzino_id,
-                   o.numero_ordine,
-                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS destinatario_nome,
-                   cf.partita_iva AS destinatario_piva,
-                   cf.codice_fiscale AS destinatario_cf,
-                   a.via, a.civico, a.cap, a.citta, a.provincia, a.nazione, a.nome_sede
+                   o.numero_ordine
             FROM documenti_trasporto d
             JOIN ordini_clienti o ON o.id = d.ordine_id
-            JOIN clienti_fornitori cf ON cf.id = d.destinatario_id
-            LEFT JOIN indirizzi a ON a.id = d.indirizzo_destinazione_id
             LEFT JOIN spedizioni s ON s.id = d.spedizione_id
             WHERE d.id = ?
         ");
@@ -227,6 +221,12 @@ final class SpedizioniController extends BaseController
         // (Revisione Gestione Magazzino e Lotti §3), mai ricalcolato dal vivo — fallback
         // dal magazzino di spedizione solo per DDT legacy privi delle colonne mittente_*.
         $mittente = qk_resolve_mittente_ddt_stampa($this->pdo, $ddt, $ddt['spedizione_magazzino_id'] ? (int)$ddt['spedizione_magazzino_id'] : null);
+
+        // Destinatario: stesso principio del mittente sopra (Revisione Ciclo Vendite
+        // §1.5, PIANO - Congelare Destinatario sul DDT.md) — legge lo snapshot
+        // congelato alla creazione, mai ricalcolato dal vivo, fallback dal vivo solo
+        // per DDT legacy privi delle colonne destinatario_*.
+        $destinatario = qk_resolve_destinatario_ddt_stampa($this->pdo, $ddt);
 
         $stRighe = $this->pdo->prepare("
             SELECT r.*,
