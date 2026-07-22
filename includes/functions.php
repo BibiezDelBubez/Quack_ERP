@@ -486,6 +486,26 @@ function qk_next_sequence_number(PDO $pdo, string $tipo): string
 
     // BEGIN IMMEDIATE acquisisce subito il lock esclusivo su SQLite,
     // rendendo atomica la lettura+incremento e azzerando la race condition.
+    //
+    // BUG CORRETTO IL 22/07/2026 (scoperto dalla verifica manuale Fase 7, vedi
+    // docs/Ciclo Vendite/CHECKLIST - Verifica Manuale Fase 7 Preventivi.md —
+    // qualunque "Nuovo Preventivo/Ordine/RFQ/..." era rotto in produzione,
+    // mai scoperto dai test automatici perché nessuna suite passava mai da
+    // qui a transazione NON già aperta): la transazione veniva aperta con SQL
+    // grezzo (exec('BEGIN IMMEDIATE')) ma chiusa con i metodi PDO
+    // commit()/rollBack(). PDO tiene un proprio flag interno "sono in
+    // transazione" che si accende SOLO con $pdo->beginTransaction(), mai con
+    // SQL scritto a mano — quindi $pdo->commit() falliva SEMPRE con
+    // "PDOException: There is no active transaction", anche se la
+    // transazione era realmente aperta ed esclusiva sul database. Stesso
+    // motivo per cui $pdo->inTransaction() qui non è mai affidabile (ritorna
+    // false anche a transazione aperta manualmente, verificato). Corretto
+    // restando coerenti fino in fondo con SQL grezzo: si apre con
+    // exec('BEGIN IMMEDIATE') e si chiude SEMPRE con exec('COMMIT')/
+    // exec('ROLLBACK'), mai con i metodi PDO — che controllano un flag
+    // diverso da quello che abbiamo davvero acceso. Un solo punto di rollback
+    // (nel catch), per evitare un secondo bug collegato: un doppio tentativo
+    // di rollback che avrebbe mascherato l'eccezione originale.
     $ownTransaction = !$pdo->inTransaction();
     if ($ownTransaction) $pdo->exec('BEGIN IMMEDIATE');
 
@@ -498,7 +518,6 @@ function qk_next_sequence_number(PDO $pdo, string $tipo): string
         $seq = $st->fetch(PDO::FETCH_ASSOC);
 
         if (!$seq) {
-            if ($ownTransaction) $pdo->rollBack();
             throw new \RuntimeException("Sequenza '$tipo' non trovata nella tabella sequenze.");
         }
 
@@ -512,9 +531,9 @@ function qk_next_sequence_number(PDO $pdo, string $tipo): string
         $pdo->prepare('UPDATE sequenze SET numero_corrente = ? WHERE id = ?')
             ->execute([$next, $seq['id']]);
 
-        if ($ownTransaction) $pdo->commit();
+        if ($ownTransaction) $pdo->exec('COMMIT');
     } catch (\Throwable $e) {
-        if ($ownTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        if ($ownTransaction) $pdo->exec('ROLLBACK');
         throw $e;
     }
 
