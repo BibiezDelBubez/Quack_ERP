@@ -11,8 +11,6 @@ declare(strict_types=1);
  */
 final class SostanzeChimicheController extends BaseController
 {
-    private const LINGUE = ['IT' => 'Italiano', 'EN' => 'English', 'DE' => 'Deutsch', 'FR' => 'Français'];
-
     /* ════════════════════════════════════════════════════════════════════════
      *  INDEX — lista sostanze
      * ════════════════════════════════════════════════════════════════════════ */
@@ -31,7 +29,6 @@ final class SostanzeChimicheController extends BaseController
                    s.clp_avvertenza, s.numero_kemler,
                    c.codice_onu, c.classe_pericolo,
                    (SELECT COUNT(*) FROM prodotti p WHERE p.sostanza_chimica_id = s.id AND p.attivo = 1) AS n_prodotti,
-                   (SELECT COUNT(*) FROM sostanze_chimiche_schede sd WHERE sd.sostanza_id = s.id AND sd.e_corrente = 1) AS n_schede,
                    (SELECT {$hCodesConcat} FROM sostanze_h_statements WHERE sostanza_id = s.id) AS h_codes,
                    (SELECT {$pittogrammiConcat} FROM sostanze_pittogrammi WHERE sostanza_id = s.id) AS pittogrammi
               FROM sostanze_chimiche s
@@ -144,7 +141,6 @@ final class SostanzeChimicheController extends BaseController
         }
 
         require_once APP_ROOT_DIR . '/includes/prodotti.php';
-        $schede             = $this->loadSchede($id);
         $prodotti_associati = $this->loadProdottiAssociati($id);
         $h_selezionati      = $this->loadHSelezionati($id);
         $p_selezionati      = $this->loadPSelezionati($id);
@@ -185,172 +181,8 @@ final class SostanzeChimicheController extends BaseController
             redirect_with('adr/sostanze', 'error', "Impossibile eliminare: {$nProd} prodott" . ($nProd === 1 ? 'o usa' : 'i usano') . " questa sostanza.");
         }
 
-        // Elimina file SDS fisici
-        $schede = $this->loadSchede($id);
-        foreach ($schede as $s) {
-            $path = UPLOAD_DIR . '/' . ltrim(str_replace('\\', '/', $s['file_path']), '/');
-            if (is_file($path)) @unlink($path);
-        }
-
         $this->pdo->prepare('DELETE FROM sostanze_chimiche WHERE id = ?')->execute([$id]);
         redirect_with('adr/sostanze', 'success', 'Sostanza chimica eliminata.');
-    }
-
-    /* ════════════════════════════════════════════════════════════════════════
-     *  UPLOAD SCHEDA SDS
-     * ════════════════════════════════════════════════════════════════════════ */
-
-    public function uploadScheda(): void
-    {
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
-            redirect(url('adr/sostanze'));
-        }
-
-        $sostanzaId = (int) post('sostanza_id');
-        $lingua     = strtoupper(trim(post('lingua', '')));
-        $versione   = trim(post('versione', ''));
-        $dataEm     = trim(post('data_emissione', '')) ?: null;
-
-        if ($sostanzaId <= 0 || !array_key_exists($lingua, self::LINGUE)) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Dati non validi.');
-        }
-
-        if (empty($_FILES['file_sds']['name'])) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Nessun file selezionato.');
-        }
-
-        $file = $_FILES['file_sds'];
-
-        // Verifica tipo reale del file (MIME sniffato dal contenuto, non dall'estensione
-        // dichiarata dall'utente). I DOCX sono contenitori ZIP: alcune installazioni di
-        // fileinfo li riconoscono come application/vnd.openxmlformats-..., altre solo come
-        // application/zip generico — entrambi ammessi e mappati a .docx.
-        $allowedMimeToExt = [
-            'application/pdf'                                                          => 'pdf',
-            'application/msword'                                                       => 'doc',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'  => 'docx',
-            'application/zip'                                                          => 'docx',
-        ];
-
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $realMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
-        if ($finfo) {
-            finfo_close($finfo);
-        }
-
-        if ($realMime === false || !isset($allowedMimeToExt[$realMime])) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Formato non consentito. Usa PDF, DOC o DOCX.');
-        }
-
-        // application/zip è ambiguo: potrebbe essere un vero DOCX, ma anche
-        // un XLSX/PPTX/JAR/zip generico rilevati genericamente allo stesso
-        // modo. Ispezioniamo il contenuto per confermare che sia davvero un
-        // DOCX prima di salvarlo con quell'estensione.
-        if ($realMime === 'application/zip' && !qk_is_docx_zip($file['tmp_name'])) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Formato non consentito. Usa PDF, DOC o DOCX.');
-        }
-
-        $ext = $allowedMimeToExt[$realMime];
-
-        $sdsDir  = rtrim(UPLOAD_DIR, '/\\') . '/sds/' . $sostanzaId;
-        if (!is_dir($sdsDir) && !mkdir($sdsDir, 0755, true)) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Impossibile creare cartella upload.');
-        }
-
-        $nomeFile    = 'SDS_' . $sostanzaId . '_' . $lingua . '_' . date('Ymd_His') . '.' . $ext;
-        $destAbs     = $sdsDir . '/' . $nomeFile;
-        $filePathRel = 'sds/' . $sostanzaId . '/' . $nomeFile;
-
-        if (!move_uploaded_file($file['tmp_name'], $destAbs)) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Upload fallito.');
-        }
-
-        try {
-            $this->pdo->prepare(
-                'UPDATE sostanze_chimiche_schede SET e_corrente = 0 WHERE sostanza_id = ? AND lingua = ?'
-            )->execute([$sostanzaId, $lingua]);
-
-            $this->pdo->prepare(
-                'INSERT INTO sostanze_chimiche_schede
-                   (sostanza_id, lingua, versione, data_emissione, file_path, file_nome_orig, e_corrente)
-                 VALUES (?, ?, ?, ?, ?, ?, 1)'
-            )->execute([$sostanzaId, $lingua, $versione ?: null, $dataEm, $filePathRel, $file['name']]);
-
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'success', "Scheda SDS ({$lingua}) caricata.");
-        } catch (Throwable $e) {
-            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
-            @unlink($destAbs);
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Errore DB: ' . $e->getMessage());
-        }
-    }
-
-    /* ════════════════════════════════════════════════════════════════════════
-     *  DELETE SCHEDA SDS
-     * ════════════════════════════════════════════════════════════════════════ */
-
-    public function deleteScheda(): void
-    {
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
-            redirect(url('adr/sostanze'));
-        }
-
-        $schedaId   = (int) post('scheda_id');
-        $sostanzaId = (int) post('sostanza_id');
-
-        $st = $this->pdo->prepare('SELECT * FROM sostanze_chimiche_schede WHERE id = ? AND sostanza_id = ?');
-        $st->execute([$schedaId, $sostanzaId]);
-        $scheda = $st->fetch(PDO::FETCH_ASSOC);
-
-        if (!$scheda) {
-            redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'error', 'Scheda non trovata.');
-        }
-
-        $path = rtrim(UPLOAD_DIR, '/\\') . '/' . ltrim(str_replace('\\', '/', $scheda['file_path']), '/');
-        if (is_file($path)) @unlink($path);
-
-        $this->pdo->prepare('DELETE FROM sostanze_chimiche_schede WHERE id = ?')->execute([$schedaId]);
-        redirect_with('adr/sostanze/edit?id=' . $sostanzaId, 'success', 'Scheda SDS eliminata.');
-    }
-
-    /* ════════════════════════════════════════════════════════════════════════
-     *  DOWNLOAD SCHEDA SDS
-     * ════════════════════════════════════════════════════════════════════════ */
-
-    public function downloadScheda(): void
-    {
-        $schedaId = (int) get_param('id');
-        if ($schedaId <= 0) redirect(url('adr/sostanze'));
-
-        $st = $this->pdo->prepare('SELECT * FROM sostanze_chimiche_schede WHERE id = ?');
-        $st->execute([$schedaId]);
-        $scheda = $st->fetch(PDO::FETCH_ASSOC);
-
-        if (!$scheda) {
-            flash_set('error', 'File non trovato.');
-            redirect(url('adr/sostanze'));
-        }
-
-        $abs = rtrim(UPLOAD_DIR, '/\\') . '/' . ltrim(str_replace('\\', '/', $scheda['file_path']), '/');
-        if (!is_file($abs)) {
-            flash_set('error', 'File fisico non trovato sul server.');
-            redirect(url('adr/sostanze/edit?id=' . $scheda['sostanza_id']));
-        }
-
-        $ext  = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
-        $mime = match($ext) {
-            'pdf'  => 'application/pdf',
-            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'doc'  => 'application/msword',
-            default => 'application/octet-stream',
-        };
-
-        $nomeOrig = $scheda['file_nome_orig'] ?: basename($scheda['file_path']);
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: inline; filename="' . addslashes($nomeOrig) . '"');
-        header('Content-Length: ' . filesize($abs));
-        header('Cache-Control: private, max-age=3600');
-        readfile($abs);
-        exit;
     }
 
     /* ════════════════════════════════════════════════════════════════════════
@@ -730,15 +562,6 @@ final class SostanzeChimicheController extends BaseController
         return $r ?: null;
     }
 
-    private function loadSchede(int $id): array
-    {
-        $st = $this->pdo->prepare(
-            'SELECT * FROM sostanze_chimiche_schede WHERE sostanza_id = ? ORDER BY lingua, e_corrente DESC, created_at DESC'
-        );
-        $st->execute([$id]);
-        return $st->fetchAll(PDO::FETCH_ASSOC);
-    }
-
     private function loadProdottiAssociati(int $id): array
     {
         $st = $this->pdo->prepare(
@@ -863,5 +686,4 @@ final class SostanzeChimicheController extends BaseController
         exit;
     }
 
-    public static function lingue(): array { return self::LINGUE; }
 }

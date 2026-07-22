@@ -36,3 +36,14 @@ function qk_get_unita_misura_lista(PDO $pdo): array
 {
     return $pdo->query("SELECT id, codice, descrizione FROM unita_misura ORDER BY descrizione")->fetchAll(PDO::FETCH_ASSOC);
 }
+
+/**
+ * Ritorna l'elenco completo delle lingue ISO 639-1 di riferimento (tabella
+ * iso_lingue), ordinato per nome leggibile — usato per popolare il campo
+ * lingua (searchable-select) del form Schede di Sicurezza (SDS), §3.9/§3.16
+ * del PIANO Refactoring SDS.
+ */
+function qk_get_iso_lingue_lista(PDO $pdo): array
+{
+    return $pdo->query("SELECT codice, nome FROM iso_lingue ORDER BY nome")->fetchAll(PDO::FETCH_ASSOC);
+}

@@ -85,6 +85,7 @@ final class ProductsController extends BaseController
         $prodotto_tag_ids      = [];
         $kit_componenti        = [];
         $listini = qk_get_listini_vendita_attivi($this->pdo, true);
+        $iso_lingue = qk_get_iso_lingue_lista($this->pdo); // tab "Scheda di sicurezza" (M5)
 
         $page_title    = 'Nuovo prodotto';
         $page_subtitle = 'Aggiungi un prodotto al catalogo';
@@ -93,7 +94,7 @@ final class ProductsController extends BaseController
             ['label' => 'Nuovo'],
         ];
         $record_meta = null;
-        $extra_css   = ['products-suppliers.css'];
+        $extra_css   = ['products-suppliers.css', 'searchable-select.css'];
 
         $this->page(APP_ROOT_DIR . '/app/views/products/_form.php', get_defined_vars());
     }
@@ -250,6 +251,7 @@ final class ProductsController extends BaseController
         $listini_prezzi_regole->execute([$entity_id]);
         $prezzi_vendita_regole = $listini_prezzi_regole->fetchAll(PDO::FETCH_ASSOC);
         $listini = qk_get_listini_vendita_attivi($this->pdo, true);
+        $iso_lingue = qk_get_iso_lingue_lista($this->pdo); // tab "Scheda di sicurezza" (M5)
 
         $page_title    = e($values['nome']) ?: 'Modifica prodotto';
         $page_subtitle = 'SKU ' . e($values['sku_interno']) . ' · ID #' . $entity_id;
@@ -257,7 +259,7 @@ final class ProductsController extends BaseController
             ['label' => 'Prodotti', 'url' => url('products')],
             ['label' => $values['nome'] ?: 'Modifica'],
         ];
-        $extra_css = ['products-suppliers.css'];
+        $extra_css = ['products-suppliers.css', 'searchable-select.css'];
 
         $this->page(APP_ROOT_DIR . '/app/views/products/_form.php', get_defined_vars());
     }

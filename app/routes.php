@@ -93,6 +93,12 @@ return [
     '/products/compliance/remove'      => ['type' => 'controller', 'controller' => 'ProductsComplianceController', 'action' => 'apiComplianceRemove',  'auth' => true, 'permission' => 'manage_catalog'],
     '/products/fornitori/prezzi/save'  => ['type' => 'controller', 'controller' => 'ProductsPricingController', 'action' => 'savePrezzo',            'auth' => true, 'permission' => 'edit_prices'],
     '/products/fornitori/prezzi/delete'=> ['type' => 'controller', 'controller' => 'ProductsPricingController', 'action' => 'deletePrezzo',          'auth' => true, 'permission' => 'edit_prices'],
+    // SDS (Schede Dati di Sicurezza) su prodotto-fornitore — PIANO - Refactoring
+    // Schede di Sicurezza (SDS) su Prodotto-Fornitore.md, §3.7/M3.
+    '/products/sds/list'           => ['type' => 'controller', 'controller' => 'ProductsSdsController', 'action' => 'apiSdsList',        'auth' => true],
+    '/products/sds/save'           => ['type' => 'controller', 'controller' => 'ProductsSdsController', 'action' => 'apiSdsSave',        'auth' => true, 'permission' => 'manage_catalog'],
+    '/products/sds/delete'         => ['type' => 'controller', 'controller' => 'ProductsSdsController', 'action' => 'apiSdsDelete',      'auth' => true, 'permission' => 'manage_catalog'],
+    '/products/sds/rimuovi-file'   => ['type' => 'controller', 'controller' => 'ProductsSdsController', 'action' => 'apiSdsRimuoviFile', 'auth' => true, 'permission' => 'manage_catalog'],
     '/products/api/categorie'      => ['type' => 'controller', 'controller' => 'ProductsCategoriesController', 'action' => 'searchCategorie',  'auth' => true],
     '/products/api/crea-tag'       => ['type' => 'controller', 'controller' => 'ProductsTagsController', 'action' => 'crearTag',         'auth' => true, 'permission' => 'manage_catalog'],
     '/products/categories'         => ['type' => 'controller', 'controller' => 'ProductsCategoriesController', 'action' => 'categories',       'auth' => true],
@@ -217,9 +223,6 @@ return [
     '/adr/sostanze/create'        => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'create',        'auth' => true, 'permission' => 'manage_catalog'],
     '/adr/sostanze/edit'          => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'edit',          'auth' => true, 'permission' => 'manage_catalog'],
     '/adr/sostanze/delete'        => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'delete',        'auth' => true, 'permission' => 'manage_catalog'],
-    '/adr/sostanze/scheda/upload' => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'uploadScheda',  'auth' => true, 'permission' => 'manage_catalog'],
-    '/adr/sostanze/scheda/delete' => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'deleteScheda',  'auth' => true, 'permission' => 'manage_catalog'],
-    '/adr/sostanze/scheda/download'=>['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'downloadScheda','auth' => true],
     '/adr/sostanze/api/check-onu'       => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiCheckOnu',         'auth' => true],
     '/adr/sostanze/api/restrizioni'     => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiRestrizioniList',   'auth' => true],
     '/adr/sostanze/api/restrizioni/add' => ['type' => 'controller', 'controller' => 'SostanzeChimicheController', 'action' => 'apiRestrizioniAdd',    'auth' => true, 'permission' => 'manage_catalog'],

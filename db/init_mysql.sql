@@ -459,19 +459,13 @@ CREATE TABLE IF NOT EXISTS sostanze_chimiche (
     CONSTRAINT fk_sostanze_chimiche_codice_onu_id FOREIGN KEY (codice_onu_id) REFERENCES adr_codici_onu(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS sostanze_chimiche_schede (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    sostanza_id INTEGER NOT NULL,
-    lingua CHAR(5) NOT NULL,
-    versione VARCHAR(20),
-    data_emissione DATE,
-    file_path TEXT NOT NULL,
-    file_nome_orig VARCHAR(255),
-    e_corrente TINYINT(1) NOT NULL DEFAULT 1,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (sostanza_id, lingua, versione),
-    CONSTRAINT fk_sostanze_chimiche_schede_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- RIMOSSA (22/07/2026): sostanze_chimiche_schede (SDS su sostanza chimica).
+-- Sostituita da prodotti_fornitori_schede_sicurezza (SDS su prodotto-fornitore,
+-- vedi sezione "SCHEDE DI SICUREZZA (SDS) PER PRODOTTO-FORNITORE" più sotto in
+-- questo stesso file) — PIANO - Refactoring Schede di Sicurezza (SDS) su
+-- Prodotto-Fornitore.md. Per i database esistenti creati prima di questa
+-- modifica: db/migrations/2026_07_22b_rimozione_sostanze_chimiche_schede.php
+-- fa il DROP + pulizia file fisici.
 
 CREATE TABLE IF NOT EXISTS sostanze_h_statements (
     sostanza_id INTEGER NOT NULL,
@@ -1608,6 +1602,51 @@ CREATE TABLE IF NOT EXISTS prodotti_rrp (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
+-- SCHEDE DI SICUREZZA (SDS) PER PRODOTTO-FORNITORE
+-- =============================================================================
+-- Sostituisce, per le nuove installazioni, la vecchia SDS-su-sostanza-chimica
+-- (sostanze_chimiche_schede, sopra). Per i database MySQL già esistenti creati
+-- prima di questa modifica, vedi
+-- db/migrations/2026_07_22_schede_sicurezza_prodotto_fornitore.php (stesso
+-- schema, applicato in modo idempotente). Vedi PIANO - Refactoring Schede di
+-- Sicurezza (SDS) su Prodotto-Fornitore.md per il ragionamento completo.
+--
+-- NOTA: GENERATED ALWAYS AS (...) STORED richiede MySQL >= 5.7.6/8.0 o
+-- MariaDB con supporto equivalente — verificare la versione del server di
+-- destinazione PRIMA di applicare questo schema (§3.15 del piano), non
+-- assumerlo solo perché funziona su SQLite in sviluppo.
+
+CREATE TABLE IF NOT EXISTS iso_lingue (
+    codice CHAR(2) NOT NULL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS prodotti_fornitori_schede_sicurezza (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prodotto_fornitore_id INTEGER NOT NULL,
+    lingua CHAR(2) NOT NULL,
+    versione VARCHAR(20),
+    data_emissione DATE,
+    valido_dal DATE,
+    valido_al DATE,
+    valido_dal_key DATE GENERATED ALWAYS AS (COALESCE(valido_dal, '0001-01-01')) STORED,
+    file_path TEXT,
+    file_nome_orig VARCHAR(255),
+    file_rimosso_il DATETIME,
+    e_corrente TINYINT(1) NOT NULL DEFAULT 1,
+    note TEXT,
+    creato_da INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
+    UNIQUE (prodotto_fornitore_id, lingua, valido_dal_key),
+    CONSTRAINT fk_pf_sds_prodotto_fornitore_id FOREIGN KEY (prodotto_fornitore_id) REFERENCES prodotti_fornitori(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pf_sds_lingua FOREIGN KEY (lingua) REFERENCES iso_lingue(codice),
+    CONSTRAINT fk_pf_sds_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_pf_sds_pf_lingua ON prodotti_fornitori_schede_sicurezza(prodotto_fornitore_id, lingua);
+
+-- =============================================================================
 -- INDICI
 -- =============================================================================
 
@@ -2053,5 +2092,56 @@ INSERT IGNORE INTO compliance_restriction_types (id, code, name, regulatory_ref,
 INSERT IGNORE INTO compliance_documenti_richiesti (id, restriction_type_id, document_code, document_name, mandatory, instructions) VALUES
     (1, 1, 'DICHIARAZIONE_USO', 'Dichiarazione d''uso professionale (Allegato IV)', 1, 'Modulo firmato dal responsabile aziendale. Scaricare il modello dalla cartella documenti.'),
     (2, 1, 'DOCUMENTO_IDENTITA', 'Documento d''identità del firmatario', 1, 'Copia fronte/retro di un documento d''identità in corso di validità del responsabile che ha firmato la dichiarazione.');
+
+-- Elenco ufficiale ISO 639-1 (184 codici). Nomi in italiano — vedi commento
+-- nella sezione CREATE TABLE iso_lingue sopra e in
+-- db/migrations/2026_07_22_schede_sicurezza_prodotto_fornitore.php.
+INSERT IGNORE INTO iso_lingue (codice, nome) VALUES
+    ('aa', 'Afar'), ('ab', 'Abcaso'), ('ae', 'Avestico'), ('af', 'Afrikaans'),
+    ('ak', 'Akan'), ('am', 'Amarico'), ('an', 'Aragonese'), ('ar', 'Arabo'),
+    ('as', 'Assamese'), ('av', 'Avaro'), ('ay', 'Aymara'), ('az', 'Azero'),
+    ('ba', 'Baschiro'), ('be', 'Bielorusso'), ('bg', 'Bulgaro'), ('bh', 'Bihari'),
+    ('bi', 'Bislama'), ('bm', 'Bambara'), ('bn', 'Bengalese'), ('bo', 'Tibetano'),
+    ('br', 'Bretone'), ('bs', 'Bosniaco'), ('ca', 'Catalano'), ('ce', 'Ceceno'),
+    ('ch', 'Chamorro'), ('co', 'Corso'), ('cr', 'Cree'), ('cs', 'Ceco'),
+    ('cu', 'Slavo ecclesiastico'), ('cv', 'Ciuvascio'), ('cy', 'Gallese'), ('da', 'Danese'),
+    ('de', 'Tedesco'), ('dv', 'Divehi'), ('dz', 'Dzongkha'), ('ee', 'Ewe'),
+    ('el', 'Greco'), ('en', 'Inglese'), ('eo', 'Esperanto'), ('es', 'Spagnolo'),
+    ('et', 'Estone'), ('eu', 'Basco'), ('fa', 'Persiano'), ('ff', 'Fulah'),
+    ('fi', 'Finlandese'), ('fj', 'Figiano'), ('fo', 'Faroese'), ('fr', 'Francese'),
+    ('fy', 'Frisone occidentale'), ('ga', 'Irlandese'), ('gd', 'Gaelico scozzese'), ('gl', 'Galiziano'),
+    ('gn', 'Guarani'), ('gu', 'Gujarati'), ('gv', 'Mannese'), ('ha', 'Hausa'),
+    ('he', 'Ebraico'), ('hi', 'Hindi'), ('ho', 'Hiri Motu'), ('hr', 'Croato'),
+    ('ht', 'Creolo haitiano'), ('hu', 'Ungherese'), ('hy', 'Armeno'), ('hz', 'Herero'),
+    ('ia', 'Interlingua'), ('id', 'Indonesiano'), ('ie', 'Interlingue'), ('ig', 'Igbo'),
+    ('ii', 'Yi del Sichuan'), ('ik', 'Inupiaq'), ('io', 'Ido'), ('is', 'Islandese'),
+    ('it', 'Italiano'), ('iu', 'Inuktitut'), ('ja', 'Giapponese'), ('jv', 'Giavanese'),
+    ('ka', 'Georgiano'), ('kg', 'Kongo'), ('ki', 'Kikuyu'), ('kj', 'Kuanyama'),
+    ('kk', 'Kazako'), ('kl', 'Groenlandese'), ('km', 'Khmer'), ('kn', 'Kannada'),
+    ('ko', 'Coreano'), ('kr', 'Kanuri'), ('ks', 'Kashmiri'), ('ku', 'Curdo'),
+    ('kv', 'Komi'), ('kw', 'Cornico'), ('ky', 'Kirghiso'), ('la', 'Latino'),
+    ('lb', 'Lussemburghese'), ('lg', 'Ganda'), ('li', 'Limburghese'), ('ln', 'Lingala'),
+    ('lo', 'Lao'), ('lt', 'Lituano'), ('lu', 'Luba-Katanga'), ('lv', 'Lettone'),
+    ('mg', 'Malgascio'), ('mh', 'Marshallese'), ('mi', 'Maori'), ('mk', 'Macedone'),
+    ('ml', 'Malayalam'), ('mn', 'Mongolo'), ('mr', 'Marathi'), ('ms', 'Malese'),
+    ('mt', 'Maltese'), ('my', 'Birmano'), ('na', 'Nauruano'), ('nb', 'Norvegese Bokmal'),
+    ('nd', 'Ndebele del nord'), ('ne', 'Nepalese'), ('ng', 'Ndonga'), ('nl', 'Olandese'),
+    ('nn', 'Norvegese Nynorsk'), ('no', 'Norvegese'), ('nr', 'Ndebele del sud'), ('nv', 'Navajo'),
+    ('ny', 'Chichewa'), ('oc', 'Occitano'), ('oj', 'Ojibwe'), ('om', 'Oromo'),
+    ('or', 'Oriya'), ('os', 'Osseto'), ('pa', 'Panjabi'), ('pi', 'Pali'),
+    ('pl', 'Polacco'), ('ps', 'Pashto'), ('pt', 'Portoghese'), ('qu', 'Quechua'),
+    ('rm', 'Romancio'), ('rn', 'Rundi'), ('ro', 'Rumeno'), ('ru', 'Russo'),
+    ('rw', 'Kinyarwanda'), ('sa', 'Sanscrito'), ('sc', 'Sardo'), ('sd', 'Sindhi'),
+    ('se', 'Sami del nord'), ('sg', 'Sango'), ('si', 'Singalese'), ('sk', 'Slovacco'),
+    ('sl', 'Sloveno'), ('sm', 'Samoano'), ('sn', 'Shona'), ('so', 'Somalo'),
+    ('sq', 'Albanese'), ('sr', 'Serbo'), ('ss', 'Swati'), ('st', 'Sotho del sud'),
+    ('su', 'Sundanese'), ('sv', 'Svedese'), ('sw', 'Swahili'), ('ta', 'Tamil'),
+    ('te', 'Telugu'), ('tg', 'Tagiko'), ('th', 'Thailandese'), ('ti', 'Tigrino'),
+    ('tk', 'Turkmeno'), ('tl', 'Tagalog'), ('tn', 'Tswana'), ('to', 'Tongano'),
+    ('tr', 'Turco'), ('ts', 'Tsonga'), ('tt', 'Tataro'), ('tw', 'Twi'),
+    ('ty', 'Tahitiano'), ('ug', 'Uiguro'), ('uk', 'Ucraino'), ('ur', 'Urdu'),
+    ('uz', 'Uzbeco'), ('ve', 'Venda'), ('vi', 'Vietnamita'), ('vo', 'Volapuk'),
+    ('wa', 'Vallone'), ('wo', 'Wolof'), ('xh', 'Xhosa'), ('yi', 'Yiddish'),
+    ('yo', 'Yoruba'), ('za', 'Zhuang'), ('zh', 'Cinese'), ('zu', 'Zulu');
 
 SET FOREIGN_KEY_CHECKS = 1;

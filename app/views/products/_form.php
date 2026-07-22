@@ -33,6 +33,10 @@ $apiPrezzoDelete = $isEdit ? url('products/fornitori/prezzi/delete'): '#';
 $apiFornListini  = url('products/api/fornitore-listini');
 $apiKitSave      = $isEdit ? url('products/kit/save')               : '#';
 $apiKitDelete    = $isEdit ? url('products/kit/delete')             : '#';
+$apiSdsList         = url('products/sds/list');
+$apiSdsSave         = $isEdit ? url('products/sds/save')           : '#';
+$apiSdsDelete       = $isEdit ? url('products/sds/delete')         : '#';
+$apiSdsRimuoviFile  = $isEdit ? url('products/sds/rimuovi-file')   : '#';
 
 /* Categoria selezionata (label per il picker) */
 $cat_label = '';
@@ -91,6 +95,12 @@ window.QkPF = {
   apiKitSave:           <?= json_encode($apiKitSave) ?>,
   apiKitDelete:         <?= json_encode($apiKitDelete) ?>,
   suppliersCreateUrl:   <?= json_encode(url('suppliers/create')) ?>,
+  /* Schede di sicurezza (SDS) — gestite da products-sds.js */
+  apiSdsList:           <?= json_encode($apiSdsList) ?>,
+  apiSdsSave:           <?= json_encode($apiSdsSave) ?>,
+  apiSdsDelete:         <?= json_encode($apiSdsDelete) ?>,
+  apiSdsRimuoviFile:    <?= json_encode($apiSdsRimuoviFile) ?>,
+  apiUploadsBase:       <?= json_encode(url('uploads?path=')) ?>,
 
   /* ── Dati pre-caricati (PHP → JS) ────────────────────────────────── */
   /** Array di fornitori del prodotto (da qk_load_prodotto_fornitori). */
@@ -179,6 +189,14 @@ window.QkPF = {
             <span class="badge ms-1" style="background:var(--qk-warning);color:var(--qk-body-bg)">ADR</span>
             <?php endif; ?>
             <span class="badge bg-danger ms-1 d-none" id="badge-compliance">!</span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="ptab-btn-sds"
+                  data-bs-toggle="tab" data-bs-target="#ptab-sds"
+                  type="button" role="tab" aria-selected="false">
+            <i class="fa-solid fa-file-shield fa-fw me-1"></i>Scheda di sicurezza
+            <span class="badge bg-warning text-dark ms-1 d-none" id="badge-sds-scadute" title="Ci sono schede scadute">!</span>
           </button>
         </li>
       </ul>
@@ -1137,8 +1155,9 @@ window.QkPF = {
                       <?php if (!empty($v['sostanza_chimica_id'])): ?>
                       <span class="qk-text-muted small">·</span>
                       <a href="<?= url('adr/sostanze/edit?id=' . (int)$v['sostanza_chimica_id']) ?>"
-                         target="_blank" class="small qk-text-accent text-decoration-none">
-                        <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Apri scheda sostanza
+                         target="_blank" class="small qk-text-accent text-decoration-none"
+                         title="Classificazione ADR/CLP condivisa da questa sostanza — le Schede di Sicurezza (SDS) si gestiscono invece nella tab &quot;Scheda di sicurezza&quot; qui sopra, per fornitore">
+                        <i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Apri classificazione ADR/CLP sostanza
                       </a>
                       <?php endif; ?>
                     </div>
@@ -1265,6 +1284,182 @@ window.QkPF = {
 
         </div><!-- /ptab-adr (ADR e Restrizioni) -->
 
+        <!-- ──────────────────────────────────────────────────────────────
+             TAB: SCHEDA DI SICUREZZA (SDS) — per prodotto-fornitore
+             PIANO - Refactoring Schede di Sicurezza (SDS) su Prodotto-Fornitore.md, M5
+        ─────────────────────────────────────────────────────────────────── -->
+        <div class="tab-pane fade" id="ptab-sds" role="tabpanel">
+
+          <?php if (!$isEdit): ?>
+          <div class="qk-card mb-3 mt-3">
+            <div class="qk-card-body text-center py-5">
+              <i class="fa-solid fa-floppy-disk fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
+              <p style="color:var(--qk-text-muted)">Salva prima il prodotto per poter gestire le Schede di Sicurezza (SDS).</p>
+            </div>
+          </div>
+          <?php elseif (empty($prodotto_fornitori)): ?>
+          <div class="qk-card mb-3 mt-3">
+            <div class="qk-card-body text-center py-5">
+              <i class="fa-solid fa-handshake fa-2x mb-3" style="color:var(--qk-text-muted)"></i>
+              <p style="color:var(--qk-text-muted)">
+                Le Schede di Sicurezza si caricano per fornitore: aggiungi prima almeno un fornitore nella tab
+                <a href="#" onclick="document.getElementById('ptab-btn-fornitori').click();return false;">Costi d'Acquisto &amp; Fornitori</a>.
+              </p>
+            </div>
+          </div>
+          <?php else: ?>
+
+          <div class="qk-guidance-box mt-3">
+            <div class="fs-4"><i class="fa-solid fa-circle-info"></i></div>
+            <div>
+              <h6 class="mb-1 fw-bold">Una SDS per fornitore e lingua</h6>
+              <p class="mb-0 text-muted" style="font-size:0.875rem">
+                Ogni fornitore consegna la propria Scheda di Sicurezza, nella lingua del destinatario (REACH).
+                Puoi avere più schede correnti in vigore per lo stesso fornitore, una per lingua.
+                Le schede storiche restano sempre visibili, anche se il fornitore collegato viene disattivato.
+              </p>
+            </div>
+          </div>
+
+          <!-- ── Toolbar ─────────────────────────────────────────────────── -->
+          <div class="qk-table-toolbar qk-card mt-3 mb-3"
+               style="border-radius:var(--qk-radius);border:1px solid var(--qk-card-border)">
+            <div class="qk-table-toolbar-left">
+              <label class="qk-flex-row qk-gap-sm d-flex align-items-center" style="gap:.4rem;font-size:.85rem;cursor:pointer;">
+                <input type="checkbox" id="sds-filter-hide-inattivi" class="form-check-input">
+                Nascondi fornitori disattivati
+              </label>
+            </div>
+            <div class="qk-table-toolbar-right">
+              <button type="button" class="btn-qk btn-qk-primary btn-qk-sm" id="btn-add-sds">
+                <i class="fa-solid fa-plus"></i> Carica scheda di sicurezza
+              </button>
+            </div>
+          </div>
+
+          <!-- ── Tabella righe SDS ─────────────────────────────────────── -->
+          <div class="qk-card" style="overflow-x:auto; min-height:150px;">
+            <div class="qk-empty d-none" id="sds-empty">
+              <i class="fa-solid fa-file-shield"></i>
+              <p>Nessuna scheda di sicurezza ancora caricata per questo prodotto.</p>
+            </div>
+            <table class="qk-table" id="sds-table">
+              <thead>
+                <tr>
+                  <th>Fornitore</th>
+                  <th style="width:70px;text-align:center;">Lingua</th>
+                  <th>Versione</th>
+                  <th style="width:120px;">Inserita il</th>
+                  <th style="width:110px;">Valido dal</th>
+                  <th style="width:110px;">Valido al</th>
+                  <th style="width:110px;">Stato</th>
+                  <th style="width:120px;text-align:center;">File</th>
+                  <th style="width:100px;"></th>
+                </tr>
+              </thead>
+              <tbody id="sds-tbody">
+                <!-- Popolato dinamicamente da products-sds.js -->
+              </tbody>
+            </table>
+          </div>
+
+          <?php endif; ?>
+
+          <!-- ── Modale dettaglio SDS (upload + metadati) ──────────────────
+               Non un drawer: qui si compila SEMPRE un solo record alla volta
+               (a differenza del drawer RRP, che contiene una mini-tabella di
+               più righe) — stesso pattern del modale "Aggiungi restrizione"
+               poco sopra in questa stessa tab ADR. Scelta rivista il
+               22/07/2026: un modale Bootstrap è già responsive di default
+               (niente overflow su schermi stretti, a differenza di
+               `.qk-drawer` che ha una larghezza fissa di 400px senza
+               breakpoint mobile — gap pre-esistente e condiviso col drawer
+               RRP, non specifico di qui). -->
+          <div class="modal fade" id="modal-sds" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="sds-modal-title">Nuova scheda di sicurezza</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+                </div>
+                <div class="modal-body">
+                  <div id="sds-modal-alert" class="qk-alert qk-alert-danger d-none mb-3"></div>
+
+                  <input type="hidden" id="sds-form-id" value="0">
+
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Fornitore <span class="required">*</span></label>
+                    <select id="sds-sel-fornitore" class="qk-form-control"></select>
+                    <span class="qk-form-hint">Solo i fornitori attivi di questo prodotto compaiono qui.</span>
+                  </div>
+
+                  <div class="qk-form-row">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Lingua <span class="required">*</span></label>
+                      <select id="sds-sel-lingua" class="searchable-select qk-form-control">
+                        <option value="">— Seleziona lingua —</option>
+                        <?php foreach ($iso_lingue as $lng): ?>
+                        <option value="<?= e($lng['codice']) ?>"><?= e($lng['nome']) ?> (<?= e($lng['codice']) ?>)</option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Versione</label>
+                      <input type="text" id="sds-versione" class="qk-form-control" placeholder="es. 2.1">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Data emissione <span class="qk-form-hint">(dal fornitore)</span></label>
+                      <input type="date" id="sds-data-emissione" class="qk-form-control">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-row">
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Valido dal <span class="qk-form-hint">vuoto = nessun limite</span></label>
+                      <input type="date" id="sds-valido-dal" class="qk-form-control">
+                    </div>
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Valido al <span class="qk-form-hint">vuoto = senza scadenza</span></label>
+                      <input type="date" id="sds-valido-al" class="qk-form-control">
+                    </div>
+                  </div>
+
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">File PDF/DOC/DOCX <span id="sds-file-required-mark" class="required">*</span></label>
+                    <input type="file" id="sds-file-input" accept=".pdf,.doc,.docx" class="qk-form-control">
+                    <div id="sds-file-current" class="qk-form-hint mt-1"></div>
+                  </div>
+
+                  <div class="qk-form-group mb-0">
+                    <label class="qk-form-label">Note</label>
+                    <textarea id="sds-note" class="qk-form-control" rows="3"></textarea>
+                  </div>
+                </div>
+                <div class="modal-footer d-flex justify-content-between">
+                  <div>
+                    <button type="button" class="btn-qk btn-qk-danger btn-qk-sm d-none" id="btn-sds-delete">
+                      <i class="fa-solid fa-trash"></i> Elimina
+                    </button>
+                    <button type="button" class="btn-qk btn-qk-secondary btn-qk-sm d-none" id="btn-sds-rimuovi-file">
+                      <i class="fa-solid fa-file-slash"></i> Rimuovi solo il file
+                    </button>
+                  </div>
+                  <div>
+                    <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="button" class="btn-qk btn-qk-primary" id="btn-save-sds">
+                      <i class="fa-solid fa-floppy-disk"></i> Salva
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /ptab-sds -->
+
       </div><!-- /tab-content -->
 
     </div><!-- /colonna principale -->
@@ -1371,4 +1566,6 @@ window.QkPF = {
 <script src="<?= asset('js/products-form.js') ?>?v=<?= time() ?>"></script>
 <?php if ($isEdit): ?>
 <script src="<?= asset('js/products-suppliers.js') ?>?v=<?= time() ?>"></script>
+<script src="<?= asset('js/searchable-select.js') ?>?v=<?= time() ?>"></script>
+<script src="<?= asset('js/products-sds.js') ?>?v=<?= time() ?>"></script>
 <?php endif; ?>

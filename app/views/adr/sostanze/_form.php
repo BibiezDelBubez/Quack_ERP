@@ -5,7 +5,6 @@
  * @var array  $errors               errori di validazione
  * @var array  $codici_onu           lista adr_codici_onu
  * @var array  $clp_data             ['h_statements'=>[], 'p_statements'=>[], 'pittogrammi'=>[]]
- * @var array  $schede               lista sostanze_chimiche_schede (solo in edit)
  * @var array  $prodotti_associati   prodotti SKU collegati (solo in edit)
  * @var array  $h_selezionati        codici H già assegnati (solo in edit)
  * @var array  $p_selezionati        codici P già assegnati (solo in edit)
@@ -13,7 +12,6 @@
  */
 $isEdit     = $mode === 'edit';
 $sostanzaId = $isEdit ? (int)($v['id'] ?? 0) : 0;
-$lingue     = SostanzeChimicheController::lingue();
 $csrf       = csrf_field();
 $h_selezionati    = $h_selezionati    ?? [];
 $p_selezionati    = $p_selezionati    ?? [];
@@ -38,13 +36,6 @@ $pitt_selezionati = $pitt_selezionati ?? [];
     </button>
   </li>
   <?php if ($isEdit): ?>
-  <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#stab-schede" role="tab">
-      <i class="fa-solid fa-file-shield me-1"></i> Schede SDS
-      <?php $nCorr = count(array_filter($schede, fn($s) => $s['e_corrente']));
-        if ($nCorr): ?><span class="badge bg-secondary ms-1"><?= $nCorr ?></span><?php endif; ?>
-    </button>
-  </li>
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#stab-restrizioni" role="tab" id="btn-tab-restrizioni">
       <i class="fa-solid fa-ban me-1"></i> Restrizioni
@@ -357,87 +348,6 @@ $pitt_selezionati = $pitt_selezionati ?? [];
   </div>
 
   <?php if ($isEdit): ?>
-
-  <!-- TAB 3: SCHEDE SDS -->
-  <div class="tab-pane fade" id="stab-schede" role="tabpanel">
-    <div class="qk-card mb-3">
-      <div class="qk-card-header">
-        <span class="qk-card-title"><i class="fa-solid fa-upload me-1"></i> Carica nuova SDS</span>
-      </div>
-      <div class="qk-card-body">
-        <form method="post" action="<?= url('adr/sostanze/scheda/upload') ?>" enctype="multipart/form-data">
-          <?= $csrf ?>
-          <input type="hidden" name="sostanza_id" value="<?= $sostanzaId ?>">
-          <div class="qk-form-row">
-            <div class="qk-form-group">
-              <label class="qk-form-label required">Lingua</label>
-              <select name="lingua" class="qk-form-control" required>
-                <option value="">— Seleziona —</option>
-                <?php foreach ($lingue as $code => $label): ?>
-                <option value="<?= $code ?>"><?= $code ?> — <?= $label ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <div class="qk-form-group">
-              <label class="qk-form-label">Versione</label>
-              <input type="text" name="versione" class="qk-form-control" placeholder="Es. 3.0">
-            </div>
-            <div class="qk-form-group">
-              <label class="qk-form-label">Data emissione</label>
-              <input type="date" name="data_emissione" class="qk-form-control">
-            </div>
-            <div class="qk-form-group" style="flex:2">
-              <label class="qk-form-label required">File</label>
-              <input type="file" name="file_sds" class="qk-form-control" accept=".pdf,.doc,.docx" required>
-            </div>
-          </div>
-          <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm mt-1"><i class="fa-solid fa-upload me-1"></i> Carica</button>
-        </form>
-      </div>
-    </div>
-
-    <?php if (empty($schede)): ?>
-    <div class="qk-empty"><i class="fa-solid fa-file-shield"></i><p>Nessuna SDS caricata.</p></div>
-    <?php else:
-      $schedePerLingua = [];
-      foreach ($schede as $sc) { $schedePerLingua[$sc['lingua']][] = $sc; }
-    ?>
-    <div class="row g-3">
-      <?php foreach ($schedePerLingua as $lingua => $versioni): ?>
-      <div class="col-md-6">
-        <div class="qk-card h-100">
-          <div class="qk-card-header">
-            <span class="qk-card-title"><i class="fa-solid fa-language me-1"></i><?= $lingua ?> — <?= e($lingue[$lingua] ?? $lingua) ?></span>
-          </div>
-          <div class="qk-card-body p-0">
-            <table class="qk-table" style="font-size:0.85rem">
-              <thead><tr><th>Versione</th><th>Data</th><th>File</th><th>Stato</th><th></th></tr></thead>
-              <tbody>
-                <?php foreach ($versioni as $sc): ?>
-                <tr>
-                  <td><?= e($sc['versione'] ?: '—') ?></td>
-                  <td><?= $sc['data_emissione'] ? fmt_date($sc['data_emissione']) : '—' ?></td>
-                  <td><a href="<?= url('adr/sostanze/scheda/download?id=' . $sc['id']) ?>" class="qk-text-accent text-decoration-none small" target="_blank"><i class="fa-solid fa-file-arrow-down me-1"></i><?= e(mb_strimwidth($sc['file_nome_orig'] ?: basename($sc['file_path']), 0, 30, '…')) ?></a></td>
-                  <td><?php if ($sc['e_corrente']): ?><span class="qk-badge confirmed">Corrente</span><?php else: ?><span class="qk-badge draft">Archiviata</span><?php endif; ?></td>
-                  <td>
-                    <form method="post" action="<?= url('adr/sostanze/scheda/delete') ?>" onsubmit="return confirm('Eliminare?')" class="d-inline">
-                      <?= $csrf ?>
-                      <input type="hidden" name="scheda_id" value="<?= (int)$sc['id'] ?>">
-                      <input type="hidden" name="sostanza_id" value="<?= $sostanzaId ?>">
-                      <button type="submit" class="btn-qk btn-qk-danger btn-qk-sm"><i class="fa-solid fa-trash"></i></button>
-                    </form>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
-  </div>
 
   <!-- TAB 4: PRODOTTI ASSOCIATI -->
   <div class="tab-pane fade" id="stab-prodotti" role="tabpanel">

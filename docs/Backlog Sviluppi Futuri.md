@@ -529,3 +529,126 @@ Nei sistemi di fascia alta, la gestione dello storage si basa su tre pilastri:
 **Di cosa si tratta.** Il fix "Listino Fantasma" (10/07/2026) risolve la sovrapposizione tra listini attivi solo per il prezzo base (`quantita_minima = 0`, tramite la vista `v_prezzo_acquisto_base_fornitore`). La stessa classe di bug resta non corretta per gli scaglioni di prezzo (`quantita_minima_stock > 0`) dentro `qk_get_purchase_price()`: le query ordinano solo per soglia, senza tie-break sulla data di validità — se un vecchio listino non viene chiuso esplicitamente, quale dei due prezzi venga restituito non è deterministico.
 
 **Perché è rimandato.** `qk_get_purchase_price()` è codice morto, mai raggiunto dalla UI reale — il bug è solo latente. Da correggere (stesso pattern del fix già fatto sulla vista) prima di ricollegare questa funzione a un qualunque punto vivo dell'interfaccia, non prima.
+
+---
+
+## 31. Distribuzione delle SDS ai clienti (obbligo REACH Art. 31, lato "a valle")
+
+**Fonte:** emerso durante l'analisi di `docs/appunti adr/PIANO - Refactoring Schede di Sicurezza (SDS)
+su Prodotto-Fornitore.md` (22/07/2026), a partire da un'osservazione su quel piano: gestisce solo la
+*ricezione* della SDS dal proprio fornitore (rapporto prodotto↔fornitore, "a monte"), non l'obbligo
+simmetrico di Quack come rivenditore verso i propri clienti ("a valle").
+
+**Di cosa si tratta.** REACH Art. 31 impone che chi fornisce una sostanza/miscela pericolosa a un
+cliente gli fornisca anche la relativa SDS, non oltre la prima fornitura, e che ne rifornisca una
+versione aggiornata a tutti i destinatari a cui è stata fornita negli ultimi 12 mesi, ogni volta che il
+documento viene revisionato. Questo obbligo vale per ogni anello della catena — quindi anche per Quack,
+in quanto rivenditore, verso i propri clienti — indipendentemente da come Quack sceglie di procurarsi il
+documento (redazione propria o inoltro di quello ricevuto dal fornitore).
+
+**Decisione presa (22/07/2026), confermata dall'utente.** L'azienda per cui è costruito Quack ha una
+prassi consolidata: inoltra ai propri clienti la SDS del fornitore così com'è, senza redigerne una
+propria. **Confermato con ricerca dedicata che questa è una prassi legittima e comune**: REACH Art. 31
+permette esplicitamente al distributore di scegliere fra inoltrare la SDS del fornitore invariata oppure
+comporne una propria — non è un compromesso tollerato, è un'opzione prevista dalla norma. Per la
+rivendita "pura" (nessuna modifica al prodotto, nessun travaso/reimballaggio), l'inoltro invariato è
+descritto in più fonti come la prassi standard.
+
+Due caveat da tenere presente se in futuro cambiano le condizioni operative (non richiedono azione ora,
+solo consapevolezza):
+- **Il riconfezionamento cambia lo status legale.** Se Quack in futuro dovesse mai travasare o
+  rietichettare un prodotto invece di rivenderlo nella confezione originale del fornitore, assumerebbe di
+  fatto il ruolo di "manufacturer" ai fini della normativa, con obbligo di redazione propria della SDS —
+  non più solo inoltro. Se questo scenario diventa reale, l'intero ragionamento fatto qui va rivisto da
+  capo.
+- **Sezione 1 della SDS (dati del fornitore/contatto).** Alcune fonti indicano che il distributore
+  dovrebbe assicurarsi che la SDS inoltrata riporti dati di contatto completi di un "supplier" competente
+  — zona grigia interpretativa, non un divieto dell'inoltro invariato, ma un punto da far confermare a un
+  consulente REACH/legale quando si riprenderà il tema.
+
+**Cosa resta comunque vero, inoltro invariato o no — il pezzo tecnico da costruire quando si riprende
+il tema.** L'obbligo REACH di *distribuzione* non sparisce solo perché si inoltra invece di redigere in
+proprio. Serve poter rispondere alla domanda: *"a quali clienti abbiamo venduto il prodotto X, fornito
+da Y, negli ultimi 12 mesi?"* — oggi questo legame (prodotto-fornitore ↔ clienti che l'hanno acquistato,
+con relativa data) non è tracciato da nessuna parte nel piano SDS attuale (che si ferma alla gestione
+lato acquisto/anagrafica).
+
+**Cosa fanno i grandi sistemi su questo punto specifico** (da
+`ADR_SDS_Permessi_Ricerca_Approfondita_e_Raccomandazioni.md`, §2.2-2.3, stessa cartella del piano):
+- **Trace One**: collega l'authoring SDS al gestionale del cliente per ottenere l'elenco contatti
+  aggiornato e tiene un registro dettagliato di chi ha ricevuto quale SDS e quando, notificando
+  automaticamente i destinatari quando c'è un aggiornamento.
+- **UL Ultrus**: ha un "publishing tool" con controllo granulare su chi può accedere a quale documento,
+  sia internamente sia verso l'esterno (portale clienti).
+- **EPY** (verticale italiano): distribuzione automatica al primo acquisto e a ogni revisione — trigger
+  sull'evento commerciale (l'ordine/la vendita), non un task manuale da ricordarsi.
+- **SAP Product Safety (EHS-SAF)**: "distribuzione automatica con trigger" — quando una SDS viene
+  aggiornata, il sistema attiva l'invio automatico dei report ai destinatari, senza intervento manuale.
+
+**Cosa andrebbe costruito, in sintesi, quando si deciderà di riprendere il tema** (solo traccia per il
+futuro, nessuna decisione presa ora):
+1. Una tabella/log che registri, per ogni riga di vendita di un prodotto con SDS associata, quale
+   `prodotti_fornitori_schede_sicurezza.id` (versione della SDS) era quella fornita al cliente in quel
+   momento — analogo concettualmente a come gli altri documenti (preventivi, ordini, DDT) già
+   congelano uno snapshot dei dati al momento dell'emissione (vedi `PIANO - Congelare Destinatario sul
+   DDT.md`, cartella Ciclo Vendite, per il pattern già consolidato in questo progetto).
+2. Una query/vista che, data una nuova revisione SDS caricata per un prodotto-fornitore, elenchi tutti i
+   clienti che hanno comprato quel prodotto (da quel fornitore) negli ultimi 12 mesi — il "chi va
+   ri-avvisato".
+3. Un meccanismo di notifica/messa a disposizione tracciata (anche solo un link scaricabile con log di
+   chi/quando ha scaricato, come minimo comune denominatore visto in più sistemi) — non necessariamente
+   un invio email automatico fin da subito, ma quantomeno una coda visibile "clienti da ri-notificare per
+   la revisione di questa SDS".
+4. Eventualmente, un piccolo pannello "salute compliance" (suggerito anche dal documento di ricerca,
+   §6 di `ADR_SDS_Permessi_Ricerca_Approfondita_e_Raccomandazioni.md`): una vista tipo "prodotti ADR
+   senza SDS attiva caricata" — a basso sforzo di sviluppo (una query), utile indipendentemente dalla
+   scelta di inoltro vs redazione propria.
+
+**Perché è rimandato.** Decisione esplicita dell'utente (22/07/2026): per il breve termine non si
+implementa nulla su questo fronte — resta traccia qui di tutto ciò che i grandi ERP fanno in materia, da
+programmare per un'implementazione futura quando si deciderà di riprendere il tema.
+
+---
+
+## 32. Altri punti già esplicitamente rimandati dal PIANO SDS (stesso documento di origine)
+
+Riportati qui per completezza, anche se il piano SDS li elenca già come "esplicitamente fuori scope" nel
+proprio corpo (§4, punti 19-21 del piano) — non serve altro lavoro di analisi per riprenderli, sono già
+ben definiti lì:
+
+- **Nessun aggancio automatico "SDS mancante → blocco vendita"** — il documento di ricerca lo suggerisce
+  come possibile evoluzione futura (§6), ma non richiesto ora.
+- **Nessuna gestione di PDF multi-lingua in un unico file**: l'utente sceglie una lingua per record;
+  limite noto, non risolvibile senza parsing del contenuto del documento.
+- **Nessun widget di riepilogo "SDS predefinita/mancante" nella lista prodotti** o altrove fuori dal form
+  prodotto — collegato concettualmente al punto 4 della voce 31 sopra (il "pannello salute compliance"),
+  quindi le due voci vanno probabilmente costruite insieme quando arriverà il momento.
+
+**Perché è rimandato.** Stessa decisione della voce 31: nessuna azione ora, traccia mantenuta per quando
+si riprenderà il modulo SDS in un secondo momento.
+
+---
+
+## 33. Limite dimensione massima e formati accettati per l'upload delle SDS
+
+**Fonte:** emerso durante l'analisi di `docs/appunti adr/PIANO - Refactoring Schede di Sicurezza (SDS)
+su Prodotto-Fornitore.md` (22/07/2026).
+
+**Di cosa si tratta.** Oggi (e con il nuovo modulo SDS pianificato) l'upload di un file SDS non ha
+alcun limite esplicito lato applicazione sulla dimensione massima — si eredita solo il limite generico
+di PHP (`upload_max_filesize`/`post_max_size` nel `php.ini`), senza un controllo dedicato né un
+messaggio d'errore leggibile se superato (oggi PHP restituisce semplicemente un `$_FILES[...]['error']`
+generico, `UPLOAD_ERR_INI_SIZE`, che va tradotto a mano in un messaggio comprensibile). Non esiste
+inoltre alcuna restrizione sui formati accettati oltre alla whitelist mime già esistente (PDF/DOC/DOCX,
+§3 del piano SDS) — nessuna decisione su, ad esempio, se restringere ulteriormente ai soli PDF in
+futuro, o mantenere anche DOC/DOCX.
+
+**Decisione (22/07/2026):** non implementato ora. Da programmare per il futuro, quando si deciderà
+esplicitamente: (1) la dimensione massima accettabile per un singolo file SDS (in MB), con relativo
+messaggio d'errore leggibile lato applicazione invece di affidarsi al solo limite PHP; (2) se restringere
+ulteriormente i formati accettati (es. solo PDF) o mantenere l'attuale whitelist PDF/DOC/DOCX.
+
+**Perché è rimandato.** Nessun problema concreto riscontrato finora con file troppo grandi o in formati
+indesiderati — la whitelist mime esistente (validazione reale del contenuto, non solo estensione) copre
+già il rischio di sicurezza principale. Da riprendere se emerge un caso reale (es. upload che saturano lo
+spazio disco più velocemente del previsto, o formati indesiderati che iniziano a comparire in pratica).

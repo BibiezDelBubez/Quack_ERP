@@ -6,12 +6,14 @@
     <h6 class="mb-1 fw-bold">A cosa serve questa sezione?</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       Qui raggruppiamo i prodotti composti dalla stessa identica sostanza. <strong>Serve per unificare l'assegnazione
-      del codice ONU, delle schede di sicurezza (SDS) e delle restrizioni di vendita — così non devi ripetere
-      le stesse informazioni su ogni singolo prodotto.</strong><br>
+      del codice ONU, della classificazione CLP/GHS e delle restrizioni di vendita — così non devi ripetere
+      le stesse informazioni su ogni singolo prodotto.</strong> Le Schede Dati di Sicurezza (SDS) si gestiscono
+      invece direttamente sulla scheda prodotto, per fornitore (sono un documento del fornitore, non della
+      sostanza chimica in astratto).<br>
       <span style="font-size:.85rem; display:block; margin-top:0.4rem">
         Esempio: il Codice ONU 1791 è una categoria generica che copre <em>qualsiasi</em> soluzione di ipoclorito.
         Qui invece si registra la formulazione specifica — <strong>Ipoclorito di sodio 14%</strong> — con il suo CAS,
-        la sua scheda di sicurezza, la classificazione CLP/GHS (pittogrammi, frasi H e P) e i dati ADR.
+        la classificazione CLP/GHS (pittogrammi, frasi H e P) e i dati ADR.
         Tutti i prodotti che vendono quella stessa formulazione (es. tanica 5L, fusto 25kg, ecc.) vengono poi collegati a questa scheda.
       </span>
     </p>
@@ -64,7 +66,6 @@
             <th>Concentrazione</th>
             <th>CLP</th>
             <th>Flag</th>
-            <th>SDS</th>
             <th>SKU</th>
             <th></th>
           </tr>
@@ -127,13 +128,6 @@
             <td class="small">
               <?php if ($s['e_soluzione']): ?><span class="qk-badge draft me-1">Soluz.</span><?php endif; ?>
               <?php if ($s['e_rifiuto']): ?><span class="qk-badge cancelled me-1">Rifiuto</span><?php endif; ?>
-            </td>
-            <td class="text-center">
-              <?php if ((int)$s['n_schede'] > 0): ?>
-              <span class="qk-badge confirmed"><?= (int)$s['n_schede'] ?></span>
-              <?php else: ?>
-              <span class="qk-text-muted small">—</span>
-              <?php endif; ?>
             </td>
             <td class="text-center">
               <?php if ((int)$s['n_prodotti'] > 0): ?>

@@ -22,7 +22,7 @@ class FileController extends BaseController
      * per compatibilità con eventuali percorsi salvati in passato con quel nome, ma non è
      * più la cartella scritta da nessun punto del codice attuale.
      */
-    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'quotes', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni', 'sds'];
+    private const ALLOWED_DIRS = ['loghi', 'header_aziende', 'prodotti', 'offerte', 'quotes', 'mpdf_tmp', 'compliance', 'categorie', 'spedizioni', 'sds', 'schede_sicurezza'];
 
     public function serve(): void
     {

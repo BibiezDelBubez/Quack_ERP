@@ -580,19 +580,13 @@ CREATE TABLE IF NOT EXISTS sostanze_chimiche (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sostanze_chimiche_cas
     ON sostanze_chimiche(codice_cas) WHERE codice_cas IS NOT NULL;
 
--- Schede di sicurezza (SDS) per sostanza chimica, multi-lingua con versioning
-CREATE TABLE IF NOT EXISTS sostanze_chimiche_schede (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    sostanza_id     INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
-    lingua          CHAR(5)  NOT NULL,
-    versione        VARCHAR(20),
-    data_emissione  DATE,
-    file_path       TEXT NOT NULL,
-    file_nome_orig  VARCHAR(255),
-    e_corrente      BOOLEAN NOT NULL DEFAULT 1,
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(sostanza_id, lingua, versione)
-);
+-- RIMOSSA (22/07/2026): sostanze_chimiche_schede (SDS su sostanza chimica).
+-- Sostituita da prodotti_fornitori_schede_sicurezza (SDS su prodotto-fornitore,
+-- vedi sezione "SCHEDE DI SICUREZZA (SDS) PER PRODOTTO-FORNITORE" più sotto in
+-- questo stesso file) — PIANO - Refactoring Schede di Sicurezza (SDS) su
+-- Prodotto-Fornitore.md. Per i database esistenti creati prima di questa
+-- modifica: db/migrations/2026_07_22b_rimozione_sostanze_chimiche_schede.php
+-- fa il DROP + pulizia file fisici.
 
 -- Pivot: sostanza ↔ H statements CLP
 CREATE TABLE IF NOT EXISTS sostanze_h_statements (
@@ -2601,3 +2595,107 @@ CREATE TABLE IF NOT EXISTS prodotti_rrp (
     note TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =============================================================================
+-- SCHEDE DI SICUREZZA (SDS) PER PRODOTTO-FORNITORE
+-- =============================================================================
+-- Sostituisce, per le nuove installazioni, la vecchia SDS-su-sostanza-chimica
+-- (sostanze_chimiche_schede, sopra — rimossa a livello di codice/route in M4
+-- del piano, ma la tabella resta qui finché non viene droppata esplicitamente
+-- in una migrazione successiva: vedi PIANO - Refactoring Schede di Sicurezza
+-- (SDS) su Prodotto-Fornitore.md, §3.6-bis, per il perché dell'ordine).
+--
+-- Per i database già esistenti creati PRIMA di questa modifica, vedi
+-- db/migrations/2026_07_22_schede_sicurezza_prodotto_fornitore.php (stesso
+-- schema, applicato via ALTER/CREATE idempotente).
+
+-- Tabella di riferimento ISO 639-1 (§3.9 del piano): FK invece di testo libero,
+-- per rendere strutturalmente impossibile la frammentazione "IT" vs "it".
+CREATE TABLE IF NOT EXISTS iso_lingue (
+    codice  CHAR(2)      PRIMARY KEY,   -- ISO 639-1, sempre minuscolo (es. 'it', 'en', 'de', 'fr')
+    nome    VARCHAR(100) NOT NULL       -- nome leggibile per la UI, in italiano (es. 'Italiano', 'Tedesco')
+);
+
+CREATE TABLE IF NOT EXISTS prodotti_fornitori_schede_sicurezza (
+    id                     INTEGER   PRIMARY KEY AUTOINCREMENT,
+    prodotto_fornitore_id  INTEGER   NOT NULL REFERENCES prodotti_fornitori(id) ON DELETE CASCADE,
+                                     -- il CASCADE resta come rete di sicurezza a livello DB, ma
+                                     -- l'applicazione (ProductsSuppliersController::deleteForn, §3.6
+                                     -- del piano) blocca la cancellazione finché esistono schede: il
+                                     -- CASCADE non dovrebbe mai scattare nella pratica.
+    lingua                 CHAR(2)   NOT NULL REFERENCES iso_lingue(codice),
+                                     -- normalizzata in minuscolo dall'applicazione PRIMA di ogni
+                                     -- validazione/insert (§3.9). REACH: SDS nella lingua del destinatario.
+    versione               VARCHAR(20),
+    data_emissione         DATE,                        -- quando il FORNITORE ha emesso il documento
+    valido_dal             DATE,                        -- da quando è efficace PER NOI; NULL = nessun limite inferiore
+    valido_al              DATE,                        -- NULL = nessun limite superiore (senza scadenza nota)
+    valido_dal_key         DATE      GENERATED ALWAYS AS (COALESCE(valido_dal, '0001-01-01')) STORED,
+                                     -- solo per il vincolo UNIQUE sotto — §3.15 del piano, mai
+                                     -- letta/scritta direttamente dall'applicazione, solo dal database.
+    file_path              TEXT,                         -- nullable: NULL = file rimosso, metadati conservati — §3.13
+    file_nome_orig         VARCHAR(255),
+    file_rimosso_il        DATETIME,                      -- quando il file fisico è stato rimosso (§3.13); NULL se mai rimosso
+    e_corrente             BOOLEAN   NOT NULL DEFAULT 1, -- "predefinita", scoped su (prodotto_fornitore_id, lingua) — §3.2
+    note                   TEXT,
+    creato_da              INTEGER   REFERENCES utenti(id),
+    created_at             DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at             DATETIME,                     -- impostato esplicitamente a CURRENT_TIMESTAMP
+                                                          -- su ogni UPDATE, mai delegato al DB — §3.10
+    UNIQUE (prodotto_fornitore_id, lingua, valido_dal_key) -- rete di sicurezza aggiuntiva, §3.15 —
+                                                            -- non sostituisce il controllo di overlap applicativo
+);
+
+CREATE INDEX IF NOT EXISTS idx_pf_sds_pf_lingua
+    ON prodotti_fornitori_schede_sicurezza(prodotto_fornitore_id, lingua);
+
+-- Elenco ufficiale ISO 639-1 (184 codici). Nomi in italiano — scelta deliberata,
+-- vedi commento in testa a db/migrations/2026_07_22_schede_sicurezza_prodotto_fornitore.php
+-- per il ragionamento completo (l'operatore che classifica una SDS è italofono).
+INSERT OR IGNORE INTO iso_lingue (codice, nome) VALUES
+    ('aa', 'Afar'), ('ab', 'Abcaso'), ('ae', 'Avestico'), ('af', 'Afrikaans'),
+    ('ak', 'Akan'), ('am', 'Amarico'), ('an', 'Aragonese'), ('ar', 'Arabo'),
+    ('as', 'Assamese'), ('av', 'Avaro'), ('ay', 'Aymara'), ('az', 'Azero'),
+    ('ba', 'Baschiro'), ('be', 'Bielorusso'), ('bg', 'Bulgaro'), ('bh', 'Bihari'),
+    ('bi', 'Bislama'), ('bm', 'Bambara'), ('bn', 'Bengalese'), ('bo', 'Tibetano'),
+    ('br', 'Bretone'), ('bs', 'Bosniaco'), ('ca', 'Catalano'), ('ce', 'Ceceno'),
+    ('ch', 'Chamorro'), ('co', 'Corso'), ('cr', 'Cree'), ('cs', 'Ceco'),
+    ('cu', 'Slavo ecclesiastico'), ('cv', 'Ciuvascio'), ('cy', 'Gallese'), ('da', 'Danese'),
+    ('de', 'Tedesco'), ('dv', 'Divehi'), ('dz', 'Dzongkha'), ('ee', 'Ewe'),
+    ('el', 'Greco'), ('en', 'Inglese'), ('eo', 'Esperanto'), ('es', 'Spagnolo'),
+    ('et', 'Estone'), ('eu', 'Basco'), ('fa', 'Persiano'), ('ff', 'Fulah'),
+    ('fi', 'Finlandese'), ('fj', 'Figiano'), ('fo', 'Faroese'), ('fr', 'Francese'),
+    ('fy', 'Frisone occidentale'), ('ga', 'Irlandese'), ('gd', 'Gaelico scozzese'), ('gl', 'Galiziano'),
+    ('gn', 'Guarani'), ('gu', 'Gujarati'), ('gv', 'Mannese'), ('ha', 'Hausa'),
+    ('he', 'Ebraico'), ('hi', 'Hindi'), ('ho', 'Hiri Motu'), ('hr', 'Croato'),
+    ('ht', 'Creolo haitiano'), ('hu', 'Ungherese'), ('hy', 'Armeno'), ('hz', 'Herero'),
+    ('ia', 'Interlingua'), ('id', 'Indonesiano'), ('ie', 'Interlingue'), ('ig', 'Igbo'),
+    ('ii', 'Yi del Sichuan'), ('ik', 'Inupiaq'), ('io', 'Ido'), ('is', 'Islandese'),
+    ('it', 'Italiano'), ('iu', 'Inuktitut'), ('ja', 'Giapponese'), ('jv', 'Giavanese'),
+    ('ka', 'Georgiano'), ('kg', 'Kongo'), ('ki', 'Kikuyu'), ('kj', 'Kuanyama'),
+    ('kk', 'Kazako'), ('kl', 'Groenlandese'), ('km', 'Khmer'), ('kn', 'Kannada'),
+    ('ko', 'Coreano'), ('kr', 'Kanuri'), ('ks', 'Kashmiri'), ('ku', 'Curdo'),
+    ('kv', 'Komi'), ('kw', 'Cornico'), ('ky', 'Kirghiso'), ('la', 'Latino'),
+    ('lb', 'Lussemburghese'), ('lg', 'Ganda'), ('li', 'Limburghese'), ('ln', 'Lingala'),
+    ('lo', 'Lao'), ('lt', 'Lituano'), ('lu', 'Luba-Katanga'), ('lv', 'Lettone'),
+    ('mg', 'Malgascio'), ('mh', 'Marshallese'), ('mi', 'Maori'), ('mk', 'Macedone'),
+    ('ml', 'Malayalam'), ('mn', 'Mongolo'), ('mr', 'Marathi'), ('ms', 'Malese'),
+    ('mt', 'Maltese'), ('my', 'Birmano'), ('na', 'Nauruano'), ('nb', 'Norvegese Bokmal'),
+    ('nd', 'Ndebele del nord'), ('ne', 'Nepalese'), ('ng', 'Ndonga'), ('nl', 'Olandese'),
+    ('nn', 'Norvegese Nynorsk'), ('no', 'Norvegese'), ('nr', 'Ndebele del sud'), ('nv', 'Navajo'),
+    ('ny', 'Chichewa'), ('oc', 'Occitano'), ('oj', 'Ojibwe'), ('om', 'Oromo'),
+    ('or', 'Oriya'), ('os', 'Osseto'), ('pa', 'Panjabi'), ('pi', 'Pali'),
+    ('pl', 'Polacco'), ('ps', 'Pashto'), ('pt', 'Portoghese'), ('qu', 'Quechua'),
+    ('rm', 'Romancio'), ('rn', 'Rundi'), ('ro', 'Rumeno'), ('ru', 'Russo'),
+    ('rw', 'Kinyarwanda'), ('sa', 'Sanscrito'), ('sc', 'Sardo'), ('sd', 'Sindhi'),
+    ('se', 'Sami del nord'), ('sg', 'Sango'), ('si', 'Singalese'), ('sk', 'Slovacco'),
+    ('sl', 'Sloveno'), ('sm', 'Samoano'), ('sn', 'Shona'), ('so', 'Somalo'),
+    ('sq', 'Albanese'), ('sr', 'Serbo'), ('ss', 'Swati'), ('st', 'Sotho del sud'),
+    ('su', 'Sundanese'), ('sv', 'Svedese'), ('sw', 'Swahili'), ('ta', 'Tamil'),
+    ('te', 'Telugu'), ('tg', 'Tagiko'), ('th', 'Thailandese'), ('ti', 'Tigrino'),
+    ('tk', 'Turkmeno'), ('tl', 'Tagalog'), ('tn', 'Tswana'), ('to', 'Tongano'),
+    ('tr', 'Turco'), ('ts', 'Tsonga'), ('tt', 'Tataro'), ('tw', 'Twi'),
+    ('ty', 'Tahitiano'), ('ug', 'Uiguro'), ('uk', 'Ucraino'), ('ur', 'Urdu'),
+    ('uz', 'Uzbeco'), ('ve', 'Venda'), ('vi', 'Vietnamita'), ('vo', 'Volapuk'),
+    ('wa', 'Vallone'), ('wo', 'Wolof'), ('xh', 'Xhosa'), ('yi', 'Yiddish'),
+    ('yo', 'Yoruba'), ('za', 'Zhuang'), ('zh', 'Cinese'), ('zu', 'Zulu');

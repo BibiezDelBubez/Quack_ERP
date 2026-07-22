@@ -186,6 +186,26 @@ final class ProductsSuppliersController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'Record non specificato.']); exit;
         }
 
+        // Blocco cascata SDS (PIANO - Refactoring Schede di Sicurezza (SDS) su
+        // Prodotto-Fornitore.md, §3.6): prodotti_fornitori_schede_sicurezza ha
+        // ON DELETE CASCADE sulla FK verso questa riga come rete di sicurezza a
+        // livello DB, ma cancellare qui senza controllo applicativo farebbe
+        // sparire silenziosamente lo storico SDS legalmente rilevante di quel
+        // fornitore per quel prodotto. Stesso principio già applicato nel
+        // modulo compliance ("nessun DoS" sulle autorizzazioni approvate).
+        $stmtCountSds = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM prodotti_fornitori_schede_sicurezza WHERE prodotto_fornitore_id = :id'
+        );
+        $stmtCountSds->execute([':id' => $id]);
+        $countSds = (int) $stmtCountSds->fetchColumn();
+        if ($countSds > 0) {
+            echo json_encode([
+                'ok' => false,
+                'error' => "Impossibile rimuovere: esistono {$countSds} schede di sicurezza collegate a questo fornitore. Eliminale prima di procedere.",
+            ]);
+            exit;
+        }
+
         try {
             $this->pdo->prepare(
                 'DELETE FROM prodotti_fornitori WHERE id = :id AND prodotto_id = :pid'
