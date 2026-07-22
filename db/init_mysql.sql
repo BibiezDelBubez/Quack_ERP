@@ -1230,6 +1230,10 @@ CREATE TABLE IF NOT EXISTS rfq_righe (
     quantita_richiesta DECIMAL(10,3) NOT NULL,
     unita_misura_id INTEGER,
     prezzo_indicativo DECIMAL(10,4),
+    -- IVA a livello di riga, allineata a offerte_righe e a SAP ME41/ME47 —
+    -- vedi commento gemello in db/init_sqlite.sql e db/migrations/2026_07_22_rfq_righe_iva.php
+    iva_perc DECIMAL(5,2) NOT NULL DEFAULT 22,
+    iva_riga DECIMAL(10,2),
     data_consegna_richiesta DATE,
     e_rifiutato TINYINT(1) NOT NULL DEFAULT 0,
     note TEXT,
@@ -1439,17 +1443,6 @@ CREATE TABLE IF NOT EXISTS ricezioni_testata (
     CONSTRAINT fk_ricezioni_testata_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_testata(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS sostanze_chimiche_restrizioni (
-    sostanza_id INTEGER NOT NULL,
-    restriction_type_id INTEGER NOT NULL,
-    concentrazione_min DECIMAL(5,2),
-    concentrazione_max DECIMAL(5,2),
-    note TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (sostanza_id, restriction_type_id),
-    CONSTRAINT fk_sostanze_chimiche_restrizioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
-    CONSTRAINT fk_sostanze_chimiche_restrizioni_sostanza_id FOREIGN KEY (sostanza_id) REFERENCES sostanze_chimiche(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS compliance_restriction_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1464,16 +1457,6 @@ CREATE TABLE IF NOT EXISTS compliance_restriction_types (
     UNIQUE (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS compliance_codice_onu_restrizioni (
-    un_code_id INTEGER NOT NULL,
-    restriction_type_id INTEGER NOT NULL,
-    min_concentration DECIMAL(5,2),
-    max_concentration DECIMAL(5,2),
-    notes TEXT,
-    PRIMARY KEY (un_code_id, restriction_type_id),
-    CONSTRAINT fk_compliance_codice_onu_restrizioni_restriction_type_id FOREIGN KEY (restriction_type_id) REFERENCES compliance_restriction_types(id),
-    CONSTRAINT fk_compliance_codice_onu_restrizioni_un_code_id FOREIGN KEY (un_code_id) REFERENCES adr_codici_onu(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS compliance_documenti_richiesti (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1719,8 +1702,7 @@ CREATE INDEX idx_ordini_testata_offerta   ON ordini_testata(offerta_id);
 CREATE INDEX idx_ordini_righe_ordine      ON ordini_righe(ordine_id);
 CREATE INDEX idx_ordini_righe_prodotto    ON ordini_righe(prodotto_id);
 CREATE INDEX idx_ricezioni_testata_ordine  ON ricezioni_testata(ordine_id);
-CREATE INDEX idx_sost_restr_sostanza ON sostanze_chimiche_restrizioni(sostanza_id);
-CREATE INDEX idx_sost_restr_tipo     ON sostanze_chimiche_restrizioni(restriction_type_id);
+
 CREATE INDEX idx_prodotti_restrizioni_prodotto
     ON prodotti_restrizioni(prodotto_id);
 CREATE INDEX idx_prodotti_restrizioni_tipo
@@ -1786,7 +1768,8 @@ INSERT IGNORE INTO schema_migrations (id, migration, applied_at) VALUES
     (4, '2026_07_10_inventari_categoria_filtro', '2026-07-14 19:56:08'),
     (5, '2026_07_10_inventario_creazione_lock', '2026-07-14 19:56:08'),
     (6, '2026_07_10_vista_costo_acquisto_base', '2026-07-14 19:56:08'),
-    (7, '2026_07_10_movimenti_quantita_delta', '2026-07-14 19:56:08');
+    (7, '2026_07_10_movimenti_quantita_delta', '2026-07-14 19:56:08'),
+    (8, '2026_07_22_rfq_righe_iva', '2026-07-22 00:00:00');
 
 INSERT IGNORE INTO unita_misura (id, codice, descrizione, fattore_base, e_riferimento) VALUES
     (1, 'kg', 'Chilogrammo', 1, 1),

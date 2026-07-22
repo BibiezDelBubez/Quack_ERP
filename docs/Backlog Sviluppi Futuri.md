@@ -652,3 +652,42 @@ ulteriormente i formati accettati (es. solo PDF) o mantenere l'attuale whitelist
 indesiderati — la whitelist mime esistente (validazione reale del contenuto, non solo estensione) copre
 già il rischio di sicurezza principale. Da riprendere se emerge un caso reale (es. upload che saturano lo
 spazio disco più velocemente del previsto, o formati indesiderati che iniziano a comparire in pratica).
+
+
+# Piano di Implementazione: Stile Dinamico Documenti (ex Numeri Magici)
+
+## Il Problema
+Attualmente i font e i colori aziendali per i PDF/Word (come Ordini e Preventivi) sono "murati" dentro il file sorgente `includes/word_helper.php`. L'utente non ha alcun potere di modificarli senza chiamare un programmatore.
+
+## Il Beneficio per l'Utente (Implicazioni della Modifica)
+Con questa modifica, trasformeremo il gestionale: l'utente amministratore potrà andare nella sezione **Azienda** (dove carica già il logo e l'intestazione) e troverà una nuova sezione grafica. Lì potrà scegliere il Font (tramite menu a tendina) e i colori primari/secondari aziendali (tramite un comodo "Color Picker" visuale). Al salvataggio, tutti i futuri documenti Word generati dal sistema usciranno formattati con il nuovo stile.
+
+---
+
+## Tappe di Sviluppo (Procedura a Rischio Zero)
+
+### Tappa 1: Allineamento Database
+Aggiungeremo i nuovi campi in modo non distruttivo.
+- Aggiorneremo i file originali `db/init_sqlite.sql` e `db/init_mysql.sql` per le future installazioni, aggiungendo le colonne: `doc_font_family`, `doc_primary_color` e `doc_secondary_color` alla tabella `aziende_interne`.
+- Creeremo un piccolo script di migrazione in `db/migrations/` per alterare automaticamente il tuo Database Live senza perdere alcun dato esistente.
+
+### Tappa 2: Il Protocollo di Simulazione Logica (Il Test Reale su WordHelper)
+Prima di toccare l'interfaccia utente o alterare i documenti di produzione, applicheremo il **Protocollo della Simulazione Logica**:
+1. Modificheremo `WordHelper.php` affinché legga i dati `$azienda['doc_primary_color']` o usi i vecchi valori come fallback (default).
+2. Creeremo uno script isolato `scratch/test_word_helper.php`.
+3. Lo script genererà un file Word finto forzando il colore "Rosso Fuoco" (`FF0000`).
+4. Lo script decodificherà fisicamente il file `.docx` appena generato (che è uno ZIP) e verificherà l'XML interno assicurandosi che contenga matematicamente i tag XML col colore rosso (`<w:color w:val="FF0000"/>`). Se i byte non corrispondono, l'operazione verrà bloccata.
+
+### Tappa 3: Aggiornamento Frontend & Controller (UI Utente)
+Una volta certificato che il motore Word accetta colori dinamici:
+- Modificheremo la View `app/views/aziende/form.php` per inserire i selettori grafici del Font e del Colore.
+- Modificheremo il salvataggio in `AziendeController.php` per registrare nel database le scelte dell'utente.
+
+### Tappa 4: Test End-to-End Finale
+Simuleremo un login, salveremo i nuovi colori dall'interfaccia e poi scaricheremo un normale "Preventivo" dal gestionale, controllando che esca colorato correttamente.
+
+---
+> [!IMPORTANT]
+> **User Review Required**
+> Il piano garantisce: Retrocompatibilità (i vecchi colori faranno da paracadute se i campi sono vuoti), Controllo Fisico dei Byte generati (nessun "mi sembra che vada bene") e finalmente il controllo totale all'Utente tramite interfaccia. Confermi l'avvio della Tappa 1?
+

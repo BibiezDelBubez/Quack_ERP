@@ -336,7 +336,10 @@ final class SalesQuotesController extends BaseController
         try {
             switch ($azione) {
                 case 'invia':
-                    $this->pdo->prepare("UPDATE preventivi SET stato = 'inviato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    // Tappa 6 (PIANO - Motore Unificato di Transizioni di Stato):
+                    // prima un UPDATE grezzo qui, senza nessun controllo di stato
+                    // (violazione MVC + il caso P3 che ha originato il piano).
+                    qk_preventivo_invia($this->pdo, $id);
                     flash_set('success', 'Preventivo segnato come Inviato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;
@@ -360,7 +363,9 @@ final class SalesQuotesController extends BaseController
                     break;
 
                 case 'rifiuta':
-                    $this->pdo->prepare("UPDATE preventivi SET stato = 'rifiutato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    // Tappa 6 (PIANO - Motore Unificato di Transizioni di Stato):
+                    // stesso motivo del caso 'invia' sopra.
+                    qk_preventivo_rifiuta($this->pdo, $id);
                     flash_set('success', 'Preventivo segnato come Rifiutato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;

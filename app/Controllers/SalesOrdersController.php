@@ -391,31 +391,29 @@ final class SalesOrdersController extends BaseController
         if ($id <= 0) { redirect(url('sales/orders')); }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $statoCorrente = $this->pdo->prepare("SELECT stato FROM ordini_clienti WHERE id = ?");
-            $statoCorrente->execute([$id]);
-            $isTerminalState = in_array($statoCorrente->fetchColumn(), ['completato', 'annullato'], true);
-
-            if ($isTerminalState) {
-                flash_set('error', 'Accesso negato: impossibile modificare un ordine già completato o annullato.');
-            } elseif (!csrf_verify()) {
+            if (!csrf_verify()) {
                 flash_set('error', 'Sessione scaduta. Ricarica la pagina e riprova.');
             } else {
                 $note                   = post('note', '');
                 $data_consegna_prevista = post('data_consegna_prevista', '');
                 try {
-                    $this->pdo->prepare("
-                        UPDATE ordini_clienti
-                        SET note = ?, data_consegna_prevista = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    ")->execute([
-                        $note !== '' ? $note : null,
-                        $data_consegna_prevista !== '' ? $data_consegna_prevista : null,
+                    // Tappa 7 (PIANO - Motore Unificato di Transizioni di Stato):
+                    // il controllo "non è già completato/annullato" viveva qui nel
+                    // controller (violazione MVC) e veniva verificato PRIMA del CSRF;
+                    // ora vive nel model (qk_ordine_cliente_aggiorna_note ->
+                    // qk_ordine_cliente_assicura_modificabile) e viene raggiunto solo
+                    // dopo il controllo CSRF, coerente con action() qui sotto e con
+                    // tutti gli altri controller già migrati.
+                    qk_ordine_cliente_aggiorna_note(
+                        $this->pdo,
                         $id,
-                    ]);
+                        $note !== '' ? $note : null,
+                        $data_consegna_prevista !== '' ? $data_consegna_prevista : null
+                    );
                     flash_set('success', 'Ordine aggiornato correttamente.');
                 } catch (\Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
-                    flash_set('error', 'Errore: ' . $e->getMessage());
+                    flash_set('error', $e->getMessage());
                 }
             }
             redirect(url('sales/orders/edit') . '?id=' . $id);
@@ -515,15 +513,19 @@ final class SalesOrdersController extends BaseController
         try {
             switch ($azione) {
                 case 'completa':
-                    $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'completato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    // Tappa 7 (PIANO - Motore Unificato di Transizioni di Stato):
+                    // prima un UPDATE grezzo qui, senza nessun controllo di stato.
+                    qk_ordine_cliente_completa($this->pdo, $id);
                     flash_set('success', 'Ordine completato.');
                     break;
                 case 'riapri':
-                    $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'in_lavorazione', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    // Tappa 7: stesso motivo del caso 'completa' sopra.
+                    qk_ordine_cliente_riapri($this->pdo, $id);
                     flash_set('success', 'Ordine rimesso in lavorazione.');
                     break;
                 case 'annulla':
-                    $this->pdo->prepare("UPDATE ordini_clienti SET stato = 'annullato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    // Tappa 7: stesso motivo del caso 'completa' sopra.
+                    qk_ordine_cliente_annulla($this->pdo, $id);
                     flash_set('success', 'Ordine annullato.');
                     break;
                 case 'segna_fatturato':
@@ -611,6 +613,18 @@ final class SalesOrdersController extends BaseController
             $st->execute([$orderId]);
             $order = $st->fetch(PDO::FETCH_ASSOC);
             if (!$order) throw new \Exception("Ordine non trovato.");
+
+            // Tappa 7 (PIANO - Motore Unificato di Transizioni di Stato): PRIMA
+            // questo metodo non controllava affatto lo stato dell'ordine — si
+            // poteva creare una spedizione (e quindi "far ripartire" lo stato
+            // dell'ordine, vedi ricalcolo a fine metodo) anche su un ordine già
+            // 'completato' o 'annullato'. Coerente con la stessa condizione già
+            // mostrata (ma mai imposta lato server) dal bottone "Nuova Spedizione"
+            // in app/views/sales/orders/_detail.php:343.
+            qk_ordine_cliente_assicura_modificabile(
+                (string) $order['stato'],
+                "Impossibile creare la spedizione: l'ordine è già in stato '{$order['stato']}'."
+            );
 
             // Risoluzione indirizzo di spedizione con la stessa logica a cascata
             // usata nelle fasi precedenti del ciclo vendite (preventivo/ordine):

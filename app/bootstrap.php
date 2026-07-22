@@ -23,6 +23,16 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/pagination.php';
 require_once __DIR__ . '/../includes/word_helper.php';
+require_once __DIR__ . '/../includes/transizioni_stati.php';
+// TransitionGuard è centralizzato qui (a differenza degli altri servizi in
+// app/Services/, che ogni controller richiede da sé) perché, a differenza di
+// ComplianceCheckerService/SchedeSicurezzaService (usati da un controller
+// specifico), è pensato per essere usato trasversalmente da praticamente ogni
+// modulo con un ciclo di vita a stati (vedi docs/plans/PIANO - Motore
+// Unificato di Transizioni di Stato.md) — stessa categoria di functions.php,
+// non un servizio di dominio singolo. Non prendere questo come il nuovo
+// pattern di default per ogni futuro servizio: resta un'eccezione motivata.
+require_once __DIR__ . '/Services/TransitionGuard.php';
 require_once __DIR__ . '/Core/Router.php';
 
 

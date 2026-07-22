@@ -10,6 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/anagrafiche.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -288,7 +290,11 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
             // modificabile. Qualunque altro stato (inviata, revisionata, chiusa) è
             // bloccato qui, così la protezione non dipende da controlli duplicati
             // nel controller (che in passato potevano essere aggirati/sovrascritti).
-            if ($row && $row['stato'] !== 'bozza') {
+            if ($row && !(new \App\Services\TransitionGuard(qk_transizioni_rfq(), 'RFQ'))->puoTransire($row['stato'], 'bozza')) {
+                // La REGOLA (quali stati restano modificabili) vive nella mappa
+                // condivisa qk_transizioni_rfq(); il messaggio resta specifico per
+                // stato qui solo per UX (TransitionGuard::assicuraConMessaggio
+                // accetta un solo messaggio, non uno per stato — qui serve di più).
                 $msgPerStato = [
                     'inviata'     => 'Una RFQ già inviata non è modificabile. Usa "Crea nuova versione".',
                     'revisionata' => 'Questa RFQ è stata sostituita da una versione più recente e non è più modificabile.',
@@ -379,6 +385,9 @@ function qk_rfq_delete(PDO $pdo, int $id): void
     $row = $st->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) throw new \RuntimeException('RFQ non trovata.');
+    // Precondizione per un DELETE, non una transizione (nessuno stato di
+    // arrivo): stesso principio già applicato a inventari/trasferimenti,
+    // lasciato come confronto diretto invece di TransitionGuard.
     if ($row['stato'] !== 'bozza') throw new \RuntimeException('Si può eliminare solo una RFQ in bozza.');
 
     $nOfferte = $pdo->prepare('SELECT COUNT(*) FROM offerte_testata WHERE rfq_id = ?');
@@ -403,8 +412,12 @@ function qk_rfq_invia(PDO $pdo, int $id): void
 {
     $pdo->beginTransaction();
     try {
-        $row = _rfq_check_stato($pdo, $id, 'bozza', 'Solo una RFQ in bozza può essere inviata.');
-        unset($row);
+        $st = $pdo->prepare('SELECT stato FROM rfq_testata WHERE id = ?');
+        $st->execute([$id]);
+        $stato = $st->fetchColumn();
+        if ($stato === false) throw new \RuntimeException('RFQ non trovata.');
+        (new \App\Services\TransitionGuard(qk_transizioni_rfq(), 'RFQ'))
+            ->assicuraConMessaggio((string)$stato, 'inviata', 'Solo una RFQ in bozza può essere inviata.');
 
         $pdo->prepare(
             "UPDATE rfq_testata SET stato = 'inviata', inviata_il = CURRENT_TIMESTAMP WHERE id = ?"
@@ -437,9 +450,8 @@ function qk_rfq_chiudi(PDO $pdo, int $id, int $utente_id): void
         $st->execute([$id]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
         if (!$row) throw new \RuntimeException('RFQ non trovata.');
-        if (!in_array($row['stato'], ['bozza', 'inviata'], true)) {
-            throw new \RuntimeException('La RFQ non è in uno stato chiudibile.');
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_rfq(), 'RFQ'))
+            ->assicuraConMessaggio($row['stato'], 'chiusa', 'La RFQ non è in uno stato chiudibile.');
         // Chiusura manuale (nessuna offerta accettata) — esito 'annullata', per
         // distinguerla dalla chiusura automatica di qk_offerta_accetta().
         $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'annullata' WHERE id = ?")->execute([$id]);
@@ -467,7 +479,12 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
 {
     $pdo->beginTransaction();
     try {
-        $rfq = _rfq_check_stato($pdo, $id, 'inviata', 'Puoi creare una nuova versione solo da una RFQ inviata.');
+        $stRfq = $pdo->prepare('SELECT * FROM rfq_testata WHERE id = ?');
+        $stRfq->execute([$id]);
+        $rfq = $stRfq->fetch(PDO::FETCH_ASSOC);
+        if (!$rfq) throw new \RuntimeException('RFQ non trovata.');
+        (new \App\Services\TransitionGuard(qk_transizioni_rfq(), 'RFQ'))
+            ->assicuraConMessaggio($rfq['stato'], 'revisionata', 'Puoi creare una nuova versione solo da una RFQ inviata.');
 
         $nuovaVersione = (int)$rfq['versione'] + 1;
         $baseNumero    = preg_replace('/ v\d+$/', '', $rfq['numero']);
@@ -504,6 +521,14 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
             }
         }
 
+        // BUG PREESISTENTE corretto qui (segnalato e approvato dall'utente, 22/07/2026):
+        // la VALUES sotto aveva solo 37 placeholder '?' invece dei 38 necessari (41 colonne
+        // dichiarate - 3 valori letterali 'bozza'/DATE('now')/CURRENT_TIMESTAMP), causando
+        // SEMPRE l'errore SQLite "table rfq_testata has 41 columns but 40 values were
+        // supplied" — creare una nuova versione di una RFQ non aveva mai funzionato.
+        // L'array PHP di execute() qui sotto era già corretto (38 valori, nello stesso ordine
+        // delle 38 colonne non letterali, verificato uno per uno prima di correggere) —
+        // mancava solo 1 '?' nel testo della query, non un problema di dati.
         $pdo->prepare(
             'INSERT INTO rfq_testata
                 (numero, versione, rfq_padre_id, stato,
@@ -518,7 +543,7 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
                  contatto_id, contatto_nome, contatto_telefono, contatto_email,
                  fornitore_telefono, fornitore_email, listino_acquisto_id,
                  metodo_pagamento_id, resa_porto, created_at)
-             VALUES (?,?,?,\'bozza\',?,?,DATE(\'now\'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)'
+             VALUES (?,?,?,\'bozza\',?,?,DATE(\'now\'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)'
         )->execute([
             $nuovoNumero, $nuovaVersione, $id,
             $rfq['fornitore_id'],
@@ -579,17 +604,6 @@ function qk_rfq_nuova_versione(PDO $pdo, int $id, int $utente_id): int
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER PRIVATI
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Verifica lo stato di una RFQ; lancia eccezione se diverso da $statoAtteso. */
-function _rfq_check_stato(PDO $pdo, int $id, string $statoAtteso, string $msg): array
-{
-    $st = $pdo->prepare('SELECT * FROM rfq_testata WHERE id = ?');
-    $st->execute([$id]);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$row) throw new \RuntimeException('RFQ non trovata.');
-    if ($row['stato'] !== $statoAtteso) throw new \RuntimeException($msg);
-    return $row;
-}
 
 /** Inserisce le righe di una RFQ (usata sia in insert che in copia versione). */
 function _rfq_insert_righe(PDO $pdo, int $rfq_id, array $righe): void

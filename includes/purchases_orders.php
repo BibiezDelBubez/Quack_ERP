@@ -13,6 +13,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/magazzino.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -167,6 +169,15 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
         $stOff->execute([$offerta_id]);
         $offerta = $stOff->fetch(PDO::FETCH_ASSOC);
         if (!$offerta) throw new \RuntimeException('Offerta non trovata.');
+        // Precondizione cross-entità (offerte_testata.stato usato come gate per
+        // un'azione su ordini_testata, non una transizione di QUESTA entità):
+        // lasciato come confronto diretto invece di TransitionGuard, stesso
+        // principio già applicato in includes/purchases_receipts.php per il
+        // controllo su ordini_testata dentro qk_ricezione_conferma(). 'accettata'
+        // è terminale in qk_transizioni_offerte_fornitore() (nessuna transizione
+        // in uscita): aggiungere un self-loop qui per riusare TransitionGuard
+        // implicherebbe erroneamente che un'offerta accettata possa essere
+        // "ri-accettata", che non è il significato di questo controllo.
         if ($offerta['stato'] !== 'accettata') {
             throw new \RuntimeException("Solo un'offerta accettata può generare un ordine.");
         }
@@ -254,6 +265,14 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $magazzinoDestinazioneId = null; // dataset senza magazzini seedati: non blocca la creazione ordine
         }
 
+        // BUG PREESISTENTE corretto qui (segnalato e approvato dall'utente, 22/07/2026):
+        // la VALUES sotto aveva solo 33 placeholder '?' invece dei 35 necessari (38 colonne
+        // dichiarate - 3 valori letterali 'bozza'/DATE('now')/CURRENT_TIMESTAMP), causando
+        // SEMPRE l'errore SQLite "table ordini_testata has 38 columns but 36 values were
+        // supplied" — questa strada (genera ordine da offerta accettata) non aveva mai
+        // funzionato. L'array PHP di execute() qui sotto era già corretto (35 valori, nello
+        // stesso ordine delle 35 colonne non letterali, verificato uno per uno prima di
+        // correggere) — mancavano solo 2 '?' nel testo della query, non un problema di dati.
         $pdo->prepare(
             "INSERT INTO ordini_testata
                 (numero, offerta_id, rfq_id, fornitore_id, stato,
@@ -268,7 +287,7 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
                  contatto_id, contatto_nome, contatto_telefono, contatto_email,
                  fornitore_telefono, fornitore_email, listino_acquisto_id,
                  metodo_pagamento_id, resa_porto, magazzino_destinazione_id, created_at)
-             VALUES (?,?,?,?,'bozza',DATE('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+             VALUES (?,?,?,?,'bozza',DATE('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
         )->execute([
             $numero,
             $offerta_id,
@@ -380,9 +399,8 @@ function qk_ordine_approva(PDO $pdo, int $id, int $utente_id): void
     $pdo->beginTransaction();
     try {
         $ordine = _ordine_carica($pdo, $id);
-        if (!in_array($ordine['stato'], ['bozza', 'in_approvazione'], true)) {
-            throw new \RuntimeException("L'ordine non è in uno stato approvabile (stato attuale: {$ordine['stato']}).");
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_ordini_fornitore(), 'ordine fornitore'))
+            ->assicuraConMessaggio($ordine['stato'], 'approvato', "L'ordine non è in uno stato approvabile (stato attuale: {$ordine['stato']}).");
         $pdo->prepare(
             "UPDATE ordini_testata
                 SET stato = 'approvato', approvato_il = CURRENT_TIMESTAMP, approvato_da = ?
@@ -408,9 +426,8 @@ function qk_ordine_invia(PDO $pdo, int $id): void
     }
     try {
         $ordine = _ordine_carica($pdo, $id);
-        if ($ordine['stato'] !== 'approvato') {
-            throw new \RuntimeException('Solo un ordine approvato può essere inviato.');
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_ordini_fornitore(), 'ordine fornitore'))
+            ->assicuraConMessaggio($ordine['stato'], 'inviato', 'Solo un ordine approvato può essere inviato.');
         $pdo->prepare(
             "UPDATE ordini_testata SET stato = 'inviato', inviato_il = CURRENT_TIMESTAMP WHERE id = ?"
         )->execute([$id]);
@@ -440,9 +457,8 @@ function qk_ordine_annulla(PDO $pdo, int $id): void
         // (sostituito da una revisione più recente via qk_ordine_crea_revisione())
         // è ormai solo storico e non deve più poter cambiare stato per nessun motivo,
         // esattamente come completato/annullato.
-        if (in_array($ordine['stato'], ['completato', 'annullato', 'superato'], true)) {
-            throw new \RuntimeException("L'ordine non può essere annullato (stato: {$ordine['stato']}).");
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_ordini_fornitore(), 'ordine fornitore'))
+            ->assicuraConMessaggio($ordine['stato'], 'annullato', "L'ordine non può essere annullato (stato: {$ordine['stato']}).");
         $pdo->prepare("UPDATE ordini_testata SET stato = 'annullato' WHERE id = ?")
            ->execute([$id]);
 
@@ -613,9 +629,8 @@ function qk_ordine_crea_revisione(PDO $pdo, int $ordine_id): int
         $ordine = _ordine_carica($pdo, $ordine_id);
 
         // Verifica lo stato: solo ordini già inviati/confermati possono subire amendment
-        if ($ordine['stato'] !== 'inviato') {
-            throw new \RuntimeException("È possibile revisionare solo ordini in stato 'inviato'.");
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_ordini_fornitore(), 'ordine fornitore'))
+            ->assicuraConMessaggio($ordine['stato'], 'superato', "È possibile revisionare solo ordini in stato 'inviato'.");
 
         // REVISIONE Ciclo Acquisti, sez. "Stati ordine/ciclo di vita" (deciso 14/07/2026,
         // rivisto e implementato 17/07/2026): il solo controllo sullo stato dell'ordine

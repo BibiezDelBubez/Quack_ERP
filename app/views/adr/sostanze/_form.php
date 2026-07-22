@@ -36,12 +36,7 @@ $pitt_selezionati = $pitt_selezionati ?? [];
     </button>
   </li>
   <?php if ($isEdit): ?>
-  <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#stab-restrizioni" role="tab" id="btn-tab-restrizioni">
-      <i class="fa-solid fa-ban me-1"></i> Restrizioni
-      <span class="badge bg-secondary ms-1 d-none" id="badge-restrizioni">0</span>
-    </button>
-  </li>
+
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#stab-prodotti" role="tab">
       <i class="fa-solid fa-boxes-stacked me-1"></i> Prodotti Associati
@@ -421,14 +416,7 @@ $pitt_selezionati = $pitt_selezionati ?? [];
     </div>
   </div>
 
-  <!-- TAB 5: RESTRIZIONI COMPLIANCE -->
-  <div class="tab-pane fade" id="stab-restrizioni" role="tabpanel">
-    <div id="restrizioni-container">
-      <div class="qk-empty py-4">
-        <i class="fa-solid fa-spinner fa-spin fa-lg mb-2"></i><br>Caricamento…
-      </div>
-    </div>
-  </div>
+
 
   <?php endif; ?>
 </div>
@@ -440,9 +428,7 @@ window.QkAdrSostanze = {
     lookupUrl: "<?= url('adr/api/lookup') ?>",
     editUrl: "<?= url('adr/sostanze/edit?id=') ?>",
     sostanzaId: <?= (int)$sostanzaId ?>,
-    apiRestrizioni: <?= json_encode(url('adr/sostanze/api/restrizioni')) ?>,
-    apiRestrizioniAdd: <?= json_encode(url('adr/sostanze/api/restrizioni/add')) ?>,
-    apiRestrizioniRemove: <?= json_encode(url('adr/sostanze/api/restrizioni/remove')) ?>,
+
     csrfToken: <?= json_encode(csrf_token()) ?>,
     productsEditUrl: "<?= url('products/edit?id=') ?>",
     salesQuotesApiProdottiUrl: "<?= url('sales/quotes/api/prodotti') ?>",
@@ -458,9 +444,7 @@ window.QkAdrSostanze = {
     lookupUrl: "<?= url('adr/api/lookup') ?>",
     editUrl: "<?= url('adr/sostanze/edit?id=') ?>",
     sostanzaId: <?= (int)$sostanzaId ?>,
-    apiRestrizioni: <?= json_encode(url('adr/sostanze/api/restrizioni')) ?>,
-    apiRestrizioniAdd: <?= json_encode(url('adr/sostanze/api/restrizioni/add')) ?>,
-    apiRestrizioniRemove: <?= json_encode(url('adr/sostanze/api/restrizioni/remove')) ?>,
+
     csrfToken: <?= json_encode(csrf_token()) ?>,
     productsEditUrl: "<?= url('products/edit?id=') ?>",
     salesQuotesApiProdottiUrl: "<?= url('sales/quotes/api/prodotti') ?>",

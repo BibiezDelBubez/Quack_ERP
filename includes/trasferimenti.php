@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/magazzino.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 // =============================================================================
 // trasferimenti.php
@@ -213,9 +215,8 @@ function qk_trasferimento_registra_partenza(PDO $pdo, int $id, int $utente_id): 
         $st->execute([$id]);
         $t = $st->fetch(PDO::FETCH_ASSOC);
         if (!$t) throw new \RuntimeException('Trasferimento non trovato.');
-        if ($t['stato'] !== 'bozza') {
-            throw new \RuntimeException("Solo un trasferimento in stato 'bozza' può essere avviato.");
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_trasferimenti(), 'trasferimento'))
+            ->assicuraConMessaggio($t['stato'], 'in_transito', "Solo un trasferimento in stato 'bozza' può essere avviato.");
 
         $stRighe = $pdo->prepare('SELECT * FROM trasferimenti_magazzino_righe WHERE trasferimento_id = ?');
         $stRighe->execute([$id]);
@@ -357,9 +358,8 @@ function qk_conferma_arrivo_trasferimento(PDO $pdo, int $id, array $quantitaArri
         $st->execute([$id]);
         $t = $st->fetch(PDO::FETCH_ASSOC);
         if (!$t) throw new \RuntimeException('Trasferimento non trovato.');
-        if ($t['stato'] !== 'in_transito') {
-            throw new \RuntimeException("Solo un trasferimento 'in transito' può essere confermato in arrivo.");
-        }
+        (new \App\Services\TransitionGuard(qk_transizioni_trasferimenti(), 'trasferimento'))
+            ->assicuraConMessaggio($t['stato'], 'completato', "Solo un trasferimento 'in transito' può essere confermato in arrivo.");
 
         $destinazioneId = (int) $t['magazzino_destinazione_id'];
 
@@ -442,13 +442,14 @@ function qk_annulla_trasferimento(PDO $pdo, int $id, int $utente_id): void
         $t = $st->fetch(PDO::FETCH_ASSOC);
         if (!$t) throw new \RuntimeException('Trasferimento non trovato.');
 
-        if ($t['stato'] === 'completato') {
-            throw new \RuntimeException("Un trasferimento già completato non può essere annullato: crea un nuovo trasferimento in senso opposto.");
-        }
+        // Caso idempotente gestito PRIMA di interrogare la mappa (non un
+        // self-loop lì): annullare due volte non è un errore, è un no-op.
         if ($t['stato'] === 'annullato') {
             $pdo->rollBack();
             return; // già annullato, nessuna operazione
         }
+        (new \App\Services\TransitionGuard(qk_transizioni_trasferimenti(), 'trasferimento'))
+            ->assicuraConMessaggio($t['stato'], 'annullato', "Un trasferimento già completato non può essere annullato: crea un nuovo trasferimento in senso opposto.");
 
         if ($t['stato'] === 'in_transito') {
             $origineId = (int) $t['magazzino_origine_id'];

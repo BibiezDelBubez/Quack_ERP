@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+// Dipendenze esplicite (CLAUDE.md, regola require_once in testa al file): questo
+// file viene caricato anche in isolamento da tests/manual/suite_create_inventario.php,
+// senza passare da app/bootstrap.php — non può contare sul fatto che siano già
+// stati inclusi altrove (Tappa 1, PIANO - Motore Unificato di Transizioni di Stato).
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
+
 // =============================================================================
 // inventario.php
 // Service layer per l'Inventario Fisico, estratto da
@@ -392,6 +399,25 @@ function qk_convalida_inventario(PDO $pdo, ?int $id, array $input, int $utenteId
             $pdo->prepare('DELETE FROM inventario_creazione_lock WHERE magazzino_id = ?')
                 ->execute([$magazzinoInventarioId]);
         } else {
+            // Guardia di stato (Tappa 1, PIANO - Motore Unificato di Transizioni
+            // di Stato): prima di questa modifica il controllo "solo le bozze
+            // sono modificabili" viveva SOLO in WarehouseController::editInventory(),
+            // sulla lettura di $inventario fatta PRIMA di aprire questa transazione
+            // — un check-then-act non protetto dalla transazione (a differenza
+            // della guardia di sovrapposizione sopra, ripetuta apposta qui dentro
+            // per lo stesso motivo). Rilettura fresca dello stato, dentro la
+            // transazione, come unico punto davvero autoritativo.
+            $statoAttualeStmt = $pdo->prepare('SELECT stato FROM inventari WHERE id = ?');
+            $statoAttualeStmt->execute([$id]);
+            $statoAttuale = (string) $statoAttualeStmt->fetchColumn();
+
+            $guardInventario = new \App\Services\TransitionGuard(qk_transizioni_inventari(), 'inventario');
+            $guardInventario->assicuraConMessaggio(
+                $statoAttuale,
+                'bozza',
+                'Impossibile salvare: l\'inventario è già convalidato e non può più essere modificato.'
+            );
+
             // Aggiorna testata
             $stmt = $pdo->prepare("UPDATE inventari SET data_inventario = ?, note = ? WHERE id = ?");
             $stmt->execute([$dataInventario, $note, $id]);
@@ -432,6 +458,18 @@ function qk_convalida_inventario(PDO $pdo, ?int $id, array $input, int $utenteId
             }
 
             qk_applica_rettifiche_inventario($pdo, $id, $magazzinoInventarioId, $righeSalvate, $utenteId);
+
+            // Guardia sulla transizione vera e propria (bozza -> convalidato).
+            // Per un inventario appena creato in questa stessa chiamata (ramo
+            // !$id sopra) lo stato è sempre 'bozza' per costruzione (appena
+            // inserito); per un inventario esistente la guardia sopra ha già
+            // verificato che sia ancora 'bozza' prima di arrivare qui — questo
+            // secondo controllo, fatto immediatamente prima della scrittura
+            // che cambia stato, non è ridondante: è lo stesso principio già
+            // applicato alla guardia di sovrapposizione, verificare più vicino
+            // possibile al punto di scrittura, non solo a monte.
+            $guardConvalida = new \App\Services\TransitionGuard(qk_transizioni_inventari(), 'inventario');
+            $guardConvalida->assicura('bozza', 'convalidato');
 
             // Segna inventario come convalidato
             $pdo->prepare("UPDATE inventari SET stato = 'convalidato' WHERE id = ?")->execute([$id]);

@@ -9,6 +9,8 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/purchases_common.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -172,8 +174,9 @@ function qk_offerta_save(PDO $pdo, array $v, array $righe, int $utente_id, int $
             $stCheck = $pdo->prepare('SELECT stato, indirizzo_consegna_id, contatto_id FROM offerte_testata WHERE id = ?');
             $stCheck->execute([$id]);
             $existingRow = $stCheck->fetch(PDO::FETCH_ASSOC);
-            if ($existingRow && $existingRow['stato'] !== 'in_valutazione') {
-                throw new \RuntimeException('Un preventivo già accettato o rifiutato non è modificabile.');
+            if ($existingRow) {
+                (new \App\Services\TransitionGuard(qk_transizioni_offerte_fornitore(), 'offerta'))
+                    ->assicuraConMessaggio($existingRow['stato'], 'in_valutazione', 'Un preventivo già accettato o rifiutato non è modificabile.');
             }
         }
 
@@ -344,6 +347,28 @@ function qk_offerta_accetta(PDO $pdo, int $id, int $utente_id): void
             // Chiude la RFQ con esito "offerta accettata" — distinto dalla
             // chiusura manuale senza esito (vedi qk_rfq_chiudi()), così lo
             // stato 'chiusa' non è più ambiguo su come/perché si è arrivati lì.
+            //
+            // Guardia aggiunta in Tappa 5 (PIANO - Motore Unificato di
+            // Transizioni di Stato): prima non esisteva ALCUN controllo sullo
+            // stato della RFQ qui. In pratica non dovrebbe mai poter scattare
+            // su una RFQ non più 'inviata', perché _offerta_check_valutabile()
+            // sopra blocca già il caso normale (un'offerta resta 'in_valutazione'
+            // solo finché la sua RFQ non viene chiusa, e qk_rfq_chiudi() rifiuta
+            // già tutte le offerte in_valutazione quando chiude) — ma è comunque
+            // una seconda linea di difesa, stesso principio già applicato in
+            // includes/purchases_receipts.php per il controllo su ordini_testata
+            // dentro qk_ricezione_conferma().
+            $stRfqStato = $pdo->prepare('SELECT stato FROM rfq_testata WHERE id = ?');
+            $stRfqStato->execute([$offerta['rfq_id']]);
+            $statoRfqAttuale = $stRfqStato->fetchColumn();
+            if ($statoRfqAttuale !== false) {
+                (new \App\Services\TransitionGuard(qk_transizioni_rfq(), 'RFQ'))
+                    ->assicuraConMessaggio(
+                        (string)$statoRfqAttuale,
+                        'chiusa',
+                        "Impossibile chiudere la RFQ collegata: non è più nello stato corretto (stato attuale: {$statoRfqAttuale})."
+                    );
+            }
             $pdo->prepare("UPDATE rfq_testata SET stato = 'chiusa', esito_chiusura = 'offerta_accettata' WHERE id = ?")
                ->execute([$offerta['rfq_id']]);
         }
@@ -382,9 +407,8 @@ function _offerta_check_valutabile(PDO $pdo, int $id): array
     $st->execute([$id]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new \RuntimeException('Offerta non trovata.');
-    if ($row['stato'] !== 'in_valutazione') {
-        throw new \RuntimeException("L'offerta è già stata valutata (stato: {$row['stato']}).");
-    }
+    (new \App\Services\TransitionGuard(qk_transizioni_offerte_fornitore(), 'offerta'))
+        ->assicuraConMessaggio($row['stato'], 'in_valutazione', "L'offerta è già stata valutata (stato: {$row['stato']}).");
     return $row;
 }
 

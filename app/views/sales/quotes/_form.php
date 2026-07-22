@@ -6,6 +6,17 @@
 $v = $values;
 $stato = $v['stato'] ?? 'bozza';
 $can_edit = ($stato === 'bozza');
+
+// Tappa 8 (PIANO - Motore Unificato di Transizioni di Stato): "Crea Nuova
+// Versione" annulla la versione corrente (vedi qk_preventivo_nuova_versione()
+// in includes/sales_quotes.php) — è quindi ammesso esattamente dagli stati da
+// cui la mappa di qk_transizioni_preventivi() ammette una transizione verso
+// 'annullato'. Prima era un in_array() scollegato dalla mappa reale, duplicato
+// qui e mai imposto lato server fino alla Tappa 6 (che ha reso questa stessa
+// condizione la guardia vera in qk_preventivo_nuova_versione()) — ora la vista
+// legge la stessa fonte di verità invece di ripetere l'elenco a mano.
+$canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo'))
+    ->puoTransire($stato, 'annullato');
 ?>
 
 <!-- ── Stili caricati via controller (sales-common.css) ────────────────── -->
@@ -66,7 +77,7 @@ $can_edit = ($stato === 'bozza');
           </button>
         </form>
       <?php else: ?>
-        <?php if (in_array($stato, ['inviato', 'rifiutato', 'scaduto', 'annullato'])): ?>
+        <?php if ($canCreaNuovaVersione): ?>
           <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
@@ -276,16 +287,30 @@ $can_edit = ($stato === 'bozza');
             </div>
             <div class="qk-form-group">
               <label class="qk-form-label">Stato</label>
-              <?php if (empty($id)): ?>
-                <input type="hidden" name="stato" value="bozza">
-                <input type="text" class="qk-form-control" value="Bozza" readonly style="background-color: var(--qk-bg-subtle); cursor: not-allowed;">
-              <?php else: ?>
-                <select name="stato" class="qk-form-control">
-                  <?php foreach (['bozza'=>'Bozza','inviato'=>'Inviato','accettato'=>'Accettato','rifiutato'=>'Rifiutato','scaduto'=>'Scaduto','annullato'=>'Annullato'] as $k => $lbl): ?>
-                  <option value="<?= e($k) ?>" <?= ($v['stato'] ?? 'bozza') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              <?php endif; ?>
+              <?php
+              // Corretto 22/07/2026 (PIANO - Motore Unificato di Transizioni di
+              // Stato, §9.3): qui c'era un <select name="stato"> libero su tutti
+              // e 6 gli stati, che bypassava per intero TransitionGuard — un
+              // preventivo in bozza poteva essere salvato direttamente come
+              // "Accettato"/"Annullato"/ecc. scegliendolo a mano, senza mai
+              // passare dalle azioni guardate (Invia/Rifiuta/Accetta e Crea
+              // Ordine). Lo stato ora si vede qui in sola lettura (coerente con
+              // i "grandi ERP": mai un campo libero per lo stato di un
+              // documento di vendita) e si cambia SOLO tramite i bottoni azione
+              // già presenti sopra in questa vista, ciascuno guardato lato
+              // server. Il campo nascosto sotto porta comunque il valore
+              // ATTUALE (mai scelto dall'utente): serve solo perché il form
+              // invia sempre lo stesso "stato" via cui passano anche i bottoni
+              // "Salva bozza"/"Salva e invia" — qk_update_offerta() lo rivalida
+              // comunque contro la mappa reale prima di scrivere, quindi anche
+              // un valore manomesso via richiesta diretta (bypassando questo
+              // form) verrebbe comunque bloccato lato server.
+              $statoLabels = ['bozza'=>'Bozza','inviato'=>'Inviato','accettato'=>'Accettato','rifiutato'=>'Rifiutato','scaduto'=>'Scaduto','annullato'=>'Annullato'];
+              $statoCorrente = $v['stato'] ?? 'bozza';
+              $statoLabel = $statoLabels[$statoCorrente] ?? $statoCorrente;
+              ?>
+              <input type="hidden" name="stato" value="<?= e($statoCorrente) ?>">
+              <input type="text" class="qk-form-control" value="<?= e($statoLabel) ?>" readonly style="background-color: var(--qk-bg-subtle); cursor: not-allowed;">
             </div>
           </div>
           

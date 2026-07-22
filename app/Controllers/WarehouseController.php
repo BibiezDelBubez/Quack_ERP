@@ -320,13 +320,23 @@ class WarehouseController extends BaseController
                 // seguono via ON DELETE CASCADE. Serve come via di sblocco per
                 // il controllo qk_inventario_bloccato() sui prodotti coinvolti,
                 // se un inventario viene aperto per errore o dimenticato aperto.
+                // NB: l'annullamento (DELETE) non è una transizione di stato — è una
+                // precondizione per una cancellazione, non modellata in
+                // qk_transizioni_inventari() (vedi il commento lì). Il controllo
+                // "solo bozza" resta quindi qui come confronto diretto, non tramite
+                // TransitionGuard, apposta.
                 if ($id && $inventario && $inventario['stato'] === 'bozza') {
                     $this->pdo->prepare("DELETE FROM inventari WHERE id = ? AND stato = 'bozza'")->execute([$id]);
                     redirect_with('warehouse/inventories', 'success', 'Inventario annullato.');
                 } else {
                     redirect_with('warehouse/inventories', 'danger', 'Impossibile annullare: inventario non trovato o già convalidato.');
                 }
-            } elseif ($inventario && $inventario['stato'] === 'convalidato') {
+            } elseif ($inventario && !(new \App\Services\TransitionGuard(qk_transizioni_inventari(), 'inventario'))->puoTransire($inventario['stato'], 'bozza')) {
+                // Controllo di UX (early redirect, prima ancora di processare il resto
+                // del POST): usa la stessa mappa/motore del controllo autoritativo che
+                // vive ora in qk_convalida_inventario() (includes/inventario.php,
+                // Tappa 1 del piano) — non è duplicazione della REGOLA, solo un
+                // secondo punto in cui viene interrogata la stessa fonte di verità.
                 $errors['_global'] = 'L\'inventario è convalidato e non può più essere modificato.';
             } else {
                 $azione = post('azione', 'salva'); // 'salva' o 'convalida'

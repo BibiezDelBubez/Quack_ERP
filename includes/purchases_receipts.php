@@ -18,6 +18,8 @@ require_once __DIR__ . '/purchases_common.php';
 require_once __DIR__ . '/purchases_orders.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/magazzino.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTURA
@@ -316,9 +318,8 @@ function qk_ricezione_annulla(PDO $pdo, int $id): void
     if ($stato === false) {
         throw new \RuntimeException('Ricezione non trovata.');
     }
-    if ($stato !== 'bozza') {
-        throw new \RuntimeException("Solo una ricezione in bozza può essere annullata (stato attuale: {$stato}).");
-    }
+    (new \App\Services\TransitionGuard(qk_transizioni_ricezioni(), 'ricezione'))
+        ->assicuraConMessaggio((string)$stato, 'annullata', "Solo una ricezione in bozza può essere annullata (stato attuale: {$stato}).");
 
     $pdo->prepare("UPDATE ricezioni_testata SET stato = 'annullata' WHERE id = ?")->execute([$id]);
 }
@@ -327,10 +328,19 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
 {
     $pdo->beginTransaction();
     try {
-        $st = $pdo->prepare("SELECT * FROM ricezioni_testata WHERE id = ? AND stato = 'bozza'");
+        // Nota: prima di questa migrazione il filtro "stato = 'bozza'" era dentro
+        // la WHERE della SELECT stessa (un'unica query, nessuna differenza di
+        // atomicità qui: siamo già dentro la stessa transazione, non c'è modo che
+        // un secondo processo scriva in mezzo su SQLite). Split in due passaggi
+        // per poter passare dalla stessa guardia condivisa, mantenendo IDENTICO
+        // il messaggio d'errore (non distingue "non trovata" da "stato sbagliato",
+        // esattamente come prima).
+        $st = $pdo->prepare('SELECT * FROM ricezioni_testata WHERE id = ?');
         $st->execute([$ricezione_id]);
         $ricezione = $st->fetch(PDO::FETCH_ASSOC);
         if (!$ricezione) throw new \RuntimeException('Ricezione non trovata o già completata.');
+        (new \App\Services\TransitionGuard(qk_transizioni_ricezioni(), 'ricezione'))
+            ->assicuraConMessaggio($ricezione['stato'], 'completata', 'Ricezione non trovata o già completata.');
 
         $ordine_id = (int) $ricezione['ordine_id'];
 
@@ -346,6 +356,17 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
         // ripassare da 'superato'/'annullato' a 'parzialmente_ricevuto', contraddicendo
         // l'invariante "uno stato terminale non cambia mai più" (§1.10, già applicata a
         // qk_ordine_annulla() per lo stato 'superato').
+        // Precondizione cross-entità (ordini_testata.stato usato come gate per
+        // un'azione su ricezioni_testata, non una transizione di QUESTA entità
+        // — stesso principio applicato a qk_ordine_da_offerta() in
+        // includes/purchases_orders.php, Tappa 4 del piano): lasciato come
+        // confronto diretto invece di TransitionGuard. L'elenco {inviato,
+        // parzialmente_ricevuto} NON è inventato qui: è esattamente l'insieme
+        // di stati da cui, in qk_transizioni_ordini_fornitore(), sono
+        // raggiungibili sia 'completato' che 'parzialmente_ricevuto' — la
+        // stessa fonte di verità, solo consultata a mente invece che via API,
+        // perché qui serve un controllo di appartenenza a un insieme, non una
+        // singola transizione con un solo stato di arrivo.
         $stOrdineStato = $pdo->prepare('SELECT stato FROM ordini_testata WHERE id = ?');
         $stOrdineStato->execute([$ordine_id]);
         $statoOrdineAttuale = $stOrdineStato->fetchColumn();

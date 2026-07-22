@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/anagrafiche.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/magazzino.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 /**
  * Genera il prossimo numero progressivo per il preventivo cliente.
@@ -255,6 +257,19 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
 {
     $pdo->beginTransaction();
     try {
+        // Corretto 22/07/2026 (stessa ragione del fix in qk_update_offerta() poco
+        // più sotto in questo file): un preventivo NUOVO non ha uno stato di
+        // partenza da validare con TransitionGuard (non esiste ancora una riga),
+        // ma il valore inviato dal form va comunque limitato a quello che i
+        // controlli della UI offrono davvero in creazione — i bottoni "Salva
+        // bozza"/"Salva e invia" — non un valore arbitrario forzato via POST
+        // (es. creare un preventivo già 'accettato', senza mai passare da
+        // qk_preventivo_conferma_ordine() e senza nessun ordine collegato).
+        $nuovoStato = (string) ($values['stato'] ?? 'bozza');
+        if (!in_array($nuovoStato, ['bozza', 'inviato'], true)) {
+            throw new \RuntimeException("Impossibile creare il preventivo: stato iniziale '$nuovoStato' non ammesso (solo 'bozza' o 'inviato').");
+        }
+
         // Recupera canale_vendita_id
         $stCv = $pdo->prepare('SELECT id FROM canali_vendita WHERE codice = ?');
         $stCv->execute([$values['canale_vendita'] ?? 'email_diretta']);
@@ -348,7 +363,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             ':data_scadenza'           => qk_null_if_empty($values['data_scadenza'] ?? ''),
             ':data_consegna_richiesta' => qk_null_if_empty($values['data_consegna_richiesta'] ?? ''),
             ':canale_vendita_id'       => $canale_vendita_id,
-            ':stato'                   => $values['stato'] ?: 'bozza',
+            ':stato'                   => $nuovoStato,
             ':sconto_globale_perc'     => $sconto_globale_perc,
             ':condizioni_pagamento'    => qk_null_if_empty($values['condizioni_pagamento'] ?? ''),
             ':trasporto'               => qk_null_if_empty($values['trasporto'] ?? ''),
@@ -508,9 +523,25 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
         // Enforce domain logic: verify the existing state of the quote before modifying it
         $stState = $pdo->prepare('SELECT stato FROM preventivi WHERE id = ?');
         $stState->execute([$id]);
-        $oldState = $stState->fetchColumn();
-        if ($oldState !== 'bozza') {
-            throw new Exception("Impossibile modificare il preventivo: lo stato attuale è '$oldState'. Le modifiche sono consentite solo in stato 'bozza'.");
+        $oldState = (string) $stState->fetchColumn();
+        $guardStato = new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo');
+        $guardStato->assicuraConMessaggio($oldState, 'bozza', "Impossibile modificare il preventivo: lo stato attuale è '$oldState'. Le modifiche sono consentite solo in stato 'bozza'.");
+
+        // Corretto 22/07/2026 (segnalato e approvato dall'utente): questa funzione
+        // controllava SOLO lo stato di PARTENZA (deve essere 'bozza'), mai il valore
+        // di ARRIVO — app/views/sales/quotes/_form.php aveva un <select name="stato">
+        // libero su tutti e 6 gli stati che passava esattamente da qui, bypassando
+        // per intero TransitionGuard (si poteva salvare un preventivo in bozza
+        // direttamente come 'accettato', senza mai passare da
+        // qk_preventivo_conferma_ordine() — nessun ordine collegato creato,
+        // un'incoerenza silenziosa). Il <select> è stato rimosso dalla vista, ma il
+        // controllo va comunque messo anche qui (difesa in profondità, stesso
+        // principio già applicato altrove in questo modulo — es. la seconda guardia
+        // in qk_offerta_accetta() lato acquisti): non fidarsi mai del solo client per
+        // il valore di destinazione di una transizione di stato.
+        $nuovoStato = (string) ($values['stato'] ?? 'bozza');
+        if (!$guardStato->puoTransire($oldState, $nuovoStato)) {
+            throw new \RuntimeException("Impossibile salvare: la transizione da '$oldState' a '$nuovoStato' non è ammessa.");
         }
 
         $stCv = $pdo->prepare('SELECT id FROM canali_vendita WHERE codice = ?');
@@ -642,7 +673,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             ':data_scadenza'           => qk_null_if_empty($values['data_scadenza'] ?? ''),
             ':data_consegna_richiesta' => qk_null_if_empty($values['data_consegna_richiesta'] ?? ''),
             ':canale_vendita_id'       => $canale_vendita_id,
-            ':stato'                   => $values['stato'] ?: 'bozza',
+            ':stato'                   => $nuovoStato,
             ':sconto_globale_perc'     => $sconto_globale_perc,
             ':condizioni_pagamento'    => qk_null_if_empty($values['condizioni_pagamento'] ?? ''),
             ':trasporto'               => qk_null_if_empty($values['trasporto'] ?? ''),
@@ -733,6 +764,56 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSIZIONI DI STATO
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Invia il preventivo al cliente (bozza -> inviato).
+ *
+ * Spostata da SalesQuotesController::action() (Tappa 6, PIANO - Motore
+ * Unificato di Transizioni di Stato): prima era un UPDATE scritto a mano nel
+ * controller, senza NESSUN controllo sullo stato di partenza (violazione MVC
+ * + P3, il caso che ha originato l'intero piano).
+ *
+ * @throws \RuntimeException se il preventivo non esiste o non è in bozza
+ */
+function qk_preventivo_invia(PDO $pdo, int $id): void
+{
+    $st = $pdo->prepare('SELECT stato FROM preventivi WHERE id = ?');
+    $st->execute([$id]);
+    $stato = $st->fetchColumn();
+    if ($stato === false) {
+        throw new \RuntimeException('Preventivo non trovato.');
+    }
+    (new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo'))
+        ->assicuraConMessaggio((string)$stato, 'inviato', "Impossibile inviare: il preventivo non è in stato 'bozza' (stato attuale: {$stato}).");
+
+    $pdo->prepare("UPDATE preventivi SET stato = 'inviato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+}
+
+/**
+ * Segna il preventivo come rifiutato dal cliente (inviato -> rifiutato).
+ *
+ * Spostata da SalesQuotesController::action() (Tappa 6, PIANO - Motore
+ * Unificato di Transizioni di Stato) — stesso motivo di qk_preventivo_invia().
+ *
+ * @throws \RuntimeException se il preventivo non esiste o non è in inviato
+ */
+function qk_preventivo_rifiuta(PDO $pdo, int $id): void
+{
+    $st = $pdo->prepare('SELECT stato FROM preventivi WHERE id = ?');
+    $st->execute([$id]);
+    $stato = $st->fetchColumn();
+    if ($stato === false) {
+        throw new \RuntimeException('Preventivo non trovato.');
+    }
+    (new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo'))
+        ->assicuraConMessaggio((string)$stato, 'rifiutato', "Impossibile segnare come rifiutato: il preventivo non è in stato 'inviato' (stato attuale: {$stato}).");
+
+    $pdo->prepare("UPDATE preventivi SET stato = 'rifiutato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+}
+
 /**
  * Genera il prossimo numero progressivo per l'ordine cliente.
  */
@@ -756,11 +837,26 @@ function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
             throw new Exception("Preventivo originale non trovato.");
         }
 
+        // Guardia aggiunta in Tappa 6 (PIANO - Motore Unificato di Transizioni
+        // di Stato): prima di questa modifica NESSUN controllo impediva di
+        // creare una "nuova versione" (che annulla questa) da QUALUNQUE stato,
+        // incluso un preventivo ancora in bozza o già accettato (con un ordine
+        // reale già generato). La regola qui formalizzata è esattamente quella
+        // già mostrata (ma mai applicata lato server) dalla vista
+        // app/views/sales/quotes/_form.php:69, che offre il bottone "Crea nuova
+        // versione" solo per stato IN ('inviato','rifiutato','scaduto','annullato').
+        (new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo'))
+            ->assicuraConMessaggio(
+                $orig['stato'],
+                'annullato',
+                "Impossibile creare una nuova versione: il preventivo è in stato '{$orig['stato']}'. Consentito solo da 'inviato', 'rifiutato', 'scaduto' o 'annullato'."
+            );
+
         // 2. Mark original quote as storico = 1, stato = 'annullato'
         $stUp = $pdo->prepare("UPDATE preventivi SET storico = 1, stato = 'annullato', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stUp->execute([$id]);
 
-        // 3. Compute new revision number
+        // 3. Compute new revision number PRIMA di creare la nuova riga (non dopo)
         $origNum = $orig['numero_preventivo'];
         if (preg_match('/-(\d+)$/', $origNum, $matches)) {
             $rev = (int)$matches[1] + 1;
@@ -769,30 +865,34 @@ function qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int
             $newNum = $origNum . '-02';
         }
 
-        // 4. Create new quote record in Bozza status (storico = 0, stato = 'bozza')
-        $columns = array_filter(db_table_columns($pdo, 'preventivi'), fn($c) => $c !== 'id');
-
+        // 4. Create new quote record in Bozza status.
+        //
+        // BUG PREESISTENTE corretto qui (segnalato e approvato dall'utente, 22/07/2026):
+        // prima questo INSERT...SELECT copiava TUTTE le colonne (tranne id) dal preventivo
+        // originale, incluso numero_preventivo — che ha vincolo UNIQUE. L'INSERT falliva
+        // SEMPRE con "UNIQUE constraint failed: preventivi.numero_preventivo" perché si
+        // stava per un istante duplicando il numero dell'originale, PRIMA che un secondo
+        // UPDATE (passo 5, rimosso) potesse correggerlo — quel secondo passo non veniva mai
+        // raggiunto. "Crea nuova versione" sui preventivi non aveva mai funzionato.
+        //
+        // Ora le colonne che devono avere un valore diverso dall'originale (il nuovo numero,
+        // lo stato che riparte da 'bozza', storico, e i metadati della nuova riga) vengono
+        // scritte già corrette in un unico INSERT, mai copiate e poi sistemate a parte.
+        $colonneSovrascritte = ['id', 'numero_preventivo', 'stato', 'storico', 'creato_da', 'created_at', 'updated_at'];
+        $columns = array_filter(db_table_columns($pdo, 'preventivi'), fn($c) => !in_array($c, $colonneSovrascritte, true));
         $colList = implode(", ", $columns);
-        $insertSql = "INSERT INTO preventivi ($colList) SELECT $colList FROM preventivi WHERE id = :orig_id";
-        $pdo->prepare($insertSql)->execute([':orig_id' => $id]);
-        $newId = (int)$pdo->lastInsertId();
 
-        // 5. Update new quote specifics
-        $stUpNew = $pdo->prepare("
-            UPDATE preventivi SET
-                numero_preventivo = :newNum,
-                stato = 'bozza',
-                storico = 0,
-                creato_da = :userId,
-                created_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :newId
-        ");
-        $stUpNew->execute([
-            ':newNum' => $newNum,
-            ':userId' => $userId,
-            ':newId'  => $newId
+        $insertSql = "
+            INSERT INTO preventivi (numero_preventivo, stato, storico, creato_da, created_at, updated_at, $colList)
+            SELECT :newNum, 'bozza', 0, :userId, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $colList
+              FROM preventivi WHERE id = :orig_id
+        ";
+        $pdo->prepare($insertSql)->execute([
+            ':newNum'  => $newNum,
+            ':userId'  => $userId,
+            ':orig_id' => $id,
         ]);
+        $newId = (int)$pdo->lastInsertId();
 
         // 6. Copy righe items from original quote
         $righeCols = array_filter(db_table_columns($pdo, 'preventivi_righe'), fn($c) => $c !== 'id');
@@ -898,9 +998,24 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         $quota = $detail['offerta'];
         $righe = $detail['righe'];
 
-        if ($quota['stato'] === 'accettato') {
-            throw new Exception("Il preventivo è già stato accettato.");
-        }
+        // Guardia aggiunta in Tappa 6 (PIANO - Motore Unificato di Transizioni
+        // di Stato): prima di questa modifica veniva controllato SOLO il caso
+        // "già accettato" (per non riaccettarlo due volte) — ma NESSUN controllo
+        // impediva di accettare un preventivo ancora in bozza, già rifiutato,
+        // scaduto o annullato, generando comunque un ordine cliente reale a
+        // partire da un preventivo che non era mai stato inviato o non era più
+        // valido. Scoperto durante l'esecuzione di questa tappa, non nella
+        // survey iniziale — stessa classe di vulnerabilità di P3, più grave
+        // perché qui la conseguenza è la creazione di un ordine a valle, non
+        // solo un cambio di stato.
+        (new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo'))
+            ->assicuraConMessaggio(
+                $quota['stato'],
+                'accettato',
+                $quota['stato'] === 'accettato'
+                    ? 'Il preventivo è già stato accettato.'
+                    : "Impossibile accettare: il preventivo non è in stato 'inviato' (stato attuale: {$quota['stato']})."
+            );
 
         // 1. Update preventivo status to 'accettato'
         $stUp = $pdo->prepare("UPDATE preventivi SET stato = 'accettato', updated_at = CURRENT_TIMESTAMP WHERE id = ?");

@@ -11,16 +11,21 @@ declare(strict_types=1);
  * (dopo la correzione al maschile) su un database temporaneo fresco da
  * db/init_sqlite.sql, non un mock — stesso pattern di suite_mittente_ddt.php.
  *
- * NOTA IMPORTANTE — bug scoperto durante questa verifica, NON incluso in
- * questa suite perché indipendente dal fix del genere: qk_preventivo_nuova_versione()
- * (includes/sales_quotes.php) copia TUTTE le colonne di preventivi (tranne
- * 'id') dalla riga originale in un nuovo INSERT, inclusa numero_preventivo —
- * che ha vincolo UNIQUE. L'INSERT fallisce quindi SEMPRE con "UNIQUE constraint
- * failed: preventivi.numero_preventivo", prima ancora che il codice arrivi a
- * rinominare il numero nella UPDATE successiva. Riprodotto in modo isolato e
- * confermato indipendente da qualunque valore di 'stato' (il bug riguarda
- * 'numero_preventivo', non il genere). Segnalato all'utente separatamente,
- * non corretto qui: è fuori perimetro rispetto a questo intervento.
+ * AGGIORNAMENTO 22/07/2026 (segnalato e approvato dall'utente): il bug
+ * descritto qui sotto (scoperto durante questa verifica, indipendente dal fix
+ * del genere) è stato CORRETTO nell'ambito del PIANO - Motore Unificato di
+ * Transizioni di Stato (Tappa 7bis) — vedi
+ * tests/manual/suite_transition_guard_tappa6_preventivi.php per il test
+ * end-to-end della correzione. qk_preventivo_nuova_versione() ora calcola il
+ * nuovo numero_preventivo PRIMA di creare la riga e lo scrive già corretto in
+ * un unico INSERT, invece di copiare il numero UNIQUE dell'originale e
+ * provare a correggerlo con una UPDATE successiva mai raggiunta. Descrizione
+ * originale del bug (per riferimento storico, non più riproducibile):
+ * qk_preventivo_nuova_versione() copiava TUTTE le colonne di preventivi
+ * (tranne 'id') dalla riga originale in un nuovo INSERT, inclusa
+ * numero_preventivo — che ha vincolo UNIQUE. L'INSERT falliva quindi SEMPRE
+ * con "UNIQUE constraint failed: preventivi.numero_preventivo", prima ancora
+ * che il codice arrivasse a rinominare il numero nella UPDATE successiva.
  *
  * Esecuzione: php tests/manual/suite_preventivo_stato_genere_confirm.php
  */

@@ -31,63 +31,20 @@ class ComplianceRepository
 
     public function getProductRestrictions(int $productId, bool $includeOnlyLogTransactions = false): array
     {
-        // ── Percorso 1: restrizioni dirette sulla sostanza chimica (best practice) ──
-        $sqlDirette = "
-            SELECT r.id, r.code, r.name, r.regulatory_ref, r.requires_vat, r.validity_days, r.log_transactions,
-                   scr.concentrazione_min AS min_concentration,
-                   scr.concentrazione_max AS max_concentration
+        $sql = "
+            SELECT r.id, r.code, r.name, r.regulatory_ref, r.requires_vat, r.validity_days, r.log_transactions
               FROM compliance_restriction_types r
-              JOIN sostanze_chimiche_restrizioni scr ON scr.restriction_type_id = r.id
-              JOIN sostanze_chimiche sa ON sa.id = scr.sostanza_id
-              JOIN prodotti p ON p.sostanza_chimica_id = sa.id
-             WHERE p.id = :prodotto_id
-               AND r.active = 1
-               AND (scr.concentrazione_min IS NULL OR sa.concentrazione_max_pct >= scr.concentrazione_min)
-               AND (scr.concentrazione_max IS NULL OR sa.concentrazione_min_pct <= scr.concentrazione_max)";
+              JOIN prodotti_restrizioni pr ON pr.restriction_type_id = r.id
+             WHERE pr.prodotto_id = :prodotto_id
+               AND r.active = 1";
         
         if ($includeOnlyLogTransactions) {
-            $sqlDirette = str_replace("AND r.active = 1", "AND r.active = 1 AND r.log_transactions = 1", $sqlDirette);
+            $sql .= " AND r.log_transactions = 1";
         }
 
-        $stmt = $this->pdo->prepare($sqlDirette);
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':prodotto_id' => $productId]);
-        $dirette = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // ── Percorso 2: fallback su codice ONU (legacy) ──
-        $fallback = [];
-        if (empty($dirette)) {
-            $sqlOnu = "
-                SELECT r.id, r.code, r.name, r.regulatory_ref, r.requires_vat, r.validity_days, r.log_transactions,
-                       cr.min_concentration, cr.max_concentration
-                  FROM compliance_restriction_types r
-                  JOIN compliance_codice_onu_restrizioni cr ON cr.restriction_type_id = r.id
-                  JOIN sostanze_chimiche sa ON sa.codice_onu_id = cr.un_code_id
-                  JOIN prodotti p ON p.sostanza_chimica_id = sa.id
-                 WHERE p.id = :prodotto_id
-                   AND r.active = 1
-                   AND (cr.min_concentration IS NULL OR sa.concentrazione_max_pct >= cr.min_concentration)
-                   AND (cr.max_concentration IS NULL OR sa.concentrazione_min_pct <= cr.max_concentration)";
-            
-            if ($includeOnlyLogTransactions) {
-                // Notice the extra ADR check from the original logic for logging via ONU
-                $sqlOnu = str_replace("AND r.active = 1", "AND COALESCE(p.is_adr, 0) = 1 AND r.active = 1 AND r.log_transactions = 1", $sqlOnu);
-            }
-
-            $stmt2 = $this->pdo->prepare($sqlOnu);
-            $stmt2->execute([':prodotto_id' => $productId]);
-            $fallback = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-        // Merge senza duplicati
-        $seen = [];
-        $merged = [];
-        foreach (array_merge($dirette, $fallback) as $r) {
-            if (!isset($seen[$r['id']])) {
-                $seen[$r['id']] = true;
-                $merged[] = $r;
-            }
-        }
-        return $merged;
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function getCustomerAuthorization(int $customerId, int $restrictionId): ?array

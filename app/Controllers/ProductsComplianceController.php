@@ -47,17 +47,8 @@ final class ProductsComplianceController extends BaseController
             $stmtAll->execute();
             $tutti = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
 
-            // Suggerimenti da codice ONU del prodotto (se ha classificazione ADR)
-            $stmtSuggest = $this->pdo->prepare(
-                'SELECT DISTINCT rt.id AS restriction_type_id, rt.code, rt.name, rt.regulatory_ref
-                 FROM prodotti p
-                 JOIN prodotto_classificazioni_adr pca ON pca.prodotto_id = p.id
-                 JOIN compliance_codice_onu_restrizioni ccr ON ccr.un_code_id = pca.codice_onu_id
-                 JOIN compliance_restriction_types rt ON rt.id = ccr.restriction_type_id
-                 WHERE p.id = :pid AND rt.active = 1'
-            );
-            $stmtSuggest->execute([':pid' => $prodottoId]);
-            $suggerimenti = $stmtSuggest->fetchAll(PDO::FETCH_ASSOC);
+            // I suggerimenti tramite codice ONU sono stati deprecati in favore del modello SKU-based
+            $suggerimenti = [];
 
             echo json_encode([
                 'ok'           => true,

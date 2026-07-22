@@ -5,6 +5,8 @@ require_once __DIR__ . '/anagrafiche.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/document_common.php';
 require_once __DIR__ . '/magazzino.php';
+require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 /**
  * Genera il prossimo numero progressivo per l'ordine cliente diretto.
@@ -60,6 +62,122 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
     $service = new \App\Services\OrderCalculatorService($pdo, $repository);
 
     return $service->insertDirectOrder($values, $righe, $user_id);
+}
+
+/**
+ * Carica la riga di ordini_clienti per id, o lancia se non trovato.
+ * Stesso pattern di _ordine_carica() in includes/purchases_orders.php.
+ */
+function _ordine_cliente_carica(PDO $pdo, int $id): array
+{
+    $st = $pdo->prepare('SELECT * FROM ordini_clienti WHERE id = ?');
+    $st->execute([$id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        throw new \RuntimeException('Ordine non trovato.');
+    }
+    return $row;
+}
+
+/**
+ * Verifica che l'ordine cliente NON sia in uno stato terminale (completato/
+ * annullato). Precondizione condivisa da due punti del controller
+ * (SalesOrdersController::edit() ed elaboraCreaSpedizione()) che PRIMA la
+ * applicavano in modo incoerente: edit() la controllava (ma nel controller,
+ * non nel model — violazione MVC), elaboraCreaSpedizione() non la applicava
+ * affatto (poteva creare una spedizione, e quindi far "ripartire" lo stato,
+ * su un ordine già completato o annullato).
+ *
+ * Tappa 7 (PIANO - Motore Unificato di Transizioni di Stato): riusa la stessa
+ * mappa/istanza di qk_transizioni_ordini_clienti() invece di un secondo
+ * in_array() scollegato — uno stato è "ancora attivo" se da lì è raggiungibile
+ * 'annullato', esattamente {in_lavorazione, parzialmente_spedito, spedito}
+ * nella mappa attuale, mai {completato, annullato}. Corrisponde esattamente
+ * alla condizione già mostrata (ma mai imposta lato server) in
+ * app/views/sales/orders/_detail.php righe 22 e 343: !$isAnnullato && !$isCompletato.
+ */
+function qk_ordine_cliente_assicura_modificabile(string $statoAttuale, string $messaggioErrore): void
+{
+    $guard = new \App\Services\TransitionGuard(qk_transizioni_ordini_clienti(), 'ordine cliente');
+    if (!$guard->puoTransire($statoAttuale, 'annullato')) {
+        throw new \RuntimeException($messaggioErrore);
+    }
+}
+
+/**
+ * Aggiorna note e data di consegna prevista di un ordine cliente.
+ * Tappa 7: il controllo "non è già completato/annullato" viveva SOLO dentro
+ * SalesOrdersController::edit() (violazione MVC) — spostato qui.
+ */
+function qk_ordine_cliente_aggiorna_note(PDO $pdo, int $id, ?string $note, ?string $dataConsegnaPrevista): void
+{
+    $ordine = _ordine_cliente_carica($pdo, $id);
+    qk_ordine_cliente_assicura_modificabile(
+        (string) $ordine['stato'],
+        'Accesso negato: impossibile modificare un ordine già completato o annullato.'
+    );
+
+    $pdo->prepare("
+        UPDATE ordini_clienti
+        SET note = ?, data_consegna_prevista = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ")->execute([$note, $dataConsegnaPrevista, $id]);
+}
+
+/**
+ * Segna l'ordine cliente come completato manualmente.
+ * Tappa 7: prima un UPDATE grezzo in SalesOrdersController::action(), senza
+ * nessun controllo di stato.
+ */
+function qk_ordine_cliente_completa(PDO $pdo, int $id): void
+{
+    $ordine = _ordine_cliente_carica($pdo, $id);
+    (new \App\Services\TransitionGuard(qk_transizioni_ordini_clienti(), 'ordine cliente'))
+        ->assicuraConMessaggio(
+            (string) $ordine['stato'],
+            'completato',
+            "Impossibile completare: l'ordine non è in uno stato valido per il completamento (stato attuale: {$ordine['stato']})."
+        );
+    $pdo->prepare("UPDATE ordini_clienti SET stato = 'completato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        ->execute([$id]);
+}
+
+/**
+ * Riporta l'ordine cliente in lavorazione. Ammesso solo da 'completato' —
+ * coerente con app/views/sales/orders/_detail.php:86 (bottone "Riapri"
+ * mostrato solo quando isCompletato && !isAnnullato).
+ */
+function qk_ordine_cliente_riapri(PDO $pdo, int $id): void
+{
+    $ordine = _ordine_cliente_carica($pdo, $id);
+    (new \App\Services\TransitionGuard(qk_transizioni_ordini_clienti(), 'ordine cliente'))
+        ->assicuraConMessaggio(
+            (string) $ordine['stato'],
+            'in_lavorazione',
+            "Impossibile riaprire: l'ordine può essere riaperto solo se è 'completato' (stato attuale: {$ordine['stato']})."
+        );
+    $pdo->prepare("UPDATE ordini_clienti SET stato = 'in_lavorazione', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        ->execute([$id]);
+}
+
+/**
+ * Annulla l'ordine cliente.
+ * NB: bug O2 preesistente e già noto (l'annullamento non rilascia mai la
+ * riserva stock su giacenze.quantita_riservata) resta FUORI SCOPO per questo
+ * piano — qui si aggiunge solo la guardia di transizione mancante, non si
+ * tocca (né si finge di correggere) la logica di rilascio riserva.
+ */
+function qk_ordine_cliente_annulla(PDO $pdo, int $id): void
+{
+    $ordine = _ordine_cliente_carica($pdo, $id);
+    (new \App\Services\TransitionGuard(qk_transizioni_ordini_clienti(), 'ordine cliente'))
+        ->assicuraConMessaggio(
+            (string) $ordine['stato'],
+            'annullato',
+            "Impossibile annullare: l'ordine è già in stato '{$ordine['stato']}'."
+        );
+    $pdo->prepare("UPDATE ordini_clienti SET stato = 'annullato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        ->execute([$id]);
 }
 
 /**

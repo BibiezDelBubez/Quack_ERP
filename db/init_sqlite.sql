@@ -99,7 +99,8 @@ INSERT OR IGNORE INTO schema_migrations (migration) VALUES
     ('2026_07_10_inventari_categoria_filtro'),
     ('2026_07_10_inventario_creazione_lock'),
     ('2026_07_10_vista_costo_acquisto_base'),
-    ('2026_07_10_movimenti_quantita_delta');
+    ('2026_07_10_movimenti_quantita_delta'),
+    ('2026_07_22_rfq_righe_iva');
 
 -- =============================================================================
 -- 1. UNITÀ DI MISURA — CATEGORIE
@@ -2085,7 +2086,19 @@ CREATE TABLE IF NOT EXISTS rfq_righe (
     quantita_richiesta      DECIMAL(10,3) NOT NULL,
     unita_misura_id         INTEGER       REFERENCES unita_misura(id),
     prezzo_indicativo       DECIMAL(10,4),
-    
+
+    -- IVA a livello di riga (allineato a SAP ME41/ME47, che valorizza un
+    -- codice/percentuale IVA già in fase di RFQ, non solo sull'ordine finale
+    -- — serve a confrontare le offerte di più fornitori a parità di
+    -- condizioni fiscali). Aggiunta 22/07/2026: qk_transizioni_stati.php
+    -- (PIANO - Motore Unificato di Transizioni di Stato.md) ha scoperto che
+    -- includes/purchases_rfq.php le scriveva già da tempo (stessa struttura
+    -- di offerte_righe.iva_perc/iva_riga poco più sotto in questo file) ma
+    -- le colonne non erano mai state aggiunte allo schema: ogni salvataggio
+    -- di una RFQ con righe falliva sempre. Vedi db/migrations/2026_07_22_rfq_righe_iva.php.
+    iva_perc                DECIMAL(5,2)  NOT NULL DEFAULT 22,
+    iva_riga                DECIMAL(10,2),
+
     -- Campi SAP/Odoo style
     data_consegna_richiesta DATE,         -- Data di consegna richiesta per questo specifico articolo (Arrivo previsto)
     e_rifiutato             BOOLEAN       NOT NULL DEFAULT 0, -- Se il fornitore RIFIUTA di quotare questa riga (1 = Rifiutata/Non quotabile, 0 = Attiva)
@@ -2382,18 +2395,7 @@ INSERT OR IGNORE INTO sequenze (tipo, prefisso, anno, numero_corrente, padding) 
 -- Il check di vendita usa questo percorso come prioritario; il collegamento
 -- compliance_codice_onu_restrizioni rimane come fallback per sostanze senza
 -- restrizioni dirette configurate.
-CREATE TABLE IF NOT EXISTS sostanze_chimiche_restrizioni (
-    sostanza_id         INTEGER NOT NULL REFERENCES sostanze_chimiche(id) ON DELETE CASCADE,
-    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id) ON DELETE CASCADE,
-    concentrazione_min  DECIMAL(5,2),  -- % minima che attiva la restrizione; NULL = nessun minimo
-    concentrazione_max  DECIMAL(5,2),  -- % massima; NULL = nessun massimo
-    note                TEXT,
-    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (sostanza_id, restriction_type_id)
-);
 
-CREATE INDEX IF NOT EXISTS idx_sost_restr_sostanza ON sostanze_chimiche_restrizioni(sostanza_id);
-CREATE INDEX IF NOT EXISTS idx_sost_restr_tipo     ON sostanze_chimiche_restrizioni(restriction_type_id);
 
 CREATE TABLE IF NOT EXISTS compliance_restriction_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2407,14 +2409,7 @@ CREATE TABLE IF NOT EXISTS compliance_restriction_types (
     active BOOLEAN NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS compliance_codice_onu_restrizioni (
-    un_code_id INTEGER NOT NULL REFERENCES adr_codici_onu(id),
-    restriction_type_id INTEGER NOT NULL REFERENCES compliance_restriction_types(id),
-    min_concentration DECIMAL(5,2),
-    max_concentration DECIMAL(5,2),
-    notes TEXT,
-    PRIMARY KEY (un_code_id, restriction_type_id)
-);
+
 
 CREATE TABLE IF NOT EXISTS compliance_documenti_richiesti (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
