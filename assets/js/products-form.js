@@ -18,41 +18,6 @@
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 
-    /* ── Sidebar "Foto Principale" — nascondi quando il tab attivo non è "Dati prodotto" ──
-     *
-     * Il pannello .qk-status-panel (foto + stato) occupa spazio fisso nella sidebar.
-     * Ha senso solo nel tab principale (Dati prodotto); nei tab Fornitori, ADR, Kit
-     * è rumore visivo e ruba larghezza utile. Lo nascondiamo tramite evento shown.bs.tab.
-     */
-    const statusPanel = document.querySelector('.qk-status-panel');
-    const formGrid    = document.querySelector('.qk-form-grid');
-    if (statusPanel) {
-      /* Tab che NON devono mostrare la sidebar foto/stato */
-      const TABS_SENZA_SIDEBAR = ['ptab-btn-fornitori', 'ptab-btn-adr', 'ptab-btn-kit', 'ptab-btn-listini'];
-
-      /**
-       * Nasconde/mostra il pannello laterale E collassa la colonna CSS grid
-       * in modo che il contenuto del tab occupi tutta la larghezza disponibile.
-       */
-      function syncSidebar(activeTabId) {
-        const nascondi = TABS_SENZA_SIDEBAR.includes(activeTabId);
-        statusPanel.style.display = nascondi ? 'none' : '';
-        /* Collassa/espande la colonna destra del grid */
-        formGrid?.classList.toggle('no-sidebar', nascondi);
-      }
-
-      /* Ascolta i cambi tab di Bootstrap */
-      document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tabBtn => {
-        tabBtn.addEventListener('shown.bs.tab', function () {
-          syncSidebar(this.id);
-        });
-      });
-
-      /* Sincronizza subito con l'eventuale tab già attivo al caricamento */
-      const activeTab = document.querySelector('[data-bs-toggle="tab"].active');
-      if (activeTab) syncSidebar(activeTab.id);
-    }
-    /* ── Fine sidebar toggle ── */
   });
 
   /* ── Radio card + visibilità tab Kit ────────────────────────────────── */
@@ -214,14 +179,16 @@
   if (adrSel) adrSel.addEventListener('change', toggleAdr);
 
   /* ── Foto drop zone ──────────────────────────────────────────────────── */
-  const fotoInput   = document.getElementById('foto-input');
-  const dropZone    = document.getElementById('foto-drop-zone');
-  const prevWrap    = document.getElementById('foto-preview');
-  const prevImg     = document.getElementById('foto-preview-img');
-  const prevName    = document.getElementById('foto-preview-name');
-  const btnChoose   = document.getElementById('btn-choose-foto');
-  const btnRemove   = document.getElementById('btn-remove-foto');
-  const fotoCurrent = document.getElementById('foto-current');
+  const fotoInput        = document.getElementById('foto-input');
+  const dropZone         = document.getElementById('foto-drop-zone');
+  const prevWrap         = document.getElementById('foto-preview');
+  const prevImg          = document.getElementById('foto-preview-img');
+  const prevName         = document.getElementById('foto-preview-name');
+  const btnChoose        = document.getElementById('btn-choose-foto');
+  const btnChooseLabel   = document.getElementById('btn-choose-foto-label');
+  const btnRemove        = document.getElementById('btn-remove-foto');
+  const fotoCurrent      = document.getElementById('foto-current');
+  const rimuoviFotoInput = document.getElementById('rimuovi-foto-input');
 
   function applyPreview(file) {
     const r = new FileReader();
@@ -231,6 +198,9 @@
       prevWrap?.classList.remove('d-none');
       dropZone?.classList.add('d-none');
       if (fotoCurrent) fotoCurrent.style.display = 'none';
+      if (btnRemove) btnRemove.classList.remove('d-none');
+      if (btnChooseLabel) btnChooseLabel.textContent = 'Cambia foto';
+      if (rimuoviFotoInput) rimuoviFotoInput.value = '0';
     };
     r.readAsDataURL(file);
   }
@@ -239,8 +209,11 @@
   btnRemove?.addEventListener('click', () => {
     if (fotoInput) fotoInput.value = '';
     prevWrap?.classList.add('d-none');
+    if (fotoCurrent) fotoCurrent.style.display = 'none';
     dropZone?.classList.remove('d-none');
-    if (fotoCurrent) fotoCurrent.style.display = '';
+    btnRemove?.classList.add('d-none');
+    if (btnChooseLabel) btnChooseLabel.textContent = 'Scegli foto';
+    if (rimuoviFotoInput) rimuoviFotoInput.value = '1';
   });
   if (dropZone) {
     dropZone.addEventListener('click', () => fotoInput?.click());

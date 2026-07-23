@@ -179,6 +179,26 @@ function qk_salva_immagine_prodotto(PDO $pdo, int $prodotto_id, array $file): ?s
 }
 
 /**
+ * Rimuove l'immagine di copertina di un prodotto (posizione_immagine = 0) e cancella il file da disco.
+ */
+function qk_rimuovi_immagine_prodotto(PDO $pdo, int $prodotto_id): void
+{
+    $old = $pdo->prepare(
+        'SELECT file_path FROM prodotti_immagini WHERE prodotto_id = :id AND posizione_immagine = 0'
+    );
+    $old->execute([':id' => $prodotto_id]);
+    foreach ($old->fetchAll(PDO::FETCH_COLUMN) as $oldPath) {
+        $full = upload_abs($oldPath);
+        if (is_file($full)) {
+            @unlink($full);
+        }
+    }
+    $pdo->prepare(
+        'DELETE FROM prodotti_immagini WHERE prodotto_id = :id AND posizione_immagine = 0'
+    )->execute([':id' => $prodotto_id]);
+}
+
+/**
  * Restituisce le categorie come array piatto con indentazione per <select>.
  * @return array<int, array{id:int, nome:string, depth:int, label:string}>
  */

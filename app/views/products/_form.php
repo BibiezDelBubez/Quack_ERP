@@ -127,15 +127,40 @@ window.QkPF = {
 <form method="post" enctype="multipart/form-data" data-qk-form action="<?= $formAction ?>">
   <?= csrf_field() ?>
 
-  <div class="qk-form-grid">
+  <!-- ═══════════════════════ BARRA AZIONI SUPERIORE ═══════════════════════ -->
+  <div class="qk-card mb-3">
+    <div class="qk-card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
+      <div class="d-flex align-items-center gap-2">
+        <button type="submit" class="btn-qk btn-qk-primary">
+          <i class="fa-solid fa-floppy-disk me-1"></i>
+          <?= $isEdit ? 'Salva modifiche' : 'Crea prodotto' ?>
+        </button>
+        <a href="<?= url('products') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
+      </div>
 
-    <!-- ══════════════════════════════════════════════════════════════════
-         COLONNA PRINCIPALE
-    ══════════════════════════════════════════════════════════════════════ -->
-    <div>
+      <?php if ($isEdit): ?>
+      <div class="d-flex align-items-center gap-3">
+        <?php if (!empty($record_meta)): ?>
+        <span class="text-muted small d-none d-md-inline" style="font-size:.8rem;">
+          <?php if ($record_meta['created_at'] ?? ''): ?>
+          Creato: <?= fmt_datetime($record_meta['created_at']) ?>
+          <?php endif; ?>
+          <?php if ($record_meta['updated_at'] ?? ''): ?>
+          &middot; Aggiornato: <?= fmt_datetime($record_meta['updated_at']) ?>
+          <?php endif; ?>
+        </span>
+        <?php endif; ?>
 
-      <!-- Tab nav -->
-      <ul class="nav nav-tabs qk-tabs mb-0" id="productTabs" role="tablist">
+        <button type="button" id="btn-delete-prodotto" class="btn-qk btn-qk-danger btn-qk-sm">
+          <i class="fa-solid fa-trash me-1"></i> Elimina prodotto
+        </button>
+      </div>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <!-- Tab nav (100% full width) -->
+  <ul class="nav nav-tabs qk-tabs mb-0" id="productTabs" role="tablist">
         <li class="nav-item" role="presentation">
           <button class="nav-link active" id="ptab-btn-dati"
                   data-bs-toggle="tab" data-bs-target="#ptab-dati"
@@ -212,110 +237,154 @@ window.QkPF = {
           <div class="qk-card mb-3">
             <div class="qk-card-header"><span class="qk-card-title">Dati Generali</span></div>
             <div class="qk-card-body">
-              <div class="qk-form-group">
-                <label class="qk-form-label">Nome <span class="required">*</span></label>
-                <input type="text" name="nome"
-                       class="qk-form-control <?= isset($errors['nome']) ? 'is-invalid' : '' ?>"
-                       value="<?= e($v['nome']) ?>"
-                       placeholder="es. Cloro granulare 70% — 25 kg"
-                       autofocus>
-                <?php if (isset($errors['nome'])): ?>
-                <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['nome']) ?></span>
-                <?php endif; ?>
-              </div>
+              <div class="row g-4">
+                <!-- Colonna Campi Dati -->
+                <div class="col-lg-8">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Nome <span class="required">*</span></label>
+                    <input type="text" name="nome"
+                           class="qk-form-control <?= isset($errors['nome']) ? 'is-invalid' : '' ?>"
+                           value="<?= e($v['nome']) ?>"
+                           placeholder="es. Cloro granulare 70% — 25 kg"
+                           autofocus>
+                    <?php if (isset($errors['nome'])): ?>
+                    <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['nome']) ?></span>
+                    <?php endif; ?>
+                  </div>
 
-              <div class="qk-form-row">
-                <!-- Categoria — QkM2O stile Odoo -->
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Categoria</label>
-                  <input type="hidden" name="categoria_id" id="cat-id-input" value="<?= e($v['categoria_id'] ?? '') ?>">
-                  <div class="qk-m2o-wrap" id="cat-m2o-wrap">
-                    <div class="qk-m2o-input-row">
-                      <input type="text" id="cat-label-input" class="qk-m2o-input"
-                             value="<?= e($cat_label) ?>"
-                             placeholder="Cerca categoria…"
-                             autocomplete="off">
-                      <button type="button" id="cat-clear-btn"
-                              class="qk-m2o-clear <?= $v['categoria_id'] ? '' : 'd-none' ?>"
-                              title="Rimuovi categoria">
-                        <i class="fa-solid fa-xmark fa-xs"></i>
-                      </button>
+                  <div class="qk-form-row">
+                    <!-- Categoria — QkM2O stile Odoo -->
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Categoria</label>
+                      <input type="hidden" name="categoria_id" id="cat-id-input" value="<?= e($v['categoria_id'] ?? '') ?>">
+                      <div class="qk-m2o-wrap" id="cat-m2o-wrap">
+                        <div class="qk-m2o-input-row">
+                          <input type="text" id="cat-label-input" class="qk-m2o-input"
+                                 value="<?= e($cat_label) ?>"
+                                 placeholder="Cerca categoria…"
+                                 autocomplete="off">
+                          <button type="button" id="cat-clear-btn"
+                                  class="qk-m2o-clear <?= $v['categoria_id'] ? '' : 'd-none' ?>"
+                                  title="Rimuovi categoria">
+                            <i class="fa-solid fa-xmark fa-xs"></i>
+                          </button>
+                        </div>
+                        <div class="qk-m2o-dropdown" id="cat-m2o-dd"></div>
+                      </div>
                     </div>
-                    <div class="qk-m2o-dropdown" id="cat-m2o-dd"></div>
-                  </div>
-                </div>
 
-                <!-- Tag -->
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Tag <span class="qk-form-hint">(clicca per aggiungere etichette)</span></label>
-                  <?php
-                  /* Costruiamo l'elenco dei tag selezionati e non selezionati */
-                  $selectedTagIds = array_map('intval', $prodotto_tag_ids ?? []);
-                  ?>
-                  <div class="qk-m2m-wrap" id="tag-m2m-wrap">
-                    <div class="qk-m2m-field" id="tag-m2m-field">
-                      <?php foreach ($all_tags as $tag): ?>
-                      <?php if (in_array((int)$tag['id'], $selectedTagIds, true)): ?>
-                      <span class="qk-m2m-chip" data-id="<?= (int)$tag['id'] ?>">
-                        <span class="qk-m2m-chip-label"><?= e($tag['nome']) ?></span>
-                        <button type="button" class="qk-m2m-chip-remove" aria-label="Rimuovi">&#215;</button>
-                        <input type="hidden" name="tag_ids[]" value="<?= (int)$tag['id'] ?>">
-                      </span>
-                      <?php endif; ?>
-                      <?php endforeach; ?>
-                      <input type="text" class="qk-m2m-input" id="tag-search-input"
-                             placeholder="Aggiungi tag…" autocomplete="off" maxlength="50">
+                    <!-- Tag -->
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Tag <span class="qk-form-hint">(clicca per aggiungere etichette)</span></label>
+                      <?php
+                      /* Costruiamo l'elenco dei tag selezionati e non selezionati */
+                      $selectedTagIds = array_map('intval', $prodotto_tag_ids ?? []);
+                      ?>
+                      <div class="qk-m2m-wrap" id="tag-m2m-wrap">
+                        <div class="qk-m2m-field" id="tag-m2m-field">
+                          <?php foreach ($all_tags as $tag): ?>
+                          <?php if (in_array((int)$tag['id'], $selectedTagIds, true)): ?>
+                          <span class="qk-m2m-chip" data-id="<?= (int)$tag['id'] ?>">
+                            <span class="qk-m2m-chip-label"><?= e($tag['nome']) ?></span>
+                            <button type="button" class="qk-m2m-chip-remove" aria-label="Rimuovi">&#215;</button>
+                            <input type="hidden" name="tag_ids[]" value="<?= (int)$tag['id'] ?>">
+                          </span>
+                          <?php endif; ?>
+                          <?php endforeach; ?>
+                          <input type="text" class="qk-m2m-input" id="tag-search-input"
+                                 placeholder="Aggiungi tag…" autocomplete="off" maxlength="50">
+                        </div>
+                        <div class="qk-m2m-dropdown" id="tag-m2m-dd"></div>
+                      </div>
+                      <!-- Dataset tags per JS (non renderizzato) -->
+                      <script id="all-tags-data" type="application/json">
+                        <?= json_encode(array_values($all_tags), JSON_HEX_TAG) ?>
+                      </script>
                     </div>
-                    <div class="qk-m2m-dropdown" id="tag-m2m-dd"></div>
                   </div>
-                  <!-- Dataset tags per JS (non renderizzato) -->
-                  <script id="all-tags-data" type="application/json">
-                    <?= json_encode(array_values($all_tags), JSON_HEX_TAG) ?>
-                  </script>
-                </div>
-              </div>
 
-              <div class="qk-form-row">
-                <!-- Tipo prodotto -->
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Tipo prodotto <span class="required">*</span></label>
-                  <div class="qk-flex-row qk-gap-sm flex-wrap mt-1">
-                    <label class="qk-radio-card <?= $v['tipo'] === 'semplice' ? 'is-selected' : '' ?>">
-                      <input type="radio" name="tipo" value="semplice"
-                             <?= $v['tipo'] === 'semplice' ? 'checked' : '' ?>>
-                      <i class="fa-solid fa-box"></i> Semplice
+                  <div class="qk-form-row">
+                    <!-- Tipo prodotto -->
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Tipo prodotto <span class="required">*</span></label>
+                      <div class="qk-flex-row qk-gap-sm flex-wrap mt-1">
+                        <label class="qk-radio-card <?= $v['tipo'] === 'semplice' ? 'is-selected' : '' ?>">
+                          <input type="radio" name="tipo" value="semplice"
+                                 <?= $v['tipo'] === 'semplice' ? 'checked' : '' ?>>
+                          <i class="fa-solid fa-box"></i> Semplice
+                        </label>
+                        <label class="qk-radio-card <?= $v['tipo'] === 'kit' ? 'is-selected' : '' ?>">
+                          <input type="radio" name="tipo" value="kit"
+                                 <?= $v['tipo'] === 'kit' ? 'checked' : '' ?>>
+                          <i class="fa-solid fa-boxes-stacked"></i> Kit / Bundle
+                        </label>
+                      </div>
+                    </div>
+
+                    <!-- Stato attivo -->
+                    <div class="qk-form-group">
+                      <label class="qk-form-label">Stato visibilità</label>
+                      <div class="mt-2">
+                        <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
+                          <input type="checkbox" name="attivo" value="1" <?= ($v['attivo'] ?? '1') === '1' ? 'checked' : '' ?>>
+                          Prodotto attivo
+                        </label>
+                        <span class="qk-form-hint">Il prodotto apparirà nelle ricerche di listini, preventivi e ordini d'acquisto.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Descrizione breve -->
+                  <div class="qk-form-group mt-3 mb-0">
+                    <label class="qk-form-label">
+                      Descrizione breve
+                      <span class="qk-form-hint">Visibile nelle liste e ricerche (max 255 caratteri)</span>
                     </label>
-                    <label class="qk-radio-card <?= $v['tipo'] === 'kit' ? 'is-selected' : '' ?>">
-                      <input type="radio" name="tipo" value="kit"
-                             <?= $v['tipo'] === 'kit' ? 'checked' : '' ?>>
-                      <i class="fa-solid fa-boxes-stacked"></i> Kit / Bundle
-                    </label>
+                    <input type="text" name="descrizione_breve"
+                           class="qk-form-control"
+                           value="<?= e($v['descrizione_breve']) ?>"
+                           placeholder="Sintesi in una riga" maxlength="255">
                   </div>
                 </div>
 
-                <!-- Stato attivo -->
-                <div class="qk-form-group">
-                  <label class="qk-form-label">Stato visibilità</label>
-                  <div class="mt-2">
-                    <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
-                      <input type="checkbox" name="attivo" value="1" <?= ($v['attivo'] ?? '1') === '1' ? 'checked' : '' ?>>
-                      Prodotto attivo
-                    </label>
-                    <span class="qk-form-hint">Il prodotto apparirà nelle ricerche di listini, preventivi e ordini d'acquisto.</span>
+                <!-- Colonna Foto Principale -->
+                <div class="col-lg-4 border-start-lg ps-lg-4">
+                  <label class="qk-form-label mb-2">Foto principale</label>
+                  <input type="hidden" name="rimuovi_foto" id="rimuovi-foto-input" value="0">
+
+                  <?php if (!empty($immagini)): ?>
+                  <div class="mb-2">
+                    <img src="<?= e($immagini[0]['url']) ?>" alt="Foto prodotto" id="foto-current"
+                         style="width:100%;max-height:200px;object-fit:contain;border-radius:6px;border:1px solid var(--qk-border);background:var(--qk-bg-subtle)">
+                  </div>
+                  <?php endif; ?>
+
+                  <div id="foto-drop-zone" class="<?= !empty($immagini) ? 'd-none' : '' ?>"
+                       style="border:2px dashed var(--qk-border);border-radius:8px;padding:1.25rem;text-align:center;cursor:pointer;transition:border-color .2s,background .2s">
+                    <i class="fa-solid fa-image fa-2x mb-2" style="color:var(--qk-text-muted)"></i>
+                    <p class="small mb-1" style="color:var(--qk-text-muted)">Trascina un&rsquo;immagine oppure clicca</p>
+                    <p class="small mb-0" style="color:var(--qk-text-muted);font-size:.75rem">JPG, PNG, WebP &middot; max 5 MB</p>
+                  </div>
+                  <input type="file" name="foto_principale" id="foto-input"
+                         accept="image/jpeg,image/png,image/webp" class="d-none">
+
+                  <div id="foto-preview" class="d-none mt-2">
+                    <img id="foto-preview-img" src="" alt="Anteprima"
+                         style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;border:1px solid var(--qk-border)">
+                    <p id="foto-preview-name" class="small mt-1 mb-0 text-truncate" style="color:var(--qk-text-muted)"></p>
+                  </div>
+
+                  <div class="qk-flex-row qk-gap-sm mt-2 flex-wrap">
+                    <button type="button" id="btn-choose-foto" class="btn-qk btn-qk-secondary btn-qk-sm">
+                      <i class="fa-solid fa-upload me-1"></i>
+                      <span id="btn-choose-foto-label"><?= !empty($immagini) ? 'Cambia foto' : 'Scegli foto' ?></span>
+                    </button>
+                    <button type="button" id="btn-remove-foto"
+                            class="btn-qk btn-qk-danger btn-qk-sm <?= empty($immagini) ? 'd-none' : '' ?>" title="Rimuovi foto">
+                      <i class="fa-solid fa-trash me-1"></i> Rimuovi foto
+                    </button>
                   </div>
                 </div>
-              </div>
-
-              <!-- Descrizione breve -->
-              <div class="qk-form-group mt-3 mb-0">
-                <label class="qk-form-label">
-                  Descrizione breve
-                  <span class="qk-form-hint">Visibile nelle liste e ricerche (max 255 caratteri)</span>
-                </label>
-                <input type="text" name="descrizione_breve"
-                       class="qk-form-control"
-                       value="<?= e($v['descrizione_breve']) ?>"
-                       placeholder="Sintesi in una riga" maxlength="255">
               </div>
             </div>
           </div>
@@ -1461,95 +1530,6 @@ window.QkPF = {
         </div><!-- /ptab-sds -->
 
       </div><!-- /tab-content -->
-
-    </div><!-- /colonna principale -->
-
-
-    <!-- ═══════════════════════ PANNELLO LATERALE ═════════════════════════ -->
-    <div class="qk-status-panel">
-
-      <div class="qk-status-panel-body">
-        <!-- Foto principale -->
-        <div class="mb-4">
-        <p class="fw-semibold mb-2"
-           style="font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--qk-text-muted)">
-          Foto principale
-        </p>
-
-          <?php if (!empty($immagini)): ?>
-          <div class="mb-2">
-            <img src="<?= e($immagini[0]['url']) ?>" alt="Foto prodotto" id="foto-current"
-                 style="width:100%;max-height:220px;object-fit:contain;
-                        border-radius:6px;border:1px solid var(--qk-border);
-                        background:var(--qk-bg-subtle)">
-          </div>
-          <?php endif; ?>
-
-          <div id="foto-drop-zone" class="<?= !empty($immagini) ? 'd-none' : '' ?>"
-               style="border:2px dashed var(--qk-border);border-radius:8px;
-                      padding:1.25rem;text-align:center;cursor:pointer;
-                      transition:border-color .2s,background .2s">
-            <i class="fa-solid fa-image fa-2x mb-2" style="color:var(--qk-text-muted)"></i>
-            <p class="small mb-1" style="color:var(--qk-text-muted)">Trascina un&rsquo;immagine oppure clicca</p>
-            <p class="small mb-0" style="color:var(--qk-text-muted);font-size:.75rem">JPG, PNG, WebP &middot; max 5 MB</p>
-          </div>
-          <input type="file" name="foto_principale" id="foto-input"
-                 accept="image/jpeg,image/png,image/webp" class="d-none">
-
-          <div id="foto-preview" class="d-none mt-2">
-            <img id="foto-preview-img" src="" alt="Anteprima"
-                 style="width:100%;max-height:180px;object-fit:contain;
-                        border-radius:6px;border:1px solid var(--qk-border)">
-            <p id="foto-preview-name" class="small mt-1 mb-0 text-truncate"
-               style="color:var(--qk-text-muted)"></p>
-          </div>
-
-          <div class="qk-flex-row qk-gap-sm mt-2 flex-wrap">
-            <button type="button" id="btn-choose-foto" class="btn-qk btn-qk-secondary btn-qk-sm">
-              <i class="fa-solid fa-upload me-1"></i>
-              <?= !empty($immagini) ? 'Cambia foto' : 'Scegli foto' ?>
-            </button>
-            <?php if (!empty($immagini)): ?>
-            <button type="button" id="btn-remove-foto"
-                    class="btn-qk btn-qk-danger btn-qk-sm" title="Nascondi anteprima">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-            <?php endif; ?>
-          </div>
-        </div>
-
-        <!-- Azioni -->
-        <div class="qk-status-panel-actions">
-          <button type="submit" class="btn-qk btn-qk-primary">
-            <i class="fa-solid fa-floppy-disk"></i>
-            <?= $isEdit ? 'Salva modifiche' : 'Crea prodotto' ?>
-          </button>
-          <a href="<?= url('products') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
-        </div>
-
-        <?php if ($isEdit && !empty($record_meta)): ?>
-        <dl class="qk-status-meta mt-3">
-          <?php if ($record_meta['created_at'] ?? ''): ?>
-          <dt>Creato</dt><dd><?= fmt_datetime($record_meta['created_at']) ?></dd>
-          <?php endif; ?>
-          <?php if ($record_meta['updated_at'] ?? ''): ?>
-          <dt>Aggiornato</dt><dd><?= fmt_datetime($record_meta['updated_at']) ?></dd>
-          <?php endif; ?>
-        </dl>
-        <?php endif; ?>
-
-        <?php if ($isEdit): ?>
-        <div class="mt-3 pt-3 border-top text-center">
-          <button type="button" id="btn-delete-prodotto" class="btn-qk btn-qk-danger btn-qk-sm w-100">
-            <i class="fa-solid fa-trash me-1"></i> Elimina prodotto
-          </button>
-        </div>
-        <?php endif; ?>
-
-      </div>
-    </div>
-
-  </div><!-- /qk-form-grid -->
 </form>
 
 <?php if ($isEdit): ?>

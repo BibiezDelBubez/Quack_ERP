@@ -168,7 +168,9 @@ final class ProductsController extends BaseController
                 if (empty($errors)) {
                     try {
                         $ricalcoloBozze = qk_update_prodotto($this->pdo, $entity_id, $values);
-                        if (!empty($_FILES['foto_principale']['name'])) {
+                        if (!empty($_POST['rimuovi_foto'])) {
+                            qk_rimuovi_immagine_prodotto($this->pdo, $entity_id);
+                        } elseif (!empty($_FILES['foto_principale']['name'])) {
                             qk_salva_immagine_prodotto($this->pdo, $entity_id, $_FILES['foto_principale']);
                         }
 
