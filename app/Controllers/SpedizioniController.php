@@ -54,8 +54,10 @@ final class SpedizioniController extends BaseController
     }
 
     /**
-     * GET /sales/shipments/new?order_id=X — pagina pick & pack dedicata
-     * Nota: il form di invio fa POST a sales/orders/action (gestito da SalesOrdersController::action)
+     * GET /sales/shipments/new?order_id=X — Renderizza la pagina di pick & pack per l'evasione dell'ordine
+     *
+     * Nota: Questo metodo gestisce esclusivamente la visualizzazione (GET) del form di creazione spedizione/DDT.
+     * L'invio (POST) dei dati viene elaborato da `SalesOrdersController::action` (con rotta `sales/orders/action` e azionamento `crea_spedizione`).
      */
     public function nuova(): void
     {

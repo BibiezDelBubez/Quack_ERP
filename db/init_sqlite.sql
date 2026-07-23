@@ -100,7 +100,8 @@ INSERT OR IGNORE INTO schema_migrations (migration) VALUES
     ('2026_07_10_inventario_creazione_lock'),
     ('2026_07_10_vista_costo_acquisto_base'),
     ('2026_07_10_movimenti_quantita_delta'),
-    ('2026_07_22_rfq_righe_iva');
+    ('2026_07_22_rfq_righe_iva'),
+    ('2026_07_23_ordini_clienti_righe_kit_snapshot');
 
 -- =============================================================================
 -- 1. UNITÀ DI MISURA — CATEGORIE
@@ -1338,6 +1339,19 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
     den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
     quantita_confezione  VARCHAR(50),
+    -- Snapshot JSON della composizione del Kit (solo se prodotto_id e' un Kit)
+    -- al momento della RISERVA di questa riga: [{"componente_id":..,"quantita":..}, ...].
+    -- AUDIT 3 §3.3 (Ciclo Vendite, 23/07/2026): qk_riserva_stock_ordine()/
+    -- qk_rilascia_stock_ordine() (includes/magazzino.php) leggevano sempre la
+    -- ricetta ATTUALE del Kit da componenti_kit, anche per liberare una riserva
+    -- fatta mesi prima con una ricetta diversa — se la ricetta cambia nel
+    -- mezzo, il rilascio scala le quantita' sbagliate. Scritta da
+    -- qk_riserva_stock_ordine() quando riceve un rigaId, letta da
+    -- qk_rilascia_stock_ordine() invece della ricetta live quando disponibile;
+    -- NULL per le righe non-Kit e per gli ordini creati prima di questa
+    -- colonna (fallback automatico sulla ricetta live, comportamento
+    -- invariato rispetto a prima).
+    kit_componenti_snapshot TEXT,
     note               TEXT,
     created_at         DATETIME      DEFAULT CURRENT_TIMESTAMP
   );

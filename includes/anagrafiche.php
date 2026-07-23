@@ -1484,6 +1484,41 @@ function qk_aziende_list(PDO $pdo): array
 }
 
 /**
+ * Carica l'elenco aziende interne attive (qk_aziende_list()) insieme all'id
+ * da preselezionare di default nel form, con la stessa logica a 3 livelli:
+ * 1) azienda attiva di sessione, se impostata; 2) azienda marcata
+ * 'predefinita'; 3) prima della lista (mai un campo vuoto, che farebbe
+ * scegliere al browser semplicemente la prima voce alfabetica — rischio di
+ * congelare sul documento i dati fiscali dell'azienda sbagliata).
+ *
+ * Estratta il 23/07/2026 (segnalazione DRY, AUDIT 3 §2.1): prima questa
+ * stessa logica a 13 righe era copiata identica in
+ * SalesQuotesController::create() e SalesOrdersController::create() — unica
+ * fonte di verità ora, entrambi i controller la chiamano.
+ *
+ * @return array{aziende: array, default_id: string}
+ */
+function qk_aziende_list_con_default(PDO $pdo): array
+{
+    $aziende = qk_aziende_list($pdo);
+
+    $defaultAziendaId = isset($_SESSION['azienda_attiva_id']) ? (string)$_SESSION['azienda_attiva_id'] : '';
+    if ($defaultAziendaId === '') {
+        foreach ($aziende as $az) {
+            if ($az['predefinita'] == 1) {
+                $defaultAziendaId = (string)$az['id'];
+                break;
+            }
+        }
+    }
+    if ($defaultAziendaId === '' && !empty($aziende)) {
+        $defaultAziendaId = (string)$aziende[0]['id'];
+    }
+
+    return ['aziende' => $aziende, 'default_id' => $defaultAziendaId];
+}
+
+/**
  * Carica un'azienda interna completa (tutti i campi di clienti_fornitori e
  * aziende_interne, utile per intestazioni di stampa PDF/Word) dato il suo id.
  *

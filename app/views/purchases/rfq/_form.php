@@ -963,7 +963,28 @@ $savedOk = isset($saved) && $saved;
      SCRIPT
 ════════════════════════════════════════════════════════════════════════ -->
 
+<script>
+/* Config: PHP -> JS, letta da assets/js/rfq-form.js. Deve essere definita
+   PRIMA di caricare rfq-form.js, che legge window.QK_RFQ_CONFIG in cima al
+   proprio scope (vedi es. riga 8: const API_FORNITORI = window.QK_RFQ_CONFIG.apiFornitori).
+   In precedenza questi valori erano in un file public/assets/js/purchases/rfq_form.js
+   separato -- un errore: quel file non era mai stato JS puro, conteneva tag
+   di output PHP che un file .js statico non fa mai elaborare (serviti al
+   browser testuali, causando un errore di sintassi), ed era per di piu'
+   caricato DOPO rfq-form.js invece che prima. Consolidato qui, dove i tag
+   PHP vengono davvero eseguiti. */
+window.QK_RFQ_CONFIG = {
+  apiFornitori: <?= json_encode(url('purchases/rfq/api/fornitori')) ?>,
+  apiProdotti: <?= json_encode(url('purchases/rfq/api/prodotti')) ?>,
+  apiPrezzo: <?= json_encode(url('purchases/rfq/api/ottieni-prezzo')) ?>,
+  apiFornitoreCrea: <?= json_encode(url('purchases/rfq/api/crea-fornitore')) ?>,
+  apiAziendaIndirizzi: <?= json_encode(url('purchases/rfq/api/azienda-indirizzi')) ?>,
+  apiFornitoreDettagli: <?= json_encode(url('purchases/rfq/api/fornitore-dettagli')) ?>,
+  canEdit: <?= $canEdit ? 'true' : 'false' ?>,
+  fornitoreId: <?= json_encode($values['fornitore_id']) ?>,
+  rfqNumero: <?= json_encode($rfq['numero'] ?? '') ?>,
+  fornitoreNome: <?= json_encode($rfq['fornitore_nome'] ?? '') ?>,
+  rfqStato: <?= json_encode($values['stato'] ?? 'bozza') ?>
+};
+</script>
 <script src="<?= url('assets/js/rfq-form.js') ?>"></script>
-
-
-<script src="<?= url('public/assets/js/purchases/rfq_form.js') ?>"></script>

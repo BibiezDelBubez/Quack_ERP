@@ -107,10 +107,11 @@ class OrderCalculatorService
                     'note' => $r['note_riga'] ?? null,
                 ];
 
-                $this->repository->insertOrderLine($lineData);
+                $rigaOrdineId = $this->repository->insertOrderLine($lineData);
 
                 if ($prodottoId) {
-                    qk_riserva_stock_ordine($this->pdo, $prodottoId, $uomResult['quantita_stock'], $magazzinoRiservaId);
+                    // $rigaOrdineId passato per congelare lo snapshot Kit (AUDIT 3 §3.3).
+                    qk_riserva_stock_ordine($this->pdo, $prodottoId, $uomResult['quantita_stock'], $magazzinoRiservaId, $rigaOrdineId);
                 }
             }
 

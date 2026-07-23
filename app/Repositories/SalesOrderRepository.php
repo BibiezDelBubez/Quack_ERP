@@ -105,7 +105,7 @@ class SalesOrderRepository
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function insertOrderLine(array $data): void
+    public function insertOrderLine(array $data): int
     {
         $stRiga = $this->pdo->prepare("
             INSERT INTO ordini_clienti_righe (
@@ -146,6 +146,8 @@ class SalesOrderRepository
             $data['unita_misura_stock_id'],
             $data['note'] ?? null,
         ]);
+
+        return (int) $this->pdo->lastInsertId();
     }
 
     public function findUomIdByCode(string $code): ?int

@@ -1,12 +1,13 @@
 (function () {
   'use strict';
 
-  const API_FORNITORI = <?= json_encode(url('purchases/rfq/api/fornitori')) ?>;
-  const API_PRODOTTI  = <?= json_encode(url('purchases/rfq/api/prodotti')) ?>;
-  const CAN_EDIT      = <?= $canEdit ? 'true' : 'false' ?>;
-  const IS_SPONTANEOUS = <?= empty($values['rfq_id']) ? 'true' : 'false' ?>;
+  const API_FORNITORI = window.QkPurchaseQuote.apiFornitori;
+  const API_PRODOTTI  = window.QkPurchaseQuote.apiProdotti;
+  const CAN_EDIT      = window.QkPurchaseQuote.canEdit;
+  const IS_SPONTANEOUS = window.QkPurchaseQuote.isSpontaneous;
+  const CSRF_TOKEN    = window.QkPurchaseQuote.csrfToken;
 
-  let fornitoreSel = { id: '<?= e($values['fornitore_id']) ?>', nome: '' };
+  let fornitoreSel = { id: window.QkPurchaseQuote.fornitoreId, nome: '' };
   let rigaIdx      = 0;
 
   function autocomplete({ inputEl, dropdownEl, clearEl, hiddenEl, fetchFn, onSelect }) {
@@ -273,7 +274,7 @@
             formData.append('nome', nome);
             formData.append('csrf_token', CSRF_TOKEN);
 
-            const res = await fetch(<?= json_encode(url('purchases/rfq/api/crea-prodotto')) ?>, {
+            const res = await fetch(window.QkPurchaseQuote.apiCreaProdotto, {
               method: 'POST',
               body: formData
             });
@@ -342,7 +343,7 @@
   const fornTelHidden = document.getElementById('off-fornitore-telefono');
   const fornEmailHidden = document.getElementById('off-fornitore-email');
   const listiniSelect = document.getElementById('off-listino-acquisto-id');
-  const API_FORNITORE_DETTAGLI = <?= json_encode(url('purchases/rfq/api/fornitore-dettagli')) ?>;
+  const API_FORNITORE_DETTAGLI = window.QkPurchaseQuote.apiFornitoreDettagli;
 
   let loadedContacts = [];
 
@@ -501,7 +502,7 @@
     if (!masterAddrId) return;
 
     try {
-      const res = await fetch(<?= json_encode(url('purchases/rfq/api/azienda-indirizzi')) ?> + '?indirizzo_id=' + masterAddrId);
+      const res = await fetch(window.QkPurchaseQuote.apiAziendaIndirizzi + '?indirizzo_id=' + masterAddrId);
       const data = await res.json();
       if (data.ok && data.indirizzo) {
         loadedAddress = data.indirizzo;
@@ -598,7 +599,7 @@
   loadOriginalAddress();
 
   // Implement Read-only Lock for status not 'in_valutazione'
-  const quoteStato = <?= json_encode($values['stato'] ?? 'in_valutazione') ?>;
+  const quoteStato = window.QkPurchaseQuote.quoteStato;
   if (quoteStato !== 'in_valutazione') {
     [
       contSelect, contNomeInput, contTelInput, contEmailInput,

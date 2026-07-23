@@ -9,9 +9,7 @@ declare(strict_types=1);
  *
  * Verifica, chiamando le funzioni reali (qk_ordine_cliente_completa,
  * qk_ordine_cliente_riapri, qk_ordine_cliente_annulla,
- * qk_ordine_cliente_aggiorna_note) e il metodo reale del controller
- * (SalesOrdersController::elaboraCreaSpedizione(), via Reflection per
- * bypassare solo il dispatch HTTP/CSRF di action(), MAI la logica interna):
+ * qk_ordine_cliente_aggiorna_note, qk_elabora_crea_spedizione):
  *  - le transizioni valide continuano a funzionare;
  *  - le 3 azioni di action() (completa/riapri/annulla), prima UPDATE grezzi
  *    senza nessun controllo di stato, ora bloccano transizioni non ammesse;
@@ -22,7 +20,24 @@ declare(strict_types=1);
  *    dell'ordine — un ordine 'completato'/'annullato' poteva ricevere una
  *    nuova spedizione (e quindi "ripartire"). Il test costruisce un ordine
  *    completo e reale (magazzino, indirizzo, prodotto, giacenza, riga ordine)
- *    e chiama il vero metodo del controller, non una sua imitazione.
+ *    e chiama la vera funzione di dominio, non una sua imitazione.
+ *
+ * NOTA (23/07/2026, PIANO - Eliminazione SQL Grezzo nei Controller, Tappa 0.5
+ * / audit/scoperte_audit.md Tappa 0.5): fino a questa modifica, la sezione
+ * "VULNERABILITA' SCOPERTA..." sotto chiamava SalesOrdersController::
+ * elaboraCreaSpedizione() via ReflectionMethod, aspettandosi che rilanciasse
+ * l'eccezione della guardia di stato fino al chiamante. Nel frattempo
+ * (AUDIT 3 §4.C.1) la logica è stata estratta in qk_elabora_crea_spedizione()
+ * (includes/sales_orders.php) e il metodo del controller è diventato un
+ * wrapper sottile che CATTURA SEMPRE l'eccezione e la trasforma in un
+ * messaggio flash (comportamento corretto per l'uso HTTP reale — un errore
+ * utente non deve mai far esplodere la pagina). Il test, scritto per
+ * l'architettura precedente, falliva quindi le 2 asserzioni chkThrows() qui
+ * sotto non perché la protezione non funzionasse (le asserzioni successive,
+ * sullo stato del DB, erano già tutte OK) ma perché controllava il punto
+ * sbagliato. Corretto chiamando direttamente qk_elabora_crea_spedizione(),
+ * dove l'eccezione viene lanciata davvero — nessuna copertura persa, anzi
+ * il test ora verifica il model invece del wrapper che lo avvolge.
  *
  * Esecuzione: php tests/manual/suite_transition_guard_tappa7_ordini_clienti.php
  */
@@ -38,19 +53,15 @@ define('BASE_URL', ''); // evita di caricare includes/config.php (dipende da $_S
 require_once APP_ROOT_DIR . '/includes/functions.php';
 require_once APP_ROOT_DIR . '/includes/document_common.php';
 require_once APP_ROOT_DIR . '/includes/sales_orders.php';
-require_once APP_ROOT_DIR . '/app/Controllers/BaseController.php';
-require_once APP_ROOT_DIR . '/app/Controllers/SalesOrdersController.php';
+// NOTA 23/07/2026 (Tappa 0.5): BaseController.php/SalesOrdersController.php non
+// servono più — il test chiama qk_elabora_crea_spedizione() direttamente, non
+// più il controller via Reflection (vedi docblock sopra).
 
 $pdo = new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $pdo->exec('PRAGMA foreign_keys = ON');
 $pdo->exec(file_get_contents(__DIR__ . '/../../db/init_sqlite.sql'));
-
-// current_user() (includes/functions.php) legge $_SESSION e usa `global $pdo`
-// per la riconvalida ogni 10 minuti — impostiamo qk_user_last_check a "adesso"
-// per non farla scattare durante il test.
-$_SESSION = [];
 
 $pass = 0; $fail = 0;
 function chk(string $label, $expected, $actual): void
@@ -206,17 +217,19 @@ foreach (['completato', 'annullato'] as $statoTerminale) {
 echo "\n=== VULNERABILITA' SCOPERTA IN QUESTA TAPPA: elaboraCreaSpedizione() non controllava affatto lo stato dell'ordine ===\n";
 
 /**
- * Chiama il vero metodo privato SalesOrdersController::elaboraCreaSpedizione()
- * via Reflection — bypassa SOLO il dispatch pubblico action()/csrf_verify()
- * (mai richiamato da elaboraCreaSpedizione() stesso, verificato leggendo il
- * controller), non la logica interna del metodo, che gira davvero.
+ * Chiama direttamente la vera funzione di dominio qk_elabora_crea_spedizione()
+ * (includes/sales_orders.php) — dove la guardia di stato lancia davvero
+ * l'eccezione. Prima (fino al 23/07/2026) questo helper passava dal metodo
+ * privato SalesOrdersController::elaboraCreaSpedizione() via Reflection, che
+ * oggi la cattura sempre e la trasforma in un messaggio flash (comportamento
+ * corretto per l'uso HTTP reale) — per questo le 2 asserzioni chkThrows()
+ * sotto fallivano: non perché la protezione non funzionasse, ma perché il
+ * test controllava il wrapper invece del model. Vedi docblock in testa al
+ * file e audit/scoperte_audit.md Tappa 0.5.
  */
 function chiamaElaboraCreaSpedizione(PDO $pdo, int $orderId, int $magazzinoId, array $quantitaNoLotto, int $uid): void
 {
-    $_SESSION['qk_user'] = ['id' => $uid, 'role' => 'admin'];
-    $_SESSION['qk_user_last_check'] = time();
-
-    $_POST = [
+    $postData = [
         'vettore' => 'Corriere Test',
         'tracking' => '',
         'causale_trasporto' => 'Vendita',
@@ -228,12 +241,8 @@ function chiamaElaboraCreaSpedizione(PDO $pdo, int $orderId, int $magazzinoId, a
         'lotti' => [],
         'quantita_no_lotto' => $quantitaNoLotto,
     ];
-    unset($_FILES['pallet_foto']);
 
-    $controller = new SalesOrdersController($pdo);
-    $method = new ReflectionMethod(SalesOrdersController::class, 'elaboraCreaSpedizione');
-    $method->setAccessible(true);
-    $method->invoke($controller, $orderId);
+    qk_elabora_crea_spedizione($pdo, $orderId, $postData, [], $uid);
 }
 
 // --- Caso bloccato: ordine 'completato' ---

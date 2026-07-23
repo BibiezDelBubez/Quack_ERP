@@ -181,3 +181,9 @@ A standard grid container widget for dashboards.
 * `.qk-gap-xs` to `.qk-gap-lg`
 * `.qk-p-1` to `.qk-p-4`, `.qk-mb-1` to `.qk-mb-4`
 * **Theme Variables Consistency**: `var(--qk-body-bg)`, `var(--qk-card-bg)`, `var(--qk-bg-subtle)`, `var(--qk-border)`, `var(--qk-text-primary)`, `var(--qk-text-muted)`, `var(--qk-accent)`.
+
+### E. Alert Messages & Link Styling (`.qk-alert`, `.qk-alert-link`)
+* **Standard Component**: Use `.qk-alert` with variant classes (`.qk-alert-danger`, `.qk-alert-warning`, `.qk-alert-success`, `.qk-alert-info`).
+* **Links Inside Alerts**: Any actionable link (`<a>`) generated inside an alert message (e.g. from controllers or flash messages) MUST use the class `.qk-alert-link`.
+* **Prohibited**: **NEVER write inline styles** (`style="color:...; font-weight:..."`) in PHP controllers or views for alert text/links. Using `.qk-alert-link` ensures `color: inherit`, keeping the link in bold (`font-weight: 700`), underlined, and visually aligned with the container alert type.
+

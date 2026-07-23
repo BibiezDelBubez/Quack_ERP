@@ -205,7 +205,7 @@ function qk_ordine_cliente_annulla(PDO $pdo, int $id): void
         $magazzinoId = $ordine['magazzino_id'] ?? null;
         if ($magazzinoId) {
             $stRighe = $pdo->prepare("
-                SELECT prodotto_id, quantita_ordinata, quantita_spedita, quantita_stock
+                SELECT id, prodotto_id, quantita_ordinata, quantita_spedita, quantita_stock
                   FROM ordini_clienti_righe
                  WHERE ordine_id = ? AND prodotto_id IS NOT NULL
             ");
@@ -219,7 +219,8 @@ function qk_ordine_cliente_annulla(PDO $pdo, int $id): void
                 }
                 $residuoStock = $qtaStock * max(0.0, $qtaOrdinata - $qtaSpedita) / $qtaOrdinata;
                 if ($residuoStock > 0) {
-                    qk_rilascia_stock_ordine($pdo, (int)$r['prodotto_id'], $residuoStock, (int)$magazzinoId);
+                    // (int)$r['id'] passato per usare lo snapshot Kit se presente (AUDIT 3 §3.3).
+                    qk_rilascia_stock_ordine($pdo, (int)$r['prodotto_id'], $residuoStock, (int)$magazzinoId, (int)$r['id']);
                 }
             }
         } else {
@@ -568,326 +569,22 @@ function qk_get_ordine_cliente_ddt(PDO $pdo, int $id): array
 
 /**
  * Crea una nuova spedizione ed il relativo DDT in un'unica transazione.
+ *
+ * PIANO - Eliminazione SQL Grezzo nei Controller (Regola Aurea), Tappa 6
+ * (23/07/2026, problema 4.C.1): wrapper sottile — la logica di dominio è
+ * stata estratta in App\Services\SpedizioneCalculatorService (+
+ * App\Repositories\SpedizioneRepository per l'accesso dati), stesso schema
+ * già usato da qk_insert_ordine_diretto() per l'ordine diretto. Firma
+ * pubblica invariata: nessun chiamante esterno impattato.
  */
 function qk_elabora_crea_spedizione(PDO $pdo, int $orderId, array $postData, array $filesData, int $userId): array
 {
-    $vettore               = trim($postData['vettore'] ?? '');
-    $tracking              = trim($postData['tracking'] ?? '');
-    $causale_trasporto     = trim($postData['causale_trasporto'] ?? 'Vendita');
-    $porto                 = strtolower(trim($postData['porto'] ?? 'franco'));
-    $aspetto_beni          = trim($postData['aspetto_beni'] ?? '');
-    $numero_colli          = (int)($postData['numero_colli'] ?? 1);
-    $peso_lordo_kg         = (float)($postData['peso_lordo_kg'] ?? 0.0);
-    $lottiPost             = $postData['lotti'] ?? [];
-    $quantitaNoLottoPost   = $postData['quantita_no_lotto'] ?? [];
-    $magazzinoSpedId       = (int)($postData['magazzino_id'] ?? 0);
+    require_once __DIR__ . '/../app/Repositories/SpedizioneRepository.php';
+    require_once __DIR__ . '/../app/Services/SpedizioneCalculatorService.php';
 
-    $pdo->beginTransaction();
-    try {
-        if ($magazzinoSpedId <= 0) {
-            throw new \Exception("Seleziona il magazzino di spedizione.");
-        }
+    $repository = new \App\Repositories\SpedizioneRepository($pdo);
+    $service = new \App\Services\SpedizioneCalculatorService($pdo, $repository);
 
-        $st = $pdo->prepare("SELECT * FROM ordini_clienti WHERE id = ?");
-        $st->execute([$orderId]);
-        $order = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$order) throw new \Exception("Ordine non trovato.");
-
-        $magazzinoRiservaId = !empty($order['magazzino_id']) ? (int)$order['magazzino_id'] : null;
-
-        qk_ordine_cliente_assicura_modificabile(
-            (string) $order['stato'],
-            "Impossibile creare la spedizione: l'ordine è già in stato '{$order['stato']}'."
-        );
-
-        $indirizzoSpedizioneId = !empty($order['indirizzo_spedizione_id']) ? (int)$order['indirizzo_spedizione_id'] : null;
-
-        if (!$indirizzoSpedizioneId && !empty($order['indirizzo_consegna_id'])) {
-            $stSnap = $pdo->prepare("SELECT indirizzo_master_id FROM indirizzi_documenti WHERE id = ?");
-            $stSnap->execute([$order['indirizzo_consegna_id']]);
-            $masterId = $stSnap->fetchColumn();
-            if ($masterId) { $indirizzoSpedizioneId = (int)$masterId; }
-        }
-
-        if (!$indirizzoSpedizioneId) {
-            $stDef = $pdo->prepare("
-                SELECT id FROM indirizzi
-                WHERE soggetto_id = ? AND attivo = 1
-                ORDER BY (tipo = 'spedizione' AND predefinito = 1) DESC,
-                         predefinito DESC,
-                         id ASC
-                LIMIT 1
-            ");
-            $stDef->execute([$order['cliente_id']]);
-            $fallbackId = $stDef->fetchColumn();
-            if ($fallbackId) { $indirizzoSpedizioneId = (int)$fallbackId; }
-        }
-
-        if (!$indirizzoSpedizioneId) {
-            throw new \Exception("Impossibile creare la spedizione: il cliente non ha nessun indirizzo di consegna valido.");
-        }
-
-        $lines = qk_get_righe_ordine_da_spedire($pdo, $orderId);
-
-        $confermaSuperamento = ($postData['conferma_superamento'] ?? '') === '1';
-        if (!$confermaSuperamento) {
-            $superamenti = [];
-            foreach ($lines as $line) {
-                $lineId = $line['id'];
-                $residuo = (float)$line['quantita_ordinata'] - (float)$line['quantita_spedita'];
-                if ((int)$line['traccia_lotti'] === 1) {
-                    $totRiga = 0.0;
-                    foreach ($lottiPost[$lineId] ?? [] as $qtaStr) {
-                        $totRiga += (float)$qtaStr;
-                    }
-                } else {
-                    $totRiga = (float)($quantitaNoLottoPost[$lineId] ?? 0.0);
-                }
-                if ($totRiga > $residuo + 0.0005) {
-                    $superamenti[] = "\"{$line['prodotto_nome']}\": " . number_format($totRiga, 3) . " contro un residuo di " . number_format($residuo, 3);
-                }
-            }
-            if (!empty($superamenti)) {
-                throw new \Exception("Spedizione bloccata: alcune righe superano la quantità ancora ordinata — " . implode('; ', $superamenti));
-            }
-        }
-
-        $numSped = qk_next_sequence_number($pdo, 'spedizione');
-
-        $pdo->prepare("
-            INSERT INTO spedizioni (numero_spedizione, ordine_id, data_spedizione, indirizzo_spedizione_id, magazzino_id, vettore, tracking, stato, creato_da, created_at)
-            VALUES (?, ?, CURRENT_DATE, ?, ?, ?, ?, 'spedita', ?, CURRENT_TIMESTAMP)
-        ")->execute([$numSped, $orderId, $indirizzoSpedizioneId, $magazzinoSpedId, $vettore ?: null, $tracking ?: null, $userId]);
-        $spedizioneId = (int)$pdo->lastInsertId();
-
-        if (isset($filesData['pallet_foto'])) {
-            $files = $filesData['pallet_foto'];
-            $totalUploaded = is_array($files['name']) ? count($files['name']) : 0;
-            for ($i = 0; $i < $totalUploaded; $i++) {
-                if ($files['error'][$i] === UPLOAD_ERR_OK) {
-                    $tmpName = $files['tmp_name'][$i];
-                    $name = basename($files['name'][$i]);
-
-                    $allowedMimeToExt = [
-                        'image/jpeg' => 'jpg',
-                        'image/png'  => 'png',
-                        'image/gif'  => 'gif',
-                        'image/webp' => 'webp',
-                    ];
-                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                    $realMime = $finfo ? finfo_file($finfo, $tmpName) : false;
-                    if ($finfo) {
-                        finfo_close($finfo);
-                    }
-                    $ext = $allowedMimeToExt[$realMime] ?? null;
-                    if ($ext !== null && getimagesize($tmpName) !== false) {
-                        $subdir = upload_dated_subdir('spedizioni');
-                        $upload_dir = upload_ensure_dir($subdir);
-                        $new_name = uniqid('sped_photo_', true) . '.' . $ext;
-                        $dest = $upload_dir . DIRECTORY_SEPARATOR . $new_name;
-                        if (move_uploaded_file($tmpName, $dest)) {
-                            $filePath = $subdir . '/' . $new_name;
-                            $stPhoto = $pdo->prepare("
-                                INSERT INTO spedizioni_foto (spedizione_id, file_path, file_name, creato_da, created_at)
-                                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                            ");
-                            $stPhoto->execute([$spedizioneId, $filePath, $name, $userId]);
-                        }
-                    }
-                }
-            }
-        }
-
-        $numDdt = qk_next_sequence_number($pdo, 'documento_trasporto');
-        $mittente = qk_calcola_mittente_ddt($pdo, $magazzinoSpedId);
-
-        $destRagioneSociale = $order['cliente_ragione_sociale'] ?? null;
-        $destPartitaIva     = $order['cliente_partita_iva'] ?? null;
-        $destCodiceFiscale  = $order['cliente_codice_fiscale'] ?? null;
-        $destVia            = $order['consegna_via'] ?? null;
-        $destCivico         = $order['consegna_civico'] ?? null;
-        $destCap            = $order['consegna_cap'] ?? null;
-        $destCitta          = $order['consegna_citta'] ?? null;
-        $destProvincia      = $order['consegna_provincia'] ?? null;
-        $destNazione        = $order['consegna_nazione'] ?? null;
-        $destNomeSede       = $order['consegna_presso'] ?? null;
-
-        $pdo->prepare("
-            INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, mittente_ragione_sociale, mittente_partita_iva, mittente_codice_fiscale, mittente_indirizzo, mittente_telefono, mittente_email, destinatario_ragione_sociale, destinatario_partita_iva, destinatario_codice_fiscale, destinatario_via, destinatario_civico, destinatario_cap, destinatario_citta, destinatario_provincia, destinatario_nazione, destinatario_nome_sede, creato_da, created_at, updated_at)
-            VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ")->execute([
-            $numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg,
-            $mittente['ragione_sociale'], $mittente['partita_iva'], $mittente['codice_fiscale'], $mittente['indirizzo'], $mittente['telefono'], $mittente['email'],
-            $destRagioneSociale, $destPartitaIva, $destCodiceFiscale, $destVia, $destCivico, $destCap, $destCitta, $destProvincia, $destNazione, $destNomeSede,
-            $userId,
-        ]);
-        $ddtId = (int)$pdo->lastInsertId();
-
-        $stInsSpedRiga = $pdo->prepare("INSERT INTO spedizioni_righe (spedizione_id, ordine_riga_id, prodotto_id, lotto_id, quantita, note) VALUES (?, ?, ?, ?, ?, '')");
-        $stInsDdtRiga  = $pdo->prepare("INSERT INTO documenti_trasporto_righe (documento_trasporto_id, prodotto_id, descrizione, quantita, unita_misura_id, lotto_id, codice_lotto, is_adr, numero_onu, classe_adr, packing_group, posizione_riga, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')");
-        $stUpLottoGiac = $pdo->prepare("
-            INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-            VALUES (?, ?, -?, CURRENT_TIMESTAMP)
-            ON CONFLICT(lotto_id, magazzino_id) DO UPDATE
-                SET quantita_disponibile = quantita_disponibile - ?,
-                    updated_at = CURRENT_TIMESTAMP
-        ");
-        $stDecrementaDisponibile = $pdo->prepare("
-            UPDATE giacenze
-               SET quantita_disponibile = quantita_disponibile - ?
-             WHERE prodotto_id = ? AND magazzino_id = ?
-        ");
-        $stCheckGiac   = $pdo->prepare("SELECT quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
-        $stUpOrdRiga   = $pdo->prepare("UPDATE ordini_clienti_righe SET quantita_spedita = quantita_spedita + ? WHERE id = ?");
-        $stAdr         = $pdo->prepare("SELECT co.codice_onu, co.classe_pericolo, COALESCE(pca.gruppo_imballaggio_override, co.gruppo_imballaggio) AS gruppo_imballaggio FROM prodotto_classificazioni_adr pca JOIN adr_codici_onu co ON co.id = pca.codice_onu_id WHERE pca.prodotto_id = ? AND pca.e_corrente = 1 LIMIT 1");
-
-        $pos = 0; $anyShipped = false;
-
-        foreach ($lines as $line) {
-            $lineId = $line['id']; $prodId = $line['prodotto_id'];
-
-            if (($line['tipo'] ?? '') !== 'kit' && qk_inventario_bloccato($pdo, $magazzinoSpedId, (int)$prodId)) {
-                throw new \Exception("Impossibile spedire \"{$line['prodotto_nome']}\": è in corso un inventario fisico in questo magazzino.");
-            }
-
-            $numSnap = isset($line['num_factor_snapshot']) ? (int)$line['num_factor_snapshot'] : 1;
-            $denSnap = isset($line['den_factor_snapshot']) ? (int)$line['den_factor_snapshot'] : 1;
-            $convertiInStock = function (float $q) use ($numSnap, $denSnap): float {
-                if ($denSnap <= 0) return $q;
-                return (float) bcdiv(bcmul((string)$q, (string)$numSnap, 6), (string)$denSnap, 3);
-            };
-
-            if ((int)$line['traccia_lotti'] === 1) {
-                foreach ($lottiPost[$lineId] ?? [] as $lottoId => $qtaStr) {
-                    $qta = (float)$qtaStr;
-                    if ($qta <= 0) continue;
-                    $anyShipped = true;
-                    $qtaStock   = $convertiInStock($qta);
-
-                    $stLotInfo = $pdo->prepare("
-                        SELECT l.id, COALESCE(lg.quantita_disponibile, 0) AS quantita_disponibile,
-                               l.codice_lotto_interno AS cl
-                        FROM lotti l
-                        LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
-                        WHERE l.id = ?
-                    ");
-                    $stLotInfo->execute([$magazzinoSpedId, $lottoId]);
-                    $lot = $stLotInfo->fetch(PDO::FETCH_ASSOC);
-                    if (!$lot) throw new \Exception("Lotto {$lottoId} non trovato.");
-                    if ($lot['quantita_disponibile'] < $qtaStock) throw new \Exception("Giacenza insufficiente lotto {$lot['cl']}.");
-
-                    $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, $lottoId, $qta]);
-                    $stAdr->execute([$prodId]);
-                    $adr = $stAdr->fetch(PDO::FETCH_ASSOC);
-                    $isAdr = !empty($adr) ? 1 : 0;
-                    $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], $lottoId, $lot['cl'], $isAdr, $isAdr ? 'UN '.$adr['codice_onu'] : null, $isAdr ? $adr['classe_pericolo'] : null, $isAdr ? $adr['gruppo_imballaggio'] : null, $pos++]);
-                    $stUpLottoGiac->execute([$lottoId, $magazzinoSpedId, $qtaStock, $qtaStock]);
-                    $stDecrementaDisponibile->execute([$qtaStock, $prodId, $magazzinoSpedId]);
-                    if ($magazzinoRiservaId !== null) {
-                        qk_rilascia_stock_ordine($pdo, (int)$prodId, $qtaStock, $magazzinoRiservaId);
-                    }
-                    $stUpOrdRiga->execute([$qta, $lineId]);
-                    $pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $lottoId, $numDdt, $userId]);
-                }
-            } else {
-                $qta = (float)($quantitaNoLottoPost[$lineId] ?? 0.0);
-                if ($qta > 0) {
-                    $anyShipped = true;
-                    $qtaStock   = $convertiInStock($qta);
-                    $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, null, $qta]);
-                    $stAdr->execute([$prodId]);
-                    $adr = $stAdr->fetch(PDO::FETCH_ASSOC);
-                    $isAdr = !empty($adr) ? 1 : 0;
-                    $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], null, null, $isAdr, $isAdr ? 'UN '.$adr['codice_onu'] : null, $isAdr ? $adr['classe_pericolo'] : null, $isAdr ? $adr['gruppo_imballaggio'] : null, $pos++]);
-
-                    if (($line['tipo'] ?? '') === 'kit') {
-                        if ($magazzinoRiservaId !== null) {
-                            qk_rilascia_stock_ordine($pdo, (int)$prodId, $qtaStock, $magazzinoRiservaId);
-                        }
-
-                        $kitSt = $pdo->prepare("
-                            SELECT ck.componente_id, ck.quantita, p.traccia_lotti
-                            FROM componenti_kit ck
-                            JOIN prodotti p ON p.id = ck.componente_id
-                            WHERE ck.kit_id = ?
-                        ");
-                        $kitSt->execute([$prodId]);
-                        $comps = $kitSt->fetchAll(PDO::FETCH_ASSOC);
-                        foreach ($comps as $c) {
-                            if (qk_inventario_bloccato($pdo, $magazzinoSpedId, (int)$c['componente_id'])) {
-                                throw new \Exception("Impossibile spedire il Kit \"{$line['prodotto_nome']}\": un componente è in inventario.");
-                            }
-                            $cQta = $c['quantita'] * $qtaStock;
-
-                            if ((int)$c['traccia_lotti'] === 1) {
-                                $allocazioni = qk_seleziona_lotti_fefo($pdo, (int)$c['componente_id'], $magazzinoSpedId, $cQta);
-                                $totAllocato = array_sum(array_column($allocazioni, 'quantita'));
-                                if ($totAllocato < $cQta - 0.0005) {
-                                    throw new \Exception(sprintf('Giacenza lotti insufficiente per componente Kit "%s".', $line['prodotto_nome']));
-                                }
-                                foreach ($allocazioni as $alloc) {
-                                    $stUpLottoGiac->execute([$alloc['lotto_id'], $magazzinoSpedId, $alloc['quantita'], $alloc['quantita']]);
-                                    $stDecrementaDisponibile->execute([$alloc['quantita'], $c['componente_id'], $magazzinoSpedId]);
-                                    $pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $magazzinoSpedId, $alloc['quantita'], $alloc['lotto_id'], $numDdt, $userId]);
-                                }
-                                continue;
-                            }
-
-                            $stCheckGiac->execute([$c['componente_id'], $magazzinoSpedId]);
-                            $dispComp = $stCheckGiac->fetchColumn();
-                            $dispComp = $dispComp !== false ? (float)$dispComp : 0.0;
-                            if ($dispComp < $cQta) {
-                                throw new \Exception(sprintf('Giacenza insufficiente per componente Kit "%s".', $line['prodotto_nome']));
-                            }
-
-                            $stDecrementaDisponibile->execute([$cQta, $c['componente_id'], $magazzinoSpedId]);
-                            $pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $magazzinoSpedId, $cQta, $numDdt, $userId]);
-                        }
-                    } else {
-                        $stCheckGiac->execute([$prodId, $magazzinoSpedId]);
-                        $dispProd = $stCheckGiac->fetchColumn();
-                        $dispProd = $dispProd !== false ? (float)$dispProd : 0.0;
-                        if ($dispProd < $qtaStock) {
-                            throw new \Exception(sprintf('Giacenza insufficiente per "%s".', $line['prodotto_nome']));
-                        }
-
-                        $stDecrementaDisponibile->execute([$qtaStock, $prodId, $magazzinoSpedId]);
-                        if ($magazzinoRiservaId !== null) {
-                            qk_rilascia_stock_ordine($pdo, (int)$prodId, $qtaStock, $magazzinoRiservaId);
-                        }
-                        $pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $numDdt, $userId]);
-                    }
-
-                    $stUpOrdRiga->execute([$qta, $lineId]);
-                }
-            }
-        }
-
-        if (!$anyShipped) throw new \Exception("Nessuna quantita valida per la spedizione.");
-
-        $stAll = $pdo->prepare("SELECT quantita_ordinata, quantita_spedita FROM ordini_clienti_righe WHERE ordine_id = ?");
-        $stAll->execute([$orderId]);
-        $allLines = $stAll->fetchAll(PDO::FETCH_ASSOC);
-        $allDone = true; $anyDone = false;
-        foreach ($allLines as $al) {
-            if ((float)$al['quantita_spedita'] < (float)$al['quantita_ordinata']) $allDone = false;
-            if ((float)$al['quantita_spedita'] > 0) $anyDone = true;
-        }
-        $nuovoStato = $allDone ? 'spedito' : ($anyDone ? 'parzialmente_spedito' : 'in_lavorazione');
-        $pdo->prepare("UPDATE ordini_clienti SET stato = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$nuovoStato, $orderId]);
-
-        $pdo->commit();
-        return [
-            'num_sped'      => $numSped,
-            'num_ddt'       => $numDdt,
-            'spedizione_id' => $spedizioneId,
-            'ddt_id'        => $ddtId,
-        ];
-    } catch (\Throwable $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        throw $e;
-    }
+    return $service->creaSpedizione($orderId, $postData, $filesData, $userId);
 }
 

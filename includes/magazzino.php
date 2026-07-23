@@ -78,6 +78,36 @@ function qk_inventario_bloccato(PDO $pdo, int $magazzinoId, int $prodottoId): bo
 }
 
 /**
+ * Verifica se un prodotto è un Kit, interrogando prodotti.tipo direttamente
+ * — non dipende da un campo 'tipo' eventualmente già presente (o assente)
+ * in un array caricato altrove da chi chiama, per evitare la classe di bug
+ * in cui una query "a monte" dimentica di includere prodotti.tipo tra le
+ * colonne selezionate.
+ *
+ * Estratta il 23/07/2026 (PIANO - Eliminazione SQL Grezzo nei Controller,
+ * Tappa 6-bis) da due copie identiche inline dentro qk_riserva_stock_ordine()
+ * e qk_rilascia_stock_ordine() qui sotto — durante la stessa tappa si è
+ * scoperto che qk_get_righe_ordine_da_spedire() (includes/sales_orders.php)
+ * NON seleziona mai prodotti.tipo, rendendo di fatto irraggiungibile il ramo
+ * "riga Kit" di App\Services\SpedizioneCalculatorService::creaSpedizione()
+ * (mai eseguito in produzione: uno scarico di un Kit falliva sempre con
+ * "Giacenza insufficiente", cercando la giacenza del Kit stesso invece di
+ * espandersi sui componenti). qk_riserva_stock_ordine()/
+ * qk_rilascia_stock_ordine() non avevano questo problema perché già
+ * verificavano il tipo con una query propria invece di fidarsi di un campo
+ * arrivato da fuori — stesso principio ora esteso anche allo scarico in
+ * spedizione, invece di limitarsi ad aggiungere la colonna mancante alla
+ * query (soluzione più fragile: rimarrebbe comunque una dipendenza nascosta
+ * da "chi chiama deve ricordarsi di includere prodotti.tipo").
+ */
+function qk_prodotto_e_kit(PDO $pdo, int $prodottoId): bool
+{
+    $st = $pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
+    $st->execute([$prodottoId]);
+    return $st->fetchColumn() === 'kit';
+}
+
+/**
  * Riserva quantità a magazzino per una riga d'ordine, "consapevole" dei Kit.
  *
  * Un Kit non ha giacenza fisica propria: è una collezione di prodotti singoli,
@@ -94,23 +124,39 @@ function qk_inventario_bloccato(PDO $pdo, int $magazzinoId, int $prodottoId): bo
  * Usata sia dalla creazione di un ordine diretto (includes/sales_orders.php)
  * sia dalla conferma preventivo→ordine (includes/sales_quotes.php), che prima
  * duplicavano questa logica in due punti separati, entrambi senza gestione Kit.
+ *
+ * @param ?int $rigaId Riga di ordini_clienti_righe per cui si sta riservando
+ *        (AUDIT 3 §3.3, 23/07/2026). Se il prodotto è un Kit e $rigaId è
+ *        fornito, la composizione usata per QUESTA riserva viene congelata su
+ *        ordini_clienti_righe.kit_componenti_snapshot, così che
+ *        qk_rilascia_stock_ordine() possa liberare esattamente le stesse
+ *        quantità anche se la ricetta del Kit cambia nel frattempo — prima
+ *        entrambe le funzioni leggevano sempre la composizione ATTUALE.
+ *        Facoltativo per compatibilità con eventuali altri chiamanti: senza
+ *        $rigaId il comportamento resta quello di sempre (nessuno snapshot).
  */
-function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId): void
+function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId, ?int $rigaId = null): void
 {
     if ($prodottoId <= 0 || $qtaStock <= 0) {
         return;
     }
 
-    $stTipo = $pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
-    $stTipo->execute([$prodottoId]);
-    $tipo = $stTipo->fetchColumn();
-
     $righeDaRiservare = [];
-    if ($tipo === 'kit') {
+    if (qk_prodotto_e_kit($pdo, $prodottoId)) {
         $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
         $stComp->execute([$prodottoId]);
-        foreach ($stComp->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $componenti = $stComp->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($componenti as $c) {
             $righeDaRiservare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
+        }
+
+        if ($rigaId !== null) {
+            $snapshot = array_map(
+                fn($c) => ['componente_id' => (int)$c['componente_id'], 'quantita' => (float)$c['quantita']],
+                $componenti
+            );
+            $pdo->prepare("UPDATE ordini_clienti_righe SET kit_componenti_snapshot = ? WHERE id = ?")
+                ->execute([json_encode($snapshot), $rigaId]);
         }
     } else {
         $righeDaRiservare[] = [$prodottoId, $qtaStock];
@@ -154,22 +200,45 @@ function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int
  * principio già usato nel decremento in fase di spedizione
  * (SalesOrdersController::elaboraCreaSpedizione()) — assorbe eventuali
  * incongruenze pregresse invece di romperle ulteriormente.
+ *
+ * @param ?int $rigaId Riga di ordini_clienti_righe per cui si sta rilasciando
+ *        (AUDIT 3 §3.3, 23/07/2026). Se il prodotto è un Kit e la riga ha uno
+ *        snapshot salvato da qk_riserva_stock_ordine(), viene usato quello
+ *        invece della composizione ATTUALE di componenti_kit — così un
+ *        cambio ricetta nel frattempo non fa liberare quantità sbagliate.
+ *        Senza $rigaId, o per righe precedenti a questa correzione (nessuno
+ *        snapshot salvato), fallback automatico sulla composizione live,
+ *        identico al comportamento di prima.
  */
-function qk_rilascia_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId): void
+function qk_rilascia_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId, ?int $rigaId = null): void
 {
     if ($prodottoId <= 0 || $qtaStock <= 0) {
         return;
     }
 
-    $stTipo = $pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
-    $stTipo->execute([$prodottoId]);
-    $tipo = $stTipo->fetchColumn();
-
     $righeDaRilasciare = [];
-    if ($tipo === 'kit') {
-        $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
-        $stComp->execute([$prodottoId]);
-        foreach ($stComp->fetchAll(PDO::FETCH_ASSOC) as $c) {
+    if (qk_prodotto_e_kit($pdo, $prodottoId)) {
+        $componenti = null;
+        if ($rigaId !== null) {
+            $stSnap = $pdo->prepare("SELECT kit_componenti_snapshot FROM ordini_clienti_righe WHERE id = ?");
+            $stSnap->execute([$rigaId]);
+            $snapRaw = $stSnap->fetchColumn();
+            if ($snapRaw) {
+                $decoded = json_decode((string)$snapRaw, true);
+                if (is_array($decoded)) {
+                    $componenti = $decoded;
+                }
+            }
+        }
+        if ($componenti === null) {
+            // Nessuno snapshot disponibile (rigaId non passato, o riga
+            // creata prima di questa correzione): fallback sulla
+            // composizione live, comportamento identico a prima di AUDIT 3 §3.3.
+            $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
+            $stComp->execute([$prodottoId]);
+            $componenti = $stComp->fetchAll(PDO::FETCH_ASSOC);
+        }
+        foreach ($componenti as $c) {
             $righeDaRilasciare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
         }
     } else {

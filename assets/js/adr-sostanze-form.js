@@ -427,15 +427,7 @@ document.addEventListener('DOMContentLoaded', function () {
   })();
 
   // Stato dell'interfaccia
-  let associatedList = <?= json_encode(array_map(function($p) {
-      return [
-          'id' => (int)$p['id'],
-          'nome' => $p['nome'],
-          'sku' => $p['sku_interno'],
-          'attivo' => (bool)$p['attivo'],
-          'categoria_id' => $p['categoria_id'] ? (int)$p['categoria_id'] : null
-      ];
-  }, $prodotti_associati)) ?>;
+  let associatedList = window.QkAdrSostanze.associatedList || [];
 
   let availableList = []; // Prodotti trovati dalla ricerca
 

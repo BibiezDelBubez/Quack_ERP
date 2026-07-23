@@ -115,23 +115,10 @@ final class SalesOrdersController extends BaseController
 
         $numero_ordine = $values['numero_ordine'] ?: qk_next_numero_ordine_diretto($this->pdo);
 
-        // AUDIT 3 §2.1: stessa logica a 3 livelli già usata da SalesQuotesController::create()
-        // (sessione -> predefinita -> prima della lista) invece di lasciare il campo vuoto,
-        // che faceva selezionare al browser semplicemente la prima voce alfabetica — rischio
-        // concreto di congelare sull'ordine i dati fiscali dell'azienda sbagliata.
-        $aziende = qk_aziende_list($this->pdo);
-        $defaultAziendaId = isset($_SESSION['azienda_attiva_id']) ? (string)$_SESSION['azienda_attiva_id'] : '';
-        if ($defaultAziendaId === '') {
-            foreach ($aziende as $az) {
-                if ($az['predefinita'] == 1) {
-                    $defaultAziendaId = (string)$az['id'];
-                    break;
-                }
-            }
-        }
-        if ($defaultAziendaId === '' && !empty($aziende)) {
-            $defaultAziendaId = (string)$aziende[0]['id'];
-        }
+        // AUDIT 3 §2.1: qk_aziende_list_con_default() (includes/anagrafiche.php) —
+        // stessa funzione condivisa ora usata anche da SalesQuotesController::create(),
+        // niente più la stessa logica a 3 livelli copiata a mano nei due controller.
+        ['aziende' => $aziende, 'default_id' => $defaultAziendaId] = qk_aziende_list_con_default($this->pdo);
         if (empty($values['azienda_interna_id'])) {
             $values['azienda_interna_id'] = $defaultAziendaId;
         }

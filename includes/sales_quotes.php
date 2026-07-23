@@ -7,6 +7,14 @@ require_once __DIR__ . '/magazzino.php';
 require_once __DIR__ . '/transizioni_stati.php';
 require_once __DIR__ . '/document_common.php';
 require_once __DIR__ . '/compliance.php';
+// tabelle_base.php: qk_preventivo_conferma_ordine() chiama qk_get_listino_default_id()
+// (definita lì) — require mancante scoperto il 23/07/2026 dalla suite di regressione
+// completa (CLAUDE.md regola 4: require sempre in testa al file). Nell'app reale il
+// bootstrap carica comunque tabelle_base.php da qualche altro punto prima che questo
+// percorso venga eseguito, quindi il bug restava mascherato — ma è un accoppiamento
+// nascosto pericoloso, non una garanzia: qualunque contesto che richieda solo
+// sales_quotes.php (come una suite di test isolata) va in errore fatale.
+require_once __DIR__ . '/tabelle_base.php';
 require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 /**
@@ -1163,10 +1171,12 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
                 ':quantita_confezione' => $r['quantita_confezione'] ?? null,
                 ':note'               => qk_null_if_empty($r['note_riga'] ?? '')
             ]);
+            $rigaOrdineId = (int)$pdo->lastInsertId();
 
             // Reserve stock (kit-aware: vedi qk_riserva_stock_ordine in includes/magazzino.php)
+            // $rigaOrdineId passato per congelare lo snapshot Kit (AUDIT 3 §3.3).
             if (!empty($r['prodotto_id']) && (float)$r['quantita_stock'] > 0) {
-                qk_riserva_stock_ordine($pdo, (int)$r['prodotto_id'], (float)$r['quantita_stock'], $magazzinoRiservaId);
+                qk_riserva_stock_ordine($pdo, (int)$r['prodotto_id'], (float)$r['quantita_stock'], $magazzinoRiservaId, $rigaOrdineId);
             }
         }
 

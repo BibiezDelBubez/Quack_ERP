@@ -1,6 +1,6 @@
 # AUDIT 3 — Conformità del Ciclo Vendite a Prezzi/UoM, Anagrafiche, Magazzino/Lotti, AGENTS.md
 
-> Stato: 🔴 **SOLO ANALISI, NESSUN FILE TOCCATO.** Tutti i 18 punti sotto sono da leggere, capire e decidere UNO ALLA VOLTA prima di correggere qualunque cosa — stessa procedura già usata per gli "Open Problems" della REVISIONE principale (spiegazione semplice → perché è un problema → cosa fa il codice → soluzione proposta → attendere "vai").
+> Stato: 🟡 **PARZIALE.** Implementati e verificati con esecuzione reale: 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 4.A.1, 4.A.2, 4.B.1 — vedi le note ✅ dentro ciascuna sezione. Gli altri punti (4.A.3, 4.A.4, 4.A.5, 4.B.2, 4.B.3, 4.C.1, 4.C.2, 4.C.3, 4.C.4) restano solo analisi, esplicitamente non ancora approvati per l'implementazione ("il resto lo guardo con più attenzione") — da riprendere UNO ALLA VOLTA quando l'utente decide.
 
 Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura integrale (non a campione) sia della documentazione di riferimento sia del codice del Ciclo Vendite coinvolto, verificando ogni riga citata con lo strumento di lettura file (non fidandosi di grep per punteggiatura/commenti). Nessuna delle 4 revisioni ripete i 10 problemi già trovati e corretti in `AUDIT 2` / `PIANO - Correzione Violazioni MVC-DRY-God Object (Audit 2).md` in questa stessa giornata di lavoro (bug `qk_preventivo_duplica()`, `apiCreaCliente()` senza colonna `codice`, registro compliance mai scritto, duplicazione compliance-check/indirizzo tra `create()`/`edit()`, `require_once` dentro le funzioni di `compliance.php`, buffer PDF non ripulito, `sconto_perc` ignorato nei totali in 5 punti, SQL grezzo per `canali_vendita` in una vista, CSS hardcoded ridondante in un alert).
 
@@ -23,6 +23,8 @@ Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura i
 
 **✅ DECISIONE (confermata):** usare `ordini_clienti_righe.quantita_stock` (o `qk_uom_converti_riga()`) per calcolare il residuo, invece del valore grezzo in unità commerciale — stessa conversione già corretta nel motore di pricing e nel controllo finale server-side di `elaboraCreaSpedizione()`. Stessa correzione per la pre-allocazione FEFO lato JS: convertire prima di confrontare/sommare, ed etichettare sempre la disponibilità del lotto con l'unità realmente usata (Stock UoM). Confermato confrontando col Ciclo Acquisti: la ricezione merci non ha una schermata identica (il suo confronto residuo è tra valori nella stessa unità), ma ovunque tocca la giacenza reale converte sempre esplicitamente a Stock UoM prima — stesso principio da applicare qui.
 
+**✅ IMPLEMENTATO E VERIFICATO.** `qk_get_righe_ordine_da_spedire()` (`includes/sales_orders.php:367-398`) ora calcola `qta_residua` con la formula proporzionale decisa (`quantita_stock * (quantita_ordinata - quantita_spedita) / quantita_ordinata`, stessa già in uso in `qk_ordine_cliente_annulla()`), tenendo distinto `qta_residua_nativa` (unità commerciale, solo per mostrare all'operatore quanto manca nell'unità in cui ha ordinato). `app/views/sales/shipments/_nuova.php:100-110` usa `qta_residua` (Stock UoM) per il confronto con `lotti_giacenze.quantita_disponibile` (stessa unità) ed etichetta esplicitamente con `uom_stock_simbolo`; `assets/js/sales-shipment-new.js` confronta valori già omogenei letti da `data-qta-residua`, nessuna conversione lato client necessaria. Verificato con test reale riproducendo l'esempio dell'audit (1 fusto = 25 kg, 4 fusti ordinati, 1 già spedito → residuo corretto 75 kg, non più confrontato erroneamente col valore in fusti) più un caso limite (quantità minuscola, nessuna divisione per zero).
+
 ### 1.2 (Gravità alta) Il suggerimento di prezzo nel form "Nuovo Ordine Diretto" è completamente non funzionante
 
 **File e righe:**
@@ -38,6 +40,8 @@ Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura i
 
 **✅ DECISIONE (confermata, rivista dopo obiezione DRY dell'utente):** la prima proposta (copiare la chiamata GET corretta anche in `sales-orders-create.js`) creava una seconda copia della stessa logica — sbagliato. Le due implementazioni gestiscono la risposta in modo diverso (quella preventivi applica anche conversione prezzo tra UoM/sconto/RRP, quella ordine diretto no — differenza di funzionalità reale, non toccata da questo fix), ma la parte dove vive il bug — costruire l'URL e chiamare l'API — è identica al 100% e oggi non esiste alcun file JS condiviso tra i due form. Soluzione: creare `assets/js/pricing-widget.js` con un'unica funzione condivisa (es. `qkFetchPrezzoSuggerito({prodottoId, listinoId, clienteId, quantita, unitaMisuraId})`) che fa la chiamata GET corretta e restituisce i dati, caricato da entrambi i form; ognuno dei due continua a gestire la risposta come fa oggi.
 
+**✅ IMPLEMENTATO E VERIFICATO.** `assets/js/pricing-widget.js` esiste, con l'unica funzione condivisa `qkFetchPrezzoSuggerito()` che fa la chiamata GET corretta (query string, non POST body) a `/sales/pricelists/api/ottieni-prezzo` e legge `prezzo_unitario` (non più `prezzo`). Caricato PRIMA del proprio script in entrambe le viste (`app/views/sales/quotes/_form.php:897-898` e `app/views/sales/orders/_create.php:576-577`). `sales-orders-create.js` (`fetchOrdinePrice()`) e `sales-quotes.js` la usano entrambi, ognuno gestendo la risposta a modo suo come deciso (nessuna duplicazione della parte che aveva il bug, gestione risposta rimasta specifica per form). Verificato per lettura diretta di tutti i file coinvolti — nessun riferimento residuo alla vecchia chiamata rotta.
+
 **Tutto il resto verificato conforme:** cascata prezzo dedicato→standard→costo, `qk_uom_converti_riga()`, snapshot su preventivi/ordini, conversione bcdiv/bcmul in `elaboraCreaSpedizione()`, vincolo `UNIQUE(..., quantita_minima_stock)`.
 
 ---
@@ -50,6 +54,8 @@ Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura i
 
 **Esempio concreto:** un'azienda interna disattivata resta selezionabile come emittente di un ordine nuovo. I dati fiscali (ragione sociale, P.IVA, IBAN) vengono congelati permanentemente su quel documento — l'errore non si corregge più in stampa per il pattern di storicizzazione già stabilito.
 
+**✅ IMPLEMENTATO E VERIFICATO (23/07/2026).** `SalesOrdersController::create()` ora usa `qk_aziende_list()` (filtro `attivo=1`), come già faceva `SalesQuotesController::create()`. Pulizia DRY aggiuntiva fatta nello stesso intervento: la logica di selezione del default (sessione → predefinita → prima della lista) era copiata identica in entrambi i controller — estratta in `qk_aziende_list_con_default()` (`includes/anagrafiche.php`), unica fonte di verità, richiamata da entrambi. Verificato con 4 asserzioni reali (azienda disattivata esclusa dall'elenco, default da sessione, default da predefinita, fallback sulla prima voce).
+
 ### 2.2 (Gravità alta) Checkbox "Salva in anagrafica" sul form ordine diretto non collegata al backend
 
 **File e righe:** checkbox in `app/views/sales/orders/_create.php:392-397`, gestita in JS (`sales-orders-create.js:156,171,176`), ma `SalesOrdersController::readPostOrderValues()` (righe 198-232) non legge mai `$_POST['salva_in_anagrafica_indirizzo']` — nessun equivalente di `SalesQuotesController::maybeCreateOneTimeAddress()`.
@@ -58,9 +64,13 @@ Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura i
 
 **Esempio concreto:** l'utente vede la stessa UI identica ai preventivi, spunta la checkbox aspettandosi che l'indirizzo venga salvato per il prossimo ordine — non succede nulla, va reinserito da capo ogni volta.
 
+**✅ IMPLEMENTATO E VERIFICATO (23/07/2026).** `SalesOrdersController::create()` ora chiama `qk_maybe_create_one_time_address($this->pdo, $values)` — funzione condivisa in `includes/anagrafiche.php`, la STESSA che `SalesQuotesController` richiama tramite il suo wrapper privato `maybeCreateOneTimeAddress()` (una sola riga di delega, nessuna logica duplicata: verificato che non esistano due implementazioni indipendenti).
+
 ### 2.3 (Gravità bassa) `SalesOrdersController::apiClienteDettagli()` non filtra clienti disattivati
 
 **File e righe:** `SalesOrdersController.php:284-292` (nessun `AND cf.attivo=1`) vs `SalesQuotesController.php:569-576` (stesso endpoint, filtro presente). Rischio pratico basso (l'autocomplete filtra già), ma incoerenza reale tra due controller gemelli.
+
+**✅ IMPLEMENTATO E VERIFICATO (23/07/2026).** Entrambi i controller chiamano ora `qk_get_cliente_dettagli_per_preventivo()` (`includes/anagrafiche.php`, filtro `cf.attivo=1` incluso) — una sola query condivisa, non due copie con filtri diversi.
 
 **Tutto il resto verificato conforme:** pattern snapshot/congelamento (indirizzo, contatto, azienda emittente) implementato identicamente e senza duplicazione tra preventivi e ordini; creazione rapida cliente/prodotto riusa sempre le funzioni condivise; blocco esplicito quando manca un indirizzo risolvibile in spedizione.
 
@@ -95,6 +105,10 @@ Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura i
 
 **Esempio concreto:** Kit con 2 kg di componente X, ordine riservato. Prima dell'annullamento, la distinta viene corretta a 3 kg. L'annullamento rilascia 3 kg invece dei 2 realmente riservati — riserva residua sotto il livello corretto, clampata a 0 silenziosamente. Edge case, richiede una modifica anagrafica nel mezzo.
 
+**✅ IMPLEMENTATO E VERIFICATO (23/07/2026).** Nuova colonna `ordini_clienti_righe.kit_componenti_snapshot` (TEXT, JSON — schema aggiornato sia in `db/init_sqlite.sql` sia in `db/init_mysql.sql`, con migrazione dedicata `db/migrations/2026_07_23_ordini_clienti_righe_kit_snapshot.php`, idempotente). `qk_riserva_stock_ordine()` (`includes/magazzino.php`) accetta ora un `?int $rigaId` opzionale: se il prodotto è un Kit e `$rigaId` è passato, la composizione realmente usata viene congelata in JSON sulla riga, oltre a scrivere la riserva su `giacenze` come già faceva. `qk_rilascia_stock_ordine()` (stesso nuovo parametro) legge PRIMA lo snapshot congelato sulla riga; solo se assente (chiamata legacy senza `$rigaId`, o riga pre-esistente alla migrazione senza snapshot) ricade sul comportamento precedente (lettura della ricetta live da `componenti_kit`) — retrocompatibile al 100%, nessun chiamante esistente rotto. Tutti i 5 punti di chiamata del Ciclo Vendite aggiornati per passare l'id riga: `OrderCalculatorService::insertDirectOrder()` (via `SalesOrderRepository::insertOrderLine()`, ora restituisce l'id inserito), `includes/sales_quotes.php` (conferma preventivo→ordine), `qk_ordine_cliente_annulla()` e i 3 punti di rilascio dentro `elaboraCreaSpedizione()` (`includes/sales_orders.php`).
+
+Verificato con esecuzione reale, non solo controllo sintattico: `tests/manual/suite_kit_riserva_snapshot.php` (9 asserzioni, 3 scenari) — riproduce esattamente l'esempio dell'audit (ricetta 2kg al momento della riserva, corretta a 3kg prima dell'annullamento, verificato che il rilascio liberi i 2kg realmente riservati e non i 3kg nuovi, oltre alla forma esatta dello snapshot JSON salvato), più il caso legacy senza `rigaId` (comportamento identico a prima) e il caso `rigaId` presente ma snapshot assente (fallback automatico senza errore). Rilanciata l'intera suite di regressione del progetto dopo la modifica: nessuna rottura introdotta (i 2 fallimenti residui — `suite_sds_m1_schema.php` e `suite_transition_guard_tappa7_ordini_clienti.php` — sono preesistenti, non collegati a questa modifica, già documentati in `audit/scoperte_audit.md`).
+
 **Tutto il resto verificato conforme:** FEFO con esclusione scaduti per prodotti standalone, congelamento mittente DDT, posting-block per riga singola, espansione Kit nella riserva/rilascio a livello di `giacenze`.
 
 ---
@@ -105,7 +119,11 @@ Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura i
 
 **4.A.1** `require_once` dentro un `if` — `SalesOrdersController.php:113`, dentro `create()`. Stesso identico anti-pattern già segnalato in CLAUDE.md come "trovato ripetutamente" in Acquisti, qui non ancora corretto. Varianti più lievi (require dentro un metodo, non in testa al file) in `SalesQuotesController.php:329,744`.
 
+**✅ IMPLEMENTATO E VERIFICATO (23/07/2026).** Verificato riga per riga: nessun `require_once` fuori dalla testa del file in nessuno dei due controller — tutti già spostati in cima (`SalesOrdersController.php:5-8`, `SalesQuotesController.php:5-8`).
+
 **4.A.2** `SalesQuotesController::apiCheckCompliance()` (righe 729-757) non chiama `csrf_verify()`, mentre `apiCreaCliente()`/`apiCreaProdotto()` nello stesso file lo fanno entrambi. Il JS manda comunque il token (`sales-quotes.js:867`) — il server lo ignora silenziosamente.
+
+**✅ IMPLEMENTATO E VERIFICATO (23/07/2026).** `csrf_verify()` presente in cima al metodo (riga 646), coerente con i suoi vicini nello stesso file.
 
 **4.A.3** CSS inline hardcoded duplicato carattere per carattere in 2 controller — `SalesOrdersController.php:121` e `SalesQuotesController.php:347`, stessa stringa `style='color:#721c24;font-weight:bold;text-decoration:underline;'`, invece di una classe `qk-*` esistente.
 
@@ -129,6 +147,15 @@ Tutte e 78 sono violazioni dirette della Regola Aurea di AGENTS.md ("zero SQL gr
 
 **4.B.1** Il gemello concettuale di `SalesQuotesController` (`RfqController`, Acquisti) delega PDF/DOCX a un Service + template esterno; Vendite costruisce tutto inline nel controller (~540 righe). Stesso bisogno di business, due architetture incompatibili — nessuna giustificazione di business apparente.
 
+**✅ IMPLEMENTATO (da un altro agente) E VERIFICATO A FONDO IL 23/07/2026.** `app/Services/SalesQuoteDocumentService.php` + `app/views/sales/quotes/_pdf_template.php` esistono, `SalesQuotesController::pdf()/docx()` sono ora sottili (prepara dati → chiama il Service → header/`exit`, con pulizia buffer corretta). Verifica NON limitata al controllo sintattico (regola AGENTS.md): esteso `tests/manual/suite_sales_quote_pdf_docx_service.php` (già scritto dall'altro agente, ma copriva solo il caso più semplice — 1 riga, zero sconti, zero contatto/consegna/note) con 3 scenari aggiuntivi, 33 asserzioni totali:
+- caso semplice: PDF/DOCX generati, nessun warning PHP durante la generazione (controllo critico: un warning dentro `ob_start()` finirebbe silenziosamente incollato nell'HTML del PDF, invisibile altrimenti);
+- caso ricco (3 righe con sconto riga, sconto globale, contatto, indirizzo di consegna diverso, note) per esercitare TUTTI i rami condizionali del template, non solo quello vuoto — verificato che i dati reali (numero preventivo, descrizioni righe, nome contatto, percentuali sconto, nome azienda emittente) compaiano davvero dentro `word/document.xml` del DOCX, non solo che il file sia strutturalmente valido;
+- caso limite: preventivo senza azienda emittente risolvibile — nessun crash.
+
+Un solo problema trovato, ed era nel test nuovo che ho scritto io stesso (non nel codice): un controllo case-sensitive su un testo che il codice scrive volutamente in maiuscolo — corretto nel test.
+
+**Limite noto della verifica**: il testo dentro il PDF non è verificabile per sottostringa diretta (mPDF con font subsettati incapsula il testo come indici glyph, non stringhe leggibili) — per il PDF la verifica di contenuto si ferma a struttura/trailer/dimensione-cresce-col-contenuto/assenza-di-warning; la verifica di contenuto testuale reale è stata fatta sul DOCX (dove il testo è XML semplice), con successo completo.
+
 **4.B.2** **Dentro lo stesso Ciclo Vendite**: creare un ordine nella stessa tabella `ordini_clienti` ha due filosofie diverse. Ordine diretto → `SalesOrderRepository`/`OrderCalculatorService` (uniche classi Repository/Service OOP di questo tipo in tutto il progetto). Preventivo confermato in ordine → INSERT SQL scritto a mano con ~44 colonne quasi duplicate riga per riga rispetto al Repository. Il Ciclo Acquisti, per confronto, è internamente coerente (un'unica filosofia a funzioni). Questo è esattamente il "30 modi diversi per lo stesso problema" richiesto di verificare — e non è nemmeno tra cicli diversi, è dentro lo stesso ciclo.
 
 **4.B.3** "Segna fatturato/da fatturare": lato Acquisti estratto in funzioni condivise con un commento esplicito "mirror di Vendite" — ma Vendite (`SalesOrdersController::action()`, righe 561,565) non è mai stato allineato, resta SQL inline. Il refactoring è stato fatto solo su metà della coppia gemella.
@@ -150,16 +177,20 @@ Tutte e 78 sono violazioni dirette della Regola Aurea di AGENTS.md ("zero SQL gr
 | # | Problema | Gravità | Rischio pratico |
 |---|---|---|---|
 | 3.1 | ✅ Riserva/rilascio stock su magazzini mai confrontati — CORRETTO E VERIFICATO | **Molto alta** | Raggiungibile in uso quotidiano, corrompe silenziosamente la giacenza virtuale, nessun percorso di auto-correzione |
-| 1.1 | Confronto quantità in unità diverse in "Nuova Spedizione" | Alta | UI mostra stati sbagliati sistematicamente, il DB resta corretto |
-| 1.2 | Suggerimento prezzo rotto su ordine diretto | Alta | Feature invisibilmente morta, nessun errore visibile |
-| 2.1 | Azienda emittente disattivata selezionabile su ordine diretto | Alta | Dati fiscali sbagliati congelati permanentemente |
-| 2.2 | Checkbox "salva indirizzo" non collegata (ordine diretto) | Alta | Funzionalità dichiarata implementata ma silenziosamente assente |
+| 1.1 | ✅ Confronto quantità in unità diverse in "Nuova Spedizione" — CORRETTO E VERIFICATO | Alta | UI mostra stati sbagliati sistematicamente, il DB resta corretto |
+| 1.2 | ✅ Suggerimento prezzo rotto su ordine diretto — CORRETTO E VERIFICATO | Alta | Feature invisibilmente morta, nessun errore visibile |
+| 2.1 | ✅ Azienda emittente disattivata selezionabile su ordine diretto — CORRETTO E VERIFICATO | Alta | Dati fiscali sbagliati congelati permanentemente |
+| 2.2 | ✅ Checkbox "salva indirizzo" non collegata (ordine diretto) — CORRETTO E VERIFICATO | Alta | Funzionalità dichiarata implementata ma silenziosamente assente |
 | 3.2 | ✅ Kit + lotti: nessuna tracciabilità in spedizione — CORRETTO E VERIFICATO | Alta (ADR) | Rottura tracciabilità per richiami prodotto |
 | 4.B.2 | Due filosofie per creare un ordine nella stessa tabella | Alta (architetturale) | Manutenzione doppia, rischio di divergenza futura |
-| 4.C.1 | `elaboraCreaSpedizione()` God Object (~400 righe) | Alta (architetturale) | — |
-| 4.A.2 | CSRF mancante su `apiCheckCompliance()` | Media | — |
-| 4.B.1, 4.B.3, 4.C.2, 4.C.4 | Incoerenze architetturali varie | Media | — |
+| 4.C.1 | `elaboraCreaSpedizione()` God Object (~400 righe) — sembra già rifattorizzata (vedi nota), da confermare | Alta (architetturale) | — |
+| 4.A.2 | ✅ CSRF mancante su `apiCheckCompliance()` — CORRETTO E VERIFICATO | Media | — |
+| 4.B.1 | ✅ PDF/DOCX Vendite su Service+template esterno — IMPLEMENTATO E VERIFICATO A FONDO (33 asserzioni) | Media | — |
+| 4.B.3, 4.C.2, 4.C.4 | Incoerenze architetturali varie | Media | — |
 | 4.A.4 | SQL crudo nei controller — **78 occorrenze esaustive** (non più campione) + 8 duplicazioni nome cliente | Alta (volume) | Sistemico, richiede un progetto a sé per dimensione, non un fix puntuale |
-| 2.3, 3.3, 4.A.1, 4.A.3, 4.A.5, 4.C.3 | Minori / già note come sistemiche | Bassa-Media | — |
+| — | ✅ 2.3 Clienti disattivati in `apiClienteDettagli()` (ordini) — CORRETTO E VERIFICATO | Bassa | — |
+| 3.3 | ✅ Rilascio riserva Kit su snapshot, non su ricetta live — CORRETTO E VERIFICATO (9 asserzioni, 3 scenari) | Bassa | — |
+| — | ✅ 4.A.1 `require_once` fuori dagli `if` — CORRETTO E VERIFICATO | Bassa | — |
+| 4.A.3, 4.A.5, 4.C.3 | Minori / già note come sistemiche | Bassa-Media | — |
 
 Nessun file è stato toccato. Aspetto le tue decisioni, punto per punto, con lo stesso formato già usato per gli altri problemi aperti di questo ciclo.

@@ -1,224 +1,280 @@
-# PIANO — Risoluzione completa delle violazioni MVC/DRY del Ciclo Vendite
+# PIANO — Eliminazione SQL Grezzo nei Controller (Regola Aurea) — 4.A.4 + 4.C.1
 
-> Stato: 🔲 **SOLO PIANO, NESSUN FILE TOCCATO.** Copre TUTTE le violazioni MVC/DRY trovate in `AUDIT 3 - Conformita a Prezzi-UoM, Anagrafiche, Magazzino e AGENTS.md.md`, Parte 4 (Categorie A/B/C): le 78 query SQL dirette nei 4 controller (`SalesOrdersController.php` 33, `SalesPricelistsController.php` 29, `SalesQuotesController.php` 9, `SpedizioniController.php` 7), le 8 duplicazioni della stringa "nome cliente", il `require_once` dentro `if`, il CSRF mancante, il CSS duplicato, il docblock impreciso, le due filosofie diverse per creare un ordine, e il passo sicuro disponibile per ridurre ulteriormente la duplicazione PDF/DOCX.
+> **Stato aggiornato il 23/07/2026, dopo verifica riga-per-riga dello stato reale del codice** (non del testo dell'audit). Vedi §0 per cosa è cambiato rispetto alla versione precedente di questo documento.
 >
-> **Decisioni già confermate dall'utente:**
-> 1. Ordine delle tappe: quello proposto sotto, dal rischio più basso al più alto.
-> 2. Tappa "segna fatturato" (§7): funzioni **separate/gemelle** tra Vendite e Acquisti (Opzione B), non una funzione condivisa — i due cicli restano disaccoppiati.
-> 3. Tappa `elaboraCreaSpedizione()` (§9): **prima correggere i bug 3.1/3.2, poi estrarre in Service** — raccomandazione adottata, non l'ordine inverso.
+> **Ambito di questa revisione: SOLO 4.A.4 (SQL grezzo nei controller) e 4.C.1 (God Object `elaboraCreaSpedizione`).** Le altre tappe del piano originale (require_once fuori posto, CSRF, CSS duplicato, docblock, "segna fatturato", unificazione filosofie ordine, riduzione duplicazione PDF/DOCX) NON sono state riverificate in questa sessione e restano fuori scope — non toccarle assumendo che lo stato descritto altrove in questo file sia ancora accurato senza prima rileggerle (CLAUDE.md punto 9).
 >
-> Rispetta `.agents/AGENTS.md` per intero: nessuna esecuzione senza autorizzazione esplicita, ogni correzione verificata con esecuzione reale (non solo `php -l`), attenzione a selettori CSS/JS quando si tocca una vista, cancellazione fisica del codice vecchio quando si estrae qualcosa (non lasciare la vecchia query commentata "per sicurezza").
+> **Decisioni confermate dall'utente in questa sessione (23/07/2026):**
+> 1. Il test `suite_transition_guard_tappa7_ordini_clienti.php` (2 asserzioni fallite per disallineamento architetturale, non per un bug — vedi `audit/scoperte_audit.md` Tappa 0.5) va **riscritto per chiamare direttamente `qk_elabora_crea_spedizione()`**, non più il metodo del controller via Reflection.
+> 2. Questo documento va **corretto e riusato**, non sostituito da uno nuovo.
+>
+> Decisioni ereditate dalla versione precedente di questo piano, ancora valide per lo scope 4.C.1:
+> - Filosofia dei test: mai fidarsi di `php -l` da solo, ogni fix verificato con script reale (Protocollo della Simulazione Logica, `.agents/AGENTS.md` §5).
+> - Le funzioni estratte da codice transazionale non aprono/chiudono transazioni proprie.
+> - "`SELECT *` resta `SELECT *`" quando si estrae una query esistente, per non rompere una vista che si aspetta colonne non elencate esplicitamente.
 
 ---
 
-## 1. Implicazioni generali — cosa tocca questo lavoro, cosa può rompersi
+## 0. Cosa è cambiato rispetto alla versione precedente di questo documento
 
-**Cosa NON cambia mai, in nessuna tappa:** il comportamento visibile all'utente. Ogni query/blocco estratto deve produrre esattamente lo stesso risultato di prima. Questo non è un refactoring che aggiunge funzionalità, è riorganizzare codice mantenendolo bit-per-bit equivalente — tranne dove esplicitamente la tappa dice "qui correggiamo anche un bug", nel qual caso il cambiamento di comportamento è intenzionale e va isolato dal resto della riorganizzazione (vedi §9).
+La versione precedente dichiarava "🔲 SOLO PIANO, NESSUN FILE TOCCATO" e contava 78 query dirette in 4 controller. Verificando oggi il codice reale con lo strumento di lettura (mai la shell, per la regola CLAUDE.md punto 1 — il mount shell di questa sessione è risultato desincronizzato, `wc -l` su `SalesOrdersController.php` restituiva 515 righe contro le ~1013 attese dal vecchio conteggio), risulta che gran parte del lavoro è **già stata fatta in sessioni precedenti, senza essere documentata come tale**:
 
-**Cosa può rompersi, in generale:**
-1. **Nomi di colonna nel risultato.** Se una query usa `SELECT *` e la funzione estratta la riscrive come `SELECT col1, col2, ...`, una vista che si aspetta una colonna non elencata esplicitamente smette di funzionare silenziosamente. **Regola: se la query originale è `SELECT *`, la funzione estratta resta `SELECT *`.**
-2. **Riuso non verificato.** Ogni tappa include esplicitamente un passo "verifica se esiste già una funzione equivalente" prima di crearne una nuova (regola CLAUDE.md punto 1).
-3. **Transazioni.** Le funzioni estratte da codice transazionale non aprono/chiudono transazioni proprie — ricevono `$pdo` già dentro la transazione del chiamante, esattamente come fanno oggi `qk_riserva_stock_ordine()`/`qk_rilascia_stock_ordine()`.
-4. **JOIN con tabelle di altri cicli.** Va verificato che il nome scelto per una nuova funzione condivisa non confligga con una funzione omonima già esistente in un file `includes/` condiviso da altri cicli.
-5. **Viste renderizzate con `get_defined_vars()` o array espliciti.** Estrarre una query non deve cambiare la CHIAVE con cui il risultato arriva alla vista.
-6. **Selettori JS/CSS.** Le tappe che toccano una vista (§8, §10) devono verificare che nessun selettore JS dipenda da una classe/id che verrebbe rimossa (regola "Logic Bomb" di AGENTS.md).
+| Controller | Query dirette (conteggio vecchio) | Query dirette **oggi**, verificate leggendo il file per intero |
+|---|---|---|
+| `SalesOrdersController.php` | 33 | **0** |
+| `SalesQuotesController.php` | 9 | **0** |
+| `SpedizioniController.php` | 7 | **0** |
+| `SalesPricelistsController.php` | 29 | **20** |
 
-**Cosa è già stato verificato NON toccare (già conformi):** `includes/sales_quotes.php`, `includes/sales_orders.php`, `includes/magazzino.php`, `includes/pricing.php`, `includes/compliance.php`, `includes/anagrafiche.php`, `includes/tabelle_base.php`.
+Le "8 duplicazioni nome cliente" sono oggi **2**, entrambe in `SalesPricelistsController.php` (righe 673 e 759) — esiste già `qk_nome_cliente_sql_fragment()` in `includes/anagrafiche.php`, gli altri 6 punti la usano già.
 
----
+`elaboraCreaSpedizione()` **non è più un metodo di ~400 righe nel controller**: è un wrapper privato di 10 righe (`SalesOrdersController.php:504-514`) che chiama `qk_elabora_crea_spedizione()`, una funzione di **324 righe** (`includes/sales_orders.php:573-896`, letta per intero). Il God Object si è spostato da controller a helper, non è stato smontato — contiene ancora **21 query dirette embedded** e una violazione DRY interna non presente nell'audit originale: lo stesso `INSERT INTO movimenti_magazzino (...)` scritto **4 volte** quasi identico (righe 791, 835, 848, 862).
 
-## 2. Tappa A — Correzioni indipendenti a rischio quasi nullo (eseguire per prima)
+Effetto collaterale scoperto e documentato in `audit/scoperte_audit.md` Tappa 0.5: il test `suite_transition_guard_tappa7_ordini_clienti.php` chiama il metodo del controller via Reflection aspettandosi un'eccezione quando l'ordine è in stato terminale — ma il controller oggi cattura sempre l'eccezione (`catch (\Throwable $e) { ...; flash_set('error', ...); }`, mai un `throw` di rilancio), perché è il comportamento corretto per l'uso HTTP reale. Il test è rimasto scritto per l'architettura precedente. **Decisione presa in questa sessione: riscrivere il test (§2).**
 
-Quattro violazioni piccole, isolate, senza alcuna dipendenza tra loro né con le tappe successive — il punto di partenza più sicuro di tutto il piano.
-
-### 2.1 `require_once` dentro un `if` (problema 4.A.1)
-
-**Implicazioni:** `SalesOrdersController.php:113` richiede `compliance.php` dentro `if (empty($errors)) { ... }` in `create()`. Se il branch non viene mai eseguito in una richiesta (es. errori di validazione presenti), il file non viene caricato — che oggi non causa un errore visibile solo perché nessuna funzione di quel file viene chiamata in quei casi, ma è comunque una dipendenza non dichiarata a livello di file, contraria a AGENTS.md e CLAUDE.md punto 4.
-
-**Microtappa:** spostare i 3 `require_once` (righe 113 di `SalesOrdersController.php`, e le 2 varianti dentro metodi di `SalesQuotesController.php:329,744`) in testa ai rispettivi file, verificare che non ci siano già `require_once` duplicati per lo stesso file (idempotenza garantita comunque da `require_once`, ma va controllato per pulizia).
-
-**Test:** `php -l` su entrambi i file, poi eseguire un flusso reale che tocca ciascun metodo coinvolto (`create()`, `checkComplianceOrWarn()`, `apiCheckCompliance()`) per confermare che il comportamento è identico.
-
-### 2.2 CSRF mancante su `apiCheckCompliance()` (problema 4.A.2 — rilevanza di sicurezza, non solo di stile)
-
-**Implicazioni:** `SalesQuotesController::apiCheckCompliance()` (righe 729-757) è raggiungibile via POST senza `csrf_verify()`, mentre `apiCreaCliente()`/`apiCreaProdotto()` nello stesso file lo controllano. Il JS (`sales-quotes.js:867`) manda già il token — aggiungere il controllo lato server non richiede modifiche al JS, solo allineare il controller allo stesso pattern già usato nei suoi metodi gemelli.
-
-**Microtappa:** aggiungere `if (!csrf_verify()) { echo json_encode(['ok' => false, 'error' => 'CSRF']); exit; }` come primo controllo del metodo, stesso identico pattern di `apiCreaCliente()`.
-
-**Test:** chiamata reale all'endpoint con e senza token CSRF valido — verificare che senza token la risposta sia il rifiuto atteso, e che con token valido il comportamento resti identico a prima.
-
-### 2.3 CSS inline duplicato (problema 4.A.3)
-
-**Implicazioni:** la stessa stringa `style='color:#721c24;font-weight:bold;text-decoration:underline;'` è scritta identica in `SalesOrdersController.php:121` e `SalesQuotesController.php:347`, dentro un messaggio HTML costruito nel controller (non in una vista). Serve una classe CSS esistente equivalente — da verificare in `assets/css/app.css`/`docs/UI_UX_STANDARDS_v2.md` prima di crearne una nuova (es. `.qk-alert-link-danger` se non esiste già qualcosa di simile).
-
-**Microtappa:** verificare classi esistenti, sostituire lo `style` inline con la classe trovata (o crearne una minima e condivisa se davvero manca), in entrambi i punti.
-
-**Test:** verifica visiva del messaggio di blocco compliance in entrambe le pagine (screenshot o rendering reale), confermare aspetto identico a prima.
-
-### 2.4 Docblock impreciso (problema 4.A.5)
-
-**Implicazioni:** nessuna, è un commento, non codice eseguito. `SpedizioniController::nuova()` riga 79 descrive un ramo POST inesistente.
-
-**Microtappa:** correggere il commento per riflettere il flusso reale (il form posta a `sales/orders/action`, gestito da `SalesOrdersController::action()`).
-
-**Test:** nessuno necessario (commento puro), solo `php -l`.
+**Conclusione pratica:** il lavoro reale rimasto per 4.A.4+4.C.1 è molto più piccolo del previsto — concentrato in `SalesPricelistsController.php` (13 query CRUD/assegnazione + 7 query nel God Object `apiImportPrezzi()`, problema 4.C.2 collegato) e nella riorganizzazione di `qk_elabora_crea_spedizione()` (324 righe, oggi in `includes/`, non più nel controller ma ancora monolitica e con una duplicazione interna).
 
 ---
 
-## 3. Tappa 0 — Infrastruttura condivisa (prerequisito per §4-§7)
+## 1. Tappa 0.5 — Correggere il test disallineato (da fare PRIMA di toccare `qk_elabora_crea_spedizione()`)
 
-### 3.1 Funzione condivisa per il nome cliente (elimina le 8 duplicazioni, problema 4.A.4 parte DRY)
+**Perché prima:** la Tappa 6 (§4) sposterà codice dentro `qk_elabora_crea_spedizione()`. Se il test di regressione per quella funzione è già rotto per un motivo indipendente, ogni esecuzione della suite durante la Tappa 6 mostrerà 2 fallimenti "di fondo" che è facile confondere con un fallimento causato dalla modifica in corso. Va sistemato per primo, così la baseline è pulita (0 fallimenti) prima di iniziare a toccare la funzione.
 
-**Implicazioni:** questa espressione (`COALESCE(ragione_sociale, TRIM(nome || ' ' || cognome))`) è scritta anche fuori dal Ciclo Vendite (CLAUDE.md la segnala ripetuta 6 volte nell'intero progetto). Questo piano tocca solo le 8 occorrenze già contate dentro il Ciclo Vendite, non va a caccia delle altre (fuori scope, segnalare se emergono).
+**Cosa cambia esattamente**, in `tests/manual/suite_transition_guard_tappa7_ordini_clienti.php`:
 
-Nota portabilità (CLAUDE.md punto 3): l'espressione usa `||`, concatenazione in SQLite ma OR logico in MySQL. Per non toccare lo schema doppio in questa tappa, si usa una funzione PHP invece di una vista SQL nativa:
+- Le righe 214-237 definiscono `chiamaElaboraCreaSpedizione()`, che oggi costruisce `$_POST`/`$_SESSION` e invoca `SalesOrdersController::elaboraCreaSpedizione()` via `ReflectionMethod`. Questa funzione di supporto del test va **sostituita** con una che chiama direttamente `qk_elabora_crea_spedizione($pdo, $orderId, $postData, $filesData, $userId)` — la vera firma pubblica della funzione in `includes/sales_orders.php:573`, dove l'eccezione viene lanciata davvero (il `catch` che la assorbe vive solo nel wrapper del controller, mai in questa funzione).
+- I due `chkThrows(...)` alle righe 244-248 e 258-262 restano invariati nella struttura (stessa asserzione, stesso messaggio atteso), cambia solo la funzione richiamata internamente.
+- Il caso "ammesso end-to-end" (righe 264-279) e il caso "self-loop" (righe 281-287) vanno aggiornati allo stesso modo — oggi passano anch'essi da `chiamaElaboraCreaSpedizione()`.
+- Non serve più costruire `$_SESSION['qk_user']`/`$_POST` globali (quello serviva solo per simulare l'HTTP che il controller si aspettava) — si passano `$postData`/`$filesData`/`$userId` come argomenti diretti alla funzione, più esplicito e meno fragile.
+- **Non toccare** il resto del file (righe 1-213): quelle asserzioni (`qk_ordine_cliente_completa`, `_riapri`, `_annulla`, `_aggiorna_note`) chiamano già le funzioni reali direttamente, non passano dal controller, e oggi passano tutte — nessuna modifica necessaria.
 
-**Microtappa:** aggiungere in `includes/anagrafiche.php`:
+**Verifica (obbligatoria, non un "dovrebbe funzionare"):** eseguire `php tests/manual/suite_transition_guard_tappa7_ordini_clienti.php`, leggere l'output riga per riga, confermare `OK: N  FALLITI: 0` con lo stesso numero di asserzioni `OK` di prima (nessuna asserzione persa, solo il meccanismo di chiamata cambiato) ed `exit code 0`. Solo a questo punto procedere con la Tappa 6.
+
+---
+
+## 2. Tappe già completate — verificate oggi, nessuna azione richiesta
+
+Elencate per completezza e per evitare che una sessione futura le rifaccia per errore (CLAUDE.md punto 9 vale anche al contrario: non ripetere lavoro già fatto e verificato).
+
+- **`SalesOrdersController.php`**: zero query dirette (letto per intero, 515 righe). L'unico frammento SQL nel file è una stringa passata come valore a `qk_ordini_clienti_list()` per l'ordinamento colonna "totale" (riga 35), non una query eseguita dal controller.
+- **`SalesQuotesController.php`**: zero query dirette (letto per intero, 774 righe). Tutto passa da `qk_*` in `includes/sales_quotes.php`/`includes/tabelle_base.php`/`includes/compliance.php` o da `SalesQuoteDocumentService`.
+- **`SpedizioniController.php`**: zero query dirette (letto per intero, 171 righe). Tutto delegato a `qk_spedizioni_count/list()`, `qk_get_ordine_per_spedizione()`, `qk_get_righe_ordine_da_spedire()`, ecc.
+- **`qk_nome_cliente_sql_fragment(string $alias = ''): string`** (`includes/anagrafiche.php:18-25`): esiste già, gestisce sia SQLite (`||`) sia MySQL (`CONCAT`) in base a `DB_DRIVER`. Usata correttamente in `includes/sales_orders.php` (righe 327, 350, 458, 479), `includes/pricelists.php` (righe 126, 239). **Non usata** in `SalesPricelistsController.php:673,759` — parte della Tappa 7 (§5.5).
+- **Prerequisito bug 3.1/3.2 di `qk_elabora_crea_spedizione()`**: confermato presente nel codice letto oggi — righe 787-789/805-809/859-861 usano `$magazzinoRiservaId` (congelato su `ordini_clienti.magazzino_id`) per il rilascio riserva, distinto da `$magazzinoSpedId` per lo scarico fisico; il ramo Kit (righe 826-838) seleziona lotti via `qk_seleziona_lotti_fefo()` e decrementa `lotti_giacenze` per ogni componente tracciato. Prerequisito della vecchia Tappa 6 soddisfatto — resta solo l'estrazione (§4).
+
+---
+
+## 3. Implicazioni generali per §4-§6 — cosa può rompersi
+
+1. **Nomi di colonna nel risultato.** Se una query è `SELECT *`, la funzione estratta resta `SELECT *`. Verificato: nessuna delle query coinvolte in §4-§6 usa `SELECT *` tranne `SELECT * FROM ordini_clienti WHERE id = ?` (riga 592 di `qk_elabora_crea_spedizione`, già dentro un helper — se ulteriormente estratta, resta `SELECT *`).
+2. **Riuso non verificato.** Prima di scrivere una funzione nuova, verificato se ne esiste già una equivalente (regola CLAUDE.md punto 1). In §5 questo controllo ha già trovato 2 casi concreti: `qk_listino_insert()`/`qk_listino_update()` esistono già in `includes/pricelists.php` ma non sono usate da `SalesPricelistsController::create()/edit()`; `qk_update_clienti_listino()` esiste già ma non è chiamata da nessuna parte del progetto (verificato con grep esaustivo — oggi è codice morto).
+3. **Transazioni.** Le funzioni estratte da codice già transazionale (dentro `qk_elabora_crea_spedizione()` o dentro il `beginTransaction()` di `apiImportPrezzi()`) non aprono/chiudono transazioni proprie.
+4. **Vincoli NOT NULL/DEFAULT.** Prima di scrivere o spostare un INSERT, verificato lo schema reale (non la memoria di una sessione precedente, CLAUDE.md punto 2) — dettagli per tabella nelle singole tappe sotto.
+5. **`||` vs `CONCAT`.** Nessuna nuova query in questo piano deve introdurre `||` per concatenare stringhe (CLAUDE.md punto 3) — usare sempre `qk_nome_cliente_sql_fragment()` dove serve un nome visualizzato, o `CONCAT()`/branching `DB_DRIVER` per casi nuovi.
+6. **Selettori JS.** Nessuna delle tappe seguenti tocca HTML/CSS/ID — sono estrazioni PHP pure (controller/helper → helper/Service), la regola "Logic Bomb" di AGENTS.md non si applica qui, ma va comunque verificato che le CHIAVI dell'array JSON restituito al JS (es. `riga`, `clienti`, `clienti_assegnati`) restino identiche, perché `assets/js/*.js` le legge per nome.
+
+---
+
+## 4. Tappa 6 — Riorganizzare `qk_elabora_crea_spedizione()` (problema 4.C.1, rischio alto)
+
+### 4.1 Implicazioni mappate per intero
+
+La funzione (`includes/sales_orders.php:573-896`) tocca in sequenza 8 tabelle in un'unica transazione: `ordini_clienti` (lettura + update stato finale), `indirizzi_documenti`/`indirizzi` (risoluzione indirizzo a cascata), `spedizioni`, `spedizioni_foto` (upload con MIME sniffing), `documenti_trasporto`, `documenti_trasporto_righe`, `lotti`/`lotti_giacenze`, `giacenze`, `componenti_kit`/`prodotti` (espansione Kit), `movimenti_magazzino`, `ordini_clienti_righe` (update `quantita_spedita`). Un errore nell'estrazione può lasciare una spedizione "a metà" (DDT creato ma giacenza non scaricata) se la transazione non resta esattamente quella di oggi.
+
+**Il modello da seguire esiste già nello stesso dominio**: `App\Services\OrderCalculatorService` + `App\Repositories\SalesOrderRepository` (letti per intero). Pattern osservato: il Service riceve `PDO` + `Repository` nel costruttore, apre `beginTransaction()`, chiama helper globali `qk_*` per la logica di dominio (validazione, conversioni, riserva stock), delega gli INSERT/UPDATE puri al Repository (metodi come `insertOrderHeader()`, `insertOrderLine()`, nessuna transazione propria, nessun try/catch — le eccezioni PDO si propagano al Service), poi `commit()`; nel `catch (Throwable $e)` il Service fa `rollBack()` e rilancia. Stesso identico schema da replicare qui con `SpedizioneCalculatorService` + `SpedizioneRepository`.
+
+### 4.2 Violazione DRY interna da correggere nella stessa tappa (non menzionata dall'audit originale)
+
+L'INSERT `INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)` (o variante con `lotto_id = null`) è scritto identico 4 volte: righe 791 (ramo standalone a lotti), 835 (ramo Kit, componente a lotti), 848 (ramo Kit, componente senza lotti), 862 (ramo standalone senza lotti). Va estratto in un unico metodo `SpedizioneRepository::insertMovimentoScarico(array $data): int` (o funzione `qk_registra_movimento_scarico_spedizione()` se si preferisce restare procedurali per coerenza con `includes/magazzino.php` — **decisione da confermare in fase di esecuzione**, non presa qui: entrambe le forme sono coerenti con pattern già presenti nel progetto, OOP per il "nuovo" Service, procedurale per restare vicino a `qk_riserva_stock_ordine()`/`qk_rilascia_stock_ordine()` che vivono nello stesso file di dominio).
+
+**Osservazione fattuale da segnalare, non da correggere in questa tappa senza autorizzazione esplicita** (CLAUDE.md punto 8): nessuna delle 4 INSERT valorizza `movimenti_magazzino.documento_id`, pur essendo una colonna nullable dedicata esattamente a questo (solo `documento_tipo='ddt'` e `riferimento_esterno=$numDdt` sono valorizzati). Popolare anche `documento_id = $ddtId` migliorerebbe la tracciabilità (join diretto invece di un match testuale su `riferimento_esterno`), ma è un cambio di comportamento (nuovo dato scritto, oggi assente) — va isolato in un passo esplicitamente autorizzato a parte, non mescolato alla riorganizzazione bit-per-bit-equivalente.
+
+### 4.3 Struttura proposta
+
+```
+app/Repositories/SpedizioneRepository.php
+    insertSpedizione(array $data): int
+    insertSpedizioneFoto(array $data): int
+    insertDocumentoTrasporto(array $data): int
+    insertSpedizioneRiga(array $data): int
+    insertDocumentoTrasportoRiga(array $data): int
+    insertMovimentoScarico(array $data): int      // elimina la duplicazione 4x
+    aggiornaLottoGiacenza(int $lottoId, int $magazzinoId, float $qta): void   // UPSERT righe 729-735
+    decrementaGiacenzaDisponibile(int $prodottoId, int $magazzinoId, float $qta): void  // righe 736-740
+    getGiacenzaDisponibile(int $prodottoId, int $magazzinoId): float          // righe 741 stCheckGiac
+    aggiornaQuantitaSpedita(int $rigaOrdineId, float $qta): void              // riga 742 stUpOrdRiga
+    getClassificazioneAdr(int $prodottoId): ?array                           // riga 743 stAdr
+
+app/Services/SpedizioneCalculatorService.php
+    creaSpedizione(int $orderId, array $postData, array $filesData, int $userId): array
+        // stessa logica di dominio oggi in qk_elabora_crea_spedizione():
+        // risoluzione indirizzo a cascata, controllo overshipment, loop righe
+        // standalone/Kit/lotti, ricalcolo stato finale — chiamando il
+        // Repository sopra per ogni scrittura invece di $pdo->prepare() inline.
+```
+
+`includes/sales_orders.php` manterrebbe `qk_elabora_crea_spedizione()` come **wrapper sottile** (stesso pattern già usato da `qk_insert_ordine_diretto()` per il Service esistente):
+
 ```php
-function qk_nome_cliente_sql_fragment(string $alias = ''): string
+function qk_elabora_crea_spedizione(PDO $pdo, int $orderId, array $postData, array $filesData, int $userId): array
 {
-    $p = $alias !== '' ? $alias . '.' : '';
-    if (DB_DRIVER === 'mysql') {
-        return "COALESCE({$p}ragione_sociale, TRIM(CONCAT(COALESCE({$p}nome,''), ' ', COALESCE({$p}cognome,''))))";
-    }
-    return "COALESCE({$p}ragione_sociale, TRIM({$p}nome || ' ' || {$p}cognome))";
+    require_once __DIR__ . '/../app/Repositories/SpedizioneRepository.php';
+    require_once __DIR__ . '/../app/Services/SpedizioneCalculatorService.php';
+    $repository = new \App\Repositories\SpedizioneRepository($pdo);
+    $service = new \App\Services\SpedizioneCalculatorService($pdo, $repository);
+    return $service->creaSpedizione($orderId, $postData, $filesData, $userId);
 }
 ```
-Sostituire negli 8 punti (righe esatte da rileggere al momento dell'esecuzione, non fidarsi dei numeri di oggi — CLAUDE.md punto 9) la stringa scritta a mano con una chiamata a questa funzione.
 
-**Test:** per ognuno degli 8 punti, eseguire la query prima e dopo sullo stesso record reale, confrontare l'output stringa-per-stringa.
+Nessun chiamante esterno cambia firma: verificato con grep esaustivo che l'unico chiamante di `qk_elabora_crea_spedizione()` è `SalesOrdersController::elaboraCreaSpedizione()` (riga 508) e l'unico chiamante di test è il file corretto in §1 — entrambi continuano a funzionare invariati perché la firma pubblica `(PDO, int, array, array, int): array` non cambia.
 
-### 3.2 Funzione condivisa per il listino di default
+### 4.4 Microtappe atomiche, in ordine di rischio crescente
 
-**Implicazioni:** `SalesOrdersController::getDefaultListinoId()` è privato e usato solo in quel file; estrarlo in `includes/tabelle_base.php` (dove vive già `qk_get_listini_vendita_attivi()`) lo rende disponibile anche agli altri controller, che potrebbero reinventare la stessa query (da verificare all'esecuzione).
+1. **4.4.1 — Creare `SpedizioneRepository` con i soli metodi di LETTURA** (`getGiacenzaDisponibile`, `getClassificazioneAdr`), senza toccare ancora `qk_elabora_crea_spedizione()`. Test: script che chiama i due metodi su dati reali/seed e confronta col risultato delle query originali eseguite a mano sullo stesso DB.
+2. **4.4.2 — Sostituire dentro `qk_elabora_crea_spedizione()` SOLO le 2 query di lettura** (righe 741 `stCheckGiac`, 743 `stAdr`) con chiamate al Repository, lasciando tutto il resto invariato. Rilanciare `suite_kit_riserva_snapshot.php` e la suite corretta al §1 — zero regressioni attese (sono sostituzioni bit-equivalenti).
+3. **4.4.3 — Aggiungere al Repository i metodi di SCRITTURA semplice** (`insertSpedizioneFoto`, `aggiornaQuantitaSpedita`, `decrementaGiacenzaDisponibile`, `aggiornaLottoGiacenza`), poi sostituirli uno alla volta dentro `qk_elabora_crea_spedizione()`, ri-testando dopo ogni sostituzione (non tutte insieme — se qualcosa si rompe, isolare quale sostituzione è la causa).
+4. **4.4.4 — Aggiungere `insertMovimentoScarico()` ed eliminare le 4 INSERT duplicate** (righe 791, 835, 848, 862), sostituendole con 4 chiamate allo stesso metodo. Questo è anche il fix della violazione DRY di §4.2. Test: verificare che il numero di righe inserite in `movimenti_magazzino` per uno scenario con Kit+standalone+lotti sia identico prima/dopo, campo per campo.
+5. **4.4.5 — Aggiungere i metodi rimanenti** (`insertSpedizione`, `insertDocumentoTrasporto`, `insertSpedizioneRiga`, `insertDocumentoTrasportoRiga`) e completare l'estrazione della logica di dominio in `SpedizioneCalculatorService::creaSpedizione()`, lasciando in `includes/sales_orders.php` solo il wrapper sottile di §4.3.
+6. **4.4.6 — Rimozione fisica del codice vecchio**: a estrazione completata, verificare che `qk_elabora_crea_spedizione()` non contenga più nessun `$pdo->prepare()`/`exec()`/`query()` diretto (grep di conferma), e che il vecchio corpo sia stato cancellato, non lasciato commentato (regola "Logic Bomb"/CLAUDE.md — cancellazione fisica, non commento).
 
-**Microtappa:** aggiungere `qk_get_listino_default_id(PDO $pdo): ?int` in `includes/tabelle_base.php`, sostituire il metodo privato con una chiamata a questa funzione.
+### 4.5 Test end-to-end finale (obbligatorio, Protocollo Simulazione Logica di AGENTS.md)
 
-**Test:** confronto diretto prima/dopo sul valore ritornato per il DB reale.
+Scenario che esercita OGNI ramo della funzione in un solo script (estensione di `tests/manual/suite_kit_riserva_snapshot.php`, che copre già gli scenari Kit standalone — riusare il suo seed dove possibile invece di duplicarlo, per DRY nei test stessi): un ordine con (a) una riga standalone tracciata a lotti, (b) una riga standalone non tracciata, (c) una riga Kit con un componente tracciato a lotti e uno non tracciato, magazzino di riserva ORIGINE diverso dal magazzino di SPEDIZIONE (per non perdere la copertura del fix 3.1). Dopo la chiamata reale a `qk_elabora_crea_spedizione()`:
+- `spedizioni`/`documenti_trasporto`/`spedizioni_righe`/`documenti_trasporto_righe` contengono le righe attese, con `lotto_id` valorizzato dove previsto (copertura fix 3.2);
+- `giacenze.quantita_disponibile` decrementata sul magazzino di spedizione per ogni prodotto/componente coinvolto;
+- `lotti_giacenze.quantita_disponibile` decrementata per ogni lotto allocato;
+- `giacenze.quantita_riservata` rilasciata sul magazzino ORIGINE, non su quello di spedizione (fix 3.1);
+- `movimenti_magazzino` contiene esattamente il numero di righe atteso (uno scarico per allocazione lotto + uno per ogni componente Kit non tracciato + uno per ogni riga standalone non tracciata), tutte con `tipo_movimento='scarico'`;
+- `ordini_clienti_righe.quantita_spedita` e `ordini_clienti.stato` aggiornati correttamente.
 
----
-
-## 4. Tappa 1 — `SalesQuotesController.php` (9 query, rischio basso)
-
-**Implicazioni:** è il controller già più toccato oggi (V1, V4, V9 parziale) — massima familiarità. Le 9 query: lista preventivi (count+list), cliente collegato a ordine, canale vendita by id, prodotto/UM per stampa, unità di misura by id, e le 3 di `apiClienteDettagli()`.
-
-**Microtappa:** per ciascuna, verificare riuso in `includes/sales_quotes.php`/`includes/anagrafiche.php`; se non esiste, crearla lì con un nome descrittivo, sostituire la chiamata, cancellare fisicamente la query originale.
-
-**Test:** script reale su ciascun metodo pubblico coinvolto, prima/dopo — stesso schema già usato oggi per V4 e per il fix `canali_vendita`.
-
----
-
-## 5. Tappa 2 — `SpedizioniController.php` (7 query, rischio basso)
-
-**Implicazioni:** controller quasi interamente di lettura. **Nota di sequenza**: la query di riga (righe 111-126) è anche oggetto del problema 1/§1.1 (conversione UoM) già deciso in questa sessione — se quel fix non è ancora stato eseguito quando si arriva qui, estrarre la query ATTUALE (senza conversione); il fix UoM resta un lavoro separato con la sua propria verifica, per non mescolare due modifiche nello stesso confronto prima/dopo.
-
-**Microtappa:** verifica riuso, estrazione in `includes/sales_orders.php` (stesso dominio, tocca `ordini_clienti`/`ordini_clienti_righe`) o un nuovo `includes/spedizioni.php` se il volume lo giustifica.
-
-**Test:** confronto prima/dopo su una spedizione reale esistente.
+Eseguire questo identico scenario PRIMA di iniziare la Tappa 6 (per catturare l'output come riferimento — "caratterizzazione prima, conferma dopo") e ripeterlo identico dopo OGNI microtappa di §4.4, confrontando riga per riga, non solo il conteggio totale.
 
 ---
 
-## 6. Tappa 3 — `SalesOrdersController.php`, parte anagrafica/liste (~18 query, rischio basso)
+## 5. Tappa 7 — `SalesPricelistsController.php`, CRUD e assegnazione clienti (13 query dirette, rischio medio)
 
-Righe: 59, 67, 141 (anche fix del problema 2.1 — stessa nota di sequenza della Tappa 2), 284, 294, 306 (anche fix del problema 2.3, stessa nota), 451, 471, 476, 493, 500, 512, 602, 641, 668, 675.
+Query coinvolte (righe verificate oggi, non quelle — diverse — dell'audit originale): 112-115, 202-210, 366-372, 391-403, 420-422, 441-459, 514-536, 603-611, 671-680, 731-733, 740, 745-748, 757-768.
 
-**Implicazioni:** blocco più grande, ma tutte letture isolate. Attenzione alla regola "`SELECT *` resta `SELECT *`" (es. riga 641).
+`includes/pricelists.php` esiste già e contiene già CRUD parziale per `listini` (`qk_listino_insert`, `qk_listino_update`, `qk_get_listino`, `qk_listino_delete`, `qk_listini_list_with_count`) e per l'associazione clienti (`qk_get_clienti_listino`, `qk_update_clienti_listino`, `qk_get_clienti_assegnati_listino`) — è il file dove va aggiunto tutto il resto, non un file nuovo (coerenza + DRY: usare il file di dominio già esistente).
 
-**Microtappa:** stessa procedura, in sotto-lotti da 5-6 query per volta, per poter fermarsi senza perdere lavoro.
+### 5.1 — `create()`/`edit()`: righe 112-115, 202-210 → riuso di funzioni già esistenti, non nuove
 
-**Test:** per ogni sotto-lotto, script reale su `index()`/`edit()`/`apiClienteDettagli()`/`create()` prima/dopo, più smoke test di pagina completo (rendering reale, nessun warning/error PHP nell'output).
+`qk_listino_insert(PDO $pdo, array $data): int` e `qk_listino_update(PDO $pdo, int $id, array $data): void` esistono già (`includes/pricelists.php:47-92`) ma **non sono chiamate** da `create()`/`edit()`, che scrivono l'INSERT/UPDATE a mano.
 
----
+**Verifica di sicurezza fatta PRIMA di proporre il riuso** (perché le firme non sono identiche — `create()` non gestisce mai `is_default`, mentre `qk_listino_insert()`/`qk_listino_update()` sì, e "resettano" l'`is_default` di ogni altro listino se il nuovo valore è 1): la tabella ha un solo listino con `is_default=1` per costruzione (singleton applicativo, "Listino Base Pubblico"). Se si passa sempre `'is_default' => $values['is_default'] ?? 0` (che in `create()` è sempre 0, in `edit()` è il valore letto da DB, quindi identico a se stesso), la query `UPDATE listini SET is_default=0 WHERE is_default=1 AND id != :id` non troverà mai righe da toccare (non esiste un secondo listino con `is_default=1` da azzerare) — comportamento equivalente a oggi, non un'ipotesi, verificato leggendo `qk_listino_update()` per intero e lo schema di `listini`.
 
-## 7. Tappa 4 — "Segna fatturato/da fatturare" (righe 561, 565 — 2 query)
+**Microtappa:** sostituire il blocco INSERT (righe 112-124) con `$newId = qk_listino_insert($this->pdo, $values);` (passando `'is_default' => 0` esplicito nell'array `$values` di `create()`, che oggi non lo include mai) e il blocco UPDATE (righe 202-219) con `qk_listino_update($this->pdo, $id, $values);` (passando `'is_default' => $values['is_default']`, già presente nell'array). Cancellare fisicamente le query manuali.
 
-**Decisione confermata: funzioni separate/gemelle (Opzione B), non condivise con Acquisti.**
+**Test:** creare un listino via `create()` prima e dopo, confrontare la riga inserita in `listini` campo per campo; modificare un listino via `edit()` (incluso il caso limite: modificare IL listino che ha `is_default=1`) prima e dopo, verificare che nessun altro listino abbia subito modifiche a `is_default`.
 
-**Implicazioni:** creare `qk_ordine_cliente_segna_fatturato()`/`qk_ordine_cliente_segna_da_fatturare()` in `includes/sales_orders.php` — stesso nome-radice e stesso pattern della coppia già esistente lato Acquisti (`qk_ordine_segna_fatturato()`/`qk_ordine_segna_da_fatturare()` in `includes/purchases_orders.php`), ma file e funzione separati, nessuna dipendenza tra i due cicli. Aggiornare il commento in `purchases_orders.php` che dice "mirror di Vendite" se necessario per chiarezza (oggi è ambiguo, potrebbe far pensare a una funzione condivisa che non esiste).
+### 5.2 — `apiSaveRiga()`: righe 366-372, 391-403, 420-422, 441-459 → nuove funzioni in `includes/pricelists.php`
 
-**Test:** ordine reale, transizione di stato fatturazione in entrambe le direzioni, verifica `stato_fatturazione` nel DB prima/dopo.
+Nessuna funzione equivalente trovata con la ricerca preventiva (verificato: `qk_get_listino_items()` esiste ma serve per la lista paginata, non per una singola riga/duplicato). Da creare, con firme che rispettano `SELECT` esplicite (non `SELECT *`, la query 441-459 ha 12 colonne/alias precisi usati dal JS come `prodotto_nome`, `sku_interno`, `unita_misura`, `uom_stock_id`, `costo`, ecc. — copiare l'elenco esatto, non riscriverlo a memoria):
 
----
+```
+qk_listino_prezzo_riga_esiste_duplicato(PDO $pdo, int $listinoId, int $prodottoId, float $qMinStock, int $escludiRigaId): bool   // righe 366-372
+qk_listino_prezzo_riga_update(PDO $pdo, int $rigaId, int $listinoId, array $data): void                                          // righe 391-403
+qk_listino_prezzo_riga_insert(PDO $pdo, array $data): int                                                                        // righe 420-422
+qk_listino_prezzo_riga_dettaglio(PDO $pdo, int $rigaId): ?array                                                                  // righe 441-459, SELECT esplicita invariata
+```
 
-## 8. Tappa 5 — Unificare le due filosofie di creazione ordine (problema 4.B.2)
+**Test:** per ciascuna, chiamata diretta su dati seed reali con confronto valore-per-valore rispetto all'esecuzione della query originale sullo stesso input; poi test end-to-end su `apiSaveRiga()` (creazione riga, modifica riga, tentativo di duplicato — deve restituire lo stesso messaggio di errore di oggi) con verifica della risposta JSON completa, non solo `ok:true/false`.
 
-**Implicazioni, mappate per intero:** oggi esistono due percorsi indipendenti che scrivono nella stessa tabella `ordini_clienti` con logiche diverse — `OrderCalculatorService::insertDirectOrder()`/`SalesOrderRepository::insertOrderHeader()` (classi OOP, ordine diretto) contro `qk_preventivo_conferma_ordine()` in `includes/sales_quotes.php` (INSERT SQL scritto a mano, ~44 colonne, percorso preventivo→ordine). Sono la stessa operazione di dominio (creare un ordine cliente) con due implementazioni indipendenti che possono divergere silenziosamente nel tempo (es. una nuova colonna aggiunta a `ordini_clienti` in futuro, ricordata in un percorso e dimenticata nell'altro — esattamente la classe di bug già vista oggi con `qk_preventivo_duplica()`/`qk_preventivo_nuova_versione()`).
+### 5.3 — `apiProdotti()`: righe 514-536 → nuova funzione, NON unificare con `qk_search_prodotti_orders()`
 
-**Cosa si può rompere:** i due percorsi hanno oggi INPUT diversi (`$values`/`$righe` da un form HTML per l'ordine diretto, vs `$quota`/`$righe` da `qk_get_offerta()` per il preventivo confermato) — non è un semplice "chiama la stessa funzione", serve prima **normalizzare i dati di input in una forma comune** prima di passarli a un unico punto di scrittura, altrimenti si rischia di introdurre un mapping sbagliato tra i campi delle due fonti.
+Verificato (ricerca preventiva, CLAUDE.md punto 1): esiste già `qk_search_prodotti_orders()` in `includes/sales_orders.php:241-287`, stesso scopo generale (autocomplete prodotti) ma **query sostanzialmente diversa** — usa `v_costo_acquisto_prodotti` (non `v_prezzo_acquisto_base_fornitore`), gestisce esplicitamente il costo aggregato dei Kit con una `SUM` su `componenti_kit`, limite 60 righe (non 20), niente ricerca su `ean`. Unificarle forzatamente cambierebbe il comportamento di uno dei due form. **Decisione: estrarre come funzione propria**, non riusare né modificare quella esistente:
 
-**Microtappa:**
-1. Confrontare campo per campo l'array passato a `SalesOrderRepository::insertOrderHeader()` (ordine diretto) con le `:parametri` dell'INSERT scritto a mano in `qk_preventivo_conferma_ordine()` — elencare ogni colonna e la sua fonte in entrambi i percorsi.
-2. Decidere se far passare anche `qk_preventivo_conferma_ordine()` attraverso `SalesOrderRepository::insertOrderHeader()` (mappando prima `$quota` nella forma attesa dal Repository) — opzione preferita, riusa la classe già esistente invece di crearne una terza.
-3. Se emergono differenze reali di business tra i due percorsi (non solo di forma dei dati), documentarle esplicitamente prima di unificare — non forzare un'unificazione che nasconderebbe una differenza voluta.
+```
+qk_pricelist_search_prodotti(PDO $pdo, string $q): array   // righe 514-536, SELECT esplicita invariata
+```
 
-**Test:** creare un ordine via entrambi i percorsi (diretto e da preventivo confermato) con dati equivalenti, confrontare le righe risultanti in `ordini_clienti` campo per campo — devono essere identiche a parità di input, sia prima sia dopo l'unificazione.
+**Test:** confronto diretto prima/dopo su una ricerca reale con risultati noti (incluso un prodotto Kit, per verificare che il comportamento — oggi diverso da `qk_search_prodotti_orders` sul costo — resti quello di oggi e non venga "corretto" per errore durante l'estrazione).
 
----
+### 5.4 — `apiOttieniPrezzo()`: righe 603-611 → nuova funzione
 
-## 9. Tappa 6 — `SalesOrdersController::elaboraCreaSpedizione()` (~18 query, rischio alto)
+```
+qk_pricelist_get_rrp_costo(PDO $pdo, int $prodottoId): ?array   // righe 603-611, SELECT esplicita invariata
+```
 
-**Decisione confermata: prima correggere i bug 3.1 e 3.2 sul codice attuale, poi estrarre in Service.**
+**Test:** confronto diretto prima/dopo su un prodotto con RRP configurato e uno senza (deve restituire `null`/riga vuota coerente con oggi).
 
-**✅ Prerequisito completato:** i bug 3.1 (riserva/rilascio su magazzini mai confrontati) e 3.2 (Kit senza tracciabilità lotti) sono stati corretti e verificati con esecuzione reale (8 asserzioni su 2 scenari: prodotto standalone e Kit, entrambi con magazzino di riserva diverso dal magazzino di spedizione). Dettagli in `AUDIT 3...md` §3.1/§3.2. Resta da fare solo l'estrazione in Service (microtappe 4-5 sotto) — non più un prerequisito bloccante.
+### 5.5 — Deduplicazione "nome cliente": righe 673, 759
 
-**Implicazioni, mappate per intero:**
-- Metodo più lungo e intrecciato del ciclo (righe 617-1013, God Object 4.C.1). Tocca in sequenza: validazione stato ordine (TransitionGuard), risoluzione indirizzo a cascata, upload file con MIME sniffing, controllo overshipment, numerazione sequenziale, congelamento mittente/destinatario, inserimento spedizione/DDT/righe, due rami (prodotto standalone a lotti vs componente Kit), verifica e decremento giacenza, log movimenti.
-- Il modello da seguire esiste già nello stesso file/dominio: `OrderCalculatorService`/`SalesOrderRepository`. Estrarre in `SpedizioneCalculatorService`+`SpedizioneRepository`, stesso pattern — se la Tappa 5 (§8) è già stata fatta, questo Repository può probabilmente riusare parte della stessa infrastruttura.
+Sostituire `COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,'')))` con `{$nomeClienteSql}` dove `$nomeClienteSql = qk_nome_cliente_sql_fragment('cf');`, in entrambi i punti — stessa identica sostituzione già fatta con successo in 6 punti di `includes/sales_orders.php` e `includes/pricelists.php` (righe 327, 350, 458, 479, 126, 239), stesso schema da replicare, zero rischio di comportamento diverso (la funzione produce byte-per-byte la stessa espressione SQL per SQLite).
 
-**Cosa si può rompere:** il metodo scrive su 6+ tabelle dentro un'unica transazione. Un errore nell'estrazione può lasciare una spedizione "a metà" (es. DDT creato ma giacenza non scaricata) se la gestione della transazione non è preservata esattamente.
+**Test:** eseguire la query prima e dopo sullo stesso set di clienti reali (inclusi quelli con `ragione_sociale` NULL e quelli con `nome`/`cognome` NULL), confrontare l'output stringa-per-stringa.
 
-**Microtappa:**
-1. Correggere il problema 3.1 (riserva/rilascio su magazzino sbagliato) sul codice attuale, nel controller — soluzione già decisa in questa sessione (form spedizione precompila da `ordini_clienti.magazzino_id`, rilascio riserva sul magazzino originale distinto dallo scarico fisico sul magazzino reale).
-2. Correggere il problema 3.2 (Kit senza tracciabilità lotti) sul codice attuale — il ramo Kit deve selezionare/decrementare `lotti_giacenze` come già fa il ramo standalone.
-3. Verificare entrambe con esecuzione reale, PRIMA di procedere.
-4. Solo a questo punto, disegnare l'estrazione in `SpedizioneCalculatorService`/`SpedizioneRepository`.
-5. Estrarre gradualmente: prima le query di sola lettura, poi quelle di scrittura, mantenendo la transazione aperta dal chiamante come oggi.
+### 5.6 — `apiAssegnaClienti()`: righe 731-733, 740, 745-748 → riuso di `qk_update_clienti_listino()`, già esistente
 
-**Test:** scenario end-to-end — ordine con una riga standalone a lotti e una riga Kit con componente a lotti, spedizione parziale, verifica: DDT corretto, `giacenze`/`lotti_giacenze` decrementate su entrambi i rami, movimento con `lotto_id` valorizzato anche per il Kit (conferma 3.2), riserva rilasciata sul magazzino giusto (conferma 3.1), `quantita_spedita`/`stato` aggiornati. Ripetere lo stesso scenario prima e dopo l'estrazione in Service, risultati a DB identici.
+**Verifica di sicurezza fatta PRIMA di proporre il riuso**: la funzione esiste (`includes/pricelists.php:150-182`) ma non è chiamata da nessuna parte del progetto oggi (verificato con grep esaustivo su tutto il codebase — è codice morto). Il suo INSERT `INSERT INTO clienti_listini (cliente_id, listino_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)` **non valorizza `priorita`**, mentre il codice manuale del controller lo fa esplicitamente (`priorita) VALUES (?, ?, 10)`). Controllato lo schema reale (`db/init_sqlite.sql:313-321`, CLAUDE.md punto 2): `priorita INTEGER NOT NULL DEFAULT 10` — il default a livello DB è esattamente lo stesso valore che il controller scrive a mano. **Le due forme sono equivalenti byte-per-byte nel risultato**, non solo "probabilmente equivalenti" — verificato sullo schema, non assunto.
 
----
+**Microtappa:** sostituire il blocco diff-sync (righe 731-752, SELECT esistenti + DELETE + INSERT loop) con `qk_update_clienti_listino($this->pdo, $listinoId, $clienteIds);`. Notare che la funzione esistente apre una propria `beginTransaction()`/`commit()` (righe 152-181) — il controller oggi apre GIÀ la sua transazione alla riga 721 prima del blocco: verificare a runtime se questo causa un conflitto (PDO SQLite non supporta transazioni annidate native). **Se la funzione viene chiamata dentro una transazione già aperta dal controller, la sua `beginTransaction()` interna fallirà** — questo è un dettaglio che il riuso diretto non può ignorare. Due opzioni, da verificare quale sia più corretta leggendo il chiamante per intero prima di scegliere: (a) rimuovere `beginTransaction()`/`commit()`/`rollBack()` da `qk_update_clienti_listino()` per renderla "componibile" dentro la transazione del chiamante (stesso pattern di `qk_riserva_stock_ordine()`), visto che è comunque usata da un solo punto dopo questa modifica; (b) rimuovere invece la `beginTransaction()` del controller e lasciare che sia `qk_update_clienti_listino()` a gestire la propria transazione, spostando FUORI da essa la query di reload (righe 757-768, che oggi vive dopo il `commit()` del controller). L'opzione (a) è preferibile per coerenza con lo stile del resto del progetto (le funzioni "helper" non aprono transazioni proprie quando pensate per essere composte), ma va confermato che nessun altro futuro chiamante di `qk_update_clienti_listino()` si aspetti che apra la propria transazione.
 
-## 10. Tappa 7 — `SalesPricelistsController.php`, CRUD semplice (~19 delle 29 query)
+**Test:** assegnazione clienti con un mix di aggiunte/rimozioni/clienti-che-restano-uguali su dati reali, verificando che `clienti_listini` risulti identica prima/dopo la modifica per lo stesso input (incluso il caso limite già corretto il 13/07/2026 e documentato nel controller: un cliente che resta assegnato non deve perdere `priorita`/`data_inizio`/`data_fine` — la diff-sync non tocca le righe invariate).
 
-**Implicazioni:** controller più "estremo" per violazione Regola Aurea, ma in gran parte operazioni CRUD isolate senza transazioni complesse (eccetto §11).
+### 5.7 — Query di reload dopo assegnazione: righe 757-768
 
-**Microtappa:** creare `includes/pricelists.php` (o estendere `includes/pricing.php`, da verificare quale sia più coerente) con le funzioni CRUD, verifica-riuso-poi-crea, sotto-lotti da 5-6 query.
+Diversa da `qk_get_clienti_assegnati_listino()` già esistente (quella unisce solo `dettagli_clienti`, questa unisce anche `clienti_listini` con `OR` e `DISTINCT`) — **non unificare senza verificare prima se sono davvero la stessa cosa concettuale o due viste intenzionalmente diverse** (una potrebbe essere "clienti con QUESTO come listino di default", l'altra "clienti assegnati in QUALSIASI modo, default o esplicito"; da confermare leggendo dove ciascuna viene usata nel frontend prima di decidere se unificare). Nel dubbio, estrarre come funzione separata:
 
-**Test:** per ogni operazione, ciclo completo reale (crea → verifica DB → modifica → verifica → elimina → verifica assenza), stile già usato oggi per `qk_preventivo_duplica()`.
+```
+qk_get_clienti_assegnati_dopo_sync(PDO $pdo, int $listinoId): array   // righe 757-768, SELECT esplicita invariata
+```
 
----
-
-## 11. Tappa 8 — `SalesPricelistsController::apiImportPrezzi()` (~10 query, rischio alto)
-
-**Implicazioni:** God Object 4.C.2 (~210 righe: parsing, conversione UoM, dedup, regola "non sovrascrivere se modificato a mano", rimozione orfani). Un errore qui può corrompere un listino prezzi intero — rischio commerciale diretto.
-
-**Microtappa:** nessun bug comportamentale noto da correggere prima (a differenza di §9); estrazione diretta in `ListinoImportService` dedicato, gradualmente (parsing → validazione → scrittura).
-
-**Test:** import reale con righe nuove, duplicate, una riga modificata a mano dopo l'ultimo import (deve restare intatta), righe orfane da rimuovere — verificare `listini_prezzi` corrisponde esattamente alle aspettative, prima e dopo l'estrazione.
+**Test:** confronto diretto prima/dopo su uno scenario reale con clienti assegnati sia via `dettagli_clienti` sia via `clienti_listini`.
 
 ---
 
-## 12. Tappa 9 — Ridurre la duplicazione PDF/DOCX (problemi 4.B.1/4.C.4 — passo sicuro disponibile, non l'unificazione completa)
+## 6. Tappa 8 — `apiImportPrezzi()` (7 query dirette + logica di business, problema 4.C.2, rischio alto)
 
-**Implicazioni:** le due API di rendering (stringa HTML per mPDF vs oggetti PhpWord) restano troppo diverse per un'unificazione completa senza un redesign importante (osservazione già confermata due volte in questa sessione). Il passo a rischio/costo contenuto già identificato: il gemello concettuale `RfqController` (Acquisti) sposta il blocco HTML del PDF in un template esterno (`_pdf_template.php`) invece di costruirlo come stringa nel controller — `SalesQuotesController::pdf()` può fare lo stesso, senza toccare `docx()` né eliminare la duplicazione tra i due formati, solo risolvendo la violazione MVC pura (presentazione fuori dal controller).
+**Implicazioni:** ~211 righe (780-991), tutte dentro un'unica transazione (`beginTransaction()` riga 811, `commit()` riga 976). Fa, in un solo metodo di controller: parsing riga per riga di un array JSON caricato dal client, risoluzione prodotto per SKU, risoluzione unità di misura opzionale per la soglia, conversione UoM (`qk_uom_converti_riga()`), calcolo valore canonico (`quantita_minima_stock`), dedup contro righe esistenti sullo stesso scaglione canonico, **regola "non sovrascrivere se modificato a mano dopo l'ultimo import"** (confronto `modificato_manualmente_il` vs `importato_il`), rimozione righe orfane (presenti in un import precedente ma non più nel file corrente). Un errore qui rischia di corrompere un intero listino prezzi — rischio commerciale diretto, non solo di stile.
 
-**Microtappa:** creare `app/views/sales/quotes/_pdf_template.php` con lo stesso contenuto HTML oggi costruito come stringa in `pdf()`, `preparaDatiStampaOfferta()` (già estratto oggi) continua a fornire i dati, il controller fa un `ob_start()`+`include` del template invece di concatenare stringhe, poi passa l'HTML risultante a `$mpdf->WriteHTML()` come oggi.
+**Nessun bug comportamentale noto da correggere prima** (a differenza della Tappa 6) — qui l'estrazione è pura riorganizzazione, bit-per-bit equivalente.
 
-**Test:** confronto byte-per-byte del PDF generato prima e dopo per lo stesso preventivo reale (stesso schema di verifica già usato oggi per V7, con lo stesso accorgimento di scrivere il file da PHP invece che via redirect di shell per evitare corruzione binaria).
+### 6.1 Struttura proposta
+
+```
+app/Services/ListinoImportService.php
+    importaRighe(int $listinoId, array $rows): array   // ritorna ['inserted'=>,'skipped'=>,'removed'=>,'errors'=>[]]
+        // orchestratore: apre/chiude la transazione, richiama i metodi sotto per ogni riga
+
+app/Repositories/ListinoPrezziRepository.php   (o estendere un repository già esistente se emerge in fase di esecuzione che ce n'è uno adatto — verificare prima di crearne un altro)
+    trovaProdottoPerSku(string $sku): ?array
+    risolviUnitaMisuraPerCodice(string $codice): ?int
+    trovaRigaEsistente(int $listinoId, int $prodottoId, float $qMinStock): ?array
+    aggiornaRiga(int $rigaId, array $data): void
+    inserisciRiga(array $data): int
+    trovaRigheOrfane(int $listinoId, array $touchedIds): array
+    rimuoviRighe(array $ids): int
+```
+
+La logica di validazione riga (SKU vuoto, prezzo non numerico, unità soglia non valida, regola "modificato a mano") resta nel Service (è business logic, non accesso dati) — solo le 7 query dirette (righe 824, 844, 889-892, 917-926, 939-941, 966, 971) migrano nel Repository.
+
+### 6.2 Microtappe atomiche
+
+1. **6.2.1** — Creare `ListinoPrezziRepository` con i 2 metodi di sola lettura semplice (`trovaProdottoPerSku`, `risolviUnitaMisuraPerCodice`), sostituirli dentro `apiImportPrezzi()`, ritestare con un import reale di righe valide (nessuna riga saltata) prima/dopo.
+2. **6.2.2** — Aggiungere `trovaRigaEsistente`/`trovaRigheOrfane`, sostituire, ritestare con un import che include righe duplicate/orfane rispetto a un import precedente — stesso conteggio `skipped`/`removed` prima/dopo.
+3. **6.2.3** — Aggiungere `aggiornaRiga`/`inserisciRiga`/`rimuoviRighe`, sostituire le ultime 3 query, ritestare l'intero flusso.
+4. **6.2.4** — Solo a questo punto, spostare l'orchestrazione (il ciclo `foreach ($rows as ...)`, la regola "modificato a mano", il calcolo `$qMinCanonico`) nel `ListinoImportService`, lasciando in `SalesPricelistsController::apiImportPrezzi()` solo: lettura `$_POST`, chiamata al Service, `echo json_encode(...)`.
+
+### 6.3 Test (obbligatorio, scenario completo)
+
+Un solo import che copre in un colpo solo tutti i rami: (a) una riga nuova (SKU non presente nel listino) → deve comparire in `listini_prezzi`; (b) una riga che aggiorna uno scaglione esistente non modificato a mano → deve aggiornarsi; (c) una riga che punta a uno scaglione esistente ma modificato a mano dopo l'ultimo import → deve restare INTATTA (stesso `prezzo_unitario` di prima, comparire in `errors` con il messaggio corretto, contare come `skipped`); (d) una riga con SKU inesistente → `skipped` con messaggio corretto, nessuna scrittura; (e) una riga orfana (presente da un import precedente, assente da questo file) → deve essere rimossa da `listini_prezzi`; (f) una riga con unità soglia dichiarata non compatibile col prodotto → `skipped` col messaggio corretto. Verificare lo stato di `listini_prezzi` campo per campo dopo l'esecuzione, non solo i contatori `inserted`/`skipped`/`removed` restituiti dal JSON — un contatore corretto non garantisce che la riga scritta abbia i valori giusti.
 
 ---
 
-## 13. Piano di test — regola generale per OGNI tappa
+## 7. Regola di verifica per OGNI microtappa di questo documento
 
-1. **Mai fidarsi di `php -l` da solo.** Ogni fix verificato con uno script reale che invoca il codice vero, non un mock.
-2. **Caratterizzazione prima, conferma dopo.** Catturare l'output/risultato esatto prima della modifica e confrontarlo campo-per-campo con l'output dopo.
-3. **Pulizia dati di test.** Ogni script crea ed elimina i propri dati, mai lasciare righe `TEST*` nel DB reale a fine sessione.
-4. **Smoke test di pagina.** Dopo ogni tappa che tocca un controller con vista associata, ri-renderizzare la pagina reale e controllare l'assenza di warning/errori PHP.
-5. **Rilettura del file immediatamente prima di ogni modifica** (CLAUDE.md punto 9) — non riusare numeri di riga o contenuti letti in tappe precedenti.
-6. **Nessuna tappa lascia il progetto in uno stato peggiore del punto di partenza** — se una tappa non può essere completata in una sessione, fermarsi a un punto già verificato e funzionante, mai a metà di un'estrazione.
+1. **Mai fidarsi di `php -l` da solo** — ogni fix verificato con uno script reale che invoca il codice vero (funzione/metodo/Service), mai un mock, per la regola esplicita di `.agents/AGENTS.md` §"Protocollo della Simulazione Logica": setup DB reale (anche in-memory), chiamata reale, lettura byte/JSON/righe DB risultanti, `exit(0)` come condizione di successo.
+2. **Caratterizzazione prima, conferma dopo** — per ogni query estratta, catturare l'esecuzione della query originale sui dati di test PRIMA della modifica, ripeterla dopo, confrontare l'output campo per campo (non solo "non è andato in errore").
+3. **Rilettura del file immediatamente prima di ogni modifica** — non riusare numeri di riga letti in un passo precedente di questo stesso piano: il codice può essere cambiato nel frattempo (CLAUDE.md punto 9), specialmente vero qui perché questa sessione stessa ha già dimostrato che lo stato del codice può disallinearsi silenziosamente dalla documentazione.
+4. **Pulizia dati di test** — ogni script crea ed elimina i propri dati (DB in-memory o directory temporanea dedicata, mai il DB reale).
+5. **Cancellazione fisica del codice vecchio** ad ogni estrazione completata — mai lasciare la query/il blocco vecchio commentato "per sicurezza" (regola AGENTS.md sulla Logic Bomb, applicata qui anche alle query, non solo a JS/CSS).
+6. **Nessuna tappa lascia il progetto in uno stato peggiore del punto di partenza** — se una sessione si interrompe a metà di una tappa (specialmente §4, la più rischiosa), fermarsi a un punto già verificato e funzionante (es. dopo 4.4.2, non a metà di 4.4.3), mai a metà di un'estrazione con query duplicate temporaneamente in due posti.
 
 ---
 
-## 14. Stato: pronto per l'esecuzione
+## 8. Ordine di esecuzione consigliato
 
-Tutte le decisioni architetturali necessarie sono state prese (vedi riquadro in cima al documento). Nessun file è ancora stato toccato — resta da autorizzare l'inizio dell'esecuzione, tappa per tappa, nell'ordine A → 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9.
+**1 → 4 → 5 → 6**, cioè: Tappa 0.5 (fix test, §1) come prerequisito bloccante → Tappa 6 (§4, rischio più alto, ma con prerequisito bug 3.1/3.2 già soddisfatto) → Tappa 7 (§5, rischio medio, indipendente dalla 6) → Tappa 8 (§6, rischio alto ma isolato, indipendente da 6 e 7). Le Tappe 7 e 8 possono essere invertite o eseguite in sessioni separate senza conflitti, entrambe indipendenti dalla Tappa 6 (file diversi, nessuna funzione condivisa tra `SalesPricelistsController`/`includes/pricelists.php` e `qk_elabora_crea_spedizione()`/`includes/sales_orders.php`).
+
+**Stato: pronto per l'esecuzione.** Nessun file toccato durante questa sessione di pianificazione (solo lettura). Resta da autorizzare esplicitamente l'inizio ("approvo", "procedi", ecc. — regola AGENTS.md, nessuna esecuzione su via libera implicito), tappa per tappa.

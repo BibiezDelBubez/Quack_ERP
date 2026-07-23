@@ -17,12 +17,12 @@ function qk_prodotti_null(?string $s): ?string
 
 /**
  * Creazione rapida prodotto ("crea al volo" da un form documento: RFQ/Offerta,
- * Preventivo, Ordine Cliente). Funzione condivisa tra Acquisti e Vendite â€”
+ * Preventivo, Ordine Cliente). Funzione condivisa tra Acquisti e Vendite —
  * spostata qui da includes/sales_quotes.php il 15/07/2026 (Revisione Ciclo
- * Acquisti Â§3bis, punto B.1): non ha nulla di specifico al dominio vendite,
+ * Acquisti §3bis, punto B.1): non ha nulla di specifico al dominio vendite,
  * viveva in quel file solo per storia, e RfqController ne aveva reinventato
  * una copia incompleta invece di riusarla (mancavano tipo/unita_misura_stock_id,
- * entrambi NOT NULL senza default â€” l'endpoint falliva sempre).
+ * entrambi NOT NULL senza default — l'endpoint falliva sempre).
  */
 function qk_crea_prodotto_rapido(PDO $pdo, array $data): int
 {
@@ -81,11 +81,11 @@ function qk_prodotti_valida_quantita_contenuto(?string $s): ?string
 {
     if ($s === null || trim($s) === '') return null; // campo facoltativo
     $s = trim(str_replace(',', '.', $s));
-    if (!is_numeric($s)) return 'La quantitÃ  per confezione deve essere un numero.';
-    if ((float)$s <= 0) return 'La quantitÃ  per confezione deve essere maggiore di zero.';
+    if (!is_numeric($s)) return 'La quantità per confezione deve essere un numero.';
+    if ((float)$s <= 0) return 'La quantità per confezione deve essere maggiore di zero.';
     // Controlla max 3 decimali
     if (strpos($s, '.') !== false && strlen(substr($s, strpos($s, '.') + 1)) > 3) {
-        return 'La quantitÃ  per confezione accetta al massimo 3 cifre decimali (es. 12.500).';
+        return 'La quantità per confezione accetta al massimo 3 cifre decimali (es. 12.500).';
     }
     return null;
 }
@@ -200,7 +200,7 @@ function qk_load_categorie(PDO $pdo): array
                 'id'    => (int) $r['id'],
                 'nome'  => $r['nome'],
                 'depth' => $depth,
-                'label' => str_repeat('â€” ', $depth) . $r['nome'],
+                'label' => str_repeat('— ', $depth) . $r['nome'],
             ];
             $walk((int) $r['id'], $depth + 1);
         }
@@ -350,8 +350,8 @@ function qk_load_prodotto_rrp(PDO $pdo, int $prodotto_id): array
  * Carica TUTTE le righe prodotti_fornitori_prezzi per un prodotto,
  * raggruppabili poi per prodotto_fornitore_id lato PHP o JS.
  *
- * Ordinamento: per ordine preferenza fornitore â†’ pf_id â†’ base/listino
- * (prezzi base IS NULL per listino vengono prima) â†’ nome listino â†’ qtÃ  minima.
+ * Ordinamento: per ordine preferenza fornitore → pf_id → base/listino
+ * (prezzi base IS NULL per listino vengono prima) → nome listino → qtà minima.
  */
 function qk_load_prodotto_tutti_prezzi(PDO $pdo, int $prodotto_id): array
 {
@@ -465,10 +465,10 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
                 CASE
                     WHEN p.tipo = 'kit' THEN (
                         -- Giacenza kit = MIN, tra i componenti, di (giacenza del componente
-                        -- SOMMATA su tutte le sedi) / quantitÃ  richiesta â€” non un semplice
+                        -- SOMMATA su tutte le sedi) / quantità richiesta — non un semplice
                         -- JOIN su giacenze (che senza SUM per-componente mescolerebbe righe
                         -- di sedi diverse nello stesso MIN, dando un risultato senza senso).
-                        -- Stesso pattern giÃ  usato in _qk_stock_list_aggregato() di magazzino.php.
+                        -- Stesso pattern già usato in _qk_stock_list_aggregato() di magazzino.php.
                         SELECT MIN(CAST(IFNULL(
                             (SELECT SUM(g3.quantita_disponibile) FROM giacenze g3 WHERE g3.prodotto_id = ck.componente_id)
                         , 0) / ck.quantita AS INT))
@@ -476,19 +476,19 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
                         WHERE ck.kit_id = p.id
                     )
                     -- Prodotto semplice: giacenza aggregata su TUTTE le sedi (SUM), non la
-                    -- riga di un magazzino preso a caso â€” bug storico corretto (Best Practice
-                    -- UX-UI Multi-Magazzino nei Grandi ERP.md, Â§5, filo conduttore #2:
-                    -- l'aggregato Ã¨ sempre una somma calcolata al volo, mai un valore singolo).
+                    -- riga di un magazzino preso a caso — bug storico corretto (Best Practice
+                    -- UX-UI Multi-Magazzino nei Grandi ERP.md, §5, filo conduttore #2:
+                    -- l'aggregato è sempre una somma calcolata al volo, mai un valore singolo).
                     ELSE SUM(g.quantita_disponibile)
                 END AS quantita_disponibile,
                 COALESCE(p.is_adr, 0) AS is_adr,
                 lp.prezzo_unitario AS prezzo_vendita,
                 p.descrizione_confezione,
                 -- Costo di acquisto base: da v_costo_acquisto_prodotti (fix 'Listino
-                -- Fantasma', audit/MASTER_AUDIT_REPORT.md â€” la vecchia sub-query
-                -- sceglieva il prezzo con ORDER BY pfp.id DESC, cioÃ¨ l'ultimo
+                -- Fantasma', audit/MASTER_AUDIT_REPORT.md — la vecchia sub-query
+                -- sceglieva il prezzo con ORDER BY pfp.id DESC, cioè l'ultimo
                 -- inserito, senza controllare se il suo listino fosse ancora
-                -- attivo o nella finestra di validitÃ ).
+                -- attivo o nella finestra di validità).
                 CASE WHEN p.tipo = 'kit' THEN (
                     SELECT SUM(ck.quantita * vc.costo_acquisto)
                     FROM componenti_kit ck
@@ -534,11 +534,11 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
 
 function qk_load_prodotto_form(PDO $pdo, int $id): ?array
 {
-    // scorta_minima non Ã¨ piÃ¹ un campo di `prodotti` (era un unico valore
+    // scorta_minima non è più un campo di `prodotti` (era un unico valore
     // azienda-wide, superato dal multi-magazzino, vedi Piano Multi-Magazzino
-    // Â§3.5): qui si legge solo a titolo informativo la soglia impostata per
-    // il magazzino attivo, cosÃ¬ il form prodotto puÃ² mostrarla senza poterla
-    // modificare direttamente â€” la modifica vera avviene nel contesto
+    // §3.5): qui si legge solo a titolo informativo la soglia impostata per
+    // il magazzino attivo, così il form prodotto può mostrarla senza poterla
+    // modificare direttamente — la modifica vera avviene nel contesto
     // magazzino (WarehouseController), dove ha senso scegliere la sede.
     $magazzinoAttivoId = qk_magazzino_attivo_id($pdo);
 
@@ -567,9 +567,9 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
      $prezzo_base = $stmtPrice->fetchColumn();
 
      // Giacenza totale su tutte le sedi (Best Practice UX-UI Multi-Magazzino
-     // nei Grandi ERP.md, Â§5: "l'aggregato Ã¨ una somma calcolata al volo").
+     // nei Grandi ERP.md, §5: "l'aggregato è una somma calcolata al volo").
      // Mostrata sulla scheda prodotto come contatore cliccabile verso il
-     // dettaglio per sede â€” pattern Odoo ("In Stock"), stesso screen giÃ 
+     // dettaglio per sede — pattern Odoo ("In Stock"), stesso screen già
      // costruito per le soglie di riordino (warehouse/min-stock?prodotto_id=).
      $stmtGiac = $pdo->prepare('SELECT COALESCE(SUM(quantita_disponibile), 0) FROM giacenze WHERE prodotto_id = ?');
      $stmtGiac->execute([$id]);
@@ -607,7 +607,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
    INSERT
    =============================================================================
    DIRETTIVE ARCHITETTURALI MULTI-UoM & PREZZI (MANTENERE ASSOLUTAMENTE INTEGRE):
-   1. La Stock UoM (unita_misura_stock_id) definisce l'unitÃ  fisica logistica a magazzino.
+   1. La Stock UoM (unita_misura_stock_id) definisce l'unità fisica logistica a magazzino.
    2. Il fattore di conversione commerciale/stock deve essere gestito come numeratore/denominatore 
       a database (num_factor e den_factor) per evitare discrepanze float con frazioni periodiche (es. 1/3).
    3. Calcolo frazione: Il decimale inserito a schermo (es. 25 o 0.468) viene convertito in frazione
@@ -627,13 +627,13 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
         // faceva `$denFactor = (int)$fVal`, troncando silenziosamente la parte decimale per
         // qualunque quantita_contenuto non intero >= 1 (es. 12.5 diventava 12).
         //
-        // BUG PIÃ™ GRAVE CORRETTO SUBITO DOPO (14/07/2026, verifica numerica con interprete PHP
+        // BUG PIÙ GRAVE CORRETTO SUBITO DOPO (14/07/2026, verifica numerica con interprete PHP
         // reale): il fix sopra, unificando i due rami, aveva invertito la CONVENZIONE del
-        // rapporto num_factor/den_factor per qualunque valore, non solo per i decimali â€”
+        // rapporto num_factor/den_factor per qualunque valore, non solo per i decimali —
         // rompendo il prezzo convertito (system_unit_price_stock) per la stragrande
         // maggioranza dei prodotti reali (qualunque quantita_contenuto intero, es. 25).
         // qk_uom_converti_riga() usa `inverseRate = den_factor/num_factor` come moltiplicatore
-        // del prezzo, e questo DEVE essere uguale a quantita_contenuto stesso (qc) â€” quindi
+        // del prezzo, e questo DEVE essere uguale a quantita_contenuto stesso (qc) — quindi
         // num_factor/den_factor deve rappresentare 1/qc, non qc. Calcoliamo qc come frazione
         // esatta aVal/bVal (via stringa+GCD, gestisce sia interi che decimali in un colpo solo),
         // poi INVERTIAMO (num_factor=bVal, den_factor=aVal) per ottenere 1/qc.
@@ -706,12 +706,12 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
         $id = (int) $pdo->lastInsertId();
 
         // Crea la riga di giacenza per il nuovo prodotto nel magazzino attivo,
-        // a quantitÃ  zero. La soglia di riordino (scorta_minima) NON si imposta
-        // piÃ¹ qui: Ã¨ per coppia (prodotto, magazzino) e va configurata a parte
+        // a quantità zero. La soglia di riordino (scorta_minima) NON si imposta
+        // più qui: è per coppia (prodotto, magazzino) e va configurata a parte
         // nel contesto magazzino (WarehouseController), dove ha senso scegliere
-        // per quale sede â€” un prodotto appena creato puÃ² non avere ancora
+        // per quale sede — un prodotto appena creato può non avere ancora
         // bisogno di una soglia in ogni magazzino esistente. Vedi Piano
-        // Multi-Magazzino Â§3.5.
+        // Multi-Magazzino §3.5.
         if ($v['tipo'] === 'semplice') {
             $pdo->prepare(
                 'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
@@ -724,8 +724,8 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            // D3.2 (PIANO Motore di Pricing Multi-UoM Â§8): quantita_minima_stock deve essere
-            // sempre valorizzato (0 = prezzo base) â€” altrimenti invisibile a getSalePrice().
+            // D3.2 (PIANO Motore di Pricing Multi-UoM §8): quantita_minima_stock deve essere
+            // sempre valorizzato (0 = prezzo base) — altrimenti invisibile a getSalePrice().
             $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?, 0, ?, 0)')
                 ->execute([$id, $prezzo_base, $um_id, $um_id]);
         }
@@ -743,9 +743,9 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
    UPDATE
    =============================================================================
    DIRETTIVE ARCHITETTURALI MULTI-UoM & PREZZI (MANTENERE ASSOLUTAMENTE INTEGRE):
-   1. La Stock UoM (unita_misura_stock_id) definisce l'unitÃ  fisica logistica a magazzino.
-   2. SE sono giÃ  avvenuti movimenti fisici (presenza in movimenti_magazzino), il cambio della
-      Stock UoM Ã¨ severamente vietato e bloccato in backend per prevenire corruzione dello storico.
+   1. La Stock UoM (unita_misura_stock_id) definisce l'unità fisica logistica a magazzino.
+   2. SE sono già avvenuti movimenti fisici (presenza in movimenti_magazzino), il cambio della
+      Stock UoM è severamente vietato e bloccato in backend per prevenire corruzione dello storico.
    3. Il fattore di conversione commerciale/stock deve essere gestito come numeratore/denominatore 
       a database (num_factor e den_factor) per evitare discrepanze float con frazioni periodiche (es. 1/3).
    4. Calcolo frazione: Il decimale inserito a schermo (es. 25 o 0.468) viene convertito in frazione
@@ -755,7 +755,7 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 /**
  * @return array{preventivi: int, rfq: int, ordini_acquisto: int, prezzi_vendita: int, prezzi_acquisto: int}
  *         Conteggio righe ricalcolate per cambio Stock UoM (tutti 0 se la Stock
- *         UoM non Ã¨ cambiata in questo salvataggio).
+ *         UoM non è cambiata in questo salvataggio).
  */
 function qk_update_prodotto(PDO $pdo, int $id, array $v): array
 {
@@ -764,7 +764,7 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
     $um_id = $umStmt->fetchColumn() ?: null;
 
     // Recupera la Stock UoM e la UoM commerciale attuali per verificare se
-    // l'utente sta davvero cambiando la Stock UoM (REVISIONE Â§6.3 Problema 2).
+    // l'utente sta davvero cambiando la Stock UoM (REVISIONE §6.3 Problema 2).
     $stCurrent = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
     $stCurrent->execute([$id]);
     $currentRow = $stCurrent->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -775,28 +775,28 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
     if ($currentUmId && (int)$currentUmId !== (int)$um_id) {
         $stockUomCambiata = true;
 
-        // Verifica se ci sono giÃ  stati movimenti fisici a magazzino per questo prodotto
+        // Verifica se ci sono già stati movimenti fisici a magazzino per questo prodotto
         $stMov = $pdo->prepare('SELECT COUNT(*) FROM movimenti_magazzino WHERE prodotto_id = ?');
         $stMov->execute([$id]);
         $hasMovements = (int)$stMov->fetchColumn() > 0;
 
         if ($hasMovements) {
             throw new \RuntimeException(
-                "Impossibile modificare l'unitÃ  di misura di stock: sono giÃ  presenti movimenti fisici di magazzino per questo prodotto nel sistema logistico."
+                "Impossibile modificare l'unità di misura di stock: sono già presenti movimenti fisici di magazzino per questo prodotto nel sistema logistico."
             );
         }
 
-        // Guardia (REVISIONE Â§6.3 Problema 2, decisione 10/07/2026): se il prodotto
-        // ha giÃ  una UoM commerciale, il nuovo fattore di conversione Ã¨ obbligatorio
-        // quando cambia la Stock UoM â€” senza un fattore valido non si potrebbero
+        // Guardia (REVISIONE §6.3 Problema 2, decisione 10/07/2026): se il prodotto
+        // ha già una UoM commerciale, il nuovo fattore di conversione è obbligatorio
+        // quando cambia la Stock UoM — senza un fattore valido non si potrebbero
         // ricalcolare correttamente le bozze collegate (vedi ricalcolo sotto).
         if ($currentContenutoId) {
             $nuovaQuantitaContenuto = qk_prodotti_decimal($v['quantita_contenuto'] ?? null);
             if ($nuovaQuantitaContenuto === null || (float)$nuovaQuantitaContenuto <= 0.0) {
                 throw new \RuntimeException(
-                    "Devi specificare il nuovo fattore di conversione (\"QuantitÃ  per unitÃ  di stock\") " .
-                    "perchÃ© stai cambiando l'unitÃ  di misura di stock di un prodotto che ha giÃ  " .
-                    "un'unitÃ  commerciale configurata. Il vecchio fattore non Ã¨ valido per la nuova unitÃ  di stock."
+                    "Devi specificare il nuovo fattore di conversione (\"Quantità per unità di stock\") " .
+                    "perché stai cambiando l'unità di misura di stock di un prodotto che ha già " .
+                    "un'unità commerciale configurata. Il vecchio fattore non è valido per la nuova unità di stock."
                 );
             }
         }
@@ -804,14 +804,14 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
 
     // Calcolo numeratore e denominatore deterministici (frazione esatta ridotta ai minimi
     // termini). BUG CORRETTO (14/07/2026, secondo audit a tappeto): questo secondo punto
-    // duplicato del calcolo (qk_update_prodotto) era sfuggito al primo fix â€” il ramo
+    // duplicato del calcolo (qk_update_prodotto) era sfuggito al primo fix — il ramo
     // "$fVal >= 1.0" troncava ancora silenziosamente la parte decimale (es. 12.5 -> 12).
     //
-    // BUG PIÃ™ GRAVE CORRETTO SUBITO DOPO (14/07/2026, verifica numerica con interprete PHP
+    // BUG PIÙ GRAVE CORRETTO SUBITO DOPO (14/07/2026, verifica numerica con interprete PHP
     // reale): unificare i due rami aveva invertito la CONVENZIONE del rapporto
     // num_factor/den_factor per qualunque valore (non solo i decimali), rompendo il prezzo
     // convertito per la maggioranza dei prodotti reali. num_factor/den_factor deve
-    // rappresentare 1/quantita_contenuto (non quantita_contenuto stesso), perchÃ©
+    // rappresentare 1/quantita_contenuto (non quantita_contenuto stesso), perché
     // qk_uom_converti_riga() usa den_factor/num_factor come moltiplicatore del prezzo.
     // Calcoliamo qc come frazione esatta aVal/bVal, poi INVERTIAMO. Verificato con un
     // interprete PHP reale (bcmath) su 9 casi (interi, decimali, <1, >1).
@@ -894,11 +894,11 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
         ]);
 
         // NOTA: qui c'era una sincronizzazione di scorta_minima verso
-        // `giacenze`, rimossa. `giacenze.scorta_minima` Ã¨ ora per coppia
+        // `giacenze`, rimossa. `giacenze.scorta_minima` è ora per coppia
         // (prodotto, magazzino) e va impostata dall'operatore nel contesto
         // magazzino (WarehouseController), non copiata da un valore unico di
-        // prodotto â€” vedi Piano Multi-Magazzino Â§3.5. Il form prodotto non
-        // scrive piÃ¹ questo campo.
+        // prodotto — vedi Piano Multi-Magazzino §3.5. Il form prodotto non
+        // scrive più questo campo.
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
@@ -906,7 +906,7 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
             $stmtCheckRule->execute([$id]);
             $ruleId = $stmtCheckRule->fetchColumn();
             if ($ruleId) {
-                // D3.2: valorizza/ripara anche quantita_minima_stock qui, cosÃ¬ eventuali righe
+                // D3.2: valorizza/ripara anche quantita_minima_stock qui, così eventuali righe
                 // create prima di questo fix (con quantita_minima_stock NULL) vengono corrette
                 // al primo salvataggio successivo del prodotto.
                 $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ?, unita_misura_soglia_id = ?, quantita_minima_stock = 0 WHERE id = ?')
@@ -917,10 +917,10 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
             }
         }
 
-        // REVISIONE Â§6.3 Problema 2 / Â§6.16 (14/07/2026): se la Stock UoM Ã¨
+        // REVISIONE §6.3 Problema 2 / §6.16 (14/07/2026): se la Stock UoM è
         // davvero cambiata (permesso solo se non ci sono movimenti, verificato
         // sopra), ricalcola tutte le bozze collegate e il valore canonico
-        // quantita_minima_stock sui prezzi â€” nella stessa transazione, cosÃ¬ il
+        // quantita_minima_stock sui prezzi — nella stessa transazione, così il
         // prodotto non risulta mai aggiornato con le bozze rimaste stale.
         $ricalcoloBozze = ['preventivi' => 0, 'rfq' => 0, 'ordini_acquisto' => 0, 'prezzi_vendita' => 0, 'prezzi_acquisto' => 0];
         if ($stockUomCambiata) {
@@ -940,13 +940,13 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
  * Ricalcola lo snapshot UoM/prezzo di tutte le righe in stato "bozza" che
  * referenziano $prodotto_id, dopo un cambio di Stock UoM (o del fattore di
  * conversione) sul prodotto. Va chiamata DOPO che il nuovo
- * unita_misura_stock_id/quantita_contenuto/num_factor/den_factor sono giÃ 
+ * unita_misura_stock_id/quantita_contenuto/num_factor/den_factor sono già
  * stati scritti su `prodotti`, nella stessa transazione (vedi qk_update_prodotto()).
  *
  * Copre: preventivi in bozza, RFQ in bozza, ordini d'acquisto in bozza (mai gli
- * ordini cliente, che non hanno un editor di riga in bozza â€” vedi REVISIONE Â§6.2),
+ * ordini cliente, che non hanno un editor di riga in bozza — vedi REVISIONE §6.2),
  * e il valore canonico quantita_minima_stock sui prezzi di vendita/acquisto
- * (PIANO Motore di Pricing Multi-UoM Â§7.1/Â§7.2/Â§8, dipendenza aggiunta il 14/07/2026).
+ * (PIANO Motore di Pricing Multi-UoM §7.1/§7.2/§8, dipendenza aggiunta il 14/07/2026).
  *
  * @return array{preventivi: int, rfq: int, ordini_acquisto: int, prezzi_vendita: int, prezzi_acquisto: int}
  */
@@ -1014,9 +1014,9 @@ function qk_ricalcola_bozze_per_cambio_stock_uom(PDO $pdo, int $prodotto_id): ar
         $risultato['rfq']++;
     }
 
-    // --- Ordini d'acquisto in bozza (stessa logica; MAI su ordini giÃ  inviati:
+    // --- Ordini d'acquisto in bozza (stessa logica; MAI su ordini già inviati:
     //     quelli si toccano solo tramite "nuova revisione", che preserva lo
-    //     snapshot originale per principio di immutabilitÃ  â€” vedi REVISIONE Â§6.2) ---
+    //     snapshot originale per principio di immutabilità — vedi REVISIONE §6.2) ---
     $st = $pdo->prepare("
         SELECT orr.* FROM ordini_righe orr
         JOIN ordini_testata ot ON ot.id = orr.ordine_id
@@ -1083,26 +1083,26 @@ function qk_ricalcola_bozze_per_cambio_stock_uom(PDO $pdo, int $prodotto_id): ar
 }
 
 /* =============================================================================
-   ERRORI DB â†’ MESSAGGIO UTENTE
+   ERRORI DB → MESSAGGIO UTENTE
 ============================================================================= */
 
 function qk_prodotti_db_message(Throwable $e): string
 {
     $msg = $e->getMessage();
     if (str_contains($msg, 'UNIQUE') && str_contains($msg, 'sku_interno')) {
-        return 'SKU interno giÃ  esistente. Scegli un codice diverso.';
+        return 'SKU interno già esistente. Scegli un codice diverso.';
     }
     if (str_contains($msg, 'UNIQUE') && str_contains($msg, 'sku_ecommerce')) {
-        return 'SKU e-commerce giÃ  esistente. Scegli un codice diverso.';
+        return 'SKU e-commerce già esistente. Scegli un codice diverso.';
     }
     if (str_contains($msg, 'UNIQUE') && str_contains($msg, 'ean')) {
-        return 'Codice EAN giÃ  associato a un altro prodotto.';
+        return 'Codice EAN già associato a un altro prodotto.';
     }
     return 'Errore durante il salvataggio. Verifica i dati e riprova.';
 }
 
 /* =============================================================================
-   PRODOTTI â€” Ricerca generica (per kit component picker)
+   PRODOTTI — Ricerca generica (per kit component picker)
 ============================================================================= */
 
 /** Ricerca prodotti per nome/SKU (picker kit). Esclude opzionalmente un ID. */
@@ -1137,7 +1137,7 @@ function qk_search_prodotti(PDO $pdo, string $q = '', int $limit = 50, ?int $exc
 }
 
 /* =============================================================================
-   KIT â€” Componenti
+   KIT — Componenti
 ============================================================================= */
 
 /** Carica i componenti di un kit. */
@@ -1168,7 +1168,7 @@ function qk_prodotto_get_conversion_factor(PDO $pdo, int $prodotto_id): float
 }
 
 /**
- * Restituisce le informazioni sulle unitÃ  di misura e i fattori di conversione (frazioni incluse) per un prodotto.
+ * Restituisce le informazioni sulle unità di misura e i fattori di conversione (frazioni incluse) per un prodotto.
  * Ritorna null se il prodotto non esiste.
  */
 function qk_prodotto_get_uom_info(PDO $pdo, int $prodotto_id): ?array
@@ -1197,16 +1197,16 @@ function qk_prodotto_get_uom_info(PDO $pdo, int $prodotto_id): ?array
 }
 
 /**
- * Converte quantitÃ  e prezzo unitario dalla UoM della riga alla UoM stock del prodotto.
+ * Converte quantità e prezzo unitario dalla UoM della riga alla UoM stock del prodotto.
  *
  * Usa BCMath con frazioni intere (num/den) per evitare deriva floating-point.
  * Chiamare da ogni punto in cui si salvano righe transazionali
  * (preventivi, ordini vendita, ordini acquisto, RFQ).
  *
  * @param PDO      $pdo         Connessione DB
- * @param int|null $prodotto_id ID prodotto (null â†’ nessuna conversione)
+ * @param int|null $prodotto_id ID prodotto (null → nessuna conversione)
  * @param int|null $um_id       UoM della riga (stock o commerciale)
- * @param float    $qta         QuantitÃ  nella UoM di riga
+ * @param float    $qta         Quantità nella UoM di riga
  * @param float    $pu          Prezzo unitario nella UoM di riga (0 se non disponibile)
  *
  * @return array{
@@ -1247,16 +1247,16 @@ function qk_uom_converti_riga(PDO $pdo, ?int $prodotto_id, ?int $um_id, float $q
     $qc            = $prodUm['quantita_contenuto'];
 
     if ((int)$um_id === $prodUm['unita_misura_stock_id']) {
-        // GiÃ  in UoM stock â€” nessuna conversione necessaria.
+        // Già in UoM stock — nessuna conversione necessaria.
     } elseif ($content_um_id !== null && (int)$um_id === $content_um_id && $qc > 0) {
         // Q_stock = Q_comm / F_conv
         $result['quantita_stock'] = (float)bcdiv((string)$qta, (string)$qc, 3);
-        // P_stock = P_comm Ã— (den / num)
+        // P_stock = P_comm × (den / num)
         $inverseRate = bcdiv((string)$prodUm['den_factor'], (string)$prodUm['num_factor'], 9);
         $result['system_unit_price_stock'] = (float)bcmul((string)$pu, $inverseRate, 4);
     }
-    // Se um_id non corrisponde nÃ© a stock nÃ© a commerciale: lascia i valori di default
-    // (caso anomalo â€” UoM sconosciuta al sistema).
+    // Se um_id non corrisponde né a stock né a commerciale: lascia i valori di default
+    // (caso anomalo — UoM sconosciuta al sistema).
 
     return $result;
 }

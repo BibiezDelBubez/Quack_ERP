@@ -1,6 +1,7 @@
 <?php
 /**
- * tools/check-utf8.php — Verifica che i file passati come argomento siano UTF-8 valido.
+ * tools/check-utf8.php — Verifica che i file passati come argomento siano UTF-8 valido
+ * E che non contengano mojibake da doppia codifica (vedi sotto).
  *
  * PERCHÉ ESISTE:
  * In db/init_sqlite.sql (zona ricezioni_righe) è stato trovato un blocco di
@@ -10,11 +11,26 @@
  * segnali evidenti in molti editor, e in SQLite passa silenzioso perché era
  * dentro un commento "--", quindi può restare inosservato per mesi.
  *
+ * ESTENSIONE DEL 23/07/2026 — RILEVAMENTO MOJIBAKE (CLAUDE.md regola 10 /
+ * AGENTS.md "Regola sulla Codifica dei File"): un audit a tappeto del
+ * progetto ha trovato 306+ istanze di un problema DIVERSO e più subdolo, in
+ * 4 file (assets/js/products-form.js, includes/prodotti.php e due file in
+ * audit/): testo che era UTF-8 corretto, riletto una volta come CP1252 (o
+ * Latin-1) e poi ri-salvato come UTF-8. Il file risultante è UTF-8
+ * PERFETTAMENTE VALIDO (quindi il controllo mb_check_encoding() sopra non lo
+ * vede) — solo il testo è sbagliato ("è" diventa "è", "—" diventa "—",
+ * ecc.). Il controllo isVerifiedMojibake() sotto individua candidati (una
+ * lettera 'Ã'/'Â' o il prefisso 'â€' seguiti da un carattere qualunque) e li
+ * accetta SOLO se il round-trip CP1252<->UTF-8 è byte-per-byte reversibile:
+ * questo esclude sistematicamente i falsi positivi (una vera lettera 'Ã'
+ * isolata nel testo non supererebbe il round-trip).
+ *
  * COSA FA:
- * Controlla che ogni file passato come argomento sia UTF-8 valido, e segnala
- * anche i file che sono UTF-8 valido ma contengono già il carattere di
- * sostituzione U+FFFD (segno che una perdita di encoding è già avvenuta in
- * passato, anche se il file risulta "tecnicamente" valido ora).
+ * 1. Controlla che ogni file passato come argomento sia UTF-8 valido.
+ * 2. Segnala i file che sono UTF-8 valido ma contengono già il carattere di
+ *    sostituzione U+FFFD (segno che una perdita di encoding è già avvenuta
+ *    in passato, anche se il file risulta "tecnicamente" valido ora).
+ * 3. Segnala i file con mojibake da doppia codifica verificato (vedi sopra).
  *
  * USO MANUALE (in qualunque momento, non solo da un hook):
  *   php tools/check-utf8.php db/init_sqlite.sql db/init_mysql.sql
@@ -26,9 +42,75 @@
  * nella cronologia invece di essere scoperta mesi dopo. Vedi README del
  * repository per come attivare l'hook (git config core.hooksPath .githooks).
  *
- * USCITA: 0 se tutti i file sono UTF-8 valido e senza U+FFFD, 1 altrimenti
- * (con elenco dei file/righe incriminati stampato su stdout).
+ * USCITA: 0 se tutti i file sono UTF-8 valido, senza U+FFFD e senza mojibake
+ * verificato; 1 altrimenti (con elenco dei file/righe incriminati stampato
+ * su stdout).
  */
+
+/**
+ * Ritorna il carattere/sequenza corretta se $candidate è mojibake verificato
+ * (round-trip CP1252<->UTF-8 byte-per-byte reversibile), altrimenti null.
+ *
+ * Stessa identica logica (e stessa soglia di sicurezza) di
+ * scripts/check_utf8_encoding.py::is_verified_mojibake() usato per l'audit
+ * del 23/07/2026 — le due implementazioni NON devono divergere silenziosamente
+ * su cosa conta come mojibake, quindi se una viene toccata va allineata anche
+ * l'altra.
+ */
+function isVerifiedMojibake(string $candidate): ?string
+{
+    $asCp1252Bytes = @mb_convert_encoding($candidate, 'Windows-1252', 'UTF-8');
+    if ($asCp1252Bytes === false || $asCp1252Bytes === '') {
+        return null;
+    }
+    if (!mb_check_encoding($asCp1252Bytes, 'UTF-8')) {
+        return null;
+    }
+    $correctedUtf8 = $asCp1252Bytes;
+    if ($correctedUtf8 === $candidate) {
+        return null; // nessuna differenza reale: non è un candidato utile
+    }
+    $reinterpreted = @mb_convert_encoding($correctedUtf8, 'UTF-8', 'Windows-1252');
+    if ($reinterpreted !== $candidate) {
+        return null; // round-trip non reversibile: troppo rischioso, si scarta
+    }
+    return $correctedUtf8;
+}
+
+/**
+ * Individua i candidati mojibake in un blocco di testo UTF-8 valido e
+ * ritorna solo quelli verificati da isVerifiedMojibake(), con il numero di
+ * riga (1-based) della prima occorrenza di ciascun candidato distinto.
+ *
+ * @return array<string, int> candidato => numero di riga della prima occorrenza
+ */
+function findVerifiedMojibake(string $content): array
+{
+    // Candidati: 'Ã'/'Â' (primo byte UTF-8 di un carattere Latin-1 Supplement
+    // doppio-codificato) o 'â€' (prefisso della famiglia di punteggiatura
+    // tipografica U+2000-U+20xx doppio-codificata) seguiti da un carattere
+    // qualunque. Non basta elencare a mano le combinazioni note: il secondo
+    // byte originale può cadere nel range CP1252 0x80-0x9F, che CP1252
+    // rimappa a caratteri FUORI dal blocco Latin-1 (es. em-dash reale) — la
+    // verifica vera è delegata a isVerifiedMojibake(), qui si individuano
+    // solo i candidati da testare.
+    if (!preg_match_all('/Ã.|Â.|â€./us', $content, $matches, PREG_OFFSET_CAPTURE)) {
+        return [];
+    }
+
+    $found = [];
+    foreach ($matches[0] as [$candidate, $byteOffset]) {
+        if (isset($found[$candidate])) {
+            continue;
+        }
+        if (isVerifiedMojibake($candidate) === null) {
+            continue;
+        }
+        $lineNo = substr_count($content, "\n", 0, $byteOffset) + 1;
+        $found[$candidate] = $lineNo;
+    }
+    return $found;
+}
 
 $files = array_slice($argv, 1);
 
@@ -50,6 +132,22 @@ foreach ($files as $file) {
     $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
     $textExtensions = ['php', 'sql', 'js', 'css', 'html', 'md', 'json', 'txt', 'ini', 'yml', 'yaml'];
     if (!in_array($ext, $textExtensions, true)) {
+        continue;
+    }
+
+    // Librerie di terze parti (vendor/, bundle minificati): non è compito né
+    // sicurezza di questo tool "correggere" codice esterno, e possono
+    // legittimamente contenere byte insoliti (es. una libreria di generazione
+    // DOCX che usa U+FFFD di proposito come fallback per caratteri XML non
+    // validi — scoperto il 23/07/2026 in assets/js/docx.umd.js, falso
+    // positivo, non una corruzione reale). Si esclude per path/nome, non per
+    // "sembra minificato", per restare un criterio esplicito e verificabile.
+    $normalizedPath = str_replace('\\', '/', $file);
+    $isVendored = str_contains($normalizedPath, '/vendor/')
+        || str_starts_with($normalizedPath, 'vendor/')
+        || (bool) preg_match('/\.min\.js$/i', $normalizedPath)
+        || in_array(basename($normalizedPath), ['docx.umd.js', 'bootstrap.bundle.js'], true);
+    if ($isVendored) {
         continue;
     }
 
@@ -80,6 +178,16 @@ foreach ($files as $file) {
             if (strpos($line, "\xEF\xBF\xBD") !== false) {
                 echo "    riga " . ($i + 1) . "\n";
             }
+        }
+    }
+
+    $mojibake = findVerifiedMojibake($content);
+    if (!empty($mojibake)) {
+        $hasErrors = true;
+        echo "✗ Mojibake da doppia codifica (UTF-8 riletto come Windows-1252/Latin-1 e ri-salvato come UTF-8): {$file}\n";
+        foreach ($mojibake as $candidate => $lineNo) {
+            $corrected = isVerifiedMojibake($candidate);
+            echo "    riga {$lineNo}: \"{$candidate}\" dovrebbe essere \"{$corrected}\"\n";
         }
     }
 }

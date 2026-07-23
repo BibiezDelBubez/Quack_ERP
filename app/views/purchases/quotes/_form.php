@@ -810,4 +810,26 @@ $statoLabel = [
 
 
 <?php endif; ?>
+<script>
+/* Config: PHP -> JS, letta da public/assets/js/purchases/quotes_form.js.
+   NOTA (23/07/2026): questi valori erano tag di output PHP scritti
+   direttamente dentro il file .js -- non elaborati mai, perche' il file e'
+   servito come asset statico (stesso bug gia' corretto altrove in questa
+   sessione). csrfToken e' un'aggiunta: il file usava un CSRF_TOKEN globale
+   mai definito da nessuna parte del progetto (bug separato, verificato con
+   grep su tutto il codebase) -- il pulsante "crea prodotto al volo" nel
+   form offerte inviava sempre un token vuoto/inesistente. */
+window.QkPurchaseQuote = {
+  apiFornitori: <?= json_encode(url('purchases/rfq/api/fornitori')) ?>,
+  apiProdotti: <?= json_encode(url('purchases/rfq/api/prodotti')) ?>,
+  apiCreaProdotto: <?= json_encode(url('purchases/rfq/api/crea-prodotto')) ?>,
+  apiFornitoreDettagli: <?= json_encode(url('purchases/rfq/api/fornitore-dettagli')) ?>,
+  apiAziendaIndirizzi: <?= json_encode(url('purchases/rfq/api/azienda-indirizzi')) ?>,
+  canEdit: <?= $canEdit ? 'true' : 'false' ?>,
+  isSpontaneous: <?= empty($values['rfq_id']) ? 'true' : 'false' ?>,
+  fornitoreId: <?= json_encode($values['fornitore_id'] ?? '') ?>,
+  quoteStato: <?= json_encode($values['stato'] ?? 'in_valutazione') ?>,
+  csrfToken: <?= json_encode(csrf_token()) ?>
+};
+</script>
 <script src="<?= url('public/assets/js/purchases/quotes_form.js') ?>"></script>

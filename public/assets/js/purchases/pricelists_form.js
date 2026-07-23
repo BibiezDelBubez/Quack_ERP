@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', function () {
-  const isEdit = <?= json_encode($isEdit) ?>;
+  const isEdit = window.QkPurchasePricelist.isEdit;
   
   if (!isEdit) {
     const inputEl = document.getElementById('pl-fornitore-label');
@@ -26,8 +26,8 @@ document.addEventListener('DOMContentLoaded', function () {
   } else {
     // Gestione della griglia prezzi acquisto inline
     const BASE = QK_BASE;
-    const CSRF = <?= json_encode(csrf_token()) ?>;
-    const LISTINO = <?= (int)$id ?>;
+    const CSRF = window.QkPurchasePricelist.csrfToken;
+    const LISTINO = window.QkPurchasePricelist.listinoId;
     const tbody = document.getElementById('pl-tbody-acquisto');
     const table = document.getElementById('tbl-prezzi-acquisto');
     const empty = document.getElementById('pl-empty-acquisto');
@@ -761,8 +761,8 @@ document.addEventListener('DOMContentLoaded', function () {
 (function () {
   'use strict';
 
-  var LISTINO_ID = <?= (int)($id ?? 0) ?>;
-  var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
+  var LISTINO_ID = window.QkPurchasePricelist.listinoId;
+  var CSRF_TOKEN = window.QkPurchasePricelist.csrfToken;
   var IMPORT_URL = QK_BASE + '/purchases/pricelists/api/import';
 
   var COLS_PREZZI = [

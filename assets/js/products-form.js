@@ -6,7 +6,7 @@
 
   const CSRF = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
-  /* â”€â”€ Utilities HTML escape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Utilities HTML escape ───────────────────────────────────────────── */
   function esc(s)     { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function escA(s)    { return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
   function fmtNum(v, d) {
@@ -18,11 +18,11 @@
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 
-    /* â”€â”€ Sidebar "Foto Principale" â€” nascondi quando il tab attivo non Ã¨ "Dati prodotto" â”€â”€
+    /* ── Sidebar "Foto Principale" — nascondi quando il tab attivo non è "Dati prodotto" ──
      *
      * Il pannello .qk-status-panel (foto + stato) occupa spazio fisso nella sidebar.
      * Ha senso solo nel tab principale (Dati prodotto); nei tab Fornitori, ADR, Kit
-     * Ã¨ rumore visivo e ruba larghezza utile. Lo nascondiamo tramite evento shown.bs.tab.
+     * è rumore visivo e ruba larghezza utile. Lo nascondiamo tramite evento shown.bs.tab.
      */
     const statusPanel = document.querySelector('.qk-status-panel');
     const formGrid    = document.querySelector('.qk-form-grid');
@@ -48,14 +48,14 @@
         });
       });
 
-      /* Sincronizza subito con l'eventuale tab giÃ  attivo al caricamento */
+      /* Sincronizza subito con l'eventuale tab già attivo al caricamento */
       const activeTab = document.querySelector('[data-bs-toggle="tab"].active');
       if (activeTab) syncSidebar(activeTab.id);
     }
-    /* â”€â”€ Fine sidebar toggle â”€â”€ */
+    /* ── Fine sidebar toggle ── */
   });
 
-  /* â”€â”€ Radio card + visibilitÃ  tab Kit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Radio card + visibilità tab Kit ────────────────────────────────── */
   const kitTabLi = document.getElementById('ptab-li-kit');
   const kitTabBtn = document.getElementById('ptab-btn-kit');
 
@@ -70,7 +70,7 @@
       if (kitTabLi) {
         const isKit = inp.value === 'kit' && inp.checked;
         kitTabLi.style.display = isKit ? '' : 'none';
-        // Se stiamo nascondendo il tab kit e il tab Ã¨ attivo, torna a "Dati prodotto"
+        // Se stiamo nascondendo il tab kit e il tab è attivo, torna a "Dati prodotto"
         if (!isKit && kitTabBtn?.classList.contains('active')) {
           document.getElementById('ptab-btn-dati')?.click();
         }
@@ -79,7 +79,7 @@
   });
 
   /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-     TAG â€” M2M chip field stile Odoo
+     TAG — M2M chip field stile Odoo
   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   (function () {
     const API_TAG    = QkPF.apiTag;
@@ -129,11 +129,11 @@
         const exact = allTags.some(t => t.nome.toLowerCase() === lq);
         if (!exact) html += `<div class="qk-m2m-option is-create" data-action="create">+ Crea &ldquo;${q}&rdquo;</div>`;
       } else {
-        html += `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nomeâ€¦)</div>`;
+        html += `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nome…)</div>`;
       }
 
       if (!avail.length && !q) html = '<div class="qk-m2m-option is-empty">Nessun tag ancora. Digita un nome e premi Invio per crearne uno.</div>'
-                                     + `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nomeâ€¦)</div>`;
+                                     + `<div class="qk-m2m-option is-create" data-action="create-prompt">+ Crea nuovo tag (digita il nome…)</div>`;
 
       dropdown.innerHTML = html;
 
@@ -200,7 +200,7 @@
     }, true);
   })();
 
-  /* â”€â”€ ADR toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── ADR toggle ──────────────────────────────────────────────────────── */
   const adrSel = document.getElementById('adr-sostanza-sel');
   const pgWrap = document.getElementById('adr-pg-wrap');
   function toggleAdr() {
@@ -213,7 +213,7 @@
   }
   if (adrSel) adrSel.addEventListener('change', toggleAdr);
 
-  /* â”€â”€ Foto drop zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Foto drop zone ──────────────────────────────────────────────────── */
   const fotoInput   = document.getElementById('foto-input');
   const dropZone    = document.getElementById('foto-drop-zone');
   const prevWrap    = document.getElementById('foto-preview');
@@ -253,7 +253,7 @@
     });
   }
 
-  /* â”€â”€ Crea categoria AJAX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Crea categoria AJAX ─────────────────────────────────────────────── */
   const btnCrea  = document.getElementById('btn-crea-cat');
   const catNome  = document.getElementById('new-cat-nome');
   const catErr   = document.getElementById('new-cat-error');
@@ -269,7 +269,7 @@
   btnCrea?.addEventListener('click', async function () {
     const nome = catNome?.value.trim();
     if (!nome) {
-      if (catErr) { catErr.textContent = 'Il nome Ã¨ obbligatorio.'; catErr.classList.remove('d-none'); }
+      if (catErr) { catErr.textContent = 'Il nome è obbligatorio.'; catErr.classList.remove('d-none'); }
       catNome?.focus(); return;
     }
     this.disabled = true;
@@ -280,7 +280,7 @@
       const out = await res.json();
       if (out.ok) {
         // FIX #2: aggiorna il picker M2O e aggiungi la categoria alla cache interna
-        // cosÃ¬ Ã¨ immediatamente trovabile senza round-trip al server
+        // così è immediatamente trovabile senza round-trip al server
         if (catM2O) {
           catM2O.setValue(out.id, out.nome ?? out.label);
           // Inserisce nella cache interna del QkM2O per la ricerca inline
@@ -300,12 +300,12 @@
     finally { this.disabled = false; this.innerHTML = '<i class="fa-solid fa-plus me-1"></i>Crea'; }
   });
 
-  /* â”€â”€ Categoria â€” QkM2O (init rimandato a DOMContentLoaded) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Categoria — QkM2O (init rimandato a DOMContentLoaded) ─────────── */
   let catM2O = null;
 
 if (QkPF.isEdit) {
   /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-     FORNITORI â€” gestione metadata fornitore (modale leggero)
+     FORNITORI — gestione metadata fornitore (modale leggero)
      I prezzi/scaglioni sono gestiti da products-suppliers.js nel tab.
      Qui gestiamo solo: apertura modale, salvataggio metadata, chiusura.
      Dopo ogni save/delete viene emesso un evento custom (qk:forn-saved /
@@ -336,7 +336,7 @@ if (QkPF.isEdit) {
 
   let mfM2O = null;
 
-  /* â”€â”€ Popola il modale fornitore con i dati del bottone trigger â”€â”€â”€â”€â”€ */
+  /* ── Popola il modale fornitore con i dati del bottone trigger ───── */
   modalForn?.addEventListener('show.bs.modal', function (e) {
     const btn  = e.relatedTarget;
     const mode = btn?.dataset.mode ?? 'create';
@@ -368,13 +368,13 @@ if (QkPF.isEdit) {
     }
   });
 
-  /* â”€â”€ Salva fornitore (metadata): invia AJAX, emette qk:forn-saved â”€â”€ */
+  /* ── Salva fornitore (metadata): invia AJAX, emette qk:forn-saved ── */
   btnSalvaForn?.addEventListener('click', async function () {
     mfHideErr();
     if (!mfFornId?.value) { mfShowErr('Seleziona un fornitore.'); return; }
 
     this.disabled  = true;
-    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggioâ€¦';
+    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio…';
 
     try {
       const fd = new FormData();
@@ -391,7 +391,7 @@ if (QkPF.isEdit) {
       fd.append('rrp_max',                      mfRrpMax ? mfRrpMax.value : '');
       fd.append('lead_time_giorni',             mfLeadTime ? mfLeadTime.value : '');
       fd.append('note',                         mfNote ? mfNote.value : '');
-      /* I prezzi sono gestiti da products-suppliers.js â€” non toccarli qui */
+      /* I prezzi sono gestiti da products-suppliers.js — non toccarli qui */
       fd.append('no_prezzi', '1');
 
       const res = await fetch(API_FORN_SAVE, { method: 'POST', body: fd, credentials: 'same-origin' });
@@ -415,7 +415,7 @@ if (QkPF.isEdit) {
   });
 
   /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-     KIT â€” gestione componenti
+     KIT — gestione componenti
   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   const API_KIT_SAVE   = QkPF.apiKitSave;
   const API_KIT_DELETE = QkPF.apiKitDelete;
@@ -430,14 +430,14 @@ if (QkPF.isEdit) {
   const mcEditInfo     = document.getElementById('mc-edit-info');
   const btnSalvaComp   = document.getElementById('btn-salva-componente');
   let   mcM2O          = null;
-  let   mcEditMode     = false; // in edit mode il prodotto Ã¨ bloccato
+  let   mcEditMode     = false; // in edit mode il prodotto è bloccato
 
   const mcShowErr = msg => { if (mcErrorMsg) mcErrorMsg.textContent = msg; mcError?.classList.remove('d-none'); };
   const mcHideErr = ()  => mcError?.classList.add('d-none');
 
-  /* â”€â”€ Costruisce HTML riga componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Costruisce HTML riga componente ─────────────────────────────────── */
   function buildKitRow(row) {
-    const dash = '<span class="qk-text-muted">â€”</span>';
+    const dash = '<span class="qk-text-muted">—</span>';
     return `<tr id="kit-row-${row.componente_id}">
       <td><span class="fw-semibold">${esc(row.nome)}</span></td>
       <td class="font-monospace">${esc(row.sku_interno)}</td>
@@ -463,7 +463,7 @@ if (QkPF.isEdit) {
     </tr>`;
   }
 
-  /* â”€â”€ Aggiorna badge tab kit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Aggiorna badge tab kit ────────────────────────────────────────── */
   function updateKitBadge(delta) {
     const badge = document.getElementById('badge-kit');
     if (!badge) return;
@@ -472,7 +472,7 @@ if (QkPF.isEdit) {
     n > 0 ? badge.classList.remove('d-none') : badge.classList.add('d-none');
   }
 
-  /* â”€â”€ Assicura che la tabella kit esista nel DOM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Assicura che la tabella kit esista nel DOM ──────────────────────── */
   function ensureKitTable() {
     let tbody = document.getElementById('kit-tbody');
     if (tbody) return tbody;
@@ -480,7 +480,7 @@ if (QkPF.isEdit) {
     document.getElementById('kit-table-wrap').innerHTML = `<table class="qk-table" id="kit-table">
       <thead><tr>
         <th>Prodotto</th><th>SKU</th>
-        <th style="width:130px" class="text-end">QuantitÃ </th>
+        <th style="width:130px" class="text-end">Quantità</th>
         <th>Note</th><th class="col-actions"></th>
       </tr></thead>
       <tbody id="kit-tbody"></tbody>
@@ -488,7 +488,7 @@ if (QkPF.isEdit) {
     return document.getElementById('kit-tbody');
   }
 
-  /* â”€â”€ Apri modal "Aggiungi componente" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Apri modal "Aggiungi componente" ─────────────────────────────── */
   document.getElementById('btn-add-componente')?.addEventListener('click', () => {
     if (!modalComp) return;
     mcEditMode = false;
@@ -497,7 +497,7 @@ if (QkPF.isEdit) {
     if (mcQta)     mcQta.value     = '';
     if (mcNote)    mcNote.value    = '';
     mcM2O?.clear();
-    // Riabilita il picker prodotto in modalitÃ  creazione
+    // Riabilita il picker prodotto in modalità creazione
     document.getElementById('mc-prodotto-label')?.removeAttribute('readonly');
     document.getElementById('mc-m2o-wrap')?.removeAttribute('style');
     mcEditInfo?.classList.add('d-none');
@@ -505,7 +505,7 @@ if (QkPF.isEdit) {
     bootstrap.Modal.getOrCreateInstance(modalComp).show();
   });
 
-  /* â”€â”€ Event delegation: edit componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Event delegation: edit componente ──────────────────────────────── */
   document.getElementById('kit-table-wrap')?.addEventListener('click', function(e) {
     const btnEdit = e.target.closest('.btn-edit-componente');
     const btnDel  = e.target.closest('.btn-delete-componente');
@@ -516,19 +516,19 @@ if (QkPF.isEdit) {
       if (mcProdId) mcProdId.value = btnEdit.dataset.componenteId;
       if (mcQta)    mcQta.value    = btnEdit.dataset.quantita;
       if (mcNote)   mcNote.value   = btnEdit.dataset.note;
-      // Blocca il picker prodotto in edit â€” solo qty e note modificabili
+      // Blocca il picker prodotto in edit — solo qty e note modificabili
       mcM2O?.setValue(btnEdit.dataset.componenteId, btnEdit.dataset.nome + ' [' + btnEdit.dataset.sku + ']');
       document.getElementById('mc-prodotto-label')?.setAttribute('readonly', 'readonly');
       document.getElementById('mc-m2o-wrap')?.setAttribute('style', 'pointer-events:none;opacity:.6');
       mcEditInfo?.classList.remove('d-none');
-      document.getElementById('modal-componente').querySelector('.modal-title').textContent = 'Modifica quantitÃ ';
+      document.getElementById('modal-componente').querySelector('.modal-title').textContent = 'Modifica quantità';
       bootstrap.Modal.getOrCreateInstance(modalComp).show();
     }
 
     if (btnDel) {
       const nome = btnDel.dataset.nome;
       const compId = btnDel.dataset.componenteId;
-      if (!confirm(`Rimuovere Â«${nome}Â» dal kit?`)) return;
+      if (!confirm(`Rimuovere «${nome}» dal kit?`)) return;
       (async () => {
         try {
           const fd = new FormData();
@@ -554,13 +554,13 @@ if (QkPF.isEdit) {
     }
   });
 
-  /* â”€â”€ Salva componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Salva componente ────────────────────────────────────────────────── */
   btnSalvaComp?.addEventListener('click', async function () {
     mcHideErr();
     if (!mcProdId?.value) { mcShowErr('Seleziona un prodotto.'); return; }
-    if (!mcQta?.value || parseFloat(mcQta.value) <= 0) { mcShowErr('Inserisci una quantitÃ  valida (> 0).'); return; }
+    if (!mcQta?.value || parseFloat(mcQta.value) <= 0) { mcShowErr('Inserisci una quantità valida (> 0).'); return; }
     this.disabled = true;
-    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggioâ€¦';
+    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio…';
     try {
       const fd = new FormData();
       fd.append('csrf_token',    CSRF);
@@ -593,12 +593,12 @@ if (QkPF.isEdit) {
 }
 
   /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-     QkM2O init â€” rimandato a DOMContentLoaded
+     QkM2O init — rimandato a DOMContentLoaded
   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   document.addEventListener('DOMContentLoaded', function () {
     if (typeof QkM2O === 'undefined') return;
 
-    /* â”€â”€ Categoria (sempre, sia create che edit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Categoria (sempre, sia create che edit) ────────────────────── */
     const catFullPicker = new QkPicker({
       title:       'Cerca: Categoria',
       apiUrl:      QkPF.apiSearchCat,
@@ -626,7 +626,7 @@ if (QkPF.isEdit) {
 
     if (QkPF.isEdit) {
 
-      /* â”€â”€ Fornitore (picker nel modale fornitore) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+      /* ── Fornitore (picker nel modale fornitore) ──────────────────── */
       const mfFullPicker = new QkPicker({
         title:       'Cerca: Fornitore',
         apiUrl:      QkPF.apiSearchForn,
@@ -639,7 +639,7 @@ if (QkPF.isEdit) {
         onSelect:    (id, row) => mfM2O?.setValue(id, row.ragione_sociale ?? ''),
       });
 
-      /* Il modale fornitore non gestisce piÃ¹ prezzi/listini (rinviati al tab
+      /* Il modale fornitore non gestisce più prezzi/listini (rinviati al tab
          products-suppliers.js), quindi la M2O non ha hook onSelect/onClear. */
       mfM2O = new QkM2O({
         inputEl:    document.getElementById('mf-fornitore-label'),
@@ -652,7 +652,7 @@ if (QkPF.isEdit) {
         picker:     mfFullPicker,
       });
 
-      /* â”€â”€ Prodotto picker (modale componente kit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+      /* ── Prodotto picker (modale componente kit) ──────────────────── */
       const mcFullPicker = new QkPicker({
         title:    'Cerca: Prodotto',
         apiUrl:   QkPF.apiSearchProdExclude,
@@ -676,11 +676,11 @@ if (QkPF.isEdit) {
 
     }
 
-    /* â”€â”€ UoM: azzera "quantitÃ  per confezione" al cambio di Stock UoM â”€â”€â”€â”€â”€
-     * (REVISIONE Â§6.3 Problema 2, punto 3): se il prodotto ha giÃ  una UoM
-     * commerciale configurata, il vecchio fattore di conversione non Ã¨ valido
+    /* ── UoM: azzera "quantità per confezione" al cambio di Stock UoM ─────
+     * (REVISIONE §6.3 Problema 2, punto 3): se il prodotto ha già una UoM
+     * commerciale configurata, il vecchio fattore di conversione non è valido
      * per la nuova Stock UoM. Costringiamo l'utente a re-inserirlo
-     * consapevolmente invece di lasciare per sbaglio il vecchio numero â€” che
+     * consapevolmente invece di lasciare per sbaglio il vecchio numero — che
      * il server rifiuterebbe comunque (vedi guardia in qk_update_prodotto()).
      */
     (function () {
@@ -701,7 +701,7 @@ if (QkPF.isEdit) {
             avvisoUomEl = document.createElement('div');
             avvisoUomEl.className = 'qk-form-hint text-danger';
             avvisoUomEl.style.marginTop = '4px';
-            avvisoUomEl.textContent = "Hai cambiato l'unitÃ  di stock: inserisci di nuovo quanta unitÃ  commerciale corrisponde a 1 unitÃ  della nuova unitÃ  di stock.";
+            avvisoUomEl.textContent = "Hai cambiato l'unità di stock: inserisci di nuovo quanta unità commerciale corrisponde a 1 unità della nuova unità di stock.";
             qtaContenutoInput.insertAdjacentElement('afterend', avvisoUomEl);
           }
           avvisoUomEl.style.display = '';
@@ -799,9 +799,9 @@ if (QkPF.isEdit) {
       
       if (currentSalesUomMode === 'commercial' && hasComm) {
         const commQty = baseQty * qFactor;
-        span.textContent = \Qtà \ \+\;
+        span.textContent = `Qtà ${commQty.toLocaleString('it-IT')} ${window.QkPF.uomCommercial}+`;
       } else {
-        span.textContent = \Qtà \ \+\;
+        span.textContent = `Qtà ${baseQty.toLocaleString('it-IT')} ${window.QkPF.uomStock}+`;
       }
     });
 
@@ -934,7 +934,7 @@ if (QkPF.isEdit) {
           fd.append('riga_id', rigaId);
           fd.append('csrf_token', csrfToken);
 
-          const res = await fetch(\\/sales/pricelists/righe/delete\, {
+          const res = await fetch(`${baseUrl}/sales/pricelists/righe/delete`, {
             method: 'POST',
             body: fd
           });
@@ -979,7 +979,7 @@ if (QkPF.isEdit) {
       fd.append('note', '');
       fd.append('csrf_token', csrfToken);
 
-      const res = await fetch(\\/sales/pricelists/righe/save\, {
+      const res = await fetch(`${baseUrl}/sales/pricelists/righe/save`, {
         method: 'POST',
         body: fd
       });
@@ -1012,7 +1012,7 @@ if (QkPF.isEdit) {
     const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
     const unitText = (currentSalesUomMode === 'commercial' && hasComm) ? window.QkPF.uomCommercial : window.QkPF.uomStock;
     
-    const qtyStr = prompt(\Inserisci la quantità minima per il nuovo scaglione (in \):\);
+    const qtyStr = prompt(`Inserisci la quantità minima per il nuovo scaglione (in ${unitText}):`);
     if (qtyStr === null) return;
     let qty = parseFloat(qtyStr.replace(',', '.'));
     if (isNaN(qty) || qty <= 0) {
@@ -1024,7 +1024,7 @@ if (QkPF.isEdit) {
       qty = qty / qFactor;
     }
 
-    if (table.querySelector(\	head th[data-qty="\"]\)) {
+    if (table.querySelector(`thead th[data-qty="${qty}"]`)) {
       alert("Questo scaglione di quantità esiste già.");
       return;
     }
@@ -1046,23 +1046,23 @@ if (QkPF.isEdit) {
 
     const qFactor = parseFloat(window.QkPF.quantitaContenuto) || 1;
     const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
-    let headerText = \Qtà \ \+\;
+    let headerText = `Qtà ${qty.toLocaleString('it-IT')} ${window.QkPF.uomStock}+`;
     if (currentSalesUomMode === 'commercial' && hasComm) {
-      headerText = \Qtà \ \+\;
+      headerText = `Qtà ${(qty * qFactor).toLocaleString('it-IT')} ${window.QkPF.uomCommercial}+`;
     }
 
     const th = document.createElement('th');
     th.classList.add('qty-column-header');
     th.dataset.qty = qty;
     th.style.width = "200px";
-    th.innerHTML = \
+    th.innerHTML = `
       <div class="d-flex align-items-center justify-content-between">
-        <span>\</span>
-        <button type="button" class="btn-delete-qty-column" data-qty="\" title="Elimina questo scaglione per tutti i listini">
+        <span>${headerText}</span>
+        <button type="button" class="btn-delete-qty-column" data-qty="${qty}" title="Elimina questo scaglione per tutti i listini">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-    \;
+    `;
 
     const refHeader = headers[insertIndex] || theadRow.querySelector('th:last-child');
     theadRow.insertBefore(th, refHeader);
@@ -1071,15 +1071,15 @@ if (QkPF.isEdit) {
     rows.forEach(row => {
       const valuta = row.dataset.valuta;
       const td = document.createElement('td');
-      td.innerHTML = \
-        <div class="matrix-cell-wrapper" data-qty="\" data-riga-id="0">
+      td.innerHTML = `
+        <div class="matrix-cell-wrapper" data-qty="${qty}" data-riga-id="0">
           <div class="matrix-price-input-group">
-            <span class="matrix-price-addon">\</span>
-            <input type="number" class="matrix-input-price cell-price-input" 
+            <span class="matrix-price-addon">${escapeHtml(valuta)}</span>
+            <input type="number" class="matrix-input-price cell-price-input"
                    step="0.0001" min="0" placeholder="Ereditato..." value="">
           </div>
         </div>
-      \;
+      `;
 
       const refCell = row.cells[insertIndex + 2] || row.querySelector('td:last-child');
       row.insertBefore(td, refCell);
@@ -1102,11 +1102,11 @@ if (QkPF.isEdit) {
     if (!delBtn) return;
     
     const qty = delBtn.dataset.qty;
-    if (!confirm(\Sei sicuro di voler eliminare lo scaglione quantità \+ e tutte le sue regole per tutti i listini?\)) {
+    if (!confirm(`Sei sicuro di voler eliminare lo scaglione quantità ${qty}+ e tutte le sue regole per tutti i listini?`)) {
       return;
     }
 
-    const cellsToDelete = Array.from(table.querySelectorAll(\.matrix-cell-wrapper[data-qty="\"]\))
+    const cellsToDelete = Array.from(table.querySelectorAll(`.matrix-cell-wrapper[data-qty="${qty}"]`))
       .filter(cell => {
         const rid = cell.dataset.rigaId;
         return rid && rid !== "0" && rid !== "-1";
@@ -1117,10 +1117,10 @@ if (QkPF.isEdit) {
       const fd = new FormData();
       fd.append('riga_id', rigaId);
       fd.append('csrf_token', csrfToken);
-      await fetch(\\/sales/pricelists/righe/delete\, { method: 'POST', body: fd });
+      await fetch(`${baseUrl}/sales/pricelists/righe/delete`, { method: 'POST', body: fd });
     }
 
-    const th = table.querySelector(\	head th[data-qty="\"]\);
+    const th = table.querySelector(`thead th[data-qty="${qty}"]`);
     if (th) {
       const headers = Array.from(table.querySelectorAll('thead th'));
       const colIndex = headers.indexOf(th);
@@ -1223,15 +1223,15 @@ if (QkPF.isEdit) {
     function buildRow(r) {
       const tr = document.createElement('tr');
       tr.dataset.rtid = r.restriction_type_id;
-      tr.innerHTML = \
-        <td><strong>\</strong></td>
-        <td><span class="qk-form-hint">\</span></td>
-        <td><span class="small" style="color:var(--qk-text-muted)">\</span></td>
+      tr.innerHTML = `
+        <td><strong>${esc(r.name)}</strong></td>
+        <td><span class="qk-form-hint">${esc(r.regulatory_ref || '—')}</span></td>
+        <td><span class="small" style="color:var(--qk-text-muted)">${esc(r.note || '—')}</span></td>
         <td>
           <button type="button" class="btn-qk btn-qk-danger btn-qk-sm btn-remove-restrizione" title="Rimuovi">
             <i class="fa-solid fa-trash-can"></i>
           </button>
-        </td>\;
+        </td>`;
       return tr;
     }
 
@@ -1240,8 +1240,8 @@ if (QkPF.isEdit) {
         suggestBanner.classList.add('d-none');
         return;
       }
-      const nomi = suggerimenti.map(s => \<strong>\</strong>\).join(', ');
-      suggestText.innerHTML = \Dal codice ONU di questo prodotto risulta: \. Vuoi aggiungerle?\;
+      const nomi = suggerimenti.map(s => `<strong>${esc(s.name)}</strong>`).join(', ');
+      suggestText.innerHTML = `Dal codice ONU di questo prodotto risulta: ${nomi}. Vuoi aggiungerle?`;
       suggestBanner.classList.remove('d-none');
     }
 

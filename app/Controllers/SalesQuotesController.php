@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once INCLUDES_DIR . '/sales_quotes.php';
 require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/compliance.php';
+require_once APP_ROOT_DIR . '/app/Services/SalesQuoteDocumentService.php';
 
 final class SalesQuotesController extends BaseController
 {
@@ -98,19 +99,10 @@ final class SalesQuotesController extends BaseController
 
         $numero_offerta = $values['numero_offerta'] ?: qk_next_numero_offerta($this->pdo);
 
-        $aziende = qk_aziende_list($this->pdo);
-        $defaultAziendaId = isset($_SESSION['azienda_attiva_id']) ? (string)$_SESSION['azienda_attiva_id'] : '';
-        if ($defaultAziendaId === '') {
-            foreach ($aziende as $az) {
-                if ($az['predefinita'] == 1) {
-                    $defaultAziendaId = (string)$az['id'];
-                    break;
-                }
-            }
-        }
-        if ($defaultAziendaId === '' && !empty($aziende)) {
-            $defaultAziendaId = (string)$aziende[0]['id'];
-        }
+        // AUDIT 3 §2.1: qk_aziende_list_con_default() (includes/anagrafiche.php) —
+        // stessa funzione condivisa ora usata anche da SalesOrdersController::create(),
+        // niente più la stessa logica a 3 livelli copiata a mano nei due controller.
+        ['aziende' => $aziende, 'default_id' => $defaultAziendaId] = qk_aziende_list_con_default($this->pdo);
         if (empty($values['azienda_interna_id'])) {
             $values['azienda_interna_id'] = $defaultAziendaId;
         }
@@ -728,301 +720,22 @@ final class SalesQuotesController extends BaseController
         if (!$dati) {
             redirect(url('sales/quotes'));
         }
-        $quota               = $dati['quota'];
-        $righe               = $dati['righe'];
-        $azienda             = $dati['azienda'];
-        $imponibile          = $dati['imponibile'];
-        $totale_iva          = $dati['totale_iva'];
-        $totale              = $dati['totale'];
-        $sconto_globale_perc = $dati['sconto_globale_perc'];
 
-        // Genera il PDF
-        $mpdf = new \Mpdf\Mpdf([
-            'mode'          => 'utf-8',
-            'format'        => 'A4',
-            'margin_top'    => 45,
-            'margin_bottom' => 25,
-            'margin_left'   => 12,
-            'margin_right'  => 12,
-            'tempDir'       => upload_ensure_dir('mpdf_tmp'),
-        ]);
-
-        $mpdf->SetTitle('Preventivo - ' . $quota['numero_preventivo']);
-        $mpdf->SetAuthor('Quack ERP');
-
-        // Header Image (Intestazione stampati)
-        $headerHtml = '';
-        if (!empty($azienda['header_path']) && file_exists(upload_abs($azienda['header_path']))) {
-            $headerHtml = '<img src="' . upload_abs($azienda['header_path']) . '" style="width:100%; max-height:35mm;">';
-        } elseif (!empty($azienda['logo_path']) && file_exists(upload_abs($azienda['logo_path']))) {
-            $headerHtml = '
-            <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
-                <tr>
-                    <td style="width:50%;"><img src="' . upload_abs($azienda['logo_path']) . '" style="max-height:22mm;"></td>
-                    <td style="width:50%; text-align:right; font-weight:bold; font-size:14pt; color:#1a5276; vertical-align:middle;">
-                        PREVENTIVO DI VENDITA
-                    </td>
-                </tr>
-            </table>';
-        } else {
-            $headerHtml = '
-            <table style="width:100%; border-collapse:collapse; font-family:sans-serif; border-bottom:1px solid #ccc; padding-bottom:3mm;">
-                <tr>
-                    <td style="width:60%;">
-                        <strong style="font-size:14pt; color:#1a5276;">' . e($azienda['ragione_sociale'] ?? 'Gemina S.r.l.') . '</strong><br>
-                        <span style="font-size:8pt; color:#666;">P.IVA: ' . e($azienda['partita_iva'] ?? '') . ' | Email: ' . e($azienda['email'] ?? '') . ' | Tel: ' . e($azienda['telefono'] ?? '') . '</span>
-                    </td>
-                    <td style="width:40%; text-align:right; font-weight:bold; font-size:12pt; color:#1a5276; vertical-align:middle;">
-                        PREVENTIVO DI VENDITA
-                    </td>
-                </tr>
-            </table>';
-        }
-
-        $mpdf->SetHTMLHeader('
-            <div style="width:100%; font-family:sans-serif; margin-bottom:5mm;">
-                ' . $headerHtml . '
-            </div>
-        ');
-
-        $mpdf->SetHTMLFooter('
-            <div style="border-top:1px solid #999; padding-top:3mm; font-size:8pt; color:#666; text-align:center; font-family:sans-serif;">
-                Pagina {PAGENO} di {nbpg} — Preventivo: ' . e($quota['numero_preventivo']) . '
-            </div>
-        ');
-
-        $html = '
-        <style>
-            body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #222; }
-            h2 { font-size: 11pt; color: #1a5276; border-bottom: 1.5pt solid #1a5276; padding-bottom: 1mm; margin-top: 5mm; margin-bottom: 3mm; text-transform: uppercase; }
-            .info-table { width: 100%; border-collapse: collapse; margin-top: 1mm; margin-bottom: 0; }
-            .info-table td { padding: 0.8mm 0; font-size: 9.5pt; vertical-align: top; }
-            .info-table .lbl { font-weight: bold; color: #555; width: 30%; }
-            .info-box { padding: 0; }
-            
-            .righe-table { width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 4mm; }
-            .righe-table th { background: #1a5276; color: #fff; padding: 2.2mm 2mm; font-size: 9pt; text-align: center; }
-            .righe-table td { padding: 2.2mm 2mm; font-size: 9pt; border-bottom: 0.5pt solid #ccc; }
-            .righe-table .num { text-align: right; font-family: monospace; }
-            .righe-table .center { text-align: center; }
-            .righe-table tr.zebra { background-color: #f8fafc; }
-            
-            .totals-table { width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 4mm; }
-            .totals-table td { padding: 1.5mm 2mm; font-size: 9.5pt; }
-            .totals-table .val { text-align: right; font-weight: bold; width: 120px; }
-            
-            .cond-table { width: 100%; border-collapse: collapse; }
-            .cond-table td { padding: 2.5mm 3mm; font-size: 9.5pt; vertical-align: top; border-bottom: 0.3pt solid #eee; }
-            .cond-table .lbl { font-weight: bold; color: #444; width: 25%; }
-        </style>';
-
-        $contattoNome = $quota['contatto_nome'] ?: '';
-        $contattoTel = $quota['contatto_telefono'] ?: '';
-        $contattoEmail = $quota['contatto_email'] ?: '';
-
-        // BLOCK 1: Info Generali e Recapiti
-        $html .= '
-        <table style="width:100%; border-collapse:collapse; margin-top:2mm; margin-bottom:5mm;">
-            <tr>
-                <td style="width:48%; vertical-align:top;">
-                    <div class="info-box">
-                        <strong style="font-size:11pt; color:#1a5276;">Dettagli Documento</strong>
-                        <table class="info-table">
-                            <tr>
-                                <td class="lbl">Rif. Interno:</td>
-                                <td><strong>' . e($quota['riferimento_interno'] ?: '—') . '</strong></td>
-                            </tr>
-                            <tr>
-                                <td class="lbl">Data Offerta:</td>
-                                <td>' . e(fmt_date($quota['data_offerta'])) . '</td>
-                            </tr>
-                            <tr>
-                                <td class="lbl">Scadenza:</td>
-                                <td>' . e(fmt_date($quota['data_scadenza'])) . '</td>
-                            </tr>
-                        </table>
-                    </div>
-                </td>
-                
-                <td style="width:4%;">&nbsp;</td>
-                
-                <td style="width:48%; vertical-align:top;">
-                    <div class="info-box">
-                        <strong style="font-size:11pt; color:#1a5276;">Spett.le Cliente</strong>
-                        <div style="margin-top:1.5mm; font-size:9.5pt; line-height:1.45;">
-                            <strong>' . e($quota['cliente_ragione_sociale']) . '</strong><br>
-                            ' . e($quota['cliente_indirizzo'] ?: '—') . '<br>';
-        if ($quota['cliente_partita_iva']) {
-            $html .= 'P.IVA: ' . e($quota['cliente_partita_iva']) . '<br>';
-        }
-        if (!empty($contattoNome)) {
-            $html .= 'Alla c.a.: <strong>' . e($contattoNome) . '</strong><br>';
-        }
-        if (!empty($contattoTel) || !empty($contattoEmail)) {
-            $html .= (!empty($contattoTel) ? 'Tel: ' . e($contattoTel) : '') . 
-                     (!empty($contattoEmail) ? ' | Email: ' . e($contattoEmail) : '') . '<br>';
-        }
-        $html .= '
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        </table>';
-
-        $titoloRighe = !empty($quota['oggetto']) ? $quota['oggetto'] : 'Articoli Richiesti';
-
-        // BLOCK 2: Righe Articoli
-        $html .= '
-        <h2>' . e($titoloRighe) . '</h2>
-        <table class="righe-table">
-            <thead>
-                <tr>
-                    <th style="width:12%">SKU</th>
-                    <th style="width:30%">Descrizione</th>
-                    <th style="width:15%">Confezione</th>
-                    <th style="width:10%; text-align:right;">Q.tà</th>
-                    <th style="width:8%; text-align:center;">UdM</th>
-                    <th style="width:12%; text-align:right;">Prezzo Unit.</th>
-                    <th style="width:13%; text-align:right;">Totale</th>
-                </tr>
-            </thead>
-            <tbody>';
-
-        $fill = false;
-        foreach ($righe as $r) {
-            $zebraClass = $fill ? ' class="zebra"' : '';
-            $qty = (float)$r['quantita'];
-            $um = $r['unita_misura'] ?: 'pz';
-            $pu = (float)$r['prezzo_unitario'];
-            $sconto = (float)$r['sconto_perc'];
-            $rigaTotale = (float)$r['imponibile_riga'];
-            
-            $prezzoStr = fmt_money($pu);
-            if ($sconto > 0) {
-                $prezzoStr .= '<br><span style="font-size:7.5pt; color:#666;">Sconto ' . $sconto . '%</span>';
-            }
-            
-            $html .= '
-                <tr' . $zebraClass . '>
-                    <td class="center"><strong>' . e($r['sku'] ?: '—') . '</strong></td>
-                    <td>' . e($r['descrizione']) . '</td>
-                    <td class="center">' . e($r['quantita_confezione'] ?: '—') . '</td>
-                    <td class="num"><strong>' . fmt_qty($qty) . '</strong></td>
-                    <td class="center">' . e($um) . '</td>
-                    <td class="num">' . $prezzoStr . '</td>
-                    <td class="num"><strong>' . fmt_money($rigaTotale) . '</strong></td>
-                </tr>';
-            
-            $fill = !$fill;
-        }
-
-        $html .= '
-            </tbody>
-        </table>';
-
-        $html .= '
-        <table class="totals-table">
-            <tr>
-                <td style="width:50%;">&nbsp;</td>
-                <td style="text-align:right; color:#666; white-space:nowrap;">Totale Imponibile:</td>
-                <td class="val">' . fmt_money($imponibile) . '</td>
-            </tr>';
-        if ($sconto_globale_perc > 0) {
-            $html .= '
-            <tr>
-                <td>&nbsp;</td>
-                <td style="text-align:right; color:#666; white-space:nowrap;">Sconto Globale (' . $sconto_globale_perc . '%):</td>
-                <td class="val">Sconto applicato</td>
-            </tr>';
-        }
-        $html .= '
-            <tr>
-                <td>&nbsp;</td>
-                <td style="text-align:right; color:#666; white-space:nowrap;">Totale I.V.A.:</td>
-                <td class="val">' . fmt_money($totale_iva) . '</td>
-            </tr>
-            <tr>
-                <td>&nbsp;</td>
-                <td style="text-align:right; font-weight:bold; color:#1a5276; white-space:nowrap;">Totale Documento:</td>
-                <td class="val" style="color:#1a5276; border-top:1px solid #1a5276;">' . fmt_money($totale) . '</td>
-            </tr>
-        </table>';
-
-        // BLOCK 3: Condizioni
-        $consegnaIndirizzo = '—';
-        if (!empty($quota['consegna_via'])) {
-            $consegnaIndirizzo = '<strong>' . e($quota['consegna_presso'] ?: $quota['cliente_ragione_sociale']) . '</strong> - ' .
-                                 e($quota['consegna_via']) . ' ' . e($quota['consegna_civico']) . ', ' .
-                                 e($quota['consegna_cap']) . ' ' . e($quota['consegna_citta']) . ' (' . e($quota['consegna_provincia']) . ')';
-        }
-
-        $html .= '
-        <h2>Condizioni di Vendita</h2>
-        <table class="cond-table">
-            <tr>
-                <td class="lbl">Modalità Pagamento:</td>
-                <td>' . e($quota['condizioni_pagamento'] ?: 'Come da accordi') . '</td>
-            </tr>
-            <tr>
-                <td class="lbl">Trasporto / Consegna:</td>
-                <td>' . e($quota['trasporto'] ?: '—') . '</td>
-            </tr>
-            <tr>
-                <td class="lbl">Luogo di Destinazione:</td>
-                <td>' . $consegnaIndirizzo . '</td>
-            </tr>';
-
-        if (!empty($quota['consegna_note'])) {
-            $html .= '
-            <tr>
-                <td class="lbl">Note Consegna:</td>
-                <td>' . e($quota['consegna_note']) . '</td>
-            </tr>';
-        }
-
-        if (!empty($quota['note_cliente'])) {
-            $html .= '
-            <tr>
-                <td class="lbl">Note aggiuntive:</td>
-                <td>' . nl2br(e($quota['note_cliente'])) . '</td>
-            </tr>';
-        }
-
-        $html .= '
-        </table>';
-
-        $html .= '
-        <div style="margin-top:15mm; page-break-inside:avoid;">
-            <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
-                <tr>
-                    <td style="width:45%; vertical-align:bottom; padding-bottom:6px;">
-                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">Accettazione per Ordine</span><br>
-                        <span style="font-size:7.5pt; color:#777777;">Timbro e Firma leggibile del Cliente</span>
-                    </td>
-                    <td style="width:10%;"></td>
-                    <td style="width:45%; vertical-align:bottom; padding-bottom:6px; text-align:right;">
-                        <span style="font-size:8.5pt; font-weight:bold; color:#444444; text-transform:uppercase; letter-spacing:0.5px;">' . e(!empty($azienda['ragione_sociale']) ? $azienda['ragione_sociale'] : 'Azienda') . '</span><br>
-                        <span style="font-size:7.5pt; color:#777777;">Firma Direzione Commerciale</span>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="border:1px dashed #bbbbbb; padding:12px; height:25mm; vertical-align:bottom; background-color:#fafafa;">
-                        <div style="border-bottom:1px solid #aaaaaa; width:80%;"></div>
-                    </td>
-                    <td></td>
-                    <td style="border:1px dashed #bbbbbb; padding:12px; height:25mm; vertical-align:bottom; background-color:#fafafa;">
-                        <div style="border-bottom:1px solid #aaaaaa; width:80%; margin-left:auto;"></div>
-                    </td>
-                </tr>
-            </table>
-        </div>';
-
-        $mpdf->WriteHTML($html);
+        $service  = new \App\Services\SalesQuoteDocumentService();
+        $pdfBytes = $service->generatePdf($dati);
 
         while (ob_get_level()) {
             ob_end_clean();
         }
-        $mpdf->Output('Preventivo_' . str_replace('/', '_', $quota['numero_preventivo']) . '.pdf', \Mpdf\Output\Destination::INLINE);
+
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="Preventivo_' . str_replace('/', '_', $dati['quota']['numero_preventivo']) . '.pdf"');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate');
+        header('Pragma: public');
+        header('Content-Length: ' . strlen($pdfBytes));
+        echo $pdfBytes;
         exit;
     }
 
@@ -1037,220 +750,24 @@ final class SalesQuotesController extends BaseController
         if (!$dati) {
             redirect(url('sales/quotes'));
         }
-        $quota               = $dati['quota'];
-        $righe               = $dati['righe'];
-        $azienda             = $dati['azienda'];
-        $imponibile          = $dati['imponibile'];
-        $totale_iva          = $dati['totale_iva'];
-        $totale              = $dati['totale'];
-        $sconto_globale_perc = $dati['sconto_globale_perc'];
 
-        $wordHelper = new \Quack\WordHelper();
-        $phpWord = $wordHelper->getPhpWord();
-        $section = $wordHelper->createStandardSection();
-        $wordHelper->addStandardHeader($section, $azienda, 'PREVENTIVO DI VENDITA');
-        $wordHelper->addStandardFooter($section, 'Prev. N°: ' . $quota['numero_preventivo']);
+        $service  = new \App\Services\SalesQuoteDocumentService();
+        $tempPath = $service->generateDocx($dati);
+        $filename = "Preventivo_" . str_replace('/', '_', $dati['quota']['numero_preventivo']) . ".docx";
 
-        // Styles
-        $fontTitle = ['name' => 'Arial', 'size' => 11, 'bold' => true, 'color' => '1A5276'];
-        $fontBold = ['name' => 'Arial', 'size' => 9.5, 'bold' => true, 'color' => '333333'];
-        $fontNormal = ['name' => 'Arial', 'size' => 9.5, 'color' => '222222'];
-        $fontTotal = ['name' => 'Arial', 'size' => 10, 'bold' => true, 'color' => '1A5276'];
-
-        // Document Title
-        $section->addText('PREVENTIVO DI VENDITA - N° ' . $quota['numero_preventivo'], ['name' => 'Arial', 'size' => 14, 'bold' => true, 'color' => '1A5276'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER, 'spaceAfter' => 150]);
-
-        // BLOCK 1: Two Column Layout Table
-        $block1Table = $section->addTable(['cellMargin' => 100]);
-        $block1Table->addRow();
-        
-        // Left Cell (Dettagli Preventivo)
-        $leftCell = $block1Table->addCell(5070, ['borderSize' => 6, 'borderColor' => 'CCCCCC', 'bgColor' => 'FCFCFC']);
-        $textRunLeft = $leftCell->addTextRun();
-        $textRunLeft->addText('Dettagli Documento', $fontTitle);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Rif. Interno: ' . ($quota['riferimento_interno'] ?: '—'), $fontNormal);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Data Offerta: ' . fmt_date($quota['data_offerta']), $fontNormal);
-        $textRunLeft->addTextBreak(1);
-        $textRunLeft->addText('Scadenza: ' . fmt_date($quota['data_scadenza']), $fontNormal);
-
-        // Spacer Cell
-        $block1Table->addCell(400);
-
-        // Right Cell (Cliente)
-        $rightCell = $block1Table->addCell(4800, ['borderSize' => 6, 'borderColor' => 'CCCCCC', 'bgColor' => 'FCFCFC']);
-        $textRunRight = $rightCell->addTextRun();
-        $textRunRight->addText('Spett.le Cliente', $fontTitle);
-        $textRunRight->addTextBreak(1);
-        $textRunRight->addText($quota['cliente_ragione_sociale'], ['name' => 'Arial', 'size' => 9.5, 'bold' => true]);
-        $textRunRight->addTextBreak(1);
-        $textRunRight->addText($quota['cliente_indirizzo'] ?: '—', $fontNormal);
-        if ($quota['cliente_partita_iva']) {
-            $textRunRight->addTextBreak(1);
-            $textRunRight->addText('P.IVA: ' . $quota['cliente_partita_iva'], $fontNormal);
-        }
-        
-        $contattoNome = $quota['contatto_nome'] ?: '';
-        $contattoTel = $quota['contatto_telefono'] ?: '';
-        $contattoEmail = $quota['contatto_email'] ?: '';
-        if ($contattoNome) {
-            $textRunRight->addTextBreak(1);
-            $textRunRight->addText('Alla c.a.: ' . $contattoNome, $fontBold);
-        }
-        if ($contattoTel || $contattoEmail) {
-            $textRunRight->addTextBreak(1);
-            $textRunRight->addText('Tel: ' . $contattoTel . ' | Email: ' . $contattoEmail, $fontNormal);
+        while (ob_get_level()) {
+            ob_end_clean();
         }
 
-        $section->addTextBreak(1);
-
-        $titoloRighe = !empty($quota['oggetto']) ? $quota['oggetto'] : 'Articoli Richiesti';
-
-        // BLOCK 2: Righe Articoli
-        $section->addText($titoloRighe, $fontTitle, ['spaceBefore' => 100, 'spaceAfter' => 100]);
-        
-        $tableGrid = $section->addTable(['cellMargin' => 80]);
-        $thStyle = ['bgColor' => '1A5276', 'borderSize' => 6, 'borderColor' => '1A5276'];
-        $thText = ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => 'FFFFFF'];
-
-        $tableGrid->addRow();
-        $tableGrid->addCell(1600, $thStyle)->addText('SKU', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(3240, $thStyle)->addText('Descrizione', $thText);
-        $tableGrid->addCell(1600, $thStyle)->addText('Confezione', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(1000, $thStyle)->addText('Q.tà', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableGrid->addCell(600, $thStyle)->addText('UdM', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-        $tableGrid->addCell(1200, $thStyle)->addText('Prezzo Unit.', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableGrid->addCell(1300, $thStyle)->addText('Totale', $thText, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        $fill = false;
-        foreach ($righe as $r) {
-            $rowBg = $fill ? 'F5F7FA' : 'FFFFFF';
-            $tdStyle = ['bgColor' => $rowBg, 'borderBottomSize' => 4, 'borderBottomColor' => 'CCCCCC'];
-            
-            $qty = (float)$r['quantita'];
-            $um = $r['unita_misura'] ?: 'pz';
-            $pu = (float)$r['prezzo_unitario'];
-            $sconto = (float)$r['sconto_perc'];
-            $rigaTotale = (float)$r['imponibile_riga'];
-
-            $prezzoStr = fmt_money($pu);
-            if ($sconto > 0) {
-                $prezzoStr .= " (Sconto {$sconto}%)";
-            }
-
-            $tableGrid->addRow();
-            $tableGrid->addCell(1600, $tdStyle)->addText($r['sku'] ?: '—', $fontBold, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-            $tableGrid->addCell(3240, $tdStyle)->addText($r['descrizione'], $fontNormal);
-            $tableGrid->addCell(1600, $tdStyle)->addText($r['quantita_confezione'] ?: '—', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-            $tableGrid->addCell(1000, $tdStyle)->addText(fmt_qty($qty), $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableGrid->addCell(600, $tdStyle)->addText($um, $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]);
-            $tableGrid->addCell(1200, $tdStyle)->addText($prezzoStr, $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableGrid->addCell(1300, $tdStyle)->addText(fmt_money($rigaTotale), $fontBold, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-            $fill = !$fill;
-        }
-
-        $section->addTextBreak(1);
-
-        $tableTotals = $section->addTable();
-        $tableTotals->addRow();
-        $tableTotals->addCell(7540);
-        $tableTotals->addCell(1800)->addText('Totale Imponibile:', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableTotals->addCell(1200)->addText(fmt_money($imponibile), $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        if ($sconto_globale_perc > 0) {
-            $tableTotals->addRow();
-            $tableTotals->addCell(7540);
-            $tableTotals->addCell(1800)->addText("Sconto Globale ({$sconto_globale_perc}%):", $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-            $tableTotals->addCell(1200)->addText('Sconto applicato', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        }
-
-        $tableTotals->addRow();
-        $tableTotals->addCell(7540);
-        $tableTotals->addCell(1800)->addText('Totale I.V.A.:', $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableTotals->addCell(1200)->addText(fmt_money($totale_iva), $fontNormal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        $tableTotals->addRow();
-        $tableTotals->addCell(7540);
-        $tableTotals->addCell(1800)->addText('Totale Documento:', $fontTotal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $tableTotals->addCell(1200)->addText(fmt_money($totale), $fontTotal, ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        // BLOCK 3: Condizioni
-        $section->addText('Condizioni di Vendita', $fontTitle, ['spaceBefore' => 150, 'spaceAfter' => 100]);
-        
-        $consegnaIndirizzo = '—';
-        if (!empty($quota['consegna_via'])) {
-            $consegnaIndirizzo = ($quota['consegna_presso'] ?: $quota['cliente_ragione_sociale']) . ' - ' .
-                                 $quota['consegna_via'] . ' ' . $quota['consegna_civico'] . ', ' .
-                                 $quota['consegna_cap'] . ' ' . $quota['consegna_citta'] . ' (' . $quota['consegna_provincia'] . ')';
-        }
-
-        $condTable = $section->addTable(['cellMargin' => 80]);
-        
-        $condTable->addRow();
-        $condTable->addCell(2500)->addText('Modalità Pagamento:', $fontBold);
-        $condTable->addCell(8040)->addText($quota['condizioni_pagamento'] ?: 'Come da accordi', $fontNormal);
-
-        $condTable->addRow();
-        $condTable->addCell(2500)->addText('Trasporto / Consegna:', $fontBold);
-        $condTable->addCell(8040)->addText($quota['trasporto'] ?: '—', $fontNormal);
-
-        $condTable->addRow();
-        $condTable->addCell(2500)->addText('Luogo di Destinazione:', $fontBold);
-        $condTable->addCell(8040)->addText($consegnaIndirizzo, $fontNormal);
-
-        if (!empty($quota['consegna_note'])) {
-            $condTable->addRow();
-            $condTable->addCell(2500)->addText('Note Consegna:', $fontBold);
-            $condTable->addCell(8040)->addText($quota['consegna_note'], $fontNormal);
-        }
-
-        if (!empty($quota['note_cliente'])) {
-            $condTable->addRow();
-            $condTable->addCell(2500)->addText('Note aggiuntive:', $fontBold);
-            $condTable->addCell(8040)->addText($quota['note_cliente'], $fontNormal);
-        }
-
-        // BLOCK 4: Riquadri firma/timbro
-        $section->addTextBreak(2);
-        $firmaTable = $section->addTable(['cellMargin' => 120]);
-        
-        // Row 1: Labels
-        $firmaTable->addRow();
-        $cellLabelLeft = $firmaTable->addCell(4770);
-        $cellLabelLeft->addText('ACCETTAZIONE PER ORDINE', ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => '444444']);
-        $cellLabelLeft->addText('Timbro e Firma leggibile del Cliente', ['name' => 'Arial', 'size' => 7.5, 'color' => '777777']);
-        
-        $firmaTable->addCell(1000); // spacer
-        
-        $cellLabelRight = $firmaTable->addCell(4770);
-        $aziendaNome = !empty($azienda['ragione_sociale']) ? $azienda['ragione_sociale'] : 'Azienda';
-        $cellLabelRight->addText(mb_strtoupper($aziendaNome, 'UTF-8'), ['name' => 'Arial', 'size' => 8.5, 'bold' => true, 'color' => '444444'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-        $cellLabelRight->addText('Firma Direzione Commerciale', ['name' => 'Arial', 'size' => 7.5, 'color' => '777777'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        // Row 2: Stamp/Signature Boxes
-        $firmaTable->addRow(1700, ['exactHeight' => true, 'cantSplit' => true]);
-        
-        $cellStyle = [
-            'borderSize' => 6,
-            'borderColor' => 'CCCCCC',
-            'bgColor' => 'FAFAFA',
-            'valign' => 'bottom',
-        ];
-        
-        $cellBoxLeft = $firmaTable->addCell(4770, $cellStyle);
-        $cellBoxLeft->addTextBreak(2);
-        $cellBoxLeft->addText('____________________________', ['name' => 'Arial', 'size' => 8, 'color' => 'BBBBBB']);
-        
-        $firmaTable->addCell(1000); // spacer
-        
-        $cellBoxRight = $firmaTable->addCell(4770, $cellStyle);
-        $cellBoxRight->addTextBreak(2);
-        $cellBoxRight->addText('____________________________', ['name' => 'Arial', 'size' => 8, 'color' => 'BBBBBB'], ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]);
-
-        $filename = "Preventivo_" . str_replace('/', '_', $quota['numero_preventivo']) . ".docx";
-        $wordHelper->streamDownload($filename);
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate');
+        header('Pragma: public');
+        header('Content-Length: ' . filesize($tempPath));
+        readfile($tempPath);
+        @unlink($tempPath);
         exit;
     }
 }

@@ -424,6 +424,15 @@ $pitt_selezionati = $pitt_selezionati ?? [];
 <link rel="stylesheet" href="<?= asset('css/adr-sostanze-form.css') ?>?v=<?= time() ?>">
 
 <script>
+/* Config: PHP -> JS, letta da adr-sostanze-form.js.
+   NOTA (23/07/2026): questo blocco era duplicato identico due volte (la
+   seconda dentro un if ($isEdit) lato PHP), causando il doppio caricamento
+   dello script quando $isEdit e' vero -- rimossa la duplicazione (violazione
+   DRY, AGENTS.md Regola Aurea), un solo blocco copre entrambi i casi.
+   Aggiunta anche 'associatedList', che nel file JS era ancora un tag di
+   output PHP letterale (mai eseguito, perche' adr-sostanze-form.js e'
+   servito come file .js statico) -- stesso bug gia' corretto altrove in
+   questa sessione per assets/js/products-form.js e i form del Ciclo Acquisti. */
 window.QkAdrSostanze = {
     lookupUrl: "<?= url('adr/api/lookup') ?>",
     editUrl: "<?= url('adr/sostanze/edit?id=') ?>",
@@ -433,25 +442,16 @@ window.QkAdrSostanze = {
     productsEditUrl: "<?= url('products/edit?id=') ?>",
     salesQuotesApiProdottiUrl: "<?= url('sales/quotes/api/prodotti') ?>",
     apiAssociaProdotti: "<?= url('adr/sostanze/api/associa-prodotti') ?>",
-    apiDisassociaProdotto: "<?= url('adr/sostanze/api/disassocia-prodotto') ?>"
+    apiDisassociaProdotto: "<?= url('adr/sostanze/api/disassocia-prodotto') ?>",
+    associatedList: <?= json_encode(array_map(function ($p) {
+        return [
+            'id' => (int)$p['id'],
+            'nome' => $p['nome'],
+            'sku' => $p['sku_interno'],
+            'attivo' => (bool)$p['attivo'],
+            'categoria_id' => $p['categoria_id'] ? (int)$p['categoria_id'] : null,
+        ];
+    }, $prodotti_associati)) ?>
 };
 </script>
 <script src="<?= asset('js/adr-sostanze-form.js') ?>?v=<?= time() ?>"></script>
-
-<?php if ($isEdit): ?>
-<script>
-window.QkAdrSostanze = {
-    lookupUrl: "<?= url('adr/api/lookup') ?>",
-    editUrl: "<?= url('adr/sostanze/edit?id=') ?>",
-    sostanzaId: <?= (int)$sostanzaId ?>,
-
-    csrfToken: <?= json_encode(csrf_token()) ?>,
-    productsEditUrl: "<?= url('products/edit?id=') ?>",
-    salesQuotesApiProdottiUrl: "<?= url('sales/quotes/api/prodotti') ?>",
-    apiAssociaProdotti: "<?= url('adr/sostanze/api/associa-prodotti') ?>",
-    apiDisassociaProdotto: "<?= url('adr/sostanze/api/disassocia-prodotto') ?>"
-};
-</script>
-<script src="<?= asset('js/adr-sostanze-form.js') ?>?v=<?= time() ?>"></script>
-
-<?php endif; ?>

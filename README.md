@@ -68,8 +68,19 @@ Quando ho progettato Quack ERP ho pensato alla convivenza di due requisiti che d
 1. Clona il repo dentro `htdocs/`
 2. `composer install`
 3. Copia/configura `includes/config.php` (ambiente, DB, cartelle upload)
-4. Avvia Apache/MySQL da XAMPP
-5. Vai su `http://localhost/Quack`
+4. `git config core.hooksPath .githooks` — attiva il pre-commit hook che blocca i commit con encoding non-UTF8 o mojibake (vedi `tools/check-utf8.php`). Va rifatto ad ogni nuovo clone/checkout: `core.hooksPath` non è versionato da git, è impostazione locale di ogni copia del repo.
+5. Avvia Apache/MySQL da XAMPP
+6. Vai su `http://localhost/Quack`
+
+### Controllo encoding manuale
+
+Per controllare a mano l'intero repository (non solo i file staged per il commit):
+
+```
+php tools/check-utf8.php $(git ls-files '*.php' '*.sql' '*.js' '*.md' '*.css' '*.html' '*.json' '*.txt' '*.yml' '*.yaml')
+```
+
+Rileva sia byte non validi come UTF-8 sia mojibake da doppia codifica (testo UTF-8 corretto ri-salvato dopo essere stato riletto come Windows-1252/Latin-1 — es. "è" diventato "è"): quest'ultimo problema è stato trovato e corretto a tappeto il 23/07/2026 in 4 file del progetto (vedi `CLAUDE.md`).
 
 ## Sì, ma perché proprio "Quack"?
 

@@ -97,5 +97,21 @@ $import_classificazioni_url  = url('adr/classificazioni/import');
 </div>
 
 <?php include APP_ROOT_DIR . '/app/views/adr/modals/_lookup.php'; ?>
+<script>
+/* Config: PHP -> JS, letta da assets/js/adr_index.js.
+   NOTA (23/07/2026): il file JS referenziato qui sotto (assets/js/adr_index.js)
+   non esisteva affatto -- lo script tag puntava a un file mai creato (404
+   silenzioso, nessun JS caricato in questa pagina). Il contenuto reale era
+   rimasto in public/assets/js/adr_index.js, orfano e mai referenziato da
+   nessuna view, con tag di output PHP letterali mai elaborati. Ricreato qui
+   in assets/js/ (percorso che asset() si aspetta davvero) con gli stessi
+   valori letti da un oggetto di configurazione invece che da tag inline. */
+window.QkAdrIndex = {
+  codiciData: <?= $codici_json ?>,
+  importUrl: <?= json_encode($import_url) ?>,
+  classificazioniData: <?= $classificazioni_json ?>,
+  importClassificazioniUrl: <?= json_encode($import_classificazioni_url) ?>
+};
+</script>
 <script src="<?= asset('js/exceljs.min.js') ?>"></script>
 <script src="<?= asset('js/adr_index.js') ?>"></script>

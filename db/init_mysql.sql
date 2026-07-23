@@ -980,6 +980,9 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     num_factor_snapshot INTEGER NOT NULL DEFAULT 1,
     den_factor_snapshot INTEGER NOT NULL DEFAULT 1,
     quantita_confezione VARCHAR(50),
+    -- Snapshot JSON della composizione del Kit al momento della riserva —
+    -- vedi commento gemello in db/init_sqlite.sql (AUDIT 3 §3.3, 23/07/2026).
+    kit_componenti_snapshot TEXT,
     note TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_ordini_clienti_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
@@ -1769,7 +1772,8 @@ INSERT IGNORE INTO schema_migrations (id, migration, applied_at) VALUES
     (5, '2026_07_10_inventario_creazione_lock', '2026-07-14 19:56:08'),
     (6, '2026_07_10_vista_costo_acquisto_base', '2026-07-14 19:56:08'),
     (7, '2026_07_10_movimenti_quantita_delta', '2026-07-14 19:56:08'),
-    (8, '2026_07_22_rfq_righe_iva', '2026-07-22 00:00:00');
+    (8, '2026_07_22_rfq_righe_iva', '2026-07-22 00:00:00'),
+    (9, '2026_07_23_ordini_clienti_righe_kit_snapshot', '2026-07-23 00:00:00');
 
 INSERT IGNORE INTO unita_misura (id, codice, descrizione, fattore_base, e_riferimento) VALUES
     (1, 'kg', 'Chilogrammo', 1, 1),

@@ -7,6 +7,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../includes/prodotti.php';
 require_once __DIR__ . '/../../includes/pricing.php';
 require_once __DIR__ . '/../../includes/pricelists.php';
+// Tappa 8 (PIANO - Eliminazione SQL Grezzo nei Controller, problema 4.C.2):
+// Repository/Service per l'estrazione di apiImportPrezzi().
+require_once __DIR__ . '/../Repositories/ListinoPrezziRepository.php';
+require_once __DIR__ . '/../Services/ListinoImportService.php';
 
 /**
  * SalesPricelistsController — Gestione Listini Vendita.
@@ -109,19 +113,7 @@ final class SalesPricelistsController extends BaseController
 
                 if (empty($errors)) {
                     try {
-                        $stmt = $this->pdo->prepare(
-                            "INSERT INTO listini (nome, descrizione, valuta, attivo, valido_dal, valido_al)
-                             VALUES (:nome, :descrizione, :valuta, :attivo, :valido_dal, :valido_al)"
-                        );
-                        $stmt->execute([
-                            ':nome'        => $values['nome'],
-                            ':descrizione' => $values['descrizione'] ?: null,
-                            ':valuta'      => $values['valuta'],
-                            ':attivo'      => $values['attivo'],
-                            ':valido_dal'  => $values['valido_dal'],
-                            ':valido_al'   => $values['valido_al'],
-                        ]);
-                        $newId = (int)$this->pdo->lastInsertId();
+                        $newId = qk_listino_insert($this->pdo, $values);
                         redirect_with('sales/pricelists/edit?id=' . $newId, 'success', 'Listino creato. Ora puoi aggiungere i prezzi prodotto.');
                     } catch (Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
@@ -199,24 +191,7 @@ final class SalesPricelistsController extends BaseController
                         if ((int)($pricelist['is_default'] ?? 0) === 1) {
                             $values['nome'] = 'Listino Base Pubblico (Globale)';
                         }
-                        $this->pdo->prepare(
-                            "UPDATE listini SET
-                                nome        = :nome,
-                                descrizione = :descrizione,
-                                valuta      = :valuta,
-                                attivo      = :attivo,
-                                valido_dal  = :valido_dal,
-                                valido_al   = :valido_al
-                             WHERE id = :id"
-                        )->execute([
-                            ':nome'        => $values['nome'],
-                            ':descrizione' => $values['descrizione'] ?: null,
-                            ':valuta'      => $values['valuta'],
-                            ':attivo'      => $values['attivo'],
-                            ':valido_dal'  => $values['valido_dal'],
-                            ':valido_al'   => $values['valido_al'],
-                            ':id'          => $id,
-                        ]);
+                        qk_listino_update($this->pdo, $id, $values);
                         redirect_with('sales/pricelists/edit?id=' . $id, 'success', 'Listino aggiornato.');
                     } catch (Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
@@ -363,102 +338,40 @@ final class SalesPricelistsController extends BaseController
         // quantita_minima_stock (D1.2): senza questo controllo, un doppione mascherato (es. stesso
         // prodotto/listino con soglie in unità diverse ma stesso valore canonico) produrrebbe un
         // errore SQL grezzo invece di un messaggio comprensibile.
-        $stmtDup = $this->pdo->prepare("
-            SELECT id FROM listini_prezzi
-            WHERE listino_id = :listino_id
-              AND prodotto_id = :prodotto_id
-              AND quantita_minima_stock = :qmin_stock
-              AND id != :riga_id
-        ");
-        $stmtDup->execute([
-            ':listino_id'  => $listinoId,
-            ':prodotto_id' => $prodottoId,
-            ':qmin_stock'  => $qMinStock,
-            ':riga_id'     => $rigaId ?: 0,
-        ]);
-        if ($stmtDup->fetch()) {
+        if (qk_listino_prezzo_riga_esiste_duplicato($this->pdo, $listinoId, $prodottoId, $qMinStock, $rigaId ?: 0)) {
             echo json_encode(['ok' => false, 'error' => 'Attenzione: esiste già un prezzo configurato in questo listino per questo scaglione di quantità (anche se espresso in un\'altra unità di misura, equivale alla stessa soglia).']);
             exit;
         }
 
         try {
+            $rigaData = [
+                'prodotto_id'             => $prodottoId,
+                'quantita_minima'         => $qMin,
+                'prezzo_unitario'         => $prezzo,
+                'sconto_perc'             => $sconto,
+                'unita_misura_id'         => $unitaMisuraId ?: null,
+                'note'                    => $note ?: null,
+                'quantita_minima_intento' => $qMinIntento,
+                'unita_misura_soglia_id'  => $unitaSogliaId,
+                'quantita_minima_stock'   => $qMinStock,
+            ];
+
             if ($rigaId) {
                 // UPDATE
                 // modificato_manualmente_il: aggiornato sempre su un salvataggio manuale (questo endpoint,
                 // usato sia dalla griglia listino sia dal drawer prodotto), mai da apiImportPrezzi() —
                 // vedi REVISIONE §6.12: evita che un import massivo sovrascriva silenziosamente un prezzo
                 // corretto/negoziato a mano dopo l'ultimo import.
-                $this->pdo->prepare(
-                    "UPDATE listini_prezzi SET
-                        prodotto_id     = :prodotto_id,
-                        quantita_minima = :qmin,
-                        prezzo_unitario = :prezzo,
-                        sconto_perc     = :sconto,
-                        unita_misura_id = :unita_misura_id,
-                        note            = :note,
-                        quantita_minima_intento = :qmin_intento,
-                        unita_misura_soglia_id  = :um_soglia_id,
-                        quantita_minima_stock   = :qmin_stock,
-                        modificato_manualmente_il = CURRENT_TIMESTAMP
-                     WHERE id = :id AND listino_id = :listino_id"
-                )->execute([
-                    ':prodotto_id' => $prodottoId,
-                    ':qmin'        => $qMin,
-                    ':prezzo'      => $prezzo,
-                    ':sconto'      => $sconto,
-                    ':unita_misura_id' => $unitaMisuraId ?: null,
-                    ':note'        => $note ?: null,
-                    ':qmin_intento' => $qMinIntento,
-                    ':um_soglia_id' => $unitaSogliaId,
-                    ':qmin_stock'   => $qMinStock,
-                    ':id'          => $rigaId,
-                    ':listino_id'  => $listinoId,
-                ]);
+                qk_listino_prezzo_riga_update($this->pdo, $rigaId, $listinoId, $rigaData);
                 $newId = $rigaId;
             } else {
                 // INSERT
-                $this->pdo->prepare(
-                    "INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock, modificato_manualmente_il)
-                     VALUES (:listino_id, :prodotto_id, :qmin, :prezzo, :sconto, :unita_misura_id, :note, :qmin_intento, :um_soglia_id, :qmin_stock, CURRENT_TIMESTAMP)"
-                )->execute([
-                    ':listino_id'  => $listinoId,
-                    ':prodotto_id' => $prodottoId,
-                    ':qmin'        => $qMin,
-                    ':prezzo'      => $prezzo,
-                    ':sconto'      => $sconto,
-                    ':unita_misura_id' => $unitaMisuraId ?: null,
-                    ':note'        => $note ?: null,
-                    ':qmin_intento' => $qMinIntento,
-                    ':um_soglia_id' => $unitaSogliaId,
-                    ':qmin_stock'   => $qMinStock,
-                ]);
-                $newId = (int)$this->pdo->lastInsertId();
+                $rigaData['listino_id'] = $listinoId;
+                $newId = qk_listino_prezzo_riga_insert($this->pdo, $rigaData);
             }
 
-
-
             // Restituisce la riga aggiornata con nome prodotto e UoM
-            $stmtRow = $this->pdo->prepare(
-                "SELECT lp.*, p.nome AS prodotto_nome, p.sku_interno, 
-                        COALESCE(um_p.codice, um_stock.codice) AS unita_misura,
-                        p.unita_misura_stock_id AS uom_stock_id,
-                        um_stock.codice AS uom_stock_code,
-                        p.unita_contenuto_id AS uom_commercial_id,
-                        um_comm.codice AS uom_commercial_code,
-                        -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md).
-                        (SELECT MIN(vf.prezzo)
-                         FROM v_prezzo_acquisto_base_fornitore vf
-                         JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
-                         WHERE pf2.prodotto_id = lp.prodotto_id AND pf2.attivo = 1) AS costo
-                 FROM listini_prezzi lp
-                 JOIN prodotti p ON p.id = lp.prodotto_id
-                 LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
-                 LEFT JOIN unita_misura um_p ON um_p.id = lp.unita_misura_id
-                 LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
-                 WHERE lp.id = :id"
-            );
-            $stmtRow->execute([':id' => $newId]);
-            $riga = $stmtRow->fetch(PDO::FETCH_ASSOC);
+            $riga = qk_listino_prezzo_riga_dettaglio($this->pdo, $newId);
 
             echo json_encode(['ok' => true, 'riga' => $riga]);
         } catch (Throwable $e) {
@@ -500,42 +413,9 @@ final class SalesPricelistsController extends BaseController
         header('Content-Type: application/json; charset=utf-8');
 
         $q = trim(get_param('q') ?? '');
-        
+
         // Nessun limite di caratteri per favorire autocomplete istantaneo (dry-run o 1 carattere)
-        
-        $where = "WHERE p.attivo = 1";
-        $params = [];
-
-        if ($q !== '') {
-            $where .= " AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR p.ean LIKE :q)";
-            $params = [':q' => '%' . $q . '%'];
-        }
-
-        $stmt = $this->pdo->prepare(
-            "SELECT p.id, p.nome AS label, p.sku_interno AS sku, um.codice AS unita_misura,
-                    p.unita_misura_stock_id, um_c.codice AS unita_misura_commerciale,
-                    p.unita_contenuto_id, p.quantita_contenuto,
-                    pf.rrp_min, pf.rrp_max,
-                    -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md).
-                    (SELECT MIN(vf.prezzo)
-                     FROM v_prezzo_acquisto_base_fornitore vf
-                     JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
-                     WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1) AS costo
-             FROM prodotti p
-             LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
-             LEFT JOIN unita_misura um_c ON um_c.id = p.unita_contenuto_id
-             LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.attivo = 1
-                AND pf.ordine_preferenza_fornitore = (
-                    SELECT MIN(pf2.ordine_preferenza_fornitore)
-                    FROM prodotti_fornitori pf2
-                    WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
-                )
-             $where
-             ORDER BY p.nome ASC
-             LIMIT 20"
-        );
-        $stmt->execute($params);
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        echo json_encode(qk_pricelist_search_prodotti($this->pdo, $q));
         exit;
     }
 
@@ -600,17 +480,7 @@ final class SalesPricelistsController extends BaseController
         $rrp_max = null;
 
         // Fix "Listino Fantasma" (audit/MASTER_AUDIT_REPORT.md).
-        $stRrp = $this->pdo->prepare('
-            SELECT pf.rrp_min, pf.rrp_max, pf.rrp_unita_misura_id,
-                   vf.prezzo AS costo_unitario
-            FROM prodotti_fornitori pf
-            LEFT JOIN v_prezzo_acquisto_base_fornitore vf ON vf.prodotto_fornitore_id = pf.id
-            WHERE pf.prodotto_id = ? AND pf.attivo = 1
-            ORDER BY pf.ordine_preferenza_fornitore ASC
-            LIMIT 1
-        ');
-        $stRrp->execute([$prodottoId]);
-        $rrpData = $stRrp->fetch(PDO::FETCH_ASSOC);
+        $rrpData = qk_pricelist_get_rrp_costo($this->pdo, $prodottoId);
         $rrp_unita_misura_id = null;
         if ($rrpData) {
             $costo_unitario = (float)($rrpData['costo_unitario'] ?? 0.0);
@@ -668,18 +538,7 @@ final class SalesPricelistsController extends BaseController
 
         try {
             // Ottieni tutti i clienti attivi
-            $stmt = $this->pdo->prepare("
-                SELECT cf.id,
-                       COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS nome_cliente,
-                       cf.partita_iva,
-                       (SELECT 1 FROM clienti_listini cl WHERE cl.cliente_id = cf.id AND cl.listino_id = :lid) AS assegnato_pivot,
-                       (SELECT 1 FROM dettagli_clienti dc WHERE dc.soggetto_id = cf.id AND dc.listino_id = :lid) AS assegnato_default
-                FROM clienti_fornitori cf
-                WHERE cf.tipo IN ('cliente', 'entrambi') AND cf.attivo = 1
-                ORDER BY nome_cliente ASC
-            ");
-            $stmt->execute([':lid' => $listinoId]);
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $rows = qk_get_clienti_con_stato_assegnazione($this->pdo, $listinoId);
 
             $result = [];
             foreach ($rows as $row) {
@@ -725,47 +584,15 @@ final class SalesPricelistsController extends BaseController
             // precedente cancellava e reinseriva TUTTE le righe di clienti_listini per questo listino
             // a ogni salvataggio, azzerando priorita/data_inizio/data_fine anche per i clienti che
             // restavano assegnati — quei campi sono scritti altrove (scheda del singolo cliente,
-            // includes/anagrafiche.php) e qui venivano silenziosamente persi. Ora si toccano solo le
-            // righe che cambiano davvero: si inseriscono solo i clienti nuovi e si rimuovono solo
-            // quelli deselezionati, senza mai toccare chi era già assegnato e resta tale.
-            $stmtEsistenti = $this->pdo->prepare("SELECT cliente_id FROM clienti_listini WHERE listino_id = ?");
-            $stmtEsistenti->execute([$listinoId]);
-            $esistenti = array_map('intval', $stmtEsistenti->fetchAll(PDO::FETCH_COLUMN));
-
-            $daRimuovere = array_diff($esistenti, $clienteIds);
-            $daAggiungere = array_diff($clienteIds, $esistenti);
-
-            if (!empty($daRimuovere)) {
-                $placeholders = implode(',', array_fill(0, count($daRimuovere), '?'));
-                $stmtDel = $this->pdo->prepare("DELETE FROM clienti_listini WHERE listino_id = ? AND cliente_id IN ($placeholders)");
-                $stmtDel->execute(array_merge([$listinoId], array_values($daRimuovere)));
-            }
-
-            if (!empty($daAggiungere)) {
-                $stmtIns = $this->pdo->prepare("
-                    INSERT INTO clienti_listini (cliente_id, listino_id, priorita)
-                    VALUES (?, ?, 10)
-                ");
-                foreach ($daAggiungere as $cid) {
-                    $stmtIns->execute([$cid, $listinoId]);
-                }
-            }
+            // includes/anagrafiche.php) e qui venivano silenziosamente persi. Vedi
+            // qk_update_clienti_listino() (includes/pricelists.php) per i dettagli: tocca solo le
+            // righe che cambiano davvero.
+            qk_update_clienti_listino($this->pdo, $listinoId, $clienteIds);
 
             $this->pdo->commit();
 
             // Ricarica la lista aggiornata dei clienti assegnati per restituirla al frontend
-            $stmtClienti = $this->pdo->prepare("
-                SELECT DISTINCT cf.id,
-                       COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS nome_cliente
-                FROM clienti_fornitori cf
-                LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
-                LEFT JOIN clienti_listini cl ON cl.cliente_id = cf.id
-                WHERE (dc.listino_id = :lid OR cl.listino_id = :lid)
-                  AND cf.attivo = 1
-                ORDER BY nome_cliente ASC
-            ");
-            $stmtClienti->execute([':lid' => $listinoId]);
-            $clienti_assegnati = $stmtClienti->fetchAll(PDO::FETCH_ASSOC);
+            $clienti_assegnati = qk_get_clienti_assegnati_dopo_sync($this->pdo, $listinoId);
 
             echo json_encode(['ok' => true, 'clienti_assegnati' => $clienti_assegnati]);
         } catch (Throwable $e) {
@@ -803,188 +630,19 @@ final class SalesPricelistsController extends BaseController
             echo json_encode(['ok' => false, 'error' => 'Listino non trovato.']); exit;
         }
 
-        $inserted   = 0;
-        $skipped    = 0;
-        $rowErrors  = [];
-        $touchedIds = []; // id di listini_prezzi scritte/confermate in questo import — vedi REVISIONE §6.12
-
-        $this->pdo->beginTransaction();
         try {
-            foreach ($rows as $i => $row) {
-                $lineNum = $i + 2;
+            $repository = new \App\Repositories\ListinoPrezziRepository($this->pdo);
+            $service    = new \App\Services\ListinoImportService($this->pdo, $repository);
+            $result     = $service->importaRighe($listinoId, $rows);
 
-                $sku = trim((string)($row['sku_interno'] ?? ''));
-                if ($sku === '') {
-                    $skipped++;
-                    $rowErrors[] = 'Riga ' . $lineNum . ': SKU interno vuoto — saltata.';
-                    continue;
-                }
-
-                // Cerca il prodotto
-                $stmtProd = $this->pdo->prepare('SELECT id, unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE sku_interno = :s AND attivo = 1');
-                $stmtProd->execute([':s' => $sku]);
-                $prodRow = $stmtProd->fetch(PDO::FETCH_ASSOC);
-                if (!$prodRow) {
-                    $skipped++;
-                    $rowErrors[] = 'Riga ' . $lineNum . ': prodotto con SKU "' . htmlspecialchars($sku) . '" non trovato o non attivo — saltata.';
-                    continue;
-                }
-                $prodottoId = (int)$prodRow['id'];
-                $uomStockId = (int)$prodRow['unita_misura_stock_id'];
-                $uomCommercialId = $prodRow['unita_contenuto_id'] !== null ? (int)$prodRow['unita_contenuto_id'] : null;
-                $uomId = $uomStockId; // default retrocompatibile: assume Stock UoM se la colonna non è valorizzata
-
-                // D4.6 (PIANO Motore di Pricing Multi-UoM §7.7/§8 Fase 4): colonna facoltativa nel
-                // tracciato Excel — se valorizzata, dichiara in quale unità è scritta la soglia
-                // (quantita_minima) per QUESTA riga, invece di assumere sempre Stock UoM. Se il
-                // codice non corrisponde né a Stock né a UoM commerciale del prodotto, si rifiuta
-                // la riga (stesso principio di §7.5: mai salvare un dato in un'unità non convertibile).
-                $umSogliaCodice = trim((string)($row['unita_misura_soglia'] ?? ''));
-                if ($umSogliaCodice !== '') {
-                    $stmtUmSoglia = $this->pdo->prepare('SELECT id FROM unita_misura WHERE codice = :c');
-                    $stmtUmSoglia->execute([':c' => $umSogliaCodice]);
-                    $umSogliaId = $stmtUmSoglia->fetchColumn();
-                    if (!$umSogliaId || ((int)$umSogliaId !== $uomStockId && (int)$umSogliaId !== $uomCommercialId)) {
-                        $skipped++;
-                        $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): unità soglia "' . htmlspecialchars($umSogliaCodice) . '" non valida per questo prodotto (deve essere l\'unità di stock o l\'unità commerciale) — saltata.';
-                        continue;
-                    }
-                    $uomId = (int)$umSogliaId;
-                }
-
-                $toFloat = function(?string $v): float {
-                    if ($v === null || trim($v) === '') return 0.0;
-                    return (float) str_replace(',', '.', trim($v));
-                };
-
-                $prezzoVal = trim((string)($row['prezzo_unitario'] ?? ''));
-                if ($prezzoVal === '' || !is_numeric(str_replace(',', '.', $prezzoVal))) {
-                    $skipped++;
-                    $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): prezzo unitario vuoto o non valido — saltata.';
-                    continue;
-                }
-                $prezzo = (float) str_replace(',', '.', $prezzoVal);
-
-                $qMin   = $toFloat($row['quantita_minima'] ?? '0');
-                $sconto = $toFloat($row['sconto_perc'] ?? '0');
-                $note   = !empty($row['note']) ? trim((string)$row['note']) : null;
-
-                // D4.6 (PIANO Motore di Pricing Multi-UoM §7.7): $uomId qui è o la Stock UoM
-                // (default retrocompatibile) o l'unità dichiarata dalla colonna facoltativa
-                // "unita_misura_soglia" — stesso campo usato sia come unità di quotazione del
-                // prezzo sia come unità della soglia, coerente col modello a singola unità per
-                // riga già in uso nel resto del sistema (vedi nota in apiSaveRiga).
-                $qMinCanonico = $qMin > 0
-                    ? (float) qk_uom_converti_riga($this->pdo, $prodottoId, $uomId, $qMin, 0.0)['quantita_stock']
-                    : 0.0;
-
-                // Cerca se esiste già un prezzo per questo listino/prodotto allo stesso scaglione.
-                // Bug corretto il 13/07/2026: la query precedente non filtrava su unita_misura_id.
-                // Bug corretto il 14/07/2026 (audit a tappeto, gap simmetrico a quello già noto lato
-                // acquisti in apiImportPrezzi di PurchasesController): il confronto restava sul valore
-                // grezzo (quantita_minima + unita_misura_id), non sul valore canonico quantita_minima_stock
-                // — un import che creasse un doppione mascherato (es. "100 KG" quando esiste già "4 FUSTI"
-                // con fattore 25) avrebbe fallito con un errore SQL grezzo sul vincolo UNIQUE invece di
-                // essere riconosciuto come lo stesso scaglione e gestito correttamente (update o skip).
-                $stmtCheck = $this->pdo->prepare("
-                    SELECT id, importato_il, modificato_manualmente_il FROM listini_prezzi
-                    WHERE listino_id = :lid AND prodotto_id = :pid AND quantita_minima_stock = :qmin_stock
-                ");
-                $stmtCheck->execute([
-                    ':lid'        => $listinoId,
-                    ':pid'        => $prodottoId,
-                    ':qmin_stock' => $qMinCanonico,
-                ]);
-                $existingRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
-
-                if ($existingRow) {
-                    $existingId = (int)$existingRow['id'];
-
-                    // REVISIONE §6.12 — "Regola d'Oro": non sovrascrivere silenziosamente una riga
-                    // modificata a mano dopo l'ultimo import. Resta comunque "vista" (touchedIds),
-                    // quindi non verrà mai chiusa come orfana solo perché non aggiornata.
-                    $modificataAMano = !empty($existingRow['modificato_manualmente_il'])
-                        && (empty($existingRow['importato_il']) || $existingRow['modificato_manualmente_il'] > $existingRow['importato_il']);
-
-                    if ($modificataAMano) {
-                        $skipped++;
-                        $touchedIds[] = $existingId;
-                        $rowErrors[] = 'Riga ' . $lineNum . ' (SKU: ' . htmlspecialchars($sku) . '): prezzo modificato manualmente dopo l\'ultimo import — non sovrascritto, verificare a mano.';
-                        continue;
-                    }
-
-                    // UPDATE
-                    $this->pdo->prepare("
-                        UPDATE listini_prezzi SET
-                            prezzo_unitario = :prezzo,
-                            sconto_perc = :sconto,
-                            note = :note,
-                            quantita_minima_intento = :qmin_intento,
-                            unita_misura_soglia_id  = :um_soglia_id,
-                            quantita_minima_stock   = :qmin_stock,
-                            importato_il = CURRENT_TIMESTAMP
-                        WHERE id = :id
-                    ")->execute([
-                        ':prezzo' => $prezzo,
-                        ':sconto' => $sconto,
-                        ':note'   => $note,
-                        ':qmin_intento' => $qMin,
-                        ':um_soglia_id' => $uomId ?: null,
-                        ':qmin_stock'   => $qMinCanonico,
-                        ':id'     => $existingId
-                    ]);
-                    $touchedIds[] = $existingId;
-                } else {
-                    // INSERT
-                    $this->pdo->prepare("
-                        INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, sconto_perc, unita_misura_id, note, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock, importato_il)
-                        VALUES (:lid, :pid, :qmin, :prezzo, :sconto, :umid, :note, :qmin_intento, :um_soglia_id, :qmin_stock, CURRENT_TIMESTAMP)
-                    ")->execute([
-                        ':lid'    => $listinoId,
-                        ':pid'    => $prodottoId,
-                        ':qmin'   => $qMin,
-                        ':prezzo' => $prezzo,
-                        ':sconto' => $sconto,
-                        ':umid'   => $uomId ?: null,
-                        ':note'   => $note,
-                        ':qmin_intento' => $qMin,
-                        ':um_soglia_id' => $uomId ?: null,
-                        ':qmin_stock'   => $qMinCanonico,
-                    ]);
-                    $touchedIds[] = (int)$this->pdo->lastInsertId();
-                }
-                $inserted++;
-            }
-
-            // REVISIONE §6.12 — righe che in passato provenivano da un import per QUESTO listino ma non
-            // sono più presenti nel file appena caricato. A differenza degli acquisti, `listini_prezzi`
-            // non ha validità per riga (scelta di progetto, vedi §6.10/C10: la validità vive solo sulla
-            // testata del listino) — quindi qui, coerentemente, le righe orfane vengono rimosse invece
-            // di essere "chiuse" con una data, non essendoci alcun campo dove farlo. Le righe modificate
-            // manualmente restano comunque escluse, perché sono sempre in touchedIds.
-            $removed = 0;
-            $stmtOrphanSel = $this->pdo->prepare("SELECT id FROM listini_prezzi WHERE listino_id = :lid AND importato_il IS NOT NULL");
-            $stmtOrphanSel->execute([':lid' => $listinoId]);
-            $orphanIds = array_diff(array_map('intval', $stmtOrphanSel->fetchAll(PDO::FETCH_COLUMN)), $touchedIds);
-            if (!empty($orphanIds)) {
-                $placeholders = implode(',', array_fill(0, count($orphanIds), '?'));
-                $stmtRemove = $this->pdo->prepare("DELETE FROM listini_prezzi WHERE id IN ($placeholders)");
-                $stmtRemove->execute(array_values($orphanIds));
-                $removed = count($orphanIds);
-            }
-
-            $this->pdo->commit();
             echo json_encode([
                 'ok' => true,
-                'inserted' => $inserted,
-                'skipped' => $skipped,
-                'removed' => $removed,
-                'errors' => $rowErrors
+                'inserted' => $result['inserted'],
+                'skipped' => $result['skipped'],
+                'removed' => $result['removed'],
+                'errors' => $result['errors'],
             ]);
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
             echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
         exit;

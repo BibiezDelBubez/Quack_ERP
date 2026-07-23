@@ -479,4 +479,16 @@
 
 
 
+<script>
+/* Config: PHP -> JS, letta da public/assets/js/purchases/pricelists_form.js.
+   NOTA (23/07/2026): questi 3 valori erano tag di output PHP scritti
+   direttamente dentro il file .js -- non elaborati mai, perche' il file e'
+   servito come asset statico. Stesso bug gia' corretto altrove in questa
+   sessione (assets/js/products-form.js, adr-sostanze-form.js, rfq_form.js). */
+window.QkPurchasePricelist = {
+  isEdit: <?= $isEdit ? 'true' : 'false' ?>,
+  csrfToken: <?= json_encode(csrf_token()) ?>,
+  listinoId: <?= (int)($id ?? 0) ?>
+};
+</script>
 <script src="<?= url('public/assets/js/purchases/pricelists_form.js') ?>"></script>
