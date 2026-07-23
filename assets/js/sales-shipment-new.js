@@ -230,7 +230,7 @@
       inp.dataset.lottoDisp = newDisp;
       // Aggiorna display disponibilità
       const dispEl = row.querySelector('.qk-pp-lotto-disp');
-      if (dispEl) dispEl.textContent = newDisp.toLocaleString('it-IT', {minimumFractionDigits:3}) + ' ' + row.closest('.qk-pp-riga').dataset.uom;
+      if (dispEl) dispEl.textContent = newDisp.toLocaleString('it-IT', {minimumFractionDigits:3}) + ' ' + row.closest('.qk-pp-riga').dataset.uomStock;
       validaQta(inp);
       aggiornaTotaleRiga(rigaId);
     });
@@ -271,28 +271,46 @@
     if (form) {
       form.addEventListener('submit', function (e) {
         let errori = [];
+        let superamenti = []; // righe che superano il residuo ordinato — non è un errore
+                               // fisico (max disponibilità lotto), è un caso che nel settore
+                               // chimico è normale (es. confezioni fisse: ordinati 950kg, si
+                               // spediscono 5 fusti da 200kg = 1000kg) — quindi non un blocco
+                               // secco, ma una conferma esplicita (vedi Problema 3 della
+                               // REVISIONE Ciclo Vendite, §3bis.S1).
 
         // Controlla ogni riga
         document.querySelectorAll('.qk-pp-riga').forEach(rigaEl => {
-          const rigaId  = rigaEl.dataset.rigaId;
-          const traccia = rigaEl.dataset.tracciaLotti === '1';
+          const rigaId    = rigaEl.dataset.rigaId;
+          const traccia   = rigaEl.dataset.tracciaLotti === '1';
+          const qtaResidua = parseFloat(rigaEl.dataset.qtaResidua);
+          const nomeProd  = rigaEl.querySelector('.qk-pp-riga-nome')?.textContent?.trim() || `riga ${rigaId}`;
 
+          let totRiga;
           if (!traccia) {
             const inp = rigaEl.querySelector('input[name^="quantita_no_lotto"]');
-            const max = parseFloat(inp?.max || 999999);
             const val = parseFloat(inp?.value || 0);
-            if (val < 0 || val > max + 0.0005) {
-              errori.push(`Quantità non valida per la riga ${rigaId}.`);
+            if (val < 0) {
+              errori.push(`Quantità non valida per "${nomeProd}".`);
+              return;
             }
-            return;
+            totRiga = val;
+          } else {
+            // Controlla ogni lotto: qui il vincolo è fisico (non si può prelevare più
+            // di quanto un lotto contenga davvero) — resta sempre un blocco secco.
+            let bloccata = false;
+            rigaEl.querySelectorAll('.qk-pp-lotto-qta').forEach(inp => {
+              if (!validaQta(inp)) {
+                errori.push(`Quantità superiore alla disponibilità del lotto per "${nomeProd}".`);
+                bloccata = true;
+              }
+            });
+            if (bloccata) return;
+            totRiga = getTotaleRiga(rigaEl);
           }
 
-          // Controlla ogni lotto
-          rigaEl.querySelectorAll('.qk-pp-lotto-qta').forEach(inp => {
-            if (!validaQta(inp)) {
-              errori.push(`Quantità superiore alla disponibilità del lotto.`);
-            }
-          });
+          if (totRiga > qtaResidua + 0.0005) {
+            superamenti.push({ nomeProd, totRiga, qtaResidua });
+          }
         });
 
         if (errori.length) {
@@ -302,6 +320,38 @@
             note.style.display = 'flex';
             note.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
+          return;
+        }
+
+        // Il campo di conferma non viene mai portato avanti da un tentativo di invio
+        // al successivo: ogni submit ricalcola i superamenti da zero sui valori
+        // ATTUALI dei campi. Se l'utente conferma e poi modifica una quantità prima
+        // di inviare di nuovo, questo blocco rientra e richiede una nuova conferma
+        // sul valore nuovo — non esiste uno stato "confermato" che sopravvive a una
+        // modifica successiva.
+        const confermaField = document.getElementById('pp-conferma-superamento');
+        if (confermaField) confermaField.value = '';
+
+        if (superamenti.length) {
+          e.preventDefault();
+          const dettaglio = superamenti
+            .map(s => `- "${s.nomeProd}": stai spedendo ${s.totRiga.toFixed(3)}, ma il residuo ordinato è ${s.qtaResidua.toFixed(3)}`)
+            .join('\n');
+          const confermato = window.confirm(
+            `Attenzione: alcune righe superano la quantità ancora ordinata:\n\n${dettaglio}\n\n` +
+            `Può essere corretto (es. confezioni a formato fisso), ma verifica prima di continuare.\n\n` +
+            `Confermare e procedere comunque con la spedizione?`
+          );
+          if (confermato) {
+            // window.confirm() è bloccante e modale: il DOM non può essere toccato
+            // finché l'utente non risponde, quindi i valori riletti sopra sono
+            // ancora quelli correnti. form.submit() invia il form senza far
+            // ripartire questo stesso listener 'submit' (a differenza di
+            // requestSubmit() o del click sul bottone), evitando un loop.
+            if (confermaField) confermaField.value = '1';
+            form.submit();
+          }
+          // Se annulla: non si invia nulla, l'utente resta sul form e può correggere.
         }
       });
     }

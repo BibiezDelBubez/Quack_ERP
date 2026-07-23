@@ -573,5 +573,6 @@ window.QK_ORDERS_CREATE_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>
 };
 </script>
+<script src="<?= url('assets/js/pricing-widget.js') ?>"></script>
 <script src="<?= url('assets/js/sales-orders-create.js') ?>"></script>
 

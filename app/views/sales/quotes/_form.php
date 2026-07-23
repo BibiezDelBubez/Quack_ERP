@@ -689,11 +689,7 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
                 <div class="qk-form-group">
                   <label class="qk-form-label">Canale vendita</label>
                   <select name="canale_vendita" class="qk-form-control">
-                    <?php 
-                    global $pdo;
-                    $stCv = $pdo->query("SELECT codice, nome FROM canali_vendita WHERE attivo = 1 ORDER BY nome");
-                    $canali_db = $stCv->fetchAll(PDO::FETCH_ASSOC);
-                    foreach ($canali_db as $c): ?>
+                    <?php foreach (($canali ?? []) as $c): ?>
                     <option value="<?= e($c['codice']) ?>" <?= ($v['canale_vendita'] ?? 'email_diretta') === $c['codice'] ? 'selected' : '' ?>><?= e($c['nome']) ?></option>
                     <?php endforeach; ?>
                   </select>
@@ -898,4 +894,5 @@ window.QK_QUOTES_CONFIG = {
 };
 </script>
 <script src="<?= asset('js/big.min.js') ?>"></script>
+<script src="<?= asset('js/pricing-widget.js') ?>"></script>
 <script src="<?= asset('js/sales-quotes.js') ?>"></script>

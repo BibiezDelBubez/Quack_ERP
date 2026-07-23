@@ -12,6 +12,46 @@ function qk_db(): PDO
 }
 
 /**
+ * Restituisce il frammento SQL standard per il nome visualizzato del cliente/fornitore
+ * (ragione_sociale se presente, altrimenti nome + cognome).
+ */
+function qk_nome_cliente_sql_fragment(string $alias = ''): string
+{
+    $p = $alias !== '' ? $alias . '.' : '';
+    if (DB_DRIVER === 'mysql') {
+        return "COALESCE({$p}ragione_sociale, TRIM(CONCAT(COALESCE({$p}nome,''), ' ', COALESCE({$p}cognome,''))))";
+    }
+    return "COALESCE({$p}ragione_sociale, TRIM({$p}nome || ' ' || {$p}cognome))";
+}
+
+/**
+ * Restituisce il nome display di un soggetto dato l'ID
+ */
+function qk_get_nome_soggetto_by_id(PDO $pdo, int $id): ?string
+{
+    $nomeSql = qk_nome_cliente_sql_fragment();
+    $st = $pdo->prepare("SELECT {$nomeSql} FROM clienti_fornitori WHERE id = ?");
+    $st->execute([$id]);
+    $val = $st->fetchColumn();
+    return $val ? (string)$val : null;
+}
+
+/**
+ * Recupera un indirizzo specifico per id (es. l'indirizzo di spedizione
+ * congelato su un ordine/preventivo) — a differenza di
+ * qk_soggetto_get_indirizzo_principale() sotto, che cerca per soggetto e
+ * restituisce sempre la sede principale, indipendentemente da quale
+ * indirizzo sia stato realmente scelto per un documento specifico.
+ */
+function qk_get_indirizzo(PDO $pdo, int $id): ?array
+{
+    $st = $pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
+    $st->execute([$id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+/**
  * Recupera l'indirizzo principale (sede legale/operativa) di un soggetto.
  * Ritorna array associativo se trovato, altrimenti null.
  */
@@ -1233,6 +1273,40 @@ function qk_list_indirizzi(PDO $pdo, int $soggetto_id): array
 }
 
 /**
+ * Se l'utente ha spuntato "salva in anagrafica" su un indirizzo di consegna
+ * "una tantum" inserito a mano su un documento (preventivo o ordine diretto),
+ * lo salva come indirizzo vero per il cliente e aggiorna $values con l'id
+ * appena creato. Normalizza anche il caso "custom"/non numerico a stringa
+ * vuota (AUDIT 3 §2.2: prima duplicata identica in SalesQuotesController,
+ * mai collegata in SalesOrdersController — estratta qui per essere condivisa
+ * dai due form invece di riscriverla una seconda volta).
+ */
+function qk_maybe_create_one_time_address(PDO $pdo, array &$values): void
+{
+    if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
+        $newAddrId = qk_insert_indirizzo($pdo, (int)$values['cliente_id'], [
+            'tipo' => 'spedizione',
+            'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
+            'predefinito' => false,
+            'referente_consegna' => $values['consegna_referente'],
+            'telefono_consegna' => $values['consegna_telefono'],
+            'presso' => $values['consegna_presso'],
+            'via' => $values['consegna_via'],
+            'civico' => $values['consegna_civico'],
+            'cap' => $values['consegna_cap'],
+            'citta' => $values['consegna_citta'],
+            'provincia' => $values['consegna_provincia'],
+            'nazione' => $values['consegna_nazione'] ?: 'IT',
+            'note_consegna' => $values['consegna_note'],
+        ]);
+        $values['indirizzo_spedizione_id'] = $newAddrId;
+    }
+    if (($values['indirizzo_spedizione_id'] ?? '') === 'custom' || !is_numeric($values['indirizzo_spedizione_id'] ?? '')) {
+        $values['indirizzo_spedizione_id'] = '';
+    }
+}
+
+/**
  * Inserisce un nuovo indirizzo per un soggetto.
  * Se predefinito=1, azzera gli altri predefiniti dello stesso tipo.
  *
@@ -1963,4 +2037,73 @@ function qk_build_e_valida_indirizzo(): array
     }
 
     return ['ok' => true, 'v' => $v];
+}
+
+/**
+ * Recupera i dettagli anagrafici e commerciali di un cliente
+ */
+function qk_get_cliente_dettagli_per_preventivo(PDO $pdo, int $clienteId): ?array
+{
+    $st = $pdo->prepare(
+        "SELECT cf.id, cf.email, cf.telefono, cf.cellulare, dc.condizioni_pagamento, dc.listino_id,
+                l.nome AS listino_nome, l.valuta AS listino_valuta
+           FROM clienti_fornitori cf
+      LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
+      LEFT JOIN listini l ON l.id = dc.listino_id
+          WHERE cf.id = ? AND cf.attivo = 1"
+    );
+    $st->execute([$clienteId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+/**
+ * Recupera i contatti di un cliente
+ */
+function qk_get_contatti_cliente(PDO $pdo, int $clienteId): array
+{
+    $nomeCompletoSql = "COALESCE(nome || ' ' || COALESCE(cognome, ''), ragione_sociale)";
+    if (DB_DRIVER === 'mysql') {
+        $nomeCompletoSql = "COALESCE(CONCAT(COALESCE(nome,''), ' ', COALESCE(cognome,'')), ragione_sociale)";
+    }
+    $st = $pdo->prepare(
+        "SELECT id, {$nomeCompletoSql} AS nome_completo,
+                email, telefono, cellulare
+           FROM clienti_fornitori
+          WHERE parent_id = ? AND attivo = 1
+          ORDER BY nome, cognome"
+    );
+    $st->execute([$clienteId]);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Recupera gli indirizzi di un cliente
+ */
+/**
+ * @param string[]|null $tipiFiltro se valorizzato, limita ai soli tipi indicati
+ *   (es. per il form ordine diretto, che a differenza dei preventivi non deve
+ *   mostrare sede_legale/fatturazione come possibile indirizzo di spedizione
+ *   — vedi AUDIT 3 §2.3: prima della condivisione di questa funzione i due
+ *   form filtravano diversamente, la condivisione aveva perso quella
+ *   differenza intenzionale). Null = nessun filtro (comportamento preventivi,
+ *   che usa sede_legale come fallback quando non c'è un indirizzo dedicato).
+ */
+function qk_get_indirizzi_cliente(PDO $pdo, int $clienteId, ?array $tipiFiltro = null): array
+{
+    $sql = "SELECT id, tipo, nome_sede, predefinito, via, civico, cap, citta, provincia, nazione,
+                   referente_consegna, telefono_consegna, note_consegna, presso
+              FROM indirizzi
+             WHERE soggetto_id = ? AND attivo = 1";
+    $params = [$clienteId];
+    if ($tipiFiltro !== null && !empty($tipiFiltro)) {
+        $placeholders = implode(',', array_fill(0, count($tipiFiltro), '?'));
+        $sql .= " AND tipo IN ($placeholders)";
+        $params = array_merge($params, $tipiFiltro);
+    }
+    $sql .= " ORDER BY CASE tipo WHEN 'spedizione' THEN 1 WHEN 'principale' THEN 2 ELSE 3 END,
+                       predefinito DESC, id ASC";
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
 }

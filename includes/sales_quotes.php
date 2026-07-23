@@ -5,6 +5,8 @@ require_once __DIR__ . '/anagrafiche.php';
 require_once __DIR__ . '/prodotti.php';
 require_once __DIR__ . '/magazzino.php';
 require_once __DIR__ . '/transizioni_stati.php';
+require_once __DIR__ . '/document_common.php';
+require_once __DIR__ . '/compliance.php';
 require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 
 /**
@@ -935,30 +937,27 @@ function qk_preventivo_duplica(PDO $pdo, int $id, int $userId): int
         // 2. Generate new quote number
         $newNum = qk_next_numero_offerta($pdo);
 
-        // 3. Create list of columns
-        $columns = array_filter(db_table_columns($pdo, 'preventivi'), fn($c) => $c !== 'id');
-
+        // 3. Corretto (stesso bug, stesso fix già collaudato in qk_preventivo_nuova_versione()
+        // poche righe sopra in questo file, 22/07/2026): copiare TUTTE le colonne incluso
+        // numero_preventivo (UNIQUE) e poi tentare di correggerlo con una UPDATE separata fa
+        // fallire SEMPRE l'INSERT, PRIMA che la UPDATE sia mai raggiunta. Le colonne che devono
+        // avere un valore diverso dall'originale vengono ora scritte già corrette in un unico
+        // INSERT, mai copiate e poi sistemate a parte.
+        $colonneSovrascritte = ['id', 'numero_preventivo', 'stato', 'storico', 'creato_da', 'created_at', 'updated_at'];
+        $columns = array_filter(db_table_columns($pdo, 'preventivi'), fn($c) => !in_array($c, $colonneSovrascritte, true));
         $colList = implode(", ", $columns);
-        $insertSql = "INSERT INTO preventivi ($colList) SELECT $colList FROM preventivi WHERE id = :orig_id";
-        $pdo->prepare($insertSql)->execute([':orig_id' => $id]);
-        $newId = (int)$pdo->lastInsertId();
 
-        // 4. Update new quote specifics
-        $stUpNew = $pdo->prepare("
-            UPDATE preventivi SET
-                numero_preventivo = :newNum,
-                stato = 'bozza',
-                storico = 0,
-                creato_da = :userId,
-                created_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :newId
-        ");
-        $stUpNew->execute([
-            ':newNum' => $newNum,
-            ':userId' => $userId,
-            ':newId'  => $newId
+        $insertSql = "
+            INSERT INTO preventivi (numero_preventivo, stato, storico, creato_da, created_at, updated_at, $colList)
+            SELECT :newNum, 'bozza', 0, :userId, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $colList
+              FROM preventivi WHERE id = :orig_id
+        ";
+        $pdo->prepare($insertSql)->execute([
+            ':newNum'  => $newNum,
+            ':userId'  => $userId,
+            ':orig_id' => $id,
         ]);
+        $newId = (int)$pdo->lastInsertId();
 
         // 5. Copy righe items from original quote
         $righeCols = array_filter(db_table_columns($pdo, 'preventivi_righe'), fn($c) => $c !== 'id');
@@ -1058,8 +1057,9 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         }
 
         // 3. Create ordini_clienti head
+        $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
         $sqlHead = "INSERT INTO ordini_clienti (
-            numero_ordine, preventivo_id, cliente_id, azienda_interna_id, data_ordine, data_consegna_prevista,
+            numero_ordine, preventivo_id, cliente_id, azienda_interna_id, magazzino_id, data_ordine, data_consegna_prevista,
             stato, stato_fatturazione, riferimento_interno, condizioni_pagamento, trasporto, valuta,
             listino_id, note, indirizzo_spedizione_id,
             consegna_via, consegna_civico, consegna_cap, consegna_citta,
@@ -1071,7 +1071,7 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
             creato_da, created_at, updated_at
         ) VALUES (
-            :numero_ordine, :preventivo_id, :cliente_id, :azienda_interna_id, CURRENT_DATE, :data_consegna_prevista,
+            :numero_ordine, :preventivo_id, :cliente_id, :azienda_interna_id, :magazzino_id, CURRENT_DATE, :data_consegna_prevista,
             'in_lavorazione', 'da_fatturare', :riferimento_interno, :condizioni_pagamento, :trasporto, :valuta,
             :listino_id, :note, :indirizzo_spedizione_id,
             :consegna_via, :consegna_civico, :consegna_cap, :consegna_citta,
@@ -1089,12 +1089,13 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             ':preventivo_id'           => $id,
             ':cliente_id'              => $quota['cliente_id'],
             ':azienda_interna_id'      => $quota['azienda_interna_id'] ?: null,
+            ':magazzino_id'            => $magazzinoRiservaId,
             ':data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
             ':riferimento_interno'     => $quota['riferimento_interno'] ?: null,
             ':condizioni_pagamento'    => $quota['condizioni_pagamento'] ?: null,
             ':trasporto'               => $quota['trasporto'] ?: null,
             ':valuta'                  => $quota['valuta'] ?: 'EUR',
-            ':listino_id'              => !empty($quota['listino_id']) ? (int)$quota['listino_id'] : (int)($pdo->query("SELECT id FROM listini WHERE is_default = 1 AND attivo = 1 LIMIT 1")->fetchColumn() ?: 0),
+            ':listino_id'              => !empty($quota['listino_id']) ? (int)$quota['listino_id'] : qk_get_listino_default_id($pdo),
             ':note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),
             ':indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?: null,
             ':consegna_via'            => $quota['consegna_via'] ?: null,
@@ -1142,8 +1143,6 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         )";
         $stLine = $pdo->prepare($sqlLine);
 
-        $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
-
         foreach ($righe as $r) {
             $stLine->execute([
                 ':ordine_id'          => $ordineId,
@@ -1171,10 +1170,54 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             }
         }
 
+        qk_compliance_log_transactions($pdo, $ordineId, $righe);
+
         $pdo->commit();
         return $ordineId;
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
+}
+
+/**
+ * Ritorna il conteggio totale preventivi per paginazione
+ */
+function qk_preventivi_count(PDO $pdo, string $whereStr, array $params): int
+{
+    $stCount = $pdo->prepare("SELECT COUNT(*) FROM preventivi o JOIN clienti_fornitori cf ON cf.id = o.cliente_id WHERE $whereStr");
+    $stCount->execute($params);
+    return (int) $stCount->fetchColumn();
+}
+
+/**
+ * Ritorna l'elenco impaginato dei preventivi
+ */
+function qk_preventivi_list(PDO $pdo, string $whereStr, array $params, string $orderCol, string $dir, int $limit, int $offset): array
+{
+    $nomeClienteSql = qk_nome_cliente_sql_fragment('cf');
+    $sql = "SELECT o.id, o.numero_preventivo, o.stato, o.data_offerta, o.data_scadenza,
+                   o.imponibile, o.totale, o.note_cliente, o.riferimento_interno,
+                   {$nomeClienteSql} AS cliente_nome,
+                   cv.nome AS canale_vendita
+              FROM preventivi o
+              JOIN clienti_fornitori cf ON cf.id = o.cliente_id
+              LEFT JOIN canali_vendita cv ON cv.id = o.canale_vendita_id
+             WHERE {$whereStr}
+             ORDER BY {$orderCol} {$dir}, o.id DESC
+             LIMIT {$limit} OFFSET {$offset}";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Recupera l'eventuale ordine cliente generato da un preventivo
+ */
+function qk_get_ordine_da_preventivo(PDO $pdo, int $preventivoId): ?array
+{
+    $stOrder = $pdo->prepare("SELECT id, numero_ordine FROM ordini_clienti WHERE preventivo_id = ? LIMIT 1");
+    $stOrder->execute([$preventivoId]);
+    $row = $stOrder->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
 }

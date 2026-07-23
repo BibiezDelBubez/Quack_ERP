@@ -1257,11 +1257,23 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     cliente_id              INTEGER      NOT NULL REFERENCES clienti_fornitori(id),
     indirizzo_spedizione_id INTEGER      REFERENCES indirizzi(id),
     azienda_interna_id      INTEGER      REFERENCES aziende_interne(id),
+    -- Magazzino usato per la riserva di giacenza alla conferma/creazione
+    -- (REVISIONE Ciclo Vendite §1.7/O2): mai più ricavato dal magazzino
+    -- attivo di sessione al momento dell'annullamento, sempre quello
+    -- congelato qui alla creazione. Nullable: ordini storici pre-esistenti
+    -- non hanno modo di saperlo retroattivamente.
+    magazzino_id            INTEGER      REFERENCES magazzini(id),
     data_ordine             DATE         NOT NULL,
     data_consegna_prevista  DATE,
     stato                   TEXT         NOT NULL CHECK (stato IN (
                                               'in_lavorazione','parzialmente_spedito',
-                                              'spedito','completato','annullato')),
+                                              'spedito','completato','annullato','superato')),
+    -- Versione/revisione dell'ordine (PIANO - Revisione Ordini Clienti, mirror
+    -- esatto di ordini_testata.versione/ordine_padre_id lato acquisti): quando
+    -- un ordine 'in_lavorazione' viene corretto, l'originale passa a 'superato'
+    -- (mai più modificabile) e ne nasce uno nuovo con versione+1, collegato qui.
+    versione                INTEGER      NOT NULL DEFAULT 1,
+    ordine_padre_id         INTEGER      REFERENCES ordini_clienti(id),
     stato_fatturazione       TEXT         NOT NULL DEFAULT 'da_fatturare',
     riferimento_interno      VARCHAR(100),
     condizioni_pagamento     TEXT,

@@ -137,6 +137,102 @@ function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int
 }
 
 /**
+ * Rilascia la riserva di giacenza fatta da qk_riserva_stock_ordine() per la
+ * parte di un ordine cliente non ancora spedita — usata all'annullamento di
+ * un ordine (REVISIONE Ciclo Vendite §1.7/O2: prima di questa funzione
+ * l'annullamento non rilasciava mai la riserva, lasciandola appesa per
+ * sempre). Mirror esatto (kit-aware, stessa risoluzione componenti) di
+ * qk_riserva_stock_ordine(), ma sottrae invece di sommare.
+ *
+ * $magazzinoId deve essere quello REALMENTE usato per la riserva originale
+ * (oggi congelato su ordini_clienti.magazzino_id alla creazione/conferma
+ * dell'ordine, mai ricalcolato da sessione) — rilasciare sul magazzino
+ * sbagliato lascerebbe la riserva fantasma nel magazzino originale e
+ * introdurrebbe una riserva negativa/errata in quello sbagliato.
+ *
+ * Clampato a 0: non fa mai scendere quantita_riservata sotto zero, stesso
+ * principio già usato nel decremento in fase di spedizione
+ * (SalesOrdersController::elaboraCreaSpedizione()) — assorbe eventuali
+ * incongruenze pregresse invece di romperle ulteriormente.
+ */
+function qk_rilascia_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int $magazzinoId): void
+{
+    if ($prodottoId <= 0 || $qtaStock <= 0) {
+        return;
+    }
+
+    $stTipo = $pdo->prepare("SELECT tipo FROM prodotti WHERE id = ?");
+    $stTipo->execute([$prodottoId]);
+    $tipo = $stTipo->fetchColumn();
+
+    $righeDaRilasciare = [];
+    if ($tipo === 'kit') {
+        $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
+        $stComp->execute([$prodottoId]);
+        foreach ($stComp->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $righeDaRilasciare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
+        }
+    } else {
+        $righeDaRilasciare[] = [$prodottoId, $qtaStock];
+    }
+
+    $stRilascio = $pdo->prepare("
+        UPDATE giacenze
+           SET quantita_riservata = CASE WHEN quantita_riservata - ? < 0 THEN 0 ELSE quantita_riservata - ? END
+         WHERE prodotto_id = ? AND magazzino_id = ?
+    ");
+    foreach ($righeDaRilasciare as [$compId, $qta]) {
+        $stRilascio->execute([$qta, $qta, $compId, $magazzinoId]);
+    }
+}
+
+/**
+ * Seleziona i lotti in ordine FEFO (esclusi gli scaduti) per coprire una
+ * quantità richiesta di un prodotto in un magazzino specifico. Estratta per
+ * essere riusabile anche per i componenti di un Kit tracciati a lotto
+ * (AUDIT 3 §3.2 Ciclo Vendite: prima di questa funzione, i componenti Kit
+ * non avevano alcuna selezione lotto in fase di spedizione — la giacenza
+ * aggregata scendeva ma lotti_giacenze restava invariata, rompendo la
+ * tracciabilità lotto→spedizione per un rivenditore ADR).
+ *
+ * Ritorna un array di ['lotto_id' => int, 'quantita' => float, 'codice' => string],
+ * uno per lotto usato, in ordine FEFO. La somma delle quantità può essere
+ * INFERIORE a $qtaNecessaria se la giacenza lotti non basta — il chiamante
+ * deve verificarlo esplicitamente (stesso principio già in uso per la
+ * verifica di giacenza sui prodotti standalone).
+ */
+function qk_seleziona_lotti_fefo(PDO $pdo, int $prodottoId, int $magazzinoId, float $qtaNecessaria): array
+{
+    $stLotti = $pdo->prepare("
+        SELECT l.id, l.codice_lotto_interno AS codice, lg.quantita_disponibile
+          FROM lotti l
+          JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+         WHERE l.prodotto_id = ?
+           AND lg.quantita_disponibile > 0
+           AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))
+         ORDER BY CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END,
+                  l.data_scadenza ASC,
+                  l.created_at ASC
+    ");
+    $stLotti->execute([$magazzinoId, $prodottoId]);
+
+    $allocazioni = [];
+    $residuo = $qtaNecessaria;
+    foreach ($stLotti->fetchAll(PDO::FETCH_ASSOC) as $lot) {
+        if ($residuo <= 0.0005) {
+            break;
+        }
+        $preso = min($residuo, (float)$lot['quantita_disponibile']);
+        if ($preso <= 0) {
+            continue;
+        }
+        $allocazioni[] = ['lotto_id' => (int)$lot['id'], 'quantita' => $preso, 'codice' => (string)$lot['codice']];
+        $residuo -= $preso;
+    }
+    return $allocazioni;
+}
+
+/**
  * Risolve l'id del magazzino "attivo" da usare quando non ne viene passato uno
  * esplicito: prima $_SESSION['magazzino_attivo_id'] (impostata dal selettore
  * in topbar, §3.3/§3.10, stesso pattern di azienda_attiva_id in
@@ -1343,6 +1439,55 @@ function qk_prodotti_search_stock(PDO $pdo, string $q, int $limit = 20): array
             'uom'           => (string) ($r['uom'] ?? ''),
         ];
     }, $st->fetchAll(PDO::FETCH_ASSOC));
+}
+
+/**
+ * Carica lotti disponibili in magazzino per un elenco di prodotti, indicizzati per prodotto_id.
+ *
+ * @return array<int, list<array>>
+ */
+function qk_get_lotti_disponibili_per_prodotti(PDO $pdo, array $prodIds, int $magazzinoId, bool $includiScaduti = false): array
+{
+    $prodIds = array_unique(array_filter(array_map('intval', $prodIds)));
+    if (empty($prodIds)) {
+        return [];
+    }
+
+    $in = implode(',', $prodIds);
+    $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
+    $stLotti = $pdo->prepare("
+        SELECT l.prodotto_id,
+               l.id,
+               l.codice_lotto_interno AS codice,
+               lg.quantita_disponibile,
+               l.data_scadenza,
+               CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
+        FROM lotti l
+        JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
+        WHERE l.prodotto_id IN ($in)
+          AND lg.quantita_disponibile > 0
+          $condScadenza
+        ORDER BY l.prodotto_id,
+                 CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END,
+                 l.data_scadenza ASC,
+                 l.created_at ASC
+    ");
+    $stLotti->execute([$magazzinoId]);
+
+    $lottiPerProdotto = [];
+    foreach ($stLotti->fetchAll(PDO::FETCH_ASSOC) as $lot) {
+        $lottiPerProdotto[(int)$lot['prodotto_id']][] = $lot;
+    }
+    return $lottiPerProdotto;
+}
+
+/**
+ * Carica lotti disponibili in magazzino per un singolo prodotto.
+ */
+function qk_get_lotti_disponibili_prodotto(PDO $pdo, int $prodottoId, int $magazzinoId, bool $includiScaduti = false): array
+{
+    $lottiMap = qk_get_lotti_disponibili_per_prodotti($pdo, [$prodottoId], $magazzinoId, $includiScaduti);
+    return $lottiMap[$prodottoId] ?? [];
 }
 
 // L'anagrafica magazzini (10 funzioni CRUD sulla tabella `magazzini`) vive ora

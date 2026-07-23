@@ -51,6 +51,10 @@ $totRighe = count($righe);
   <?= csrf_field() ?>
   <input type="hidden" name="id" value="<?= $orderId ?>">
   <input type="hidden" name="azione" value="crea_spedizione">
+  <!-- Impostato via JS solo subito prima di un submit già confermato dall'utente
+       (superamento della quantità residua ordinata) — mai persistito tra un
+       tentativo di invio e il successivo, vedi sales-shipment-new.js. -->
+  <input type="hidden" name="conferma_superamento" id="pp-conferma-superamento" value="">
 
   <!-- ══════════════════════════════════════════════════════════════════════
        LAYOUT: colonna sinistra (righe) + colonna destra sticky (trasporto)
@@ -93,8 +97,17 @@ $totRighe = count($righe);
         $rigaId      = (int)$r['id'];
         $prodId      = (int)$r['prodotto_id'];
         $tracciaLotti = (int)($r['traccia_lotti'] ?? 0);
+        // AUDIT 3 §1.1: due residui distinti, non intercambiabili.
+        // $qtaResiduaNativa è nell'unità in cui l'ordine è stato scritto ed è
+        // quello che l'operatore inserisce/vede per un prodotto senza lotti
+        // (il server la converte poi in Stock UoM, come sempre).
+        // $qtaResidua è in Stock UoM: l'unica unità comparabile con
+        // lotti_giacenze.quantita_disponibile, usata per l'allocazione FEFO e
+        // per lo stato "pronta/parziale/non disponibile" dei prodotti a lotto.
+        $qtaResiduaNativa = (float)$r['qta_residua_nativa'];
         $qtaResidua  = (float)$r['qta_residua'];
         $uom         = e($r['uom_simbolo'] ?? '');
+        $uomStock    = e($r['uom_stock_simbolo'] ?? $uom);
         $percSpedita = $r['quantita_ordinata'] > 0
                          ? round(((float)$r['quantita_spedita'] / (float)$r['quantita_ordinata']) * 100)
                          : 0;
@@ -110,8 +123,9 @@ $totRighe = count($righe);
            data-riga-id="<?= $rigaId ?>"
            data-prodotto-id="<?= $prodId ?>"
            data-traccia-lotti="<?= $tracciaLotti ?>"
-           data-qta-residua="<?= $qtaResidua ?>"
+           data-qta-residua="<?= $tracciaLotti ? $qtaResidua : $qtaResiduaNativa ?>"
            data-uom="<?= $uom ?>"
+           data-uom-stock="<?= $uomStock ?>"
            data-stato="<?= $statoRiga ?>">
 
         <!-- Header riga -->
@@ -125,7 +139,7 @@ $totRighe = count($righe);
           </div>
           <div class="qk-pp-riga-residuo">
             <span class="qk-pp-residuo-label">Da spedire</span>
-            <span class="qk-pp-residuo-val"><?= $qtaResidua ?> <?= $uom ?></span>
+            <span class="qk-pp-residuo-val"><?= $qtaResiduaNativa ?> <?= $uom ?></span>
           </div>
         </div>
 
@@ -152,8 +166,8 @@ $totRighe = count($righe);
                 <input type="number"
                        name="quantita_no_lotto[<?= $rigaId ?>]"
                        class="qk-form-control"
-                       step="0.001" min="0" max="<?= $qtaResidua ?>"
-                       value="<?= $qtaResidua ?>">
+                       step="0.001" min="0" max="<?= $qtaResiduaNativa ?>"
+                       value="<?= $qtaResiduaNativa ?>">
                 <span class="qk-pp-uom"><?= $uom ?></span>
               </div>
             </div>
@@ -197,7 +211,7 @@ $totRighe = count($righe);
                       <?php endif; ?>
                     </span>
                     <span class="qk-pp-lotto-disp">
-                      <?= number_format((float)$lot['quantita_disponibile'], 3, ',', '.') ?> <?= $uom ?>
+                      <?= number_format((float)$lot['quantita_disponibile'], 3, ',', '.') ?> <?= $uomStock ?>
                     </span>
                     <span class="qk-pp-lotto-scad <?= !$lot['data_scadenza'] ? 'text-muted' : '' ?>">
                       <?= $lot['data_scadenza'] ? date('d/m/Y', strtotime($lot['data_scadenza'])) : '—' ?>
@@ -211,7 +225,7 @@ $totRighe = count($righe);
                              value="<?= number_format($assegna, 3, '.', '') ?>"
                              data-riga-id="<?= $rigaId ?>"
                              data-lotto-disp="<?= (float)$lot['quantita_disponibile'] ?>">
-                      <span class="qk-pp-uom"><?= $uom ?></span>
+                      <span class="qk-pp-uom"><?= $uomStock ?></span>
                     </div>
                     <button type="button"
                             class="btn-qk btn-qk-ghost btn-qk-xs qk-pp-btn-rimuovi"
@@ -225,7 +239,7 @@ $totRighe = count($righe);
                   <?php if ($rimasto > 0.0005): ?>
                   <div class="qk-pp-stock-alert partial" id="stock-alert-<?= $rigaId ?>">
                     <i class="fa-solid fa-triangle-exclamation"></i>
-                    Stock insufficiente: mancano <strong><?= number_format($rimasto, 3, ',', '.') ?> <?= $uom ?></strong>
+                    Stock insufficiente: mancano <strong><?= number_format($rimasto, 3, ',', '.') ?> <?= $uomStock ?></strong>
                   </div>
                   <?php endif; ?>
                 </div>
@@ -236,7 +250,7 @@ $totRighe = count($righe);
                           class="btn-qk btn-qk-ghost btn-qk-sm qk-pp-btn-aggiungi"
                           data-riga-id="<?= $rigaId ?>"
                           data-prodotto-id="<?= $prodId ?>"
-                          data-uom="<?= $uom ?>">
+                          data-uom="<?= $uomStock ?>">
                     <i class="fa-solid fa-plus me-1"></i> Aggiungi lotto
                   </button>
                   <div class="qk-pp-totale" id="pp-tot-<?= $rigaId ?>">
@@ -255,7 +269,7 @@ $totRighe = count($righe);
                         echo number_format($totAssegnato, 3, ',', '.');
                       ?>
                     </strong>
-                    / <?= $qtaResidua ?> <?= $uom ?>
+                    / <?= $qtaResidua ?> <?= $uomStock ?>
                   </div>
                 </div>
 

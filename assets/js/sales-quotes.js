@@ -1340,10 +1340,11 @@ document.addEventListener('DOMContentLoaded', function () {
       : (tr.dataset.uomCommercialId || tr.dataset.uomStockId || '');
 
     try {
-      const res = await fetch(`${BASE}/sales/pricelists/api/ottieni-prezzo?prodotto_id=${prodottoId}&listino_id=${listinoId || ''}&cliente_id=${clienteId}&quantita=${qty}&unita_misura_id=${unitaMisuraRichiestaId}`);
-      const data = await res.json();
-      
-      if (data.ok) {
+      const data = await qkFetchPrezzoSuggerito({
+        prodottoId, listinoId, clienteId, quantita: qty, unitaMisuraId: unitaMisuraRichiestaId,
+      });
+
+      if (data && data.ok) {
         let computedPrice = parseFloat(data.prezzo_unitario) || 0;
         
         const qFactor = parseFloat(tr.dataset.quantitaContenuto) || 1;
@@ -1380,7 +1381,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       const badge = tr.querySelector('.price-origin-badge');
-      if (badge && data.origine) {
+      if (badge && data && data.origine) {
         let iconHtml = '';
         if (data.origine === 'dedicato') {
           iconHtml = `<i class="fa-solid fa-tag" style="color:var(--qk-accent)" title="${data.prezzo_sorgente}"></i>`;

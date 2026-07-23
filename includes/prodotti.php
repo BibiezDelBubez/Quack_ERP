@@ -1710,3 +1710,14 @@ function qk_duplicate_prodotto(PDO $pdo, int $id): int {
         throw $e;
     }
 }
+
+/**
+ * Restituisce sku_interno e unita_misura_stock_id di un prodotto dato l'ID
+ */
+function qk_get_prodotto_stock_info(PDO $pdo, int $id): ?array
+{
+    $st = $pdo->prepare("SELECT sku_interno, unita_misura_stock_id FROM prodotti WHERE id = ?");
+    $st->execute([$id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}

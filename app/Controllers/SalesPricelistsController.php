@@ -6,6 +6,7 @@ declare(strict_types=1);
 // convertire la quantità richiesta in Stock UoM prima di interrogare il motore di prezzo.
 require_once __DIR__ . '/../../includes/prodotti.php';
 require_once __DIR__ . '/../../includes/pricing.php';
+require_once __DIR__ . '/../../includes/pricelists.php';
 
 /**
  * SalesPricelistsController — Gestione Listini Vendita.
@@ -24,29 +25,23 @@ final class SalesPricelistsController extends BaseController
         $search = get_param('q');
         $filtro_attivo = get_param('attivo'); // '' | '1' | '0'
 
-        $sql = "SELECT l.*,
-                       (SELECT COUNT(*) FROM listini_prezzi lp WHERE lp.listino_id = l.id) AS nr_articoli
-                FROM listini l
-                WHERE 1=1";
-
+        $where = ["1=1"];
         $params = [];
         if ($search) {
-            $sql .= " AND (l.nome LIKE :q OR l.descrizione LIKE :q)";
+            $where[] = "(l.nome LIKE :q OR l.descrizione LIKE :q)";
             $params[':q'] = '%' . $search . '%';
         }
         if ($filtro_attivo !== '' && $filtro_attivo !== null) {
-            $sql .= " AND l.attivo = :attivo";
+            $where[] = "l.attivo = :attivo";
             $params[':attivo'] = (int)$filtro_attivo;
         }
 
         $sortMap = ['nome' => 'l.nome', 'valuta' => 'l.valuta', 'dal' => 'l.valido_dal', 'al' => 'l.valido_al', 'articoli' => 'nr_articoli'];
         $pag = qk_pagination_params(array_keys($sortMap), 'nome', 'asc');
         $orderCol = $sortMap[$pag['sort']] ?? 'l.nome';
-        $sql .= " ORDER BY " . $orderCol . " " . ($pag['dir'] === 'asc' ? 'ASC' : 'DESC');
+        $sqlWhere = implode(' AND ', $where);
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        $pricelists = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $pricelists = qk_listini_list_with_count($this->pdo, $sqlWhere, $params, $orderCol, $pag['dir'] === 'asc' ? 'ASC' : 'DESC');
 
         // Calcola lo stato effettivo di ciascun listino nel controller
         $oggi = date('Y-m-d');
@@ -161,9 +156,7 @@ final class SalesPricelistsController extends BaseController
             redirect_with('sales/pricelists', 'danger', 'Nessun listino specificato.');
         }
 
-        $stmt = $this->pdo->prepare("SELECT * FROM listini WHERE id = :id");
-        $stmt->execute([':id' => $id]);
-        $pricelist = $stmt->fetch(PDO::FETCH_ASSOC);
+        $pricelist = qk_get_listino($this->pdo, $id);
 
         if (!$pricelist) {
             redirect_with('sales/pricelists', 'danger', 'Listino non trovato.');
@@ -249,55 +242,11 @@ final class SalesPricelistsController extends BaseController
         ];
         $orderByCol = $sortColMap[$sort] ?? 'p.nome';
 
-        // Count per la paginazione
-        $stmtCount = $this->pdo->prepare("SELECT COUNT(*) FROM listini_prezzi lp WHERE lp.listino_id = :lid");
-        $stmtCount->execute([':lid' => $id]);
-        $total = (int)$stmtCount->fetchColumn();
+        $total = qk_listino_prezzi_count($this->pdo, $id);
         $pages = (int)ceil($total / $limit);
 
-        // Righe prodotto (con UoM nativa del prezzo o fallback UoM stock)
-        $stmtItems = $this->pdo->prepare(
-            "SELECT lp.*, 
-                    p.nome AS prodotto_nome, p.sku_interno, 
-                    p.unita_misura_stock_id AS p_um_stock_id, 
-                    p.unita_contenuto_id AS p_um_comm_id, 
-                    p.quantita_contenuto AS p_factor,
-                    um_stock.codice AS um_stock_code,
-                    um_comm.codice AS um_comm_code,
-                    um_native.codice AS um_native_code,
-                    COALESCE(um_native.codice, um_stock.codice) AS unita_misura,
-                    -- Fix 'Listino Fantasma' (audit/MASTER_AUDIT_REPORT.md) —
-                    -- vedi commento esteso in db/init_sqlite.sql §14b.
-                    (SELECT MIN(vf.prezzo)
-                     FROM v_prezzo_acquisto_base_fornitore vf
-                     JOIN prodotti_fornitori pf2 ON pf2.id = vf.prodotto_fornitore_id
-                     WHERE pf2.prodotto_id = lp.prodotto_id AND pf2.attivo = 1) AS costo
-             FROM listini_prezzi lp
-             JOIN prodotti p ON p.id = lp.prodotto_id
-             LEFT JOIN unita_misura um_stock ON um_stock.id = p.unita_misura_stock_id
-             LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
-             LEFT JOIN unita_misura um_native ON um_native.id = lp.unita_misura_id
-             WHERE lp.listino_id = :lid
-             ORDER BY $orderByCol $dir, lp.quantita_minima ASC
-             LIMIT :limit OFFSET :offset"
-        );
-        $stmtItems->bindValue(':lid', $id, PDO::PARAM_INT);
-        $stmtItems->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmtItems->bindValue(':offset', $offset, PDO::PARAM_INT);
-        $stmtItems->execute();
-        $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-
-        // Clienti che usano questo listino come default
-        $stmtClienti = $this->pdo->prepare(
-            "SELECT cf.id,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS nome_cliente
-             FROM dettagli_clienti dc
-             JOIN clienti_fornitori cf ON cf.id = dc.soggetto_id
-             WHERE dc.listino_id = :lid
-             ORDER BY nome_cliente ASC"
-        );
-        $stmtClienti->execute([':lid' => $id]);
-        $clienti_assegnati = $stmtClienti->fetchAll(PDO::FETCH_ASSOC);
+        $items = qk_get_listino_items($this->pdo, $id, $orderByCol, $dir, $limit, $offset);
+        $clienti_assegnati = qk_get_clienti_assegnati_listino($this->pdo, $id);
 
         $this->page(APP_ROOT_DIR . '/app/views/sales/pricelists_form.php', [
             'page_title'    => 'Modifica listino vendita',
@@ -338,19 +287,10 @@ final class SalesPricelistsController extends BaseController
             redirect_with('sales/pricelists', 'danger', 'ID non valido.');
         }
 
-        // Verifica che non sia usato in preventivi aperti
-        $stmtCheck = $this->pdo->prepare(
-            "SELECT COUNT(*) FROM preventivi WHERE listino_id = :id AND stato NOT IN ('annullato','rifiutato')"
-        );
-        $stmtCheck->execute([':id' => $id]);
-        $usatoInPreventivi = (int)$stmtCheck->fetchColumn();
-
-        if ($usatoInPreventivi > 0) {
-            redirect_with('sales/pricelists', 'danger', "Impossibile eliminare: il listino è usato in $usatoInPreventivi preventivo/i attivi.");
-        }
-
         try {
-            $this->pdo->prepare("DELETE FROM listini WHERE id = :id")->execute([':id' => $id]);
+            if (!qk_listino_delete($this->pdo, $id)) {
+                redirect_with('sales/pricelists', 'danger', "Impossibile eliminare: il listino è in uso.");
+            }
             redirect_with('sales/pricelists', 'success', 'Listino eliminato.');
         } catch (Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
@@ -384,9 +324,7 @@ final class SalesPricelistsController extends BaseController
         }
 
         // Verifica listino esiste
-        $stmtL = $this->pdo->prepare("SELECT id FROM listini WHERE id = :id");
-        $stmtL->execute([':id' => $listinoId]);
-        if (!$stmtL->fetch()) {
+        if (!qk_get_listino($this->pdo, $listinoId)) {
             echo json_encode(['ok' => false, 'error' => 'Listino non trovato.']);
             exit;
         }
@@ -547,7 +485,7 @@ final class SalesPricelistsController extends BaseController
         }
 
         try {
-            $this->pdo->prepare("DELETE FROM listini_prezzi WHERE id = :id")->execute([':id' => $rigaId]);
+            qk_listino_riga_delete($this->pdo, $rigaId);
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
             echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
@@ -861,9 +799,7 @@ final class SalesPricelistsController extends BaseController
         }
 
         // Verifica listino
-        $stmtL = $this->pdo->prepare("SELECT id FROM listini WHERE id = :id");
-        $stmtL->execute([':id' => $listinoId]);
-        if (!$stmtL->fetch()) {
+        if (!qk_get_listino($this->pdo, $listinoId)) {
             echo json_encode(['ok' => false, 'error' => 'Listino non trovato.']); exit;
         }
 

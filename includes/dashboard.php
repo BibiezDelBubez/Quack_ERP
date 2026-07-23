@@ -66,7 +66,7 @@ function get_kpi_acquisti_in_arrivo(PDO $pdo): int
 function get_kpi_fatturato_mese(PDO $pdo, string $mese_yyyy_mm): float
 {
     $stKpi5 = $pdo->prepare("
-        SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario), 0.0)
+        SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario * (1 - r.sconto_perc/100.0)), 0.0)
         FROM ordini_clienti_righe r
         JOIN ordini_clienti o ON o.id = r.ordine_id
         WHERE o.stato != 'annullato' AND o.data_ordine LIKE ?
@@ -85,7 +85,7 @@ function get_dashboard_recent_sales_orders(PDO $pdo, int $limit = 5): array
     $stmtSO = $pdo->prepare(
         "SELECT o.id, o.numero_ordine, o.stato, o.data_ordine,
                 COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                (SELECT COALESCE(SUM(quantita_ordinata * prezzo_unitario), 0.0) FROM ordini_clienti_righe WHERE ordine_id = o.id) AS totale
+                (SELECT COALESCE(SUM(quantita_ordinata * prezzo_unitario * (1 - sconto_perc/100.0)), 0.0) FROM ordini_clienti_righe WHERE ordine_id = o.id) AS totale
          FROM ordini_clienti o
          JOIN clienti_fornitori cf ON cf.id = o.cliente_id
          ORDER BY o.created_at DESC

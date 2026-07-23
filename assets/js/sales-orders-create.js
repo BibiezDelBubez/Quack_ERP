@@ -396,18 +396,19 @@ async function fetchOrdinePrice(tr, item) {
   if (!clienteId || !item.id) return;
   const listinoId = document.getElementById('ord-listino-id')?.value || '';
   try {
-    const data = await apiFetch('/sales/pricelists/api/ottieni-prezzo', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'csrf_token=' + encodeURIComponent(CSRF) + '&cliente_id=' + clienteId + '&prodotto_id=' + item.id + '&listino_id=' + listinoId + '&qta=1',
-    });
-    if (data && data.prezzo !== undefined && data.prezzo !== null) {
+    // AUDIT 3 §1.2: prima mandava i parametri via POST body a un endpoint che
+    // legge solo GET (quindi non arrivava mai nulla), con anche un nome
+    // parametro sbagliato (qta invece di quantita) e una chiave di risposta
+    // sbagliata (prezzo invece di prezzo_unitario) — tre bug indipendenti
+    // sullo stesso percorso. Ora usa la stessa funzione condivisa e corretta
+    // già usata dal form preventivi (pricing-widget.js).
+    const data = await qkFetchPrezzoSuggerito({ prodottoId: item.id, listinoId, clienteId, quantita: 1 });
+    if (data && data.ok && data.prezzo_unitario !== undefined && data.prezzo_unitario !== null) {
       const puInput = tr.querySelector('.ord-inp-pu');
       const badge   = tr.querySelector('.ord-price-badge');
       if (puInput && !puInput.value) {
-        puInput.value = data.prezzo;
-        if (badge) { badge.innerHTML = '<i class="fa-solid fa-tag" style="color:var(--qk-success)"></i>'; badge.title = 'Da listino'; }
+        puInput.value = data.prezzo_unitario;
+        if (badge) { badge.innerHTML = '<i class="fa-solid fa-tag" style="color:var(--qk-success)"></i>'; badge.title = data.prezzo_sorgente || 'Da listino'; }
         calcTotali();
       }
     }

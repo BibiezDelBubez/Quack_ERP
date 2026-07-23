@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/sales_quotes.php';
 require_once INCLUDES_DIR . '/tabelle_base.php';
+require_once INCLUDES_DIR . '/compliance.php';
 
 final class SalesQuotesController extends BaseController
 {
@@ -34,26 +35,8 @@ final class SalesQuotesController extends BaseController
 
         $whereStr = implode(' AND ', $where);
 
-        $stCount = $this->pdo->prepare("SELECT COUNT(*) FROM preventivi o JOIN clienti_fornitori cf ON cf.id = o.cliente_id WHERE $whereStr");
-        $stCount->execute($params);
-        $total = (int) $stCount->fetchColumn();
-
-        $params[':limit']  = $pag['limit'];
-        $params[':offset'] = $pag['offset'];
-        $stmt = $this->pdo->prepare(
-            "SELECT o.id, o.numero_preventivo, o.stato, o.data_offerta, o.data_scadenza,
-                    o.imponibile, o.totale, o.note_cliente, o.riferimento_interno,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                    cv.nome AS canale_vendita
-             FROM preventivi o
-             JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-             LEFT JOIN canali_vendita cv ON cv.id = o.canale_vendita_id
-             WHERE $whereStr
-             ORDER BY $orderCol $orderDir, o.id DESC
-             LIMIT :limit OFFSET :offset"
-        );
-        $stmt->execute($params);
-        $offers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $total  = qk_preventivi_count($this->pdo, $whereStr, $params);
+        $offers = qk_preventivi_list($this->pdo, $whereStr, $params, $orderCol, $orderDir, (int)$pag['limit'], (int)$pag['offset']);
 
         $active_tab    = 'quotes';
         $page_title    = 'Preventivi';
@@ -85,59 +68,24 @@ final class SalesQuotesController extends BaseController
                 $errors = qk_offerta_validate($values, $righe);
 
                 if (empty($errors)) {
-                    // Compliance checks
-                    require_once INCLUDES_DIR . '/compliance.php';
-                    $violations = qk_compliance_check_sale($this->pdo, (int)$values['cliente_id'], $righe);
-                    
-                    $is_bozza = ($values['stato'] ?? 'bozza') === 'bozza';
-                    
-                    if (!empty($violations)) {
-                        $violation_msgs = [];
-                        foreach ($violations as $v) {
-                            $violation_msgs[] = $v['message'];
-                        }
-                        
-                        if ($is_bozza) {
-                            flash_set('warning', "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs));
-                        } else {
-                            $customer_url = url('customers/edit?id=' . $values['cliente_id']);
-                            $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='alert-link' style='color:#721c24;font-weight:bold;text-decoration:underline;'>Gestisci autorizzazioni cliente →</a>";
-                        }
+                    // Compliance checks (Audit 2, V4 — estratto in un metodo condiviso, era
+                    // duplicato carattere per carattere anche in edit() poco più sotto in
+                    // questo stesso file; vedi checkComplianceOrWarn())
+                    $complianceError = $this->checkComplianceOrWarn($values, $righe);
+                    if ($complianceError !== null) {
+                        $errors['_global'] = $complianceError;
                     }
 
                     if (empty($errors)) {
                         try {
                             $user_id = (int) (current_user()['id'] ?? 0);
-                            
-                            if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
-                                $newAddrId = qk_insert_indirizzo($this->pdo, (int)$values['cliente_id'], [
-                                    'tipo' => 'spedizione',
-                                    'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
-                                    'predefinito' => false,
-                                    'referente_consegna' => $values['consegna_referente'],
-                                    'telefono_consegna' => $values['consegna_telefono'],
-                                    'presso' => $values['consegna_presso'],
-                                    'via' => $values['consegna_via'],
-                                    'civico' => $values['consegna_civico'],
-                                    'cap' => $values['consegna_cap'],
-                                    'citta' => $values['consegna_citta'],
-                                    'provincia' => $values['consegna_provincia'],
-                                    'nazione' => $values['consegna_nazione'] ?: 'IT',
-                                    'note_consegna' => $values['consegna_note'],
-                                ]);
-                                $values['indirizzo_spedizione_id'] = $newAddrId;
-                            }
-                            if ($values['indirizzo_spedizione_id'] === 'custom' || !is_numeric($values['indirizzo_spedizione_id'])) {
-                                $values['indirizzo_spedizione_id'] = '';
-                            }
+
+                            // Audit 2, V4 — stesso motivo del compliance check sopra, vedi
+                            // maybeCreateOneTimeAddress().
+                            $this->maybeCreateOneTimeAddress($values);
 
                             $id      = qk_insert_offerta($this->pdo, $values, $righe, $user_id);
-                            
-                            // If order was generated / accepted, we log compliance transactions if any
-                            if (($values['stato'] ?? '') === 'accettato') {
-                                qk_compliance_log_transactions($this->pdo, $id, $righe);
-                            }
-                            
+
                             redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' salvato correttamente.');
                         } catch (Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
@@ -168,6 +116,7 @@ final class SalesQuotesController extends BaseController
         }
         
         $listini = qk_get_listini_vendita_attivi($this->pdo);
+        $canali  = qk_get_canali_vendita_attivi($this->pdo);
 
         $active_tab    = 'quotes';
         $page_title    = 'Nuovo preventivo';
@@ -184,6 +133,7 @@ final class SalesQuotesController extends BaseController
             'numero_offerta' => $numero_offerta,
             'aziende' => $aziende,
             'listini' => $listini,
+            'canali' => $canali,
             'active_tab' => $active_tab,
             'page_title' => $page_title,
             'page_subtitle' => $page_subtitle,
@@ -207,9 +157,7 @@ final class SalesQuotesController extends BaseController
         }
 
         // Get linked order if accepted
-        $stOrder = $this->pdo->prepare("SELECT id, numero_ordine FROM ordini_clienti WHERE preventivo_id = ? LIMIT 1");
-        $stOrder->execute([$id]);
-        $linkedOrder = $stOrder->fetch(PDO::FETCH_ASSOC) ?: null;
+        $linkedOrder = qk_get_ordine_da_preventivo($this->pdo, $id);
 
         $errors = [];
         $values = $this->mapDetailToValues($detail['offerta']);
@@ -229,58 +177,22 @@ final class SalesQuotesController extends BaseController
                 $errors = qk_offerta_validate($values, $righe);
 
                 if (empty($errors)) {
-                    // Compliance checks
-                    require_once INCLUDES_DIR . '/compliance.php';
-                    $violations = qk_compliance_check_sale($this->pdo, (int)$values['cliente_id'], $righe);
-                    
-                    $is_bozza = ($values['stato'] ?? 'bozza') === 'bozza';
-                    
-                    if (!empty($violations)) {
-                        $violation_msgs = [];
-                        foreach ($violations as $v) {
-                            $violation_msgs[] = $v['message'];
-                        }
-                        
-                        if ($is_bozza) {
-                            flash_set('warning', "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs));
-                        } else {
-                            $customer_url = url('customers/edit?id=' . $values['cliente_id']);
-                            $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='alert-link' style='color:#721c24;font-weight:bold;text-decoration:underline;'>Gestisci autorizzazioni cliente →</a>";
-                        }
+                    // Compliance checks (Audit 2, V4 — vedi checkComplianceOrWarn(), stesso
+                    // metodo condiviso usato in create())
+                    $complianceError = $this->checkComplianceOrWarn($values, $righe);
+                    if ($complianceError !== null) {
+                        $errors['_global'] = $complianceError;
                     }
 
                     if (empty($errors)) {
                         try {
                             $user_id = (int) (current_user()['id'] ?? 0);
-                            
-                            if (!empty($values['salva_in_anagrafica_indirizzo']) && !empty($values['cliente_id']) && !empty($values['consegna_via'])) {
-                                $newAddrId = qk_insert_indirizzo($this->pdo, (int)$values['cliente_id'], [
-                                    'tipo' => 'spedizione',
-                                    'nome_sede' => $values['consegna_nome_sede'] ?: 'Spedizione ' . date('d/m/Y'),
-                                    'predefinito' => false,
-                                    'referente_consegna' => $values['consegna_referente'],
-                                    'telefono_consegna' => $values['consegna_telefono'],
-                                    'presso' => $values['consegna_presso'],
-                                    'via' => $values['consegna_via'],
-                                    'civico' => $values['consegna_civico'],
-                                    'cap' => $values['consegna_cap'],
-                                    'citta' => $values['consegna_citta'],
-                                    'provincia' => $values['consegna_provincia'],
-                                    'nazione' => $values['consegna_nazione'] ?: 'IT',
-                                    'note_consegna' => $values['consegna_note'],
-                                ]);
-                                $values['indirizzo_spedizione_id'] = $newAddrId;
-                            }
-                            if ($values['indirizzo_spedizione_id'] === 'custom' || !is_numeric($values['indirizzo_spedizione_id'])) {
-                                $values['indirizzo_spedizione_id'] = '';
-                            }
+
+                            // Audit 2, V4 — vedi maybeCreateOneTimeAddress()
+                            $this->maybeCreateOneTimeAddress($values);
 
                             qk_update_offerta($this->pdo, $id, $values, $righe, $user_id);
-                            
-                            if (($values['stato'] ?? '') === 'accettato') {
-                                qk_compliance_log_transactions($this->pdo, $id, $righe);
-                            }
-                            
+
                             redirect_with('sales/quotes', 'success', 'Preventivo ' . e($values['numero_offerta']) . ' modificato correttamente.');
                         } catch (Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
@@ -294,6 +206,7 @@ final class SalesQuotesController extends BaseController
         $numero_offerta = $values['numero_offerta'];
         
         $listini = qk_get_listini_vendita_attivi($this->pdo);
+        $canali  = qk_get_canali_vendita_attivi($this->pdo);
 
         $aziende = qk_aziende_list($this->pdo);
 
@@ -315,6 +228,7 @@ final class SalesQuotesController extends BaseController
             'preloadedRighe' => $preloadedRighe,
             'numero_offerta' => $numero_offerta,
             'listini' => $listini,
+            'canali' => $canali,
             'aziende' => $aziende,
             'active_tab' => $active_tab,
             'page_title' => $page_title,
@@ -381,14 +295,54 @@ final class SalesQuotesController extends BaseController
         }
     }
 
+    /**
+     * Esegue il controllo compliance sulle righe di un preventivo. Se ci sono
+     * violazioni e il documento è ancora in bozza, mostra solo un avviso
+     * (flash warning) e ritorna null (non blocca). Se non è in bozza, ritorna
+     * il messaggio di errore da mettere in $errors['_global'] (blocca il
+     * salvataggio). Nessuna violazione -> ritorna null.
+     *
+     * Estratto (Audit 2, V4) da create()/edit(), dove questo identico blocco
+     * di 19 righe era duplicato carattere per carattere.
+     */
+    private function checkComplianceOrWarn(array $values, array $righe): ?string
+    {
+        $violations = qk_compliance_check_sale($this->pdo, (int)$values['cliente_id'], $righe);
+        if (empty($violations)) {
+            return null;
+        }
+
+        $violation_msgs = [];
+        foreach ($violations as $v) {
+            $violation_msgs[] = $v['message'];
+        }
+
+        $is_bozza = ($values['stato'] ?? 'bozza') === 'bozza';
+        if ($is_bozza) {
+            flash_set('warning', "Attenzione! Rilevate violazioni di compliance: " . implode(" | ", $violation_msgs));
+            return null;
+        }
+
+        $customer_url = url('customers/edit?id=' . $values['cliente_id']);
+        return "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='qk-alert-link'>Gestisci autorizzazioni cliente →</a>";
+    }
+
+    /**
+     * Se l'operatore ha spuntato "salva in anagrafica" sull'indirizzo una
+     * tantum, crea il nuovo indirizzo e aggiorna $values['indirizzo_spedizione_id']
+     * per riferimento. Normalizza anche il caso "custom"/non numerico a
+     * stringa vuota.
+     *
+     * Estratto (Audit 2, V4) da create()/edit(), stesso blocco duplicato.
+     */
+    private function maybeCreateOneTimeAddress(array &$values): void
+    {
+        qk_maybe_create_one_time_address($this->pdo, $values);
+    }
+
     private function mapDetailToValues(array $quote): array
     {
-        $canale_codice = 'email_diretta';
-        if (!empty($quote['canale_vendita_id'])) {
-            $stCv = $this->pdo->prepare('SELECT codice FROM canali_vendita WHERE id = ?');
-            $stCv->execute([$quote['canale_vendita_id']]);
-            $canale_codice = $stCv->fetchColumn() ?: 'email_diretta';
-        }
+        $canale_codice = !empty($quote['canale_vendita_id']) ? (qk_get_canale_vendita_codice($this->pdo, (int)$quote['canale_vendita_id']) ?: 'email_diretta') : 'email_diretta';
 
         return [
             'numero_offerta'          => $quote['numero_preventivo'] ?? '',
@@ -485,12 +439,12 @@ final class SalesQuotesController extends BaseController
 
         try {
             $id = qk_crea_cliente_rapido($this->pdo, [
-                'tipo_soggetto'  => $ts,
+                'tipo_soggetto'   => $ts,
                 'ragione_sociale' => $rs,
-                'nome'           => $nm,
-                'cognome'        => $cog,
-                'email'          => $email,
-                'telefono'       => $tel,
+                'nome'            => $nm,
+                'cognome'         => $cog,
+                'email'           => $email,
+                'telefono'        => $tel,
             ]);
             echo json_encode([
                 'success'  => true,
@@ -535,13 +489,8 @@ final class SalesQuotesController extends BaseController
 
         try {
             $id  = qk_crea_prodotto_rapido($this->pdo, ['nome' => $nome, 'sku_interno' => $sku, 'unita_misura' => $um]);
-            $row = $this->pdo->prepare('SELECT sku_interno, unita_misura_stock_id FROM prodotti WHERE id = :id');
-            $row->execute([':id' => $id]);
-            $prod = $row->fetch(PDO::FETCH_ASSOC);
-            
-            $stUm = $this->pdo->prepare('SELECT codice FROM unita_misura WHERE id = ?');
-            $stUm->execute([$prod['unita_misura_stock_id']]);
-            $um_codice = $stUm->fetchColumn() ?: 'pz';
+            $prod = qk_get_prodotto_stock_info($this->pdo, $id);
+            $um_codice = !empty($prod['unita_misura_stock_id']) ? (qk_get_unita_misura_codice($this->pdo, (int)$prod['unita_misura_stock_id']) ?: 'pz') : 'pz';
 
             echo json_encode([
                 'success'      => true,
@@ -567,40 +516,10 @@ final class SalesQuotesController extends BaseController
         $indirizzi = [];
         
         if ($cliente_id > 0) {
-            $stmtCli = $this->pdo->prepare(
-                "SELECT cf.id, cf.email, cf.telefono, cf.cellulare, dc.condizioni_pagamento, dc.listino_id,
-                        l.nome AS listino_nome, l.valuta AS listino_valuta
-                   FROM clienti_fornitori cf
-              LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
-              LEFT JOIN listini l ON l.id = dc.listino_id
-                  WHERE cf.id = ? AND cf.attivo = 1"
-            );
-            $stmtCli->execute([$cliente_id]);
-            $cliente = $stmtCli->fetch(PDO::FETCH_ASSOC);
-            
+            $cliente = qk_get_cliente_dettagli_per_preventivo($this->pdo, $cliente_id);
             if ($cliente) {
-                // Fetch contacts
-                $stmtContatti = $this->pdo->prepare(
-                    "SELECT id, COALESCE(nome || ' ' || COALESCE(cognome, ''), ragione_sociale) AS nome_completo,
-                            email, telefono, cellulare
-                       FROM clienti_fornitori
-                      WHERE parent_id = ? AND attivo = 1
-                      ORDER BY nome, cognome"
-                );
-                $stmtContatti->execute([$cliente_id]);
-                $contatti = $stmtContatti->fetchAll(PDO::FETCH_ASSOC);
-                
-                // Fetch addresses
-                $stmtAddr = $this->pdo->prepare(
-                    "SELECT id, tipo, nome_sede, predefinito, via, civico, cap, citta, provincia, nazione,
-                            referente_consegna, telefono_consegna, note_consegna, presso
-                       FROM indirizzi
-                      WHERE soggetto_id = ? AND attivo = 1
-                      ORDER BY CASE tipo WHEN 'spedizione' THEN 1 WHEN 'principale' THEN 2 ELSE 3 END,
-                               predefinito DESC, id ASC"
-                );
-                $stmtAddr->execute([$cliente_id]);
-                $indirizzi = $stmtAddr->fetchAll(PDO::FETCH_ASSOC);
+                $contatti  = qk_get_contatti_cliente($this->pdo, $cliente_id);
+                $indirizzi = qk_get_indirizzi_cliente($this->pdo, $cliente_id);
             }
         }
         
@@ -732,6 +651,12 @@ final class SalesQuotesController extends BaseController
         ob_start();
         header('Content-Type: application/json');
         
+        if (!csrf_verify()) {
+            ob_end_clean();
+            echo json_encode(['ok' => false, 'error' => 'CSRF token non valido.']);
+            exit;
+        }
+
         $customer_id = (int) post('cliente_id', '0');
         $product_id = (int) post('prodotto_id', '0');
         
@@ -742,7 +667,6 @@ final class SalesQuotesController extends BaseController
         }
 
         try {
-            require_once INCLUDES_DIR . '/compliance.php';
             $violations = qk_compliance_check_sale($this->pdo, $customer_id, [['prodotto_id' => $product_id]]);
             ob_end_clean();
             if (empty($violations)) {
@@ -757,16 +681,19 @@ final class SalesQuotesController extends BaseController
         exit;
     }
 
-    public function pdf(): void
+    /**
+     * Audit 2, V7 — dati comuni a pdf() e docx(): prima venivano recuperati e
+     * calcolati due volte in modo identico (stesso qk_get_offerta(), stesso
+     * qk_resolve_azienda_emittente_stampa(), stessa estrazione dei 4 totali
+     * da $quota). Qui viene estratta SOLO questa parte, non il rendering
+     * (HTML per mPDF vs chiamate PhpWord), che resta separato perché usa due
+     * API completamente diverse e toccarlo è il pezzo a rischio più alto.
+     */
+    private function preparaDatiStampaOfferta(int $id): ?array
     {
-        $id = (int) get_param('id', '0');
-        if ($id <= 0) {
-            redirect(url('sales/quotes'));
-        }
-
         $detail = qk_get_offerta($this->pdo, $id);
         if (!$detail) {
-            redirect(url('sales/quotes'));
+            return null;
         }
 
         $quota = $detail['offerta'];
@@ -778,6 +705,36 @@ final class SalesQuotesController extends BaseController
         // rifare sempre una query dal vivo che cambierebbe l'intestazione
         // fiscale di un documento vecchio a ogni ristampa.
         $azienda = qk_resolve_azienda_emittente_stampa($this->pdo, $quota);
+
+        return [
+            'quota'               => $quota,
+            'righe'               => $righe,
+            'azienda'             => $azienda,
+            'imponibile'          => (float) $quota['imponibile'],
+            'totale_iva'          => (float) $quota['totale_iva'],
+            'totale'              => (float) $quota['totale'],
+            'sconto_globale_perc' => (float) $quota['sconto_globale_perc'],
+        ];
+    }
+
+    public function pdf(): void
+    {
+        $id = (int) get_param('id', '0');
+        if ($id <= 0) {
+            redirect(url('sales/quotes'));
+        }
+
+        $dati = $this->preparaDatiStampaOfferta($id);
+        if (!$dati) {
+            redirect(url('sales/quotes'));
+        }
+        $quota               = $dati['quota'];
+        $righe               = $dati['righe'];
+        $azienda             = $dati['azienda'];
+        $imponibile          = $dati['imponibile'];
+        $totale_iva          = $dati['totale_iva'];
+        $totale              = $dati['totale'];
+        $sconto_globale_perc = $dati['sconto_globale_perc'];
 
         // Genera il PDF
         $mpdf = new \Mpdf\Mpdf([
@@ -963,11 +920,6 @@ final class SalesQuotesController extends BaseController
             </tbody>
         </table>';
 
-        $imponibile = (float)$quota['imponibile'];
-        $totale_iva = (float)$quota['totale_iva'];
-        $totale = (float)$quota['totale'];
-        $sconto_globale_perc = (float)$quota['sconto_globale_perc'];
-
         $html .= '
         <table class="totals-table">
             <tr>
@@ -1066,6 +1018,10 @@ final class SalesQuotesController extends BaseController
         </div>';
 
         $mpdf->WriteHTML($html);
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
         $mpdf->Output('Preventivo_' . str_replace('/', '_', $quota['numero_preventivo']) . '.pdf', \Mpdf\Output\Destination::INLINE);
         exit;
     }
@@ -1077,18 +1033,17 @@ final class SalesQuotesController extends BaseController
             redirect(url('sales/quotes'));
         }
 
-        $detail = qk_get_offerta($this->pdo, $id);
-        if (!$detail) {
+        $dati = $this->preparaDatiStampaOfferta($id);
+        if (!$dati) {
             redirect(url('sales/quotes'));
         }
-
-        $quota = $detail['offerta'];
-        $righe = $detail['righe'];
-
-        // Recupera azienda interna emittente, rispettando l'integrità storica
-        // (Revisione §5.3.3 / doc "00" §3.3, fix 14/07/2026) — stessa
-        // funzione condivisa usata per il PDF, vedi commento lì.
-        $azienda = qk_resolve_azienda_emittente_stampa($this->pdo, $quota);
+        $quota               = $dati['quota'];
+        $righe               = $dati['righe'];
+        $azienda             = $dati['azienda'];
+        $imponibile          = $dati['imponibile'];
+        $totale_iva          = $dati['totale_iva'];
+        $totale              = $dati['totale'];
+        $sconto_globale_perc = $dati['sconto_globale_perc'];
 
         $wordHelper = new \Quack\WordHelper();
         $phpWord = $wordHelper->getPhpWord();
@@ -1197,10 +1152,6 @@ final class SalesQuotesController extends BaseController
         }
 
         $section->addTextBreak(1);
-        $imponibile = (float)$quota['imponibile'];
-        $totale_iva = (float)$quota['totale_iva'];
-        $totale = (float)$quota['totale'];
-        $sconto_globale_perc = (float)$quota['sconto_globale_perc'];
 
         $tableTotals = $section->addTable();
         $tableTotals->addRow();

@@ -5,6 +5,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../app/Repositories/ComplianceRepository.php';
+require_once __DIR__ . '/../app/Services/ComplianceCheckerService.php';
+
 /**
  * Checks if a sale is allowed for a customer and a list of items.
  *
@@ -24,9 +27,6 @@ declare(strict_types=1);
  */
 function qk_compliance_check_sale(PDO $pdo, int $customer_id, array $items): array
 {
-    require_once __DIR__ . '/../app/Repositories/ComplianceRepository.php';
-    require_once __DIR__ . '/../app/Services/ComplianceCheckerService.php';
-
     $repo = new \App\Repositories\ComplianceRepository($pdo);
     $service = new \App\Services\ComplianceCheckerService($repo);
 
@@ -38,9 +38,6 @@ function qk_compliance_check_sale(PDO $pdo, int $customer_id, array $items): arr
  */
 function qk_compliance_log_transactions(PDO $pdo, int $sale_id, array $items): void
 {
-    require_once __DIR__ . '/../app/Repositories/ComplianceRepository.php';
-    require_once __DIR__ . '/../app/Services/ComplianceCheckerService.php';
-
     $repo = new \App\Repositories\ComplianceRepository($pdo);
     $service = new \App\Services\ComplianceCheckerService($repo);
 

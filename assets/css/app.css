@@ -841,6 +841,7 @@ select.qk-form-control-xs { appearance: none; cursor: pointer; }
 .qk-alert-danger  { background: var(--qk-danger-bg);  color: var(--qk-danger);  border-color: var(--qk-danger); }
 .qk-alert-warning { background: var(--qk-warning-bg); color: var(--qk-warning); border-color: var(--qk-warning); }
 .qk-alert-info    { background: var(--qk-info-bg);    color: var(--qk-info);    border-color: var(--qk-info); }
+.qk-alert-link    { font-weight: 700; text-decoration: underline; color: inherit; }
 .qk-alert-close {
   margin-left: auto; background: none; border: none; cursor: pointer;
   color: currentColor; opacity: .6; font-size: .8rem; padding: 0; flex-shrink: 0;

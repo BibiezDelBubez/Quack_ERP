@@ -53,11 +53,14 @@ class OrderCalculatorService
             $contattoSnapshotId = qk_upsert_document_contact($this->pdo, $contPayload);
 
             // ── Inserimento testata ordine ───────────────────────────────────────
+            $magazzinoRiservaId = qk_magazzino_attivo_id($this->pdo);
+
             $orderData = array_merge($values, $denorm);
             $orderData['indirizzo_consegna_id'] = $indirizzoConsegnaId;
             $orderData['contatto_snapshot_id'] = $contattoSnapshotId;
             $orderData['creato_da'] = $userId;
-            
+            $orderData['magazzino_id'] = $magazzinoRiservaId;
+
             $ordineId = $this->repository->insertOrderHeader($orderData);
 
             // ── Inserimento righe ────────────────────────────────────────────────
@@ -107,7 +110,6 @@ class OrderCalculatorService
                 $this->repository->insertOrderLine($lineData);
 
                 if ($prodottoId) {
-                    $magazzinoRiservaId = qk_magazzino_attivo_id($this->pdo);
                     qk_riserva_stock_ordine($this->pdo, $prodottoId, $uomResult['quantita_stock'], $magazzinoRiservaId);
                 }
             }

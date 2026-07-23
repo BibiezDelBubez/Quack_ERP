@@ -5,15 +5,10 @@ declare(strict_types=1);
 require_once INCLUDES_DIR . '/sales_orders.php';
 require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/sales_quotes.php';
+require_once INCLUDES_DIR . '/compliance.php';
 
 final class SalesOrdersController extends BaseController
 {
-    /** Restituisce l'ID del listino marcato is_default=1, oppure null se non esiste. */
-    private function getDefaultListinoId(): ?int
-    {
-        $row = $this->pdo->query("SELECT id FROM listini WHERE is_default = 1 AND attivo = 1 LIMIT 1")->fetch();
-        return $row ? (int)$row['id'] : null;
-    }
 
     public function index(): void
     {
@@ -25,9 +20,7 @@ final class SalesOrdersController extends BaseController
 
         $customerName = '';
         if ($customerId) {
-            $cStmt = $this->pdo->prepare("SELECT COALESCE(ragione_sociale, TRIM(nome || ' ' || cognome)) FROM clienti_fornitori WHERE id = ?");
-            $cStmt->execute([$customerId]);
-            $customerName = $cStmt->fetchColumn() ?: '';
+            $customerName = qk_get_nome_soggetto_by_id($this->pdo, (int)$customerId) ?: '';
         }
 
         $sortWhitelist = ['numero', 'data', 'stato', 'cliente', 'consegna', 'totale'];
@@ -39,7 +32,7 @@ final class SalesOrdersController extends BaseController
             'stato'    => 'o.stato',
             'cliente'  => 'cf.ragione_sociale',
             'consegna' => 'o.data_consegna_prevista',
-            'totale'   => '(SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario),0) FROM ordini_clienti_righe r WHERE r.ordine_id = o.id)',
+            'totale'   => "(SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario * (1 - r.sconto_perc/100.0)),0) FROM ordini_clienti_righe r WHERE r.ordine_id = o.id)",
         ];
         $orderCol = $sortMap[$pag['sort']] ?? 'o.data_ordine';
 
@@ -56,26 +49,8 @@ final class SalesOrdersController extends BaseController
 
         $whereStr = implode(' AND ', $where);
 
-        $countStmt = $this->pdo->prepare(
-            "SELECT COUNT(*) FROM ordini_clienti o
-               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-              WHERE $whereStr"
-        );
-        $countStmt->execute($params);
-        $total = (int) $countStmt->fetchColumn();
-
-        $listStmt = $this->pdo->prepare(
-            "SELECT o.id, o.numero_ordine, o.data_ordine, o.data_consegna_prevista, o.stato,
-                    (SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario),0) FROM ordini_clienti_righe r WHERE r.ordine_id = o.id) AS totale,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome
-               FROM ordini_clienti o
-               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-              WHERE $whereStr
-              ORDER BY $orderCol {$pag['dir']}
-              LIMIT {$pag['limit']} OFFSET {$pag['offset']}"
-        );
-        $listStmt->execute($params);
-        $orders = $listStmt->fetchAll(PDO::FETCH_ASSOC);
+        $total  = qk_ordini_clienti_count($this->pdo, $whereStr, $params);
+        $orders = qk_ordini_clienti_list($this->pdo, $whereStr, $params, $orderCol, (string)$pag['dir'], (int)$pag['limit'], (int)$pag['offset']);
 
         $active_tab    = 'orders';
         $base          = url('sales/orders');
@@ -103,9 +78,31 @@ final class SalesOrdersController extends BaseController
                 $errors = qk_ordine_diretto_validate($values, $righe);
 
                 if (empty($errors)) {
+                    // Compliance checks (REVISIONE Ciclo Vendite §1.6/§3bis.O1): un
+                    // ordine diretto non passa mai da un preventivo, quindi senza
+                    // questo controllo il blocco compliance già applicato in
+                    // SalesQuotesController veniva completamente aggirato creando
+                    // l'ordine da qui invece che da un preventivo. Un ordine diretto
+                    // non ha un concetto di "bozza" (nasce già 'in_lavorazione' e
+                    // riserva stock subito): sempre bloccante, mai solo avviso.
+                    $violations = qk_compliance_check_sale($this->pdo, (int)$values['cliente_id'], $righe);
+                    if (!empty($violations)) {
+                        $violation_msgs = [];
+                        foreach ($violations as $v) {
+                            $violation_msgs[] = $v['message'];
+                        }
+                        $customer_url = url('customers/edit?id=' . $values['cliente_id']);
+                        $errors['_global'] = "Salvataggio bloccato per motivi di compliance. " . implode(" | ", $violation_msgs) . " <a href='{$customer_url}' class='qk-alert-link'>Gestisci autorizzazioni cliente →</a>";
+                    }
+                }
+
+                if (empty($errors)) {
                     try {
                         $userId   = (int)(current_user()['id'] ?? 0);
+                        // AUDIT 3 §2.2: checkbox già presente nel form, mai letta finora.
+                        qk_maybe_create_one_time_address($this->pdo, $values);
                         $ordineId = qk_insert_ordine_diretto($this->pdo, $values, $righe, $userId);
+                        qk_compliance_log_transactions($this->pdo, $ordineId, $righe);
                         flash_set('success', 'Ordine ' . e($values['numero_ordine']) . ' creato con successo!');
                         redirect(url('sales/orders/edit') . '?id=' . $ordineId);
                     } catch (\Throwable $e) {
@@ -117,13 +114,28 @@ final class SalesOrdersController extends BaseController
         }
 
         $numero_ordine = $values['numero_ordine'] ?: qk_next_numero_ordine_diretto($this->pdo);
-        $stAz    = $this->pdo->query(
-            "SELECT ai.id, COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS ragione_sociale
-               FROM aziende_interne ai
-               JOIN clienti_fornitori cf ON cf.id = ai.soggetto_id
-              ORDER BY 2"
-        );
-        $aziende = $stAz ? $stAz->fetchAll(PDO::FETCH_ASSOC) : [];
+
+        // AUDIT 3 §2.1: stessa logica a 3 livelli già usata da SalesQuotesController::create()
+        // (sessione -> predefinita -> prima della lista) invece di lasciare il campo vuoto,
+        // che faceva selezionare al browser semplicemente la prima voce alfabetica — rischio
+        // concreto di congelare sull'ordine i dati fiscali dell'azienda sbagliata.
+        $aziende = qk_aziende_list($this->pdo);
+        $defaultAziendaId = isset($_SESSION['azienda_attiva_id']) ? (string)$_SESSION['azienda_attiva_id'] : '';
+        if ($defaultAziendaId === '') {
+            foreach ($aziende as $az) {
+                if ($az['predefinita'] == 1) {
+                    $defaultAziendaId = (string)$az['id'];
+                    break;
+                }
+            }
+        }
+        if ($defaultAziendaId === '' && !empty($aziende)) {
+            $defaultAziendaId = (string)$aziende[0]['id'];
+        }
+        if (empty($values['azienda_interna_id'])) {
+            $values['azienda_interna_id'] = $defaultAziendaId;
+        }
+
         $listini = qk_get_listini_vendita_attivi($this->pdo);
 
         $active_tab    = 'orders';
@@ -152,7 +164,7 @@ final class SalesOrdersController extends BaseController
             'condizioni_pagamento'    => '',
             'trasporto'               => 'Franco destino',
             'valuta'                  => 'EUR',
-            'listino_id'              => $this->getDefaultListinoId() ?? '', // listino marcato is_default=1
+            'listino_id'              => qk_get_listino_default_id($this->pdo) ?? '', // listino marcato is_default=1
             'note'                    => '',
             'indirizzo_spedizione_id' => '',
             'consegna_via'            => '',
@@ -188,7 +200,7 @@ final class SalesOrdersController extends BaseController
             'condizioni_pagamento'    => $s('condizioni_pagamento'),
             'trasporto'               => $s('trasporto'),
             'valuta'                  => $s('valuta', 'EUR'),
-            'listino_id'              => $s('listino_id', (string)($this->getDefaultListinoId() ?? '')),
+            'listino_id'              => $s('listino_id', (string)(qk_get_listino_default_id($this->pdo) ?? '')),
             'note'                    => $s('note'),
             'indirizzo_spedizione_id' => $s('indirizzo_spedizione_id'),
             'consegna_via'            => $s('consegna_via'),
@@ -207,6 +219,7 @@ final class SalesOrdersController extends BaseController
             'contatto_telefono'       => $s('contatto_telefono'),
             'uom_mode'                => $s('uom_mode', 'commercial'),
             'sconto_globale_perc'     => $s('sconto_globale_perc', '0'),
+            'salva_in_anagrafica_indirizzo' => $s('salva_in_anagrafica_indirizzo'),
         ];
     }
 
@@ -260,45 +273,17 @@ final class SalesOrdersController extends BaseController
         $clienteId = (int)get_param('cliente_id');
         if ($clienteId <= 0) { echo json_encode(['ok' => false]); exit; }
 
-        $stCli = $this->pdo->prepare("
-            SELECT cf.*, dc.listino_id
-            FROM clienti_fornitori cf
-            LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
-            WHERE cf.id = ? LIMIT 1
-        ");
-        $stCli->execute([$clienteId]);
-        $cliente = $stCli->fetch(PDO::FETCH_ASSOC);
+        $cliente = qk_get_cliente_dettagli_per_preventivo($this->pdo, $clienteId);
         if (!$cliente) { echo json_encode(['ok' => false]); exit; }
 
-        $stAddr = $this->pdo->prepare("
-            SELECT id, tipo, predefinito, nome_sede, via, civico, cap, citta, provincia, nazione,
-                   referente_consegna, telefono_consegna, note_consegna, presso
-              FROM indirizzi
-             WHERE soggetto_id = ?
-               AND tipo IN ('spedizione','magazzino','sede_operativa')
-               AND attivo = 1
-             ORDER BY predefinito DESC, nome_sede ASC
-        ");
-        $stAddr->execute([$clienteId]);
-        $indirizzi = $stAddr->fetchAll(PDO::FETCH_ASSOC);
-
-        $stCont = $this->pdo->prepare("
-            SELECT id,
-                   COALESCE(nome || ' ' || COALESCE(cognome, ''), ragione_sociale) AS nome_completo,
-                   email, telefono, cellulare
-              FROM clienti_fornitori
-             WHERE parent_id = ?
-               AND attivo = 1
-             ORDER BY nome, cognome
-        ");
-        $stCont->execute([$clienteId]);
-        $contatti = $stCont->fetchAll(PDO::FETCH_ASSOC);
+        $indirizzi = qk_get_indirizzi_cliente($this->pdo, $clienteId);
+        $contatti  = qk_get_contatti_cliente($this->pdo, $clienteId);
 
         echo json_encode([
             'ok'        => true,
             'cliente'   => [
                 'condizioni_pagamento' => $cliente['condizioni_pagamento'] ?? '',
-                'listino_id'           => $cliente['listino_id'] !== null ? (int)$cliente['listino_id'] : $this->getDefaultListinoId()
+                'listino_id'           => $cliente['listino_id'] !== null ? (int)$cliente['listino_id'] : qk_get_listino_default_id($this->pdo)
             ],
             'indirizzi' => $indirizzi,
             'contatti'  => $contatti,
@@ -326,13 +311,21 @@ final class SalesOrdersController extends BaseController
         }
 
         try {
-            $st = $this->pdo->prepare("
-                INSERT INTO clienti_fornitori
-                    (tipo_soggetto, ragione_sociale, nome, cognome, email, telefono, tipo, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'cliente', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ");
-            $st->execute([$tipo, $ragione ?: null, $nome ?: null, $cognome ?: null, $email ?: null, $telefono ?: null]);
-            $id    = (int)$this->pdo->lastInsertId();
+            // Corretto (Audit 2, V2 — bug identico a quello già corretto per apiCreaProdotto()
+            // poco sotto in questo stesso file): l'INSERT a mano ometteva la colonna NOT NULL
+            // UNIQUE "codice" di clienti_fornitori, fallendo sempre. Riusa la funzione condivisa
+            // già corretta qk_crea_cliente_rapido() (includes/sales_quotes.php), invece di
+            // reinventare un secondo INSERT indipendente per lo stesso identico scopo — la
+            // funzione condivisa restituisce solo l'id, quindi il resto della risposta JSON
+            // (label/email/telefono) resta assemblato qui, identico a prima.
+            $id = qk_crea_cliente_rapido($this->pdo, [
+                'tipo_soggetto'   => $tipo,
+                'ragione_sociale' => $ragione,
+                'nome'            => $nome,
+                'cognome'         => $cognome,
+                'email'           => $email,
+                'telefono'        => $telefono,
+            ]);
             $label = $tipo === 'azienda' ? $ragione : trim($nome . ' ' . $cognome);
             echo json_encode(['success' => true, 'id' => $id, 'label' => $label, 'email' => $email, 'telefono' => $telefono]);
         } catch (\Throwable $e) {
@@ -363,21 +356,15 @@ final class SalesOrdersController extends BaseController
                 'unita_misura' => $umCod,
             ]);
 
-            $stInfo = $this->pdo->prepare(
-                "SELECT p.sku_interno, um.codice AS unita_misura
-                 FROM prodotti p
-                 LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
-                 WHERE p.id = ?"
-            );
-            $stInfo->execute([$id]);
-            $info = $stInfo->fetch();
+            $prodInfo = qk_get_prodotto_stock_info($this->pdo, $id);
+            $um_codice = !empty($prodInfo['unita_misura_stock_id']) ? (qk_get_unita_misura_codice($this->pdo, (int)$prodInfo['unita_misura_stock_id']) ?: $umCod) : $umCod;
 
             echo json_encode([
                 'success' => true,
                 'id' => $id,
                 'label' => $nome,
-                'sku' => $info['sku_interno'] ?? $sku,
-                'unita_misura' => $info['unita_misura'] ?? $umCod,
+                'sku' => $prodInfo['sku_interno'] ?? $sku,
+                'unita_misura' => $um_codice,
             ]);
         } catch (\Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
@@ -419,70 +406,24 @@ final class SalesOrdersController extends BaseController
             redirect(url('sales/orders/edit') . '?id=' . $id);
         }
 
-        $st = $this->pdo->prepare("
-            SELECT o.*,
-                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                   cf.telefono AS cliente_telefono, cf.email AS cliente_email,
-                   p.numero_preventivo AS preventivo_numero,
-                   u.username AS creato_da_username,
-                   lst.nome AS listino_nome
-            FROM ordini_clienti o
-            JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-            LEFT JOIN preventivi p ON p.id = o.preventivo_id
-            LEFT JOIN utenti u ON u.id = o.creato_da
-            LEFT JOIN listini lst ON lst.id = o.listino_id
-            WHERE o.id = ?
-        ");
-        $st->execute([$id]);
-        $order = $st->fetch(PDO::FETCH_ASSOC);
+        $order = qk_get_ordine_cliente_dettaglio($this->pdo, $id);
         if (!$order) { redirect_with('sales/orders', 'error', 'Ordine non trovato.'); }
 
         $address = null;
         if (!empty($order['indirizzo_spedizione_id'])) {
-            $stAddr = $this->pdo->prepare("SELECT * FROM indirizzi WHERE id = ?");
-            $stAddr->execute([$order['indirizzo_spedizione_id']]);
-            $address = $stAddr->fetch(PDO::FETCH_ASSOC);
+            $address = qk_get_indirizzo($this->pdo, (int)$order['indirizzo_spedizione_id']);
         }
 
-        $stLines = $this->pdo->prepare("
-            SELECT r.*,
-                   p.sku_interno AS prodotto_codice, p.nome AS prodotto_nome,
-                   p.traccia_lotti, um.codice AS uom_simbolo,
-                   (r.prezzo_unitario - COALESCE(r.costo_unitario, 0)) AS margine_unit,
-                   CASE WHEN r.prezzo_unitario > 0
-                        THEN ((r.prezzo_unitario - COALESCE(r.costo_unitario, 0)) / r.prezzo_unitario) * 100
-                        ELSE 0 END AS margine_perc,
-                   (r.quantita_ordinata * r.prezzo_unitario) AS imponibile_riga
-            FROM ordini_clienti_righe r
-            LEFT JOIN prodotti p ON p.id = r.prodotto_id
-            LEFT JOIN unita_misura um ON um.id = r.unita_misura_id
-            WHERE r.ordine_id = ?
-        ");
-        $stLines->execute([$id]);
-        $lines = $stLines->fetchAll(PDO::FETCH_ASSOC);
+        $lines     = qk_get_ordine_cliente_righe($this->pdo, $id);
+        $shipments = qk_get_ordine_cliente_spedizioni($this->pdo, $id);
 
-        $stShip = $this->pdo->prepare("
-            SELECT s.*, (SELECT COUNT(*) FROM spedizioni_righe WHERE spedizione_id = s.id) AS righe_count
-            FROM spedizioni s WHERE s.ordine_id = ? ORDER BY s.created_at DESC
-        ");
-        $stShip->execute([$id]);
-        $shipments = $stShip->fetchAll(PDO::FETCH_ASSOC);
-
-        $stPhotos = $this->pdo->prepare("
-            SELECT sf.* FROM spedizioni_foto sf
-            JOIN spedizioni s ON s.id = sf.spedizione_id
-            WHERE s.ordine_id = ?
-        ");
-        $stPhotos->execute([$id]);
-        $photosList = $stPhotos->fetchAll(PDO::FETCH_ASSOC);
+        $photosList = qk_get_ordine_cliente_foto_spedizioni($this->pdo, $id);
         $shipment_photos = [];
         foreach ($photosList as $ph) {
             $shipment_photos[(int)$ph['spedizione_id']][] = $ph;
         }
 
-        $stDdt = $this->pdo->prepare("SELECT d.* FROM documenti_trasporto d WHERE d.ordine_id = ? ORDER BY d.created_at DESC");
-        $stDdt->execute([$id]);
-        $ddts = $stDdt->fetchAll(PDO::FETCH_ASSOC);
+        $ddts = qk_get_ordine_cliente_ddt($this->pdo, $id);
 
         $totImponibile = 0.0;
         $totCosto      = 0.0;
@@ -529,11 +470,11 @@ final class SalesOrdersController extends BaseController
                     flash_set('success', 'Ordine annullato.');
                     break;
                 case 'segna_fatturato':
-                    $this->pdo->prepare("UPDATE ordini_clienti SET stato_fatturazione = 'fatturato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    qk_ordine_cliente_segna_fatturato($this->pdo, $id);
                     flash_set('success', 'Ordine segnato come fatturato.');
                     break;
                 case 'segna_da_fatturare':
-                    $this->pdo->prepare("UPDATE ordini_clienti SET stato_fatturazione = 'da_fatturare', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$id]);
+                    qk_ordine_cliente_segna_da_fatturare($this->pdo, $id);
                     flash_set('success', 'Ordine ripristinato a "Da Fatturare".');
                     break;
                 case 'crea_spedizione':
@@ -568,372 +509,20 @@ final class SalesOrdersController extends BaseController
         // Lotti scaduti (Tappa 4.4): esclusi per default — inclusi solo se il
         // chiamante passa esplicitamente includi_scaduti=1 (toggle lato UI).
         $includiScaduti = get_param('includi_scaduti', '0') === '1';
-        $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
-
-        $st = $this->pdo->prepare("
-            SELECT l.id, l.codice_lotto_interno AS codice,
-                   lg.quantita_disponibile, l.data_scadenza, l.data_arrivo, l.created_at,
-                   CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
-            FROM lotti l
-            JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
-            WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0
-              $condScadenza
-            ORDER BY CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END, l.data_scadenza ASC, l.created_at ASC
-        ");
-        $st->execute([$magazzinoId, $prodottoId]);
-        echo json_encode(['lotti' => $st->fetchAll(PDO::FETCH_ASSOC)]);
+        $lotti = qk_get_lotti_disponibili_prodotto($this->pdo, $prodottoId, $magazzinoId, $includiScaduti);
+        echo json_encode(['lotti' => $lotti]);
         exit;
     }
 
     private function elaboraCreaSpedizione(int $orderId): void
     {
-        $vettore           = post('vettore', '');
-        $tracking          = post('tracking', '');
-        $causale_trasporto = post('causale_trasporto', 'Vendita');
-        $porto             = post('porto', 'franco');
-        $aspetto_beni      = post('aspetto_beni', '');
-        $numero_colli      = (int)post('numero_colli', '0');
-        $peso_lordo_kg     = (float)post('peso_lordo_kg', '0.0');
-        $lottiPost           = $_POST['lotti'] ?? [];
-        $quantitaNoLottoPost = $_POST['quantita_no_lotto'] ?? [];
-
-        // Magazzino di spedizione: campo esplicito sul form "Nuova Spedizione"
-        // (Revisione Gestione Magazzino e Lotti §3), non più risolto silenziosamente
-        // dal magazzino attivo di sessione. Viene scritto su spedizioni.magazzino_id e
-        // usato per congelare il mittente sul DDT (vedi qk_calcola_mittente_ddt sotto).
-        $magazzinoSpedId = (int)post('magazzino_id', '0');
-
-        $this->pdo->beginTransaction();
         try {
-            if ($magazzinoSpedId <= 0) {
-                throw new \Exception("Seleziona il magazzino di spedizione.");
-            }
-
-            $st = $this->pdo->prepare("SELECT * FROM ordini_clienti WHERE id = ?");
-            $st->execute([$orderId]);
-            $order = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$order) throw new \Exception("Ordine non trovato.");
-
-            // Tappa 7 (PIANO - Motore Unificato di Transizioni di Stato): PRIMA
-            // questo metodo non controllava affatto lo stato dell'ordine — si
-            // poteva creare una spedizione (e quindi "far ripartire" lo stato
-            // dell'ordine, vedi ricalcolo a fine metodo) anche su un ordine già
-            // 'completato' o 'annullato'. Coerente con la stessa condizione già
-            // mostrata (ma mai imposta lato server) dal bottone "Nuova Spedizione"
-            // in app/views/sales/orders/_detail.php:343.
-            qk_ordine_cliente_assicura_modificabile(
-                (string) $order['stato'],
-                "Impossibile creare la spedizione: l'ordine è già in stato '{$order['stato']}'."
-            );
-
-            // Risoluzione indirizzo di spedizione con la stessa logica a cascata
-            // usata nelle fasi precedenti del ciclo vendite (preventivo/ordine):
-            // 1) indirizzo esplicitamente selezionato sull'ordine
-            // 2) master address dietro allo snapshot strutturato (indirizzi_documenti)
-            // 3) indirizzo di spedizione predefinito del cliente
-            // Se nessuno è risolvibile, si blocca con un errore chiaro invece di
-            // forzare NULL su una colonna NOT NULL (che prima causava il crash SQL).
-            $indirizzoSpedizioneId = !empty($order['indirizzo_spedizione_id']) ? (int)$order['indirizzo_spedizione_id'] : null;
-
-            if (!$indirizzoSpedizioneId && !empty($order['indirizzo_consegna_id'])) {
-                $stSnap = $this->pdo->prepare("SELECT indirizzo_master_id FROM indirizzi_documenti WHERE id = ?");
-                $stSnap->execute([$order['indirizzo_consegna_id']]);
-                $masterId = $stSnap->fetchColumn();
-                if ($masterId) { $indirizzoSpedizioneId = (int)$masterId; }
-            }
-
-            if (!$indirizzoSpedizioneId) {
-                $stDef = $this->pdo->prepare("
-                    SELECT id FROM indirizzi
-                    WHERE soggetto_id = ? AND attivo = 1
-                    ORDER BY (tipo = 'spedizione' AND predefinito = 1) DESC,
-                             predefinito DESC,
-                             id ASC
-                    LIMIT 1
-                ");
-                $stDef->execute([$order['cliente_id']]);
-                $fallbackId = $stDef->fetchColumn();
-                if ($fallbackId) { $indirizzoSpedizioneId = (int)$fallbackId; }
-            }
-
-            if (!$indirizzoSpedizioneId) {
-                throw new \Exception("Impossibile creare la spedizione: il cliente non ha nessun indirizzo di consegna valido. Seleziona un indirizzo sull'ordine prima di procedere.");
-            }
-
-            $stLines = $this->pdo->prepare("
-                SELECT r.*, p.traccia_lotti, p.nome AS prodotto_nome, p.sku_interno, p.tipo
-                FROM ordini_clienti_righe r
-                JOIN prodotti p ON p.id = r.prodotto_id
-                WHERE r.ordine_id = ?
-            ");
-            $stLines->execute([$orderId]);
-            $lines = $stLines->fetchAll(PDO::FETCH_ASSOC);
-
-            $count   = (int)$this->pdo->query("SELECT COUNT(*) FROM spedizioni")->fetchColumn();
-            $numSped = 'SPED/' . date('Y') . '/' . str_pad((string)($count + 1), 4, '0', STR_PAD_LEFT);
-            $userId  = (int)(current_user()['id'] ?? 0);
-
-            $this->pdo->prepare("
-                INSERT INTO spedizioni (numero_spedizione, ordine_id, data_spedizione, indirizzo_spedizione_id, magazzino_id, vettore, tracking, stato, creato_da, created_at)
-                VALUES (?, ?, CURRENT_DATE, ?, ?, ?, ?, 'spedita', ?, CURRENT_TIMESTAMP)
-            ")->execute([$numSped, $orderId, $indirizzoSpedizioneId, $magazzinoSpedId, $vettore ?: null, $tracking ?: null, $userId]);
-            $spedizioneId = (int)$this->pdo->lastInsertId();
-
-            // Gestione Upload Foto Spedizione (Pallet)
-            if (isset($_FILES['pallet_foto'])) {
-                $files = $_FILES['pallet_foto'];
-                $totalUploaded = is_array($files['name']) ? count($files['name']) : 0;
-                for ($i = 0; $i < $totalUploaded; $i++) {
-                    if ($files['error'][$i] === UPLOAD_ERR_OK) {
-                        $tmpName = $files['tmp_name'][$i];
-                        $name = basename($files['name'][$i]);
-
-                        // Verifica tipo reale del file (MIME sniffato dal contenuto, non
-                        // dall'estensione dichiarata dall'utente).
-                        $allowedMimeToExt = [
-                            'image/jpeg' => 'jpg',
-                            'image/png'  => 'png',
-                            'image/gif'  => 'gif',
-                            'image/webp' => 'webp',
-                        ];
-                        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                        $realMime = $finfo ? finfo_file($finfo, $tmpName) : false;
-                        if ($finfo) {
-                            finfo_close($finfo);
-                        }
-                        $ext = $allowedMimeToExt[$realMime] ?? null;
-                        if ($ext !== null && getimagesize($tmpName) !== false) {
-                            $subdir = upload_dated_subdir('spedizioni');
-                            $upload_dir = upload_ensure_dir($subdir);
-                            $new_name = uniqid('sped_photo_', true) . '.' . $ext;
-                            $dest = $upload_dir . DIRECTORY_SEPARATOR . $new_name;
-                            if (move_uploaded_file($tmpName, $dest)) {
-                                $filePath = $subdir . '/' . $new_name;
-                                $stPhoto = $this->pdo->prepare("
-                                    INSERT INTO spedizioni_foto (spedizione_id, file_path, file_name, creato_da, created_at)
-                                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                                ");
-                                $stPhoto->execute([$spedizioneId, $filePath, $name, $userId]);
-                            }
-                        }
-                    }
-                }
-            }
-
-            $countDdt = (int)$this->pdo->query("SELECT COUNT(*) FROM documenti_trasporto")->fetchColumn();
-            $numDdt   = 'DDT/' . date('Y') . '/' . str_pad((string)($countDdt + 1), 4, '0', STR_PAD_LEFT);
-
-            // Mittente congelato alla creazione, mai ricalcolato in stampa (Revisione
-            // Gestione Magazzino e Lotti §3): stesso principio di
-            // qk_resolve_azienda_emittente_stampa() per preventivi/ordini_clienti.
-            $mittente = qk_calcola_mittente_ddt($this->pdo, $magazzinoSpedId);
-
-            // Destinatario congelato alla creazione, stesso principio del mittente
-            // sopra (Revisione Ciclo Vendite §1.5, PIANO - Congelare Destinatario sul
-            // DDT.md). Non serve ricalcolare nulla: $order (righe 610-612) contiene
-            // già cliente_ragione_sociale/cliente_partita_iva/cliente_codice_fiscale e
-            // consegna_via/civico/cap/citta/provincia/nazione/presso, congelati lì al
-            // momento della creazione dell'ordine — li copiamo semplicemente in avanti.
-            $destRagioneSociale = $order['cliente_ragione_sociale'] ?? null;
-            $destPartitaIva     = $order['cliente_partita_iva'] ?? null;
-            $destCodiceFiscale  = $order['cliente_codice_fiscale'] ?? null;
-            $destVia            = $order['consegna_via'] ?? null;
-            $destCivico         = $order['consegna_civico'] ?? null;
-            $destCap            = $order['consegna_cap'] ?? null;
-            $destCitta          = $order['consegna_citta'] ?? null;
-            $destProvincia      = $order['consegna_provincia'] ?? null;
-            $destNazione        = $order['consegna_nazione'] ?? null;
-            $destNomeSede       = $order['consegna_presso'] ?? null;
-
-            $this->pdo->prepare("
-                INSERT INTO documenti_trasporto (numero_documento_trasporto, spedizione_id, ordine_id, data, destinatario_id, indirizzo_destinazione_id, causale_trasporto, porto, vettore, aspetto_beni, numero_colli, peso_lordo_kg, stato, mittente_ragione_sociale, mittente_partita_iva, mittente_codice_fiscale, mittente_indirizzo, mittente_telefono, mittente_email, destinatario_ragione_sociale, destinatario_partita_iva, destinatario_codice_fiscale, destinatario_via, destinatario_civico, destinatario_cap, destinatario_citta, destinatario_provincia, destinatario_nazione, destinatario_nome_sede, creato_da, created_at, updated_at)
-                VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, 'emesso', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ")->execute([
-                $numDdt, $spedizioneId, $orderId, $order['cliente_id'], $indirizzoSpedizioneId, $causale_trasporto, $porto, $vettore ?: null, $aspetto_beni ?: null, $numero_colli, $peso_lordo_kg,
-                $mittente['ragione_sociale'], $mittente['partita_iva'], $mittente['codice_fiscale'], $mittente['indirizzo'], $mittente['telefono'], $mittente['email'],
-                $destRagioneSociale, $destPartitaIva, $destCodiceFiscale, $destVia, $destCivico, $destCap, $destCitta, $destProvincia, $destNazione, $destNomeSede,
-                $userId,
-            ]);
-            $ddtId = (int)$this->pdo->lastInsertId();
-
-            $stInsSpedRiga = $this->pdo->prepare("INSERT INTO spedizioni_righe (spedizione_id, ordine_riga_id, prodotto_id, lotto_id, quantita, note) VALUES (?, ?, ?, ?, ?, '')");
-            $stInsDdtRiga  = $this->pdo->prepare("INSERT INTO documenti_trasporto_righe (documento_trasporto_id, prodotto_id, descrizione, quantita, unita_misura_id, lotto_id, codice_lotto, is_adr, numero_onu, classe_adr, packing_group, posizione_riga, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')");
-            // Decremento per-magazzino della disponibilità di lotto (fonte di verità
-            // dal Piano Multi-Magazzino §3.8). L'INSERT iniziale con valore negativo
-            // gestisce il caso raro in cui la riga lotti_giacenze non esista ancora
-            // (es. lotto storico pre-migrazione mai passato da una ricezione scoped).
-            $stUpLottoGiac = $this->pdo->prepare("
-                INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-                VALUES (?, ?, -?, CURRENT_TIMESTAMP)
-                ON CONFLICT(lotto_id, magazzino_id) DO UPDATE
-                    SET quantita_disponibile = quantita_disponibile - ?,
-                        updated_at = CURRENT_TIMESTAMP
-            ");
-            // quantita_riservata è "clampata" a 0 (CASE WHEN, portabile SQLite/MySQL,
-            // niente GREATEST() che MySQL non ha come scalare né MAX(a,b) che SQLite
-            // supporta ma MySQL no) invece di essere semplicemente decrementata: è un
-            // contatore di prenotazione, non un vincolo fisico, e può risultare
-            // inferiore alla quantità spedita se la prenotazione e la spedizione non
-            // sono mai state garantite perfettamente allineate (spedizioni parziali,
-            // riserve rilasciate altrove). Non blocchiamo mai la spedizione per
-            // questo — è quantita_disponibile, verificata sotto, il vincolo fisico
-            // reale — ma evitiamo di scrivere un valore negativo privo di senso.
-            $stUpGiac      = $this->pdo->prepare("
-                UPDATE giacenze
-                   SET quantita_disponibile = quantita_disponibile - ?,
-                       quantita_riservata   = CASE WHEN quantita_riservata - ? < 0 THEN 0 ELSE quantita_riservata - ? END
-                 WHERE prodotto_id = ? AND magazzino_id = ?
-            ");
-            // Verifica di disponibilità prima dello scarico per i prodotti NON tracciati
-            // a lotto (per i tracciati il controllo equivalente è già fatto sopra su
-            // lotti_giacenze). Senza questo controllo lo scarico procedeva comunque,
-            // portando quantita_disponibile sotto zero in caso di doppia prenotazione
-            // concorrente o di ordine con quantità superiore allo stock reale.
-            $stCheckGiac   = $this->pdo->prepare("SELECT quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
-            $stUpOrdRiga   = $this->pdo->prepare("UPDATE ordini_clienti_righe SET quantita_spedita = quantita_spedita + ? WHERE id = ?");
-            $stAdr         = $this->pdo->prepare("SELECT co.codice_onu, co.classe_pericolo, COALESCE(pca.gruppo_imballaggio_override, co.gruppo_imballaggio) AS gruppo_imballaggio FROM prodotto_classificazioni_adr pca JOIN adr_codici_onu co ON co.id = pca.codice_onu_id WHERE pca.prodotto_id = ? AND pca.e_corrente = 1 LIMIT 1");
-
-            $pos = 0; $anyShipped = false;
-
-            foreach ($lines as $line) {
-                $lineId = $line['id']; $prodId = $line['prodotto_id'];
-
-                // Tappa 4.3: blocco scarico su un prodotto sotto conteggio in questo
-                // magazzino. Per i Kit, il blocco si applica ai singoli componenti
-                // (nessuna giacenza fisica propria del Kit), verificati più sotto.
-                if (($line['tipo'] ?? '') !== 'kit' && qk_inventario_bloccato($this->pdo, $magazzinoSpedId, (int)$prodId)) {
-                    throw new \Exception("Impossibile spedire \"{$line['prodotto_nome']}\": è in corso un inventario fisico su questo prodotto in questo magazzino.");
-                }
-
-                /*
-                 * =========================================================================
-                 * ARCHITECTURAL RULE / PRINCIPLE - MULTI-UOM & PRICING PRESERVATION:
-                 * To prevent precision drift and guarantee contract safety:
-                 * 1. Conversion factors between stock UoM and commercial UoM must be stored
-                 *    as exact, simplified integer fractions (num_factor / den_factor) in the database.
-                 * 2. Every transactional line snapshot (Offers, Sales/Purchase Orders, Receipts)
-                 *    must copy these factors at creation time into `num_factor_snapshot` and
-                 *    `den_factor_snapshot` to avoid historical data changes when products are edited.
-                 * 3. Do NOT use approximate decimal division or float conversion factors directly
-                 *    in transactions. Always reference the exact snapshot fraction.
-                 * =========================================================================
-                 */
-                $numSnap = isset($line['num_factor_snapshot']) ? (int)$line['num_factor_snapshot'] : 1;
-                $denSnap = isset($line['den_factor_snapshot']) ? (int)$line['den_factor_snapshot'] : 1;
-                // Corretto il 13/07/2026 (PIANO Motore di Pricing Multi-UoM §5.3): la riga precedente
-                // faceva "(float)($numSnap / $denSnap)", una divisione float diretta che violava il
-                // principio scritto poche righe sopra ("Do NOT use approximate decimal division...").
-                // bcmul/bcdiv sulla frazione esatta, come già fa qk_uom_converti_riga() in includes/prodotti.php.
-                $convertiInStock = function (float $q) use ($numSnap, $denSnap): float {
-                    if ($denSnap <= 0) return $q;
-                    return (float) bcdiv(bcmul((string)$q, (string)$numSnap, 6), (string)$denSnap, 3);
-                };
-
-                if ((int)$line['traccia_lotti'] === 1) {
-                    foreach ($lottiPost[$lineId] ?? [] as $lottoId => $qtaStr) {
-                        $qta = (float)$qtaStr;
-                        if ($qta <= 0) continue;
-                        $anyShipped = true;
-                        $qtaStock   = $convertiInStock($qta);
-
-                        // Disponibilità per QUESTO magazzino di spedizione, non l'aggregato
-                        // legacy: lo stesso lotto può avere quantità diverse in sedi diverse
-                        // (Piano Multi-Magazzino §3.8/§3.9).
-                        $stLotInfo = $this->pdo->prepare("
-                            SELECT l.id, COALESCE(lg.quantita_disponibile, 0) AS quantita_disponibile,
-                                   l.codice_lotto_interno AS cl
-                            FROM lotti l
-                            LEFT JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
-                            WHERE l.id = ?
-                        ");
-                        $stLotInfo->execute([$magazzinoSpedId, $lottoId]);
-                        $lot = $stLotInfo->fetch(PDO::FETCH_ASSOC);
-                        if (!$lot) throw new \Exception("Lotto {$lottoId} non trovato.");
-                        if ($lot['quantita_disponibile'] < $qtaStock) throw new \Exception("Giacenza insufficiente lotto {$lot['cl']} nel magazzino di spedizione.");
-
-                        $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, $lottoId, $qta]);
-                        $stAdr->execute([$prodId]);
-                        $adr = $stAdr->fetch(PDO::FETCH_ASSOC);
-                        $isAdr = !empty($adr) ? 1 : 0;
-                        $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], $lottoId, $lot['cl'], $isAdr, $isAdr ? 'UN '.$adr['codice_onu'] : null, $isAdr ? $adr['classe_pericolo'] : null, $isAdr ? $adr['gruppo_imballaggio'] : null, $pos++]);
-                        $stUpLottoGiac->execute([$lottoId, $magazzinoSpedId, $qtaStock, $qtaStock]);
-                        $stUpGiac->execute([$qtaStock, $qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
-                        $stUpOrdRiga->execute([$qta, $lineId]);
-                        $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, ?, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $lottoId, $numDdt, $userId]);
-                    }
-                } else {
-                    $qta = (float)($quantitaNoLottoPost[$lineId] ?? 0.0);
-                    if ($qta > 0) {
-                        $anyShipped = true;
-                        $qtaStock   = $convertiInStock($qta);
-                        $stInsSpedRiga->execute([$spedizioneId, $lineId, $prodId, null, $qta]);
-                        $stInsDdtRiga->execute([$ddtId, $prodId, $line['descrizione'], $qta, $line['unita_misura_id'], null, null, 0, null, null, null, $pos++]);
-                        
-                        if (($line['tipo'] ?? '') === 'kit') {
-                            $kitSt = $this->pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
-                            $kitSt->execute([$prodId]);
-                            $comps = $kitSt->fetchAll(PDO::FETCH_ASSOC);
-                            foreach ($comps as $c) {
-                                if (qk_inventario_bloccato($this->pdo, $magazzinoSpedId, (int)$c['componente_id'])) {
-                                    throw new \Exception("Impossibile spedire il Kit \"{$line['prodotto_nome']}\": uno dei suoi componenti è sotto conteggio in un inventario fisico in corso in questo magazzino.");
-                                }
-                                $cQta = $c['quantita'] * $qtaStock;
-
-                                $stCheckGiac->execute([$c['componente_id'], $magazzinoSpedId]);
-                                $dispComp = $stCheckGiac->fetchColumn();
-                                $dispComp = $dispComp !== false ? (float)$dispComp : 0.0;
-                                if ($dispComp < $cQta) {
-                                    throw new \Exception(sprintf(
-                                        'Giacenza insufficiente nel magazzino di spedizione per un componente del Kit "%s" (disponibile %.3f, richiesto %.3f).',
-                                        $line['prodotto_nome'],
-                                        $dispComp,
-                                        $cQta
-                                    ));
-                                }
-
-                                $stUpGiac->execute([$cQta, $cQta, $cQta, $c['componente_id'], $magazzinoSpedId]);
-                                $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$c['componente_id'], $magazzinoSpedId, $cQta, $numDdt, $userId]);
-                            }
-                        } else {
-                            $stCheckGiac->execute([$prodId, $magazzinoSpedId]);
-                            $dispProd = $stCheckGiac->fetchColumn();
-                            $dispProd = $dispProd !== false ? (float)$dispProd : 0.0;
-                            if ($dispProd < $qtaStock) {
-                                throw new \Exception(sprintf(
-                                    'Giacenza insufficiente nel magazzino di spedizione per "%s" (disponibile %.3f, richiesto %.3f).',
-                                    $line['prodotto_nome'],
-                                    $dispProd,
-                                    $qtaStock
-                                ));
-                            }
-
-                            $stUpGiac->execute([$qtaStock, $qtaStock, $qtaStock, $prodId, $magazzinoSpedId]);
-                            $this->pdo->prepare("INSERT INTO movimenti_magazzino (prodotto_id, magazzino_id, tipo_movimento, quantita, lotto_id, riferimento_esterno, documento_tipo, creato_da, created_at) VALUES (?, ?, 'scarico', ?, null, ?, 'ddt', ?, CURRENT_TIMESTAMP)")->execute([$prodId, $magazzinoSpedId, $qtaStock, $numDdt, $userId]);
-                        }
-                        
-                        $stUpOrdRiga->execute([$qta, $lineId]);
-                    }
-                }
-            }
-
-            if (!$anyShipped) throw new \Exception("Nessuna quantita valida per la spedizione.");
-
-            $stAll = $this->pdo->prepare("SELECT quantita_ordinata, quantita_spedita FROM ordini_clienti_righe WHERE ordine_id = ?");
-            $stAll->execute([$orderId]);
-            $allLines = $stAll->fetchAll(PDO::FETCH_ASSOC);
-            $allDone = true; $anyDone = false;
-            foreach ($allLines as $al) {
-                if ((float)$al['quantita_spedita'] < (float)$al['quantita_ordinata']) $allDone = false;
-                if ((float)$al['quantita_spedita'] > 0) $anyDone = true;
-            }
-            $nuovoStato = $allDone ? 'spedito' : ($anyDone ? 'parzialmente_spedito' : 'in_lavorazione');
-            $this->pdo->prepare("UPDATE ordini_clienti SET stato = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$nuovoStato, $orderId]);
-
-            $this->pdo->commit();
-            flash_set('success', "Spedizione {$numSped} e DDT {$numDdt} registrati correttamente.");
+            $userId = (int)(current_user()['id'] ?? 0);
+            $res = qk_elabora_crea_spedizione($this->pdo, $orderId, $_POST, $_FILES, $userId);
+            flash_set('success', "Spedizione {$res['num_sped']} e DDT {$res['num_ddt']} registrati correttamente.");
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
-            throw $e;
+            error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
+            flash_set('error', $e->getMessage());
         }
     }
 }

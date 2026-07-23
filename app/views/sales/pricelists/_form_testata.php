@@ -21,7 +21,7 @@
     <div class="qk-card-body">
       
       <?php if (!empty($values['is_default'])): ?>
-        <div class="qk-alert qk-alert-info mb-3" style="background-color: #e7f1ff; border: 1px solid #b6d4fe; border-radius: var(--qk-border-radius); padding: 1rem; color: #052c65;">
+        <div class="qk-alert qk-alert-info mb-3">
           <i class="fa-solid fa-earth-americas me-2"></i> Questo è il <strong>Listino Pubblico Globale</strong> (di default). Si applica automaticamente a tutti i clienti sprovvisti di un listino dedicato.
         </div>
       <?php endif; ?>

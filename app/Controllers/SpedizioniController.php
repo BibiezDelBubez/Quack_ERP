@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once INCLUDES_DIR . '/magazzino.php';
 require_once INCLUDES_DIR . '/document_common.php';
+require_once INCLUDES_DIR . '/sales_orders.php';
 
 final class SpedizioniController extends BaseController
 {
@@ -40,30 +41,8 @@ final class SpedizioniController extends BaseController
         if ($al)    { $where[] = "s.data_spedizione <= :al";     $params[':al']    = $al; }
         $whereStr = implode(' AND ', $where);
 
-        $countStmt = $this->pdo->prepare(
-            "SELECT COUNT(*) FROM spedizioni s
-               JOIN ordini_clienti o  ON o.id = s.ordine_id
-               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-              WHERE $whereStr"
-        );
-        $countStmt->execute($params);
-        $total = (int) $countStmt->fetchColumn();
-
-        $listStmt = $this->pdo->prepare(
-            "SELECT s.id, s.numero_spedizione, s.data_spedizione, s.stato, s.vettore, s.tracking,
-                    s.ordine_id, o.numero_ordine,
-                    COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                    d.id AS ddt_id, d.numero_documento_trasporto
-               FROM spedizioni s
-               JOIN ordini_clienti o  ON o.id = s.ordine_id
-               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-          LEFT JOIN documenti_trasporto d ON d.spedizione_id = s.id
-              WHERE $whereStr
-              ORDER BY $orderCol {$pag['dir']}
-              LIMIT {$pag['limit']} OFFSET {$pag['offset']}"
-        );
-        $listStmt->execute($params);
-        $shipments = $listStmt->fetchAll(PDO::FETCH_ASSOC);
+        $total     = qk_spedizioni_count($this->pdo, $whereStr, $params);
+        $shipments = qk_spedizioni_list($this->pdo, $whereStr, $params, $orderCol, (string)$pag['dir'], (int)$pag['limit'], (int)$pag['offset']);
 
         $base          = url('sales/shipments');
         $page_title    = 'Spedizioni';
@@ -75,8 +54,8 @@ final class SpedizioniController extends BaseController
     }
 
     /**
-     * GET  /sales/shipments/new?order_id=X — pagina pick & pack dedicata
-     * POST /sales/shipments/new             — crea spedizione (delega a SalesOrdersController::elaboraCreaSpedizione)
+     * GET /sales/shipments/new?order_id=X — pagina pick & pack dedicata
+     * Nota: il form di invio fa POST a sales/orders/action (gestito da SalesOrdersController::action)
      */
     public function nuova(): void
     {
@@ -84,17 +63,7 @@ final class SpedizioniController extends BaseController
         if ($orderId <= 0) redirect(url('sales/orders'));
 
         // Carica ordine
-        $stOrd = $this->pdo->prepare("
-            SELECT o.*,
-                   COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome,
-                   cf.email AS cliente_email,
-                   cf.telefono AS cliente_telefono
-            FROM ordini_clienti o
-            JOIN clienti_fornitori cf ON cf.id = o.cliente_id
-            WHERE o.id = ?
-        ");
-        $stOrd->execute([$orderId]);
-        $order = $stOrd->fetch(PDO::FETCH_ASSOC);
+        $order = qk_get_ordine_per_spedizione($this->pdo, $orderId);
 
         if (!$order) {
             flash_set('error', 'Ordine non trovato.');
@@ -108,22 +77,7 @@ final class SpedizioniController extends BaseController
         }
 
         // Carica righe con residuo da spedire
-        $stLines = $this->pdo->prepare("
-            SELECT r.*,
-                   p.sku_interno AS prodotto_codice,
-                   p.nome        AS prodotto_nome,
-                   p.traccia_lotti,
-                   um.codice     AS uom_simbolo,
-                   (r.quantita_ordinata - r.quantita_spedita) AS qta_residua
-            FROM ordini_clienti_righe r
-            LEFT JOIN prodotti p ON p.id = r.prodotto_id
-            LEFT JOIN unita_misura um ON um.id = r.unita_misura_id
-            WHERE r.ordine_id = ?
-              AND (r.quantita_ordinata - r.quantita_spedita) > 0.0005
-            ORDER BY r.id ASC
-        ");
-        $stLines->execute([$orderId]);
-        $righe = $stLines->fetchAll(PDO::FETCH_ASSOC);
+        $righe = qk_get_righe_ordine_da_spedire($this->pdo, $orderId);
 
         if (empty($righe)) {
             flash_set('error', 'Tutte le righe di questo ordine sono già state spedite.');
@@ -131,16 +85,25 @@ final class SpedizioniController extends BaseController
         }
 
         // Magazzino di spedizione: campo esplicito sulla pagina (Revisione Gestione
-        // Magazzino e Lotti §3), precompilato col magazzino attivo di sessione ma
-        // sempre scelto/confermato dall'operatore — non più un'approssimazione
-        // silenziosa (vedi Magazzino Attivo - Analisi e Alternative.md, Fix 1, stesso
-        // pattern già applicato a "Nuovo movimento"). Se il parametro passato non
-        // corrisponde a un magazzino attivo esistente, si ricade sul default.
+        // Magazzino e Lotti §3), sempre scelto/confermato dall'operatore — non più
+        // un'approssimazione silenziosa. AUDIT 3 §3.1: il default NON deve più essere
+        // il magazzino attivo di sessione (che può essere cambiato tra la creazione
+        // dell'ordine e la spedizione, lasciando la riserva "fantasma" nel magazzino
+        // originale) — deve essere il magazzino congelato sull'ordine
+        // (ordini_clienti.magazzino_id), lo stesso dove la riserva è stata scritta.
+        // Se l'operatore lo cambia comunque (merce non più lì), elaboraCreaSpedizione()
+        // gestisce il rilascio riserva sul magazzino originale separatamente dallo
+        // scarico fisico sul magazzino scelto qui (vedi fix in quel metodo).
         $magazzini = qk_magazzini_list($this->pdo, true);
         $magazzinoParam = get_param('magazzino_id', '');
         if ($magazzinoParam !== '' && in_array((int)$magazzinoParam, array_column($magazzini, 'id'), true)) {
             $magazzinoSpedId = (int) $magazzinoParam;
+        } elseif (!empty($order['magazzino_id']) && in_array((int)$order['magazzino_id'], array_column($magazzini, 'id'), true)) {
+            $magazzinoSpedId = (int) $order['magazzino_id'];
         } else {
+            // Ordine legacy senza magazzino_id congelato (creato prima della Tappa
+            // che ha introdotto la colonna): unico caso in cui si ricade ancora sul
+            // magazzino attivo di sessione.
             $magazzinoSpedId = qk_magazzino_attivo_id($this->pdo);
         }
 
@@ -151,32 +114,7 @@ final class SpedizioniController extends BaseController
         // pensato per casi eccezionali (es. smaltimento/reso) — mai come default silenzioso.
         $includiScaduti = get_param('includi_scaduti', '0') === '1';
         $prodIds = array_unique(array_filter(array_column($righe, 'prodotto_id')));
-        $lottiPerProdotto = [];
-        if (!empty($prodIds)) {
-            $in = implode(',', array_map('intval', $prodIds));
-            $condScadenza = $includiScaduti ? '' : "AND (l.data_scadenza IS NULL OR l.data_scadenza >= DATE('now'))";
-            $stLotti = $this->pdo->prepare("
-                SELECT l.prodotto_id,
-                       l.id,
-                       l.codice_lotto_interno AS codice,
-                       lg.quantita_disponibile,
-                       l.data_scadenza,
-                       CASE WHEN l.data_scadenza IS NOT NULL AND l.data_scadenza < DATE('now') THEN 1 ELSE 0 END AS scaduto
-                FROM lotti l
-                JOIN lotti_giacenze lg ON lg.lotto_id = l.id AND lg.magazzino_id = ?
-                WHERE l.prodotto_id IN ($in)
-                  AND lg.quantita_disponibile > 0
-                  $condScadenza
-                ORDER BY l.prodotto_id,
-                         CASE WHEN l.data_scadenza IS NULL THEN 1 ELSE 0 END,
-                         l.data_scadenza ASC,
-                         l.created_at ASC
-            ");
-            $stLotti->execute([$magazzinoSpedId]);
-            foreach ($stLotti->fetchAll(PDO::FETCH_ASSOC) as $lot) {
-                $lottiPerProdotto[$lot['prodotto_id']][] = $lot;
-            }
-        }
+        $lottiPerProdotto = qk_get_lotti_disponibili_per_prodotti($this->pdo, $prodIds, $magazzinoSpedId, $includiScaduti);
 
         $page_title  = 'Nuova Spedizione — ' . $order['numero_ordine'];
         $breadcrumbs = [
@@ -200,17 +138,7 @@ final class SpedizioniController extends BaseController
         $id = (int)get_param('id');
         if ($id <= 0) redirect(url('sales/shipments'));
 
-        $st = $this->pdo->prepare("
-            SELECT d.*,
-                   s.numero_spedizione, s.vettore AS s_vettore, s.tracking, s.magazzino_id AS spedizione_magazzino_id,
-                   o.numero_ordine
-            FROM documenti_trasporto d
-            JOIN ordini_clienti o ON o.id = d.ordine_id
-            LEFT JOIN spedizioni s ON s.id = d.spedizione_id
-            WHERE d.id = ?
-        ");
-        $st->execute([$id]);
-        $ddt = $st->fetch(PDO::FETCH_ASSOC);
+        $ddt = qk_get_ddt_dettaglio($this->pdo, $id);
 
         if (!$ddt) {
             flash_set('error', 'DDT non trovato.');
@@ -228,18 +156,7 @@ final class SpedizioniController extends BaseController
         // per DDT legacy privi delle colonne destinatario_*.
         $destinatario = qk_resolve_destinatario_ddt_stampa($this->pdo, $ddt);
 
-        $stRighe = $this->pdo->prepare("
-            SELECT r.*,
-                   p.nome AS prodotto_nome, p.sku_interno AS prodotto_codice,
-                   um.codice AS uom_codice
-            FROM documenti_trasporto_righe r
-            LEFT JOIN prodotti p ON p.id = r.prodotto_id
-            LEFT JOIN unita_misura um ON um.id = r.unita_misura_id
-            WHERE r.documento_trasporto_id = ?
-            ORDER BY r.posizione_riga ASC
-        ");
-        $stRighe->execute([$id]);
-        $righe = $stRighe->fetchAll(PDO::FETCH_ASSOC);
+        $righe = qk_get_ddt_righe($this->pdo, $id);
 
         $page_title  = 'DDT ' . $ddt['numero_documento_trasporto'];
         $breadcrumbs = [

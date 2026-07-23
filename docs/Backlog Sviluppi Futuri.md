@@ -653,6 +653,33 @@ indesiderati — la whitelist mime esistente (validazione reale del contenuto, n
 già il rischio di sicurezza principale. Da riprendere se emerge un caso reale (es. upload che saturano lo
 spazio disco più velocemente del previsto, o formati indesiderati che iniziano a comparire in pratica).
 
+---
+
+## 34. Reso Cliente e Correzione di una Spedizione già Confermata
+
+**Fonte:** [Ciclo Vendite/REVISIONE - Analisi Documentazione Ciclo Vendite.md](Ciclo%20Vendite/REVISIONE%20-%20Analisi%20Documentazione%20Ciclo%20Vendite.md), §3bis (S5/S6) e §3.1 — problema "Nessun modo di annullare una spedizione sbagliata / nessun flusso di reso".
+
+**Di cosa si tratta.** Oggi, una volta confermata una spedizione (giacenza scaricata, DDT emesso), non esiste alcuna azione per tornare indietro: né per un errore operativo (lotto o quantità sbagliati, scoperto subito dopo la conferma), né per un reso reale del cliente (merce rispedita al mittente, danneggiata o non conforme). `spedizioni.stato` ammette già a schema i valori `consegnata` e `reso`, ma nessuna azione del programma li scrive mai — sono stati morti, previsti in passato e mai collegati a nulla.
+
+**Decisione presa (22/07/2026): per il momento non si implementa un flusso guidato.** Se serve correggere una giacenza dopo un errore di spedizione o registrare un reso fisico, si usa il form generico "Nuovo movimento" della sezione Magazzino (stesso pattern già in uso, e già deciso, per il reso a fornitore lato acquisti — voce 18 sopra). Questo copre il bisogno operativo immediato (la giacenza torna corretta), ma **non** aggiorna in automatico `ordini_clienti_righe.quantita_spedita`, non cambia lo stato della spedizione/DDT collegati, e non lascia un collegamento strutturato tra il movimento di rettifica e la spedizione originale — chi corregge deve saperlo e, se rilevante, aggiustare a mano anche quei dati collegati.
+
+**Perché non è un semplice collegamento UI, quando si deciderà di costruirlo.** Stesse categorie di eccezioni già mappate per il reso fornitore (voce 18), qui applicate al lato vendite:
+
+1. **Reso di una quantità superiore a quanto spedito.** Un reso non può mai superare `spedizioni_righe.quantita` per quella riga — controllo banale ma insufficiente da solo (vedi punto 2).
+2. **Merce già rivenduta/ritrasferita nel frattempo.** Se il lotto rientrato è nel frattempo già stato movimentato altrove, il controllo di "quanto è reso-abile" non può basarsi solo sullo storico della spedizione originale.
+3. **Il prodotto va reintegrato in giacenza tal quale o messo in quarantena/verifica?** Un reso per "danneggiato in trasporto" non dovrebbe rientrare silenziosamente come giacenza vendibile senza controllo — servirebbe (come già notato in Gestione Magazzino e Lotti, area "magazzino virtuale di quarantena") decidere se un reso guidato debba poter scegliere la destinazione, non solo "ricarica il lotto originale".
+4. **Correzione errore vs reso reale sono due casi concettualmente diversi ma con la stessa meccanica di fondo** (ricaricare giacenza, aggiornare `quantita_spedita`, aggiornare stato) — da decidere se trattarli come un'unica funzionalità con un motivo/causale diverso, o come due flussi separati.
+5. **Collegamento con la fatturazione**, quando esisterà davvero (oggi è solo il flag `stato_fatturazione`, vedi §3.7/F1 della stessa REVISIONE): un reso dopo che l'ordine è già marcato "fatturato" avrebbe bisogno di una nota di credito collegata, oggi impossibile perché non c'è alcun modulo fatture realmente wired.
+
+**Cosa servirebbe per implementarlo, quando si deciderà di farlo:**
+1. Nuova azione "Registra reso/rettifica" accessibile dalla scheda spedizione, che elenca le righe/lotti di quella spedizione con quantità ancora "correggibile" già calcolata.
+2. Validazione server-side sulla giacenza/quantità realmente disponibile per il reso, non solo sullo storico della spedizione.
+3. Decisione esplicita su destinazione del reso (giacenza vendibile diretta vs quarantena) prima di scrivere qualunque codice.
+4. Collegamento automatico del movimento generato alla spedizione di origine (`documento_tipo`/`documento_id`), aggiornamento di `quantita_spedita` sulla riga ordine e dello stato spedizione (`consegnata`/`reso`, finalmente utilizzati) nella stessa operazione.
+
+**Perché è rimandato.** Nessun caso d'uso urgente lo richiede oggi — il movimento manuale da Magazzino copre l'operatività corrente. Stesso trattamento già dato al reso fornitore (voce 18): riconosciuto come lavoro futuro, non un fix su qualcosa di rotto in produzione, da programmare come intervento a sé quando la fase Spedizioni/ADR/Compliance (oggi dichiaratamente ancora in studio) sarà definita nel suo complesso.
+
+---
 
 # Piano di Implementazione: Stile Dinamico Documenti (ex Numeri Magici)
 

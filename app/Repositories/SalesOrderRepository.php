@@ -23,7 +23,7 @@ class SalesOrderRepository
     {
         $st = $this->pdo->prepare("
             INSERT INTO ordini_clienti (
-                numero_ordine, cliente_id, preventivo_id, azienda_interna_id,
+                numero_ordine, cliente_id, preventivo_id, azienda_interna_id, magazzino_id,
                 data_ordine, data_consegna_prevista,
                 stato, stato_fatturazione,
                 riferimento_interno, condizioni_pagamento, trasporto, valuta,
@@ -38,7 +38,7 @@ class SalesOrderRepository
                 cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
                 creato_da, created_at, updated_at
             ) VALUES (
-                ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
                 ?, ?,
                 ?, ?,
                 ?, ?, ?, ?,
@@ -60,6 +60,7 @@ class SalesOrderRepository
             $data['cliente_id'],
             $data['preventivo_id'] ?? null,
             $data['azienda_interna_id'] ?? null,
+            $data['magazzino_id'] ?? null,
             $data['data_ordine'],
             $data['data_consegna_prevista'] ?? null,
             $data['stato'] ?? 'in_lavorazione',
@@ -68,7 +69,7 @@ class SalesOrderRepository
             $data['condizioni_pagamento'] ?? null,
             $data['trasporto'] ?? null,
             $data['valuta'] ?? 'EUR',
-            $data['listino_id'] ?? 1,
+            $data['listino_id'] ?? null,
             $data['note'] ?? null,
             $data['indirizzo_spedizione_id'] ?? null,
             $data['consegna_via'] ?? null,
