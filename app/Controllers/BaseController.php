@@ -50,6 +50,33 @@ abstract class BaseController
         require INCLUDES_DIR . '/footer.php';
     }
 
+    /**
+     * Rilegge dal form SOLO i campi elencati in $whitelist, usando il valore
+     * già presente in $current come fallback per ogni campo non inviato.
+     * Qualunque altra chiave presente in $current (es. un campo di sola
+     * lettura finito lì per un merge con una riga DB, o colonne extra
+     * restituite da una query più ampia del necessario) non viene mai letta
+     * da $_POST: è ignorata per costruzione, non solo per disciplina.
+     *
+     * @param array<string,mixed> $current    valori attuali (default form + riga DB caricata)
+     * @param string[]            $whitelist  chiavi scrivibili dal form (tipicamente array_keys(defaultValues()))
+     * @param string[]            $checkboxes chiavi checkbox HTML: assenti in $_POST => '0'
+     * @param string[]            $skip       chiavi con logica di lettura dedicata, gestite dal chiamante
+     */
+    protected function readFormValues(array $current, array $whitelist, array $checkboxes = [], array $skip = []): array
+    {
+        foreach ($whitelist as $k) {
+            if (in_array($k, $checkboxes, true) || in_array($k, $skip, true)) {
+                continue;
+            }
+            $current[$k] = post($k, (string) ($current[$k] ?? ''));
+        }
+        foreach ($checkboxes as $k) {
+            $current[$k] = isset($_POST[$k]) ? '1' : '0';
+        }
+        return $current;
+    }
+
     protected function dbMessage(PDOException $e): string
     {
         $msg = $e->getMessage();

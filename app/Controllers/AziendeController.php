@@ -472,17 +472,11 @@ final class AziendeController extends BaseController
 
     private function readPostValues(array $current): array
     {
-        foreach (array_keys($current) as $k) {
-            $val = $current[$k] ?? '';
-            if (is_bool($val)) {
-                $val = $val ? '1' : '0';
-            }
-            $current[$k] = post($k, (string) $val);
-        }
-        $current['socio_unico']      = isset($_POST['socio_unico']) ? '1' : '0';
-        $current['in_liquidazione']  = isset($_POST['in_liquidazione']) ? '1' : '0';
-        $current['predefinita']     = isset($_POST['predefinita']) ? '1' : '0';
-        return $current;
+        return $this->readFormValues(
+            $current,
+            array_keys($this->defaultValues()),
+            ['socio_unico', 'in_liquidazione', 'predefinita']
+        );
     }
 
     private function validate(array $values): array

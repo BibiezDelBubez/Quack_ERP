@@ -403,10 +403,7 @@ class SuppliersController extends BaseController
 
     private function readPostValues(array $current): array
     {
-        foreach (array_keys($current) as $k) {
-            $current[$k] = post($k, $current[$k] ?? '');
-        }
-        return $current;
+        return $this->readFormValues($current, array_keys($this->defaultValues()));
     }
 
     /**

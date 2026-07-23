@@ -179,21 +179,21 @@ $pitt_selezionati = $pitt_selezionati ?? [];
             <div class="qk-form-group">
               <div class="form-check">
                 <input type="checkbox" class="form-check-input" name="e_soluzione" id="e_soluzione" value="1"
-                       <?= ($v['e_soluzione'] ?? '0') === '1' ? 'checked' : '' ?>>
+                       <?= qk_is_true($v['e_soluzione'] ?? null) ? 'checked' : '' ?>>
                 <label class="form-check-label" for="e_soluzione">Soluzione acquosa</label>
               </div>
             </div>
             <div class="qk-form-group">
               <div class="form-check">
                 <input type="checkbox" class="form-check-input" name="e_rifiuto" id="e_rifiuto" value="1"
-                       <?= ($v['e_rifiuto'] ?? '0') === '1' ? 'checked' : '' ?>>
+                       <?= qk_is_true($v['e_rifiuto'] ?? null) ? 'checked' : '' ?>>
                 <label class="form-check-label" for="e_rifiuto">Rifiuto pericoloso</label>
               </div>
             </div>
             <div class="qk-form-group">
               <div class="form-check">
                 <input type="checkbox" class="form-check-input" name="e_stabilizzato" id="e_stabilizzato" value="1"
-                       <?= ($v['e_stabilizzato'] ?? '0') === '1' ? 'checked' : '' ?>>
+                       <?= qk_is_true($v['e_stabilizzato'] ?? null) ? 'checked' : '' ?>>
                 <label class="form-check-label" for="e_stabilizzato">Stabilizzato</label>
               </div>
             </div>

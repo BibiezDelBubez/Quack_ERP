@@ -228,21 +228,15 @@ final class MagazziniController extends BaseController
 
     private function readPostValues(array $current): array
     {
-        foreach (array_keys($current) as $k) {
-            if (in_array($k, ['predefinito', 'attivo'], true)) {
-                continue; // gestiti separatamente sotto (checkbox)
-            }
-            $val = $current[$k] ?? '';
-            if (is_bool($val)) {
-                $val = $val ? '1' : '0';
-            }
-            $current[$k] = post($k, (string) $val);
-        }
+        $current = $this->readFormValues(
+            $current,
+            array_keys($this->defaultValues()),
+            ['predefinito', 'attivo'],
+            ['azienda_interna_id', 'parent_id', 'soggetto_esterno_id']
+        );
         $current['azienda_interna_id']  = post('azienda_interna_id', '') !== '' ? (int) post('azienda_interna_id') : null;
         $current['parent_id']           = post('parent_id', '') !== '' ? (int) post('parent_id') : null;
         $current['soggetto_esterno_id'] = post('soggetto_esterno_id', '') !== '' ? (int) post('soggetto_esterno_id') : null;
-        $current['predefinito'] = isset($_POST['predefinito']) ? '1' : '0';
-        $current['attivo']      = isset($_POST['attivo']) ? '1' : '0';
         return $current;
     }
 

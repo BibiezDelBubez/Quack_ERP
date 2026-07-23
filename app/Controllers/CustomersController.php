@@ -215,14 +215,13 @@ class CustomersController extends BaseController
     /** Legge i valori POST sovrascrivendo i defaults */
     private function readPostValues(array $current): array
     {
-        foreach (array_keys($current) as $k) {
-            if ($k === 'listini') {
-                $current[$k] = $_POST['listini'] ?? [];
-            } else {
-                $current[$k] = post($k, $current[$k] ?? '');
-            }
-        }
-        $current['newsletter'] = isset($_POST['newsletter']) ? '1' : '0';
+        $current = $this->readFormValues(
+            $current,
+            array_keys($this->defaultValues()),
+            ['newsletter'],
+            ['listini']
+        );
+        $current['listini'] = $_POST['listini'] ?? [];
         return $current;
     }
 

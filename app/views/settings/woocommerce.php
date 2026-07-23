@@ -104,14 +104,14 @@
             <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
               <input type="hidden" name="wc_sync_enabled" value="0">
               <input type="checkbox" name="wc_sync_enabled" value="1"
-                     id="wc-sync-enabled" <?= ($values['wc_sync_enabled'] ?? '0') === '1' ? 'checked' : '' ?>
+                     id="wc-sync-enabled" <?= qk_is_true($values['wc_sync_enabled'] ?? '0') ? 'checked' : '' ?>
                      style="width:1.1rem;height:1.1rem;cursor:pointer">
               <span>Abilita sincronizzazione automatica</span>
             </label>
             <span class="qk-form-hint">Se disabilitata, la sync può essere avviata manualmente.</span>
           </div>
 
-          <div id="sync-options" style="<?= ($values['wc_sync_enabled'] ?? '0') !== '1' ? 'opacity:.45;pointer-events:none' : '' ?>">
+          <div id="sync-options" style="<?= !qk_is_true($values['wc_sync_enabled'] ?? '0') ? 'opacity:.45;pointer-events:none' : '' ?>">
 
             <div class="qk-form-group">
               <label class="qk-form-label">Cosa sincronizzare</label>
@@ -119,14 +119,14 @@
                 <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                   <input type="hidden" name="wc_sync_products" value="0">
                   <input type="checkbox" name="wc_sync_products" value="1"
-                         <?= ($values['wc_sync_products'] ?? '0') === '1' ? 'checked' : '' ?>
+                         <?= qk_is_true($values['wc_sync_products'] ?? '0') ? 'checked' : '' ?>
                          style="width:1.1rem;height:1.1rem;cursor:pointer">
                   <span>Prodotti (nome, prezzo, stock, immagine)</span>
                 </label>
                 <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
                   <input type="hidden" name="wc_sync_orders" value="0">
                   <input type="checkbox" name="wc_sync_orders" value="1"
-                         <?= ($values['wc_sync_orders'] ?? '0') === '1' ? 'checked' : '' ?>
+                         <?= qk_is_true($values['wc_sync_orders'] ?? '0') ? 'checked' : '' ?>
                          style="width:1.1rem;height:1.1rem;cursor:pointer">
                   <span>Ordini (importa da WooCommerce come ordini di vendita)</span>
                 </label>
@@ -197,7 +197,7 @@
           $hasUrl    = !empty($values['wc_store_url']);
           $hasCk     = !empty($values['wc_consumer_key']);
           $hasCs     = !empty($values['wc_consumer_secret']);
-          $syncOn    = ($values['wc_sync_enabled'] ?? '0') === '1';
+          $syncOn    = qk_is_true($values['wc_sync_enabled'] ?? '0');
           ?>
 
           <div class="qk-flex-row qk-gap-sm" style="font-size:.82rem">

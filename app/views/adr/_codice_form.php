@@ -257,7 +257,7 @@ $lbl = function (string $field, array $list, string $idCol, string $labelCol, st
             <div class="qk-form-group">
               <label class="d-flex align-items-center gap-2" style="cursor:pointer;font-size:.875rem">
                 <input type="checkbox" name="e_merce_alto_rischio" value="1"
-                       <?= ($v('e_merce_alto_rischio') === '1') ? 'checked' : '' ?>>
+                       <?= qk_is_true($values['e_merce_alto_rischio'] ?? null) ? 'checked' : '' ?>>
                 <i class="fa-solid fa-skull-crossbones text-danger"></i>
                 Merce alto rischio
               </label>
@@ -265,7 +265,7 @@ $lbl = function (string $field, array $list, string $idCol, string $labelCol, st
             <div class="qk-form-group">
               <label class="d-flex align-items-center gap-2" style="cursor:pointer;font-size:.875rem">
                 <input type="checkbox" name="e_inquinante_marino" value="1"
-                       <?= ($v('e_inquinante_marino') === '1') ? 'checked' : '' ?>>
+                       <?= qk_is_true($values['e_inquinante_marino'] ?? null) ? 'checked' : '' ?>>
                 <i class="fa-solid fa-fish-fins" style="color:var(--qk-info)"></i>
                 Inquinante marino
               </label>

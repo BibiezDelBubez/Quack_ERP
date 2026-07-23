@@ -210,7 +210,7 @@ window.QkPF = {
                   data-bs-toggle="tab" data-bs-target="#ptab-adr"
                   type="button" role="tab" aria-selected="false">
             <i class="fa-solid fa-triangle-exclamation fa-fw me-1" style="color:var(--qk-warning)"></i>ADR & Restrizioni
-            <?php if (($v['is_adr'] ?? '0') === '1'): ?>
+            <?php if (qk_is_true($v['is_adr'] ?? '0')): ?>
             <span class="badge ms-1" style="background:var(--qk-warning);color:var(--qk-body-bg)">ADR</span>
             <?php endif; ?>
             <span class="badge bg-danger ms-1 d-none" id="badge-compliance">!</span>
@@ -326,7 +326,7 @@ window.QkPF = {
                       <label class="qk-form-label">Stato visibilità</label>
                       <div class="mt-2">
                         <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
-                          <input type="checkbox" name="attivo" value="1" <?= ($v['attivo'] ?? '1') === '1' ? 'checked' : '' ?>>
+                          <input type="checkbox" name="attivo" value="1" <?= qk_is_true($v['attivo'] ?? '1') ? 'checked' : '' ?>>
                           Prodotto attivo
                         </label>
                         <span class="qk-form-hint">Il prodotto apparirà nelle ricerche di listini, preventivi e ordini d'acquisto.</span>
@@ -493,7 +493,7 @@ window.QkPF = {
                   <div class="mt-2">
                     <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
                       <input type="checkbox" name="traccia_lotti" value="1"
-                             <?= ($v['traccia_lotti'] ?? '1') === '1' ? 'checked' : '' ?>>
+                             <?= qk_is_true($v['traccia_lotti'] ?? '1') ? 'checked' : '' ?>>
                       Traccia lotti
                     </label>
                     <span class="qk-form-hint">Indica se si deve tracciare la movimentazione dei lotti di questo prodotto.</span>
@@ -536,7 +536,7 @@ window.QkPF = {
                     <a href="<?= url('warehouse/min-stock?prodotto_id=' . (int) $entity_id) ?>"
                        class="btn-qk btn-qk-secondary btn-qk-sm" style="display:inline-flex;align-items:center;gap:.4rem">
                       <i class="fa-solid fa-warehouse"></i>
-                      <strong><?= e(fmt_qty((float) ($v['quantita_disponibile_totale'] ?? 0))) ?></strong> <?= e($um) ?>
+                      <strong><?= e(fmt_qty($giacenza_totale_display ?? 0.0)) ?></strong> <?= e($um) ?>
                       <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.7rem"></i>
                     </a>
                   </div>
@@ -1191,7 +1191,7 @@ window.QkPF = {
                 <div class="qk-form-group">
                   <div class="form-check form-switch">
                     <input type="checkbox" class="form-check-input" name="is_adr" id="is_adr" value="1"
-                           <?= ($v['is_adr'] ?? '0') === '1' ? 'checked' : '' ?>
+                           <?= qk_is_true($v['is_adr'] ?? '0') ? 'checked' : '' ?>
                            onchange="document.getElementById('adr-sostanza-wrap').style.opacity=this.checked?'1':'.4';
                                      document.getElementById('adr-sostanza-wrap').style.pointerEvents=this.checked?'':'none';">
                     <label class="form-check-label fw-semibold" for="is_adr">Prodotto pericoloso ADR</label>
@@ -1200,7 +1200,7 @@ window.QkPF = {
               </div>
 
               <div id="adr-sostanza-wrap"
-                   style="<?= ($v['is_adr'] ?? '0') !== '1' ? 'opacity:.4;pointer-events:none' : '' ?>">
+                   style="<?= !qk_is_true($v['is_adr'] ?? '0') ? 'opacity:.4;pointer-events:none' : '' ?>">
                 <div class="qk-form-row">
                   <div class="qk-form-group" style="flex:3">
                     <label class="qk-form-label">Sostanza chimica</label>

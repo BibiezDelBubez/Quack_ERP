@@ -262,13 +262,11 @@ final class SostanzeChimicheController extends BaseController
 
     private function readPost(array $v): array
     {
-        foreach (array_keys($v) as $k) {
-            $v[$k] = post($k, (string)($v[$k] ?? ''));
-        }
-        $v['e_soluzione']    = isset($_POST['e_soluzione'])    ? '1' : '0';
-        $v['e_rifiuto']      = isset($_POST['e_rifiuto'])      ? '1' : '0';
-        $v['e_stabilizzato'] = isset($_POST['e_stabilizzato']) ? '1' : '0';
-        return $v;
+        return $this->readFormValues(
+            $v,
+            array_keys($this->defaults()),
+            ['e_soluzione', 'e_rifiuto', 'e_stabilizzato']
+        );
     }
 
     private function validate(array $v, ?int $editId = null): array

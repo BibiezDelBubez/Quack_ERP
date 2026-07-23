@@ -570,6 +570,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
                 p.unita_contenuto_id, p.quantita_contenuto,
                 COALESCE(g.scorta_minima, 0) AS scorta_minima,
                 COALESCE(p.is_adr, 0) AS is_adr, p.sostanza_chimica_id,
+                p.markup_fallback_perc,
                 p.created_at, p.updated_at
          FROM prodotti p
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
@@ -617,6 +618,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          'quantita_disponibile_totale' => $quantita_disponibile_totale,
          'is_adr'               => (string) ($row['is_adr']               ?? '0'),
          'sostanza_chimica_id'      => (string) ($row['sostanza_chimica_id']      ?? ''),
+         'markup_fallback_perc' => $row['markup_fallback_perc'] !== null ? (string) $row['markup_fallback_perc'] : '',
          'prezzo_vendita_base'  => $prezzo_base !== false ? (string)$prezzo_base : '',
          '_created_at'          => $row['created_at'],
          '_updated_at'          => $row['updated_at'],
@@ -691,13 +693,13 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
                 tipo, categoria_id, note_interne,
                 attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
                 num_factor, den_factor, peso_netto_kg, peso_lordo_kg,
-                ean, is_adr, sostanza_chimica_id, created_at)
+                ean, is_adr, sostanza_chimica_id, markup_fallback_perc, created_at)
              VALUES
                (:sku_interno, :sku_ecommerce, :nome, :desc_breve, :desc_confezione, :desc_completa,
                 :tipo, :cat_id, :note_int,
                 :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto,
                 :num_factor, :den_factor, :peso_netto, :peso_lordo,
-                :ean, :is_adr, :sostanza_chimica_id, CURRENT_TIMESTAMP)'
+                :ean, :is_adr, :sostanza_chimica_id, :markup_fallback_perc, CURRENT_TIMESTAMP)'
         );
         $stmt->execute([
             ':sku_interno'       => trim($v['sku_interno']),
@@ -721,6 +723,7 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
             ':ean'               => qk_prodotti_null($v['ean']),
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
             ':sostanza_chimica_id'   => qk_prodotti_null($v['sostanza_chimica_id'] ?? '') !== null ? (int) $v['sostanza_chimica_id'] : null,
+            ':markup_fallback_perc'  => qk_prodotti_decimal($v['markup_fallback_perc'] ?? null),
         ]);
 
         $id = (int) $pdo->lastInsertId();
@@ -887,6 +890,7 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
                ean                    = :ean,
                is_adr                 = :is_adr,
                sostanza_chimica_id        = :sostanza_chimica_id,
+               markup_fallback_perc   = :markup_fallback_perc,
                updated_at             = CURRENT_TIMESTAMP
              WHERE id = :id'
         )->execute([
@@ -910,6 +914,8 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
             ':peso_lordo'        => qk_prodotti_decimal($v['peso_lordo_kg']),
             ':ean'               => qk_prodotti_null($v['ean']),
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
+            ':sostanza_chimica_id' => qk_prodotti_null($v['sostanza_chimica_id'] ?? '') !== null ? (int) $v['sostanza_chimica_id'] : null,
+            ':markup_fallback_perc' => qk_prodotti_decimal($v['markup_fallback_perc'] ?? null),
             ':id'                => $id,
         ]);
 

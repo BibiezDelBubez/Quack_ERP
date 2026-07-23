@@ -285,16 +285,46 @@ function qk_schema_status(PDO $pdo): array {
     }
 }
 
-/* ── Input helpers ────────────────────────────────────────────────────────── */
-
-/** Restituisce un valore POST escaped, o il default */
-function post(string $key, string $default = ''): string {
-    return isset($_POST[$key]) ? trim($_POST[$key]) : $default;
+/** Normalizza un flag booleano/checkbox proveniente da form o DB (string '1'/'0', int 1/0, bool, null) */
+function qk_is_true(mixed $value): bool {
+    if (is_bool($value)) return $value;
+    if (is_int($value))  return $value === 1;
+    if (is_string($value)) return $value === '1';
+    return false;
 }
 
-/** Restituisce un valore GET escaped, o il default */
-function get_param(string $key, string $default = ''): string {
-    return isset($_GET[$key]) ? trim($_GET[$key]) : $default;
+/* ── Input helpers ────────────────────────────────────────────────────────── */
+
+/**
+ * Restituisce un valore POST trimmato, o il default.
+ * $default accetta qualunque scalare (i valori di fallback spesso arrivano
+ * da una riga DB già tipizzata, es. float/int/bool), ma viene sempre
+ * normalizzato a string: il ritorno resta string come da firma, quindi
+ * nessun chiamante esistente deve cambiare.
+ */
+function post(string $key, string|int|float|bool|null $default = ''): string {
+    if (!isset($_POST[$key])) {
+        return (string) $default;
+    }
+    if (is_array($_POST[$key])) {
+        throw new \InvalidArgumentException(
+            "post('{$key}'): il campo è stato inviato come array. Leggilo direttamente da \$_POST['{$key}'], post() gestisce solo valori scalari."
+        );
+    }
+    return trim((string) $_POST[$key]);
+}
+
+/** Restituisce un valore GET trimmato, o il default (stesse regole di post(), vedi sopra) */
+function get_param(string $key, string|int|float|bool|null $default = ''): string {
+    if (!isset($_GET[$key])) {
+        return (string) $default;
+    }
+    if (is_array($_GET[$key])) {
+        throw new \InvalidArgumentException(
+            "get_param('{$key}'): il parametro è stato inviato come array. Leggilo direttamente da \$_GET['{$key}'], get_param() gestisce solo valori scalari."
+        );
+    }
+    return trim((string) $_GET[$key]);
 }
 
 /* ── Formattazione ────────────────────────────────────────────────────────── */

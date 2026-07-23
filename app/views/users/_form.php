@@ -115,15 +115,15 @@ $ruoloDesc = [
         <div>
           <label class="qk-form-label">Stato account</label>
           <div class="d-flex gap-2 mt-1">
-            <label class="qk-radio-option horizontal <?= ($v['attivo'] ?? '1') === '1' ? 'is-selected' : '' ?>">
-              <input type="radio" name="attivo" value="1" <?= ($v['attivo'] ?? '1') === '1' ? 'checked' : '' ?>>
+            <label class="qk-radio-option horizontal <?= qk_is_true($v['attivo'] ?? '1') ? 'is-selected' : '' ?>">
+              <input type="radio" name="attivo" value="1" <?= qk_is_true($v['attivo'] ?? '1') ? 'checked' : '' ?>>
               <span class="qk-radio-option-body">
                 <i class="fa-solid fa-circle-check" style="color:var(--qk-success)"></i>
                 <span class="qk-radio-option-label">Attivo</span>
               </span>
             </label>
-            <label class="qk-radio-option horizontal <?= ($v['attivo'] ?? '1') === '0' ? 'is-selected' : '' ?>">
-              <input type="radio" name="attivo" value="0" <?= ($v['attivo'] ?? '1') === '0' ? 'checked' : '' ?>>
+            <label class="qk-radio-option horizontal <?= !qk_is_true($v['attivo'] ?? '1') ? 'is-selected' : '' ?>">
+              <input type="radio" name="attivo" value="0" <?= !qk_is_true($v['attivo'] ?? '1') ? 'checked' : '' ?>>
               <span class="qk-radio-option-body">
                 <i class="fa-solid fa-ban" style="color:var(--qk-danger)"></i>
                 <span class="qk-radio-option-label">Disabilitato</span>

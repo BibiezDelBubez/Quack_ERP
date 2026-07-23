@@ -124,6 +124,11 @@ final class ProductsController extends BaseController
         ];
         unset($loaded['_created_at'], $loaded['_updated_at']);
 
+        // Valore di sola lettura (aggregato calcolato, mai scrivibile dal form):
+        // tenuto fuori da $values per non finire mai nel giro di lettura del POST.
+        $giacenza_totale_display = (float) ($loaded['quantita_disponibile_totale'] ?? 0);
+        unset($loaded['quantita_disponibile_totale']);
+
         $values = array_merge($this->defaultValues(), $loaded);
         $errors = [];
 
@@ -363,17 +368,17 @@ final class ProductsController extends BaseController
             'is_adr'               => '0',
             'sostanza_chimica_id'      => '',
             'prezzo_vendita_base'  => '',
+            'markup_fallback_perc' => '',
         ];
     }
 
     private function readPostValues(array $current): array
     {
-        foreach (array_keys($current) as $k) {
-            $current[$k] = post($k, $current[$k] ?? '');
-        }
-        $current['attivo']        = isset($_POST['attivo'])        ? '1' : '0';
-        $current['traccia_lotti'] = isset($_POST['traccia_lotti']) ? '1' : '0';
-        $current['is_adr']        = isset($_POST['is_adr'])        ? '1' : '0';
+        $current = $this->readFormValues(
+            $current,
+            array_keys($this->defaultValues()),
+            ['attivo', 'traccia_lotti', 'is_adr']
+        );
         // Se is_adr è disabilitato, azzera la sostanza
         if ($current['is_adr'] === '0') {
             $current['sostanza_chimica_id'] = '';

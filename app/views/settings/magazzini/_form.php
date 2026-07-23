@@ -177,14 +177,14 @@ $v = $values;
     <div class="qk-status-panel-body">
       <div class="qk-form-group mb-3">
         <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
-          <input type="checkbox" name="predefinito" form="formMagazzino" value="1" <?= !empty($v['predefinito']) ? 'checked' : '' ?>>
+          <input type="checkbox" name="predefinito" form="formMagazzino" value="1" <?= qk_is_true($v['predefinito'] ?? null) ? 'checked' : '' ?>>
           Magazzino predefinito
         </label>
         <span class="qk-form-hint mt-1 d-block">Preselezionato di default in ogni schermata finché l'utente non sceglie diversamente.</span>
       </div>
       <div class="qk-form-group mb-3">
         <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
-          <input type="checkbox" name="attivo" form="formMagazzino" value="1" <?= !empty($v['attivo']) ? 'checked' : '' ?>>
+          <input type="checkbox" name="attivo" form="formMagazzino" value="1" <?= qk_is_true($v['attivo'] ?? null) ? 'checked' : '' ?>>
           Attivo
         </label>
         <span class="qk-form-hint mt-1 d-block">Un magazzino disattivato non compare più nei selettori per nuove operazioni, ma resta negli storici.</span>

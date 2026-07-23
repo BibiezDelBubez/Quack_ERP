@@ -211,7 +211,7 @@ $nContatti = count($contatti_preload);
               
               <div class="qk-form-group mt-2">
                 <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem;cursor:pointer">
-                  <input type="checkbox" name="newsletter" value="1" <?= $v['newsletter'] === '1' ? 'checked' : '' ?>>
+                  <input type="checkbox" name="newsletter" value="1" <?= qk_is_true($v['newsletter'] ?? null) ? 'checked' : '' ?>>
                   Iscritto alla newsletter
                 </label>
               </div>
@@ -316,7 +316,7 @@ $nContatti = count($contatti_preload);
               <div class="qk-form-group">
                 <label class="qk-form-label d-block">Esenzione IVA</label>
                 <label class="qk-checkbox-label">
-                  <input type="checkbox" name="iva_esente" value="1" form="formCliente" <?= !empty($v['iva_esente']) ? 'checked' : '' ?>>
+                  <input type="checkbox" name="iva_esente" value="1" form="formCliente" <?= qk_is_true($v['iva_esente'] ?? null) ? 'checked' : '' ?>>
                   Cliente esente IVA (Esportatore / Lettera d'Intento)
                 </label>
               </div>
