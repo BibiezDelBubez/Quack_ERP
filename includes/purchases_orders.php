@@ -355,7 +355,7 @@ function qk_ordine_da_offerta(PDO $pdo, int $offerta_id, int $utente_id): int
             $pu = (string)($r['prezzo_unitario'] ?? '0');
 
             // Conversione quantità e prezzo in UoM stock (centralizzata in qk_uom_converti_riga)
-            $uomResult = qk_uom_converti_riga($pdo, $prodotto_id ? (int)$prodotto_id : null, $um_id ? (int)$um_id : null, $qta, $pu);
+            $uomResult = qk_uom_converti_riga($pdo, $prodotto_id ? (int)$prodotto_id : null, $um_id ? (int)$um_id : null, (float)$qta, (float)$pu);
             $quantita_stock              = $uomResult['quantita_stock'];
             $system_unit_price_stock     = $uomResult['system_unit_price_stock'];
             $unita_misura_stock_id       = $uomResult['unita_misura_stock_id'];

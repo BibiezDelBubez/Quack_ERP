@@ -92,7 +92,7 @@ function qk_rfq_detail(PDO $pdo, int $id): ?array
                 snap_cont.contatto_master_id AS contatto_master_id,
                 snap_cont.personalizzato AS contatto_personalizzato,
                 snap_cont.hash_originale AS contatto_hash_originale,
-                COALESCE(cf.ragione_sociale, cf.nome || \' \' || COALESCE(cf.cognome,\'\')) AS fornitore_nome,
+                COALESCE(r.fornitore_ragione_sociale, COALESCE(cf.ragione_sociale, cf.nome || \' \' || COALESCE(cf.cognome,\'\'))) AS fornitore_nome,
                 mp.descrizione AS metodo_pagamento_descrizione,
                 la.nome_listino AS listino_acquisto_nome
            FROM rfq_testata r
@@ -221,6 +221,18 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
             // Questa funzione esegue lo snapshotting iniziale e restituisce gli ID storici 
             // da inserire nel DB. Il database live è stato allineato a questo schema.
             // ==============================================================================
+            $fornitoreId = ($v['fornitore_id'] ?? '') !== '' ? (int)$v['fornitore_id'] : null;
+            $fornitoreRagioneSociale = null;
+            $fornitoreIndirizzoSnap = null;
+            if ($fornitoreId) {
+                $stForn = $pdo->prepare('SELECT ragione_sociale, nome, cognome FROM clienti_fornitori WHERE id = ?');
+                $stForn->execute([$fornitoreId]);
+                if ($fRow = $stForn->fetch(PDO::FETCH_ASSOC)) {
+                    $fornitoreRagioneSociale = !empty($fRow['ragione_sociale']) ? $fRow['ragione_sociale'] : trim(($fRow['nome'] ?? '') . ' ' . ($fRow['cognome'] ?? ''));
+                }
+                $fornitoreIndirizzoSnap = qk_rfq_get_fornitore_indirizzo($pdo, $fornitoreId, '<br>');
+            }
+
             $snapAddrId = qk_upsert_document_address($pdo, $addrPayload, null);
             $snapContId = qk_upsert_document_contact($pdo, $contPayload, null);
 
@@ -238,16 +250,16 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                      consegna_provincia, consegna_nazione, consegna_presso,
                      consegna_referente, consegna_telefono, consegna_note,
                      contatto_id, contatto_nome, contatto_telefono, contatto_email,
-                     fornitore_telefono, fornitore_email, listino_acquisto_id,
+                     fornitore_telefono, fornitore_email, fornitore_ragione_sociale, fornitore_indirizzo_snapshot, listino_acquisto_id,
                      metodo_pagamento_id, resa_porto, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)'
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)'
             );
             $st->execute([
                 $numero,
                 (int)($v['versione'] ?? 1),
                 ($v['rfq_padre_id'] ?? '') !== '' ? (int)$v['rfq_padre_id'] : null,
                 $v['stato'] ?? 'bozza',
-                ($v['fornitore_id'] ?? '') !== '' ? (int)$v['fornitore_id'] : null,
+                $fornitoreId,
                 $snapAddrId,
                 $v['data_emissione'] ?? date('Y-m-d'),
                 ($v['data_scadenza'] ?? '') !== '' ? $v['data_scadenza'] : null,
@@ -277,6 +289,8 @@ function qk_rfq_save(PDO $pdo, array $v, array $righe, int $utente_id, int $id =
                 $v['contatto_email'] ?? null,
                 $v['fornitore_telefono'] ?? null,
                 $v['fornitore_email'] ?? null,
+                $fornitoreRagioneSociale,
+                $fornitoreIndirizzoSnap,
                 ($v['listino_acquisto_id'] ?? '') !== '' ? (int)$v['listino_acquisto_id'] : null,
                 ($v['metodo_pagamento_id'] ?? '') !== '' ? (int)$v['metodo_pagamento_id'] : null,
                 ($v['resa_porto'] ?? '') !== '' ? $v['resa_porto'] : null,
@@ -621,7 +635,9 @@ function _rfq_insert_righe(PDO $pdo, int $rfq_id, array $righe): void
         $qty     = (float)$r['quantita_richiesta'];
         $price   = ($r['prezzo_indicativo'] ?? '') !== '' ? (float)$r['prezzo_indicativo'] : 0.0;
         $ivaPerc = ($r['iva_perc'] ?? '') !== '' ? (float)$r['iva_perc'] : 22.0;
-        $ivaRiga = $qty * $price * ($ivaPerc / 100.0);
+        
+        $totali = qk_calcola_totali_riga($qty, $price, 0.0, $ivaPerc);
+        $ivaRiga = $totali['iva_riga'];
         $um_id   = ($r['unita_misura_id'] ?? '') !== '' ? (int)$r['unita_misura_id'] : null;
 
         $uomResult = qk_uom_converti_riga($pdo, !empty($r['prodotto_id']) ? (int)$r['prodotto_id'] : null, $um_id, $qty, $price);
@@ -637,7 +653,7 @@ function _rfq_insert_righe(PDO $pdo, int $rfq_id, array $righe): void
             ($r['prezzo_indicativo'] ?? '') !== '' ? $price : null,
             $r['note'] ?? '',
             $ivaPerc,
-            round($ivaRiga, 4),
+            $ivaRiga,
             !empty($r['data_consegna_richiesta']) ? $r['data_consegna_richiesta'] : null,
             !empty($r['e_rifiutato']) ? (int)$r['e_rifiutato'] : 0,
             $uomResult['quantita_stock'],

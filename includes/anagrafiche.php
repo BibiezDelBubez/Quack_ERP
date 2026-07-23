@@ -296,15 +296,26 @@ function qk_cliente_prepare_row(array $values, ?string $existingNoteCommerciali 
     ];
 
     $sconto = qk_parse_float_it($values['discount'] ?? '', 0.0);
+    $fido = isset($values['fido_credito']) && $values['fido_credito'] !== '' ? qk_parse_float_it((string)$values['fido_credito'], 0.0) : null;
+    if ($fido !== null && $fido <= 0.0) {
+        $fido = null;
+    }
+    $ivaEsente = isset($values['iva_esente']) && ($values['iva_esente'] === '1' || $values['iva_esente'] === 1 || $values['iva_esente'] === true) ? 1 : 0;
 
     $dettagli = [
-        'tipo_cliente'         => qk_map_category_to_tipo_cliente($values['category'] ?? ''),
-        'sconto_extra_perc'    => $sconto,
-        'condizioni_pagamento' => qk_null_if_empty($values['payment_terms'] ?? ''),
-        'codice_sdi'           => qk_null_if_empty($values['sdi_code'] ?? ''),
-        'note_commerciali'     => $noteComm,
-        'note_interne'         => $noteInterne,
-        'listino_id'           => !empty($values['listino_id']) ? (int)$values['listino_id'] : null,
+        'tipo_cliente'              => qk_map_category_to_tipo_cliente($values['category'] ?? ''),
+        'canale_vendita_default_id' => !empty($values['canale_vendita_default_id']) ? (int)$values['canale_vendita_default_id'] : null,
+        'sconto_extra_perc'         => $sconto,
+        'condizioni_pagamento'      => qk_null_if_empty($values['payment_terms'] ?? ''),
+        'fido_credito'              => $fido,
+        'codice_sdi'                => qk_null_if_empty($values['sdi_code'] ?? ''),
+        'iva_esente'                => $ivaEsente,
+        'codice_esenzione_iva'      => qk_null_if_empty($values['codice_esenzione_iva'] ?? ''),
+        'note_commerciali'          => $noteComm,
+        'note_interne'              => $noteInterne,
+        'regime_fiscale'            => qk_null_if_empty($values['regime_fiscale'] ?? ''),
+        'zona_commerciale'          => qk_null_if_empty($values['zona_commerciale'] ?? ''),
+        'listino_id'                => !empty($values['listino_id']) ? (int)$values['listino_id'] : null,
     ];
 
     $via = trim((string) ($values['address'] ?? ''));
@@ -472,29 +483,42 @@ function qk_insert_cliente(PDO $pdo, array $values): int
         $tipo_cliente_id = qk_get_tipo_cliente_id_by_code($pdo, $d['tipo_cliente']);
         $stmtD = $pdo->prepare(
             'INSERT INTO dettagli_clienti (
-                soggetto_id, tipo_cliente_id, sconto_extra_perc, condizioni_pagamento,
-                codice_sdi, note_commerciali, note_interne, listino_id
-            ) VALUES (?,?,?,?,?,?,?,?)'
+                soggetto_id, tipo_cliente_id, canale_vendita_default_id, sconto_extra_perc,
+                condizioni_pagamento, fido_credito, codice_sdi, iva_esente, codice_esenzione_iva,
+                note_commerciali, note_interne, regime_fiscale, zona_commerciale, listino_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         );
         $stmtD->execute([
             $id,
             $tipo_cliente_id,
+            $d['canale_vendita_default_id'],
             $d['sconto_extra_perc'],
             $d['condizioni_pagamento'],
+            $d['fido_credito'],
             $d['codice_sdi'],
+            $d['iva_esente'],
+            $d['codice_esenzione_iva'],
             $d['note_commerciali'],
             $d['note_interne'],
+            $d['regime_fiscale'],
+            $d['zona_commerciale'],
             $d['listino_id'],
         ]);
 
         // Sync many-to-many listini from form values
         if (!empty($values['listini'])) {
+            // Deduplica per listino_id: se il form invia lo stesso listino 2 volte,
+            // conserva solo la prima occorrenza (prevenzione crash UNIQUE constraint)
+            $seenLids = [];
             $insListino = $pdo->prepare("
                 INSERT INTO clienti_listini (cliente_id, listino_id, priorita, data_inizio, data_fine)
                 VALUES (?, ?, ?, ?, ?)
             ");
             foreach ($values['listini'] as $lst) {
                 if (empty($lst['listino_id'])) continue;
+                $lid = (int)$lst['listino_id'];
+                if (isset($seenLids[$lid])) continue;
+                $seenLids[$lid] = true;
                 $insListino->execute([
                     $id,
                     (int)$lst['listino_id'],
@@ -561,33 +585,48 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
         if ($chk->fetchColumn()) {
             $pdo->prepare(
                 'UPDATE dettagli_clienti SET
-                    tipo_cliente_id = ?, sconto_extra_perc = ?, condizioni_pagamento = ?,
-                    codice_sdi = ?, note_commerciali = ?, note_interne = ?, listino_id = ?
+                    tipo_cliente_id = ?, canale_vendita_default_id = ?, sconto_extra_perc = ?,
+                    condizioni_pagamento = ?, fido_credito = ?, codice_sdi = ?, iva_esente = ?,
+                    codice_esenzione_iva = ?, note_commerciali = ?, note_interne = ?,
+                    regime_fiscale = ?, zona_commerciale = ?, listino_id = ?
                  WHERE soggetto_id = ?'
             )->execute([
                 $tipo_cliente_id,
+                $d['canale_vendita_default_id'],
                 $d['sconto_extra_perc'],
                 $d['condizioni_pagamento'],
+                $d['fido_credito'],
                 $d['codice_sdi'],
+                $d['iva_esente'],
+                $d['codice_esenzione_iva'],
                 $d['note_commerciali'],
                 $d['note_interne'],
+                $d['regime_fiscale'],
+                $d['zona_commerciale'],
                 $d['listino_id'],
                 $id,
             ]);
         } else {
             $pdo->prepare(
                 'INSERT INTO dettagli_clienti (
-                    soggetto_id, tipo_cliente_id, sconto_extra_perc, condizioni_pagamento,
-                    codice_sdi, note_commerciali, note_interne, listino_id
-                ) VALUES (?,?,?,?,?,?,?,?)'
+                    soggetto_id, tipo_cliente_id, canale_vendita_default_id, sconto_extra_perc,
+                    condizioni_pagamento, fido_credito, codice_sdi, iva_esente, codice_esenzione_iva,
+                    note_commerciali, note_interne, regime_fiscale, zona_commerciale, listino_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
             )->execute([
                 $id,
                 $tipo_cliente_id,
+                $d['canale_vendita_default_id'],
                 $d['sconto_extra_perc'],
                 $d['condizioni_pagamento'],
+                $d['fido_credito'],
                 $d['codice_sdi'],
+                $d['iva_esente'],
+                $d['codice_esenzione_iva'],
                 $d['note_commerciali'],
                 $d['note_interne'],
+                $d['regime_fiscale'],
+                $d['zona_commerciale'],
                 $d['listino_id'],
             ]);
         }
@@ -595,12 +634,18 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
         // Sync many-to-many listini from form values
         $pdo->prepare("DELETE FROM clienti_listini WHERE cliente_id = ?")->execute([$id]);
         if (!empty($values['listini'])) {
+            // Deduplica per listino_id: se il form invia lo stesso listino 2 volte,
+            // conserva solo la prima occorrenza (prevenzione crash UNIQUE constraint)
+            $seenLids = [];
             $insListino = $pdo->prepare("
                 INSERT INTO clienti_listini (cliente_id, listino_id, priorita, data_inizio, data_fine)
                 VALUES (?, ?, ?, ?, ?)
             ");
             foreach ($values['listini'] as $lst) {
                 if (empty($lst['listino_id'])) continue;
+                $lid = (int)$lst['listino_id'];
+                if (isset($seenLids[$lid])) continue;
+                $seenLids[$lid] = true;
                 $insListino->execute([
                     $id,
                     (int)$lst['listino_id'],
@@ -623,8 +668,10 @@ function qk_update_cliente(PDO $pdo, int $id, array $values): void
 /** @return ?array<string, string> */
 function qk_load_cliente_form(PDO $pdo, int $id): ?array
 {
-    $sql = 'SELECT cf.*, tc.codice AS tipo_cliente, dc.sconto_extra_perc, dc.condizioni_pagamento,
-                   dc.codice_sdi, dc.note_commerciali, dc.note_interne, dc.listino_id,
+    $sql = 'SELECT cf.*, tc.codice AS tipo_cliente, dc.canale_vendita_default_id, dc.sconto_extra_perc,
+                   dc.condizioni_pagamento, dc.fido_credito, dc.codice_sdi, dc.iva_esente,
+                   dc.codice_esenzione_iva, dc.note_commerciali, dc.note_interne, dc.regime_fiscale,
+                   dc.zona_commerciale, dc.listino_id,
                    i.via AS ind_via, i.civico AS ind_civico, i.cap AS ind_cap,
                    i.citta AS ind_citta, i.provincia AS ind_provincia, i.nazione AS ind_nazione
             FROM clienti_fornitori cf
@@ -669,10 +716,16 @@ function qk_load_cliente_form(PDO $pdo, int $id): ?array
         'sdi_code'      => (string) ($row['codice_sdi'] ?? ''),
         'pec'           => (string) ($row['pec'] ?? ''),
         'category'      => qk_map_tipo_cliente_to_category($row['tipo_cliente'] ?? null),
-        'discount'      => isset($row['sconto_extra_perc']) ? (string) $row['sconto_extra_perc'] : '',
-        'payment_terms' => (string) ($row['condizioni_pagamento'] ?? ''),
-        'listino_id'    => isset($row['listino_id']) ? (string) $row['listino_id'] : '',
-        'status'        => qk_reverse_status((int) $row['attivo']),
+        'discount'                  => isset($row['sconto_extra_perc']) ? (string) $row['sconto_extra_perc'] : '',
+        'payment_terms'             => (string) ($row['condizioni_pagamento'] ?? ''),
+        'listino_id'                => isset($row['listino_id']) ? (string) $row['listino_id'] : '',
+        'fido_credito'              => isset($row['fido_credito']) ? (string) $row['fido_credito'] : '',
+        'iva_esente'                => isset($row['iva_esente']) ? (string) $row['iva_esente'] : '0',
+        'codice_esenzione_iva'      => (string) ($row['codice_esenzione_iva'] ?? ''),
+        'regime_fiscale'            => (string) ($row['regime_fiscale'] ?? ''),
+        'canale_vendita_default_id' => isset($row['canale_vendita_default_id']) ? (string) $row['canale_vendita_default_id'] : '',
+        'zona_commerciale'          => (string) ($row['zona_commerciale'] ?? ''),
+        'status'                    => qk_reverse_status((int) $row['attivo']),
         'notes'         => $notesClean,
         'newsletter'    => $newsletter,
         '_created_at'   => (string) ($row['created_at'] ?? ''),
@@ -2081,6 +2134,7 @@ function qk_get_cliente_dettagli_per_preventivo(PDO $pdo, int $clienteId): ?arra
 {
     $st = $pdo->prepare(
         "SELECT cf.id, cf.email, cf.telefono, cf.cellulare, dc.condizioni_pagamento, dc.listino_id,
+                dc.canale_vendita_default_id, dc.fido_credito, dc.iva_esente, dc.codice_esenzione_iva,
                 l.nome AS listino_nome, l.valuta AS listino_valuta
            FROM clienti_fornitori cf
       LEFT JOIN dettagli_clienti dc ON dc.soggetto_id = cf.id
@@ -2090,6 +2144,22 @@ function qk_get_cliente_dettagli_per_preventivo(PDO $pdo, int $clienteId): ?arra
     $st->execute([$clienteId]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     return $row ?: null;
+}
+
+/**
+ * Calcola l'esposizione commerciale totale di un cliente (ordini aperti).
+ */
+function qk_calcola_esposizione_cliente(PDO $pdo, int $clienteId): float
+{
+    $st = $pdo->prepare(
+        "SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario * (1 - COALESCE(r.sconto_perc, 0)/100.0)), 0.0)
+           FROM ordini_clienti o
+           JOIN ordini_clienti_righe r ON r.ordine_id = o.id
+          WHERE o.cliente_id = ?
+            AND o.stato NOT IN ('completato', 'annullato')"
+    );
+    $st->execute([$clienteId]);
+    return (float) $st->fetchColumn();
 }
 
 /**
@@ -2138,6 +2208,49 @@ function qk_get_indirizzi_cliente(PDO $pdo, int $clienteId, ?array $tipiFiltro =
     }
     $sql .= " ORDER BY CASE tipo WHEN 'spedizione' THEN 1 WHEN 'principale' THEN 2 ELSE 3 END,
                        predefinito DESC, id ASC";
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Funzione trasversale di ricerca autocomplete soggetti (clienti/fornitori).
+ *
+ * @param PDO    $pdo
+ * @param string $term  Stringa di ricerca
+ * @param string $tipo  'fornitore' | 'cliente' | 'tutti'
+ * @param int    $limit Numero massimo di risultati
+ * @return array Mappa di soggetti trovati
+ */
+function qk_search_soggetti(PDO $pdo, string $term, string $tipo = 'tutti', int $limit = 50): array
+{
+    $term = trim($term);
+    if ($term === '') {
+        return [];
+    }
+
+    $nomeSql = qk_nome_cliente_sql_fragment();
+    $where = ['attivo = 1', 'id NOT IN (SELECT soggetto_id FROM aziende_interne)'];
+    $params = [];
+
+    if ($tipo === 'fornitore') {
+        $where[] = "tipo IN ('fornitore', 'entrambi')";
+    } elseif ($tipo === 'cliente') {
+        $where[] = "tipo IN ('cliente', 'entrambi')";
+    }
+
+    $whereSearch = "(ragione_sociale LIKE ? OR nome LIKE ? OR cognome LIKE ? OR codice LIKE ? OR email LIKE ?)";
+    $like = '%' . $term . '%';
+    $where[] = $whereSearch;
+    $params = array_merge($params, [$like, $like, $like, $like, $like]);
+
+    $sql = "SELECT id, codice, tipo, ragione_sociale, nome, cognome, email, telefono,
+                   {$nomeSql} AS label, {$nomeSql} AS ragione_sociale_label
+              FROM clienti_fornitori
+             WHERE " . implode(' AND ', $where) . "
+             ORDER BY label ASC
+             LIMIT " . (int)$limit;
+
     $st = $pdo->prepare($sql);
     $st->execute($params);
     return $st->fetchAll(PDO::FETCH_ASSOC);

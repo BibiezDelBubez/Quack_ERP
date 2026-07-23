@@ -721,8 +721,18 @@ final class SalesQuotesController extends BaseController
             redirect(url('sales/quotes'));
         }
 
-        $service  = new \App\Services\SalesQuoteDocumentService();
-        $pdfBytes = $service->generatePdf($dati);
+        $archiver = new \App\Services\PdfArchiverService();
+        $pdfBytes = $archiver->getOrRender(
+            $this->pdo,
+            'preventivi',
+            $id,
+            'preventivi',
+            (string)($dati['quota']['stato'] ?? 'bozza'),
+            function() use ($dati) {
+                $service  = new \App\Services\SalesQuoteDocumentService();
+                return $service->generatePdf($dati);
+            }
+        );
 
         while (ob_get_level()) {
             ob_end_clean();

@@ -524,8 +524,27 @@ class PurchaseOrdersController extends BaseController
             </table>
         </div>';
 
-        $mpdf->WriteHTML($html);
-        $mpdf->Output('OrdineAcquisto_' . clean_filename($ordine['numero']) . '.pdf', \Mpdf\Output\Destination::INLINE);
+        $archiver = new \App\Services\PdfArchiverService();
+        $pdfBytes = $archiver->getOrRender(
+            $this->pdo,
+            'ordini_acquisto',
+            $id,
+            'ordini_testata',
+            (string)($ordine['stato'] ?? 'bozza'),
+            function() use ($mpdf, $html) {
+                $mpdf->WriteHTML($html);
+                return $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
+            }
+        );
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="OrdineAcquisto_' . clean_filename($ordine['numero']) . '.pdf"');
+        header('Content-Length: ' . strlen($pdfBytes));
+        echo $pdfBytes;
         exit;
     }
 

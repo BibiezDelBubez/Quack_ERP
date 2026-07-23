@@ -443,8 +443,10 @@ function _offerta_insert_righe(PDO $pdo, int $offerta_id, array $righe): void
         $prezzo     = (float)($r['prezzo_unitario'] ?? 0);
         $sconto     = (float)($r['sconto_perc'] ?? 0);
         $iva        = (float)($r['iva_perc'] ?? 22);
-        $imponibile = round($qta * $prezzo * (1 - $sconto / 100), 2);
-        $ivaRiga    = round($imponibile * $iva / 100, 2);
+        
+        $totali     = qk_calcola_totali_riga($qta, $prezzo, $sconto, $iva);
+        $imponibile = $totali['imponibile'];
+        $ivaRiga    = $totali['iva_riga'];
 
         $st->execute([
             $offerta_id,
@@ -477,8 +479,10 @@ function _offerta_insert_righe(PDO $pdo, int $offerta_id, array $righe): void
         $prezzo     = (float)($r['prezzo_unitario'] ?? 0);
         $sconto     = (float)($r['sconto_perc'] ?? 0);
         $iva        = (float)($r['iva_perc'] ?? 22);
-        $imponibile = round($qta * $prezzo * (1 - $sconto / 100), 2);
-        $ivaRiga    = round($imponibile * $iva / 100, 2);
+
+        $totali     = qk_calcola_totali_riga($qta, $prezzo, $sconto, $iva);
+        $imponibile = $totali['imponibile'];
+        $ivaRiga    = $totali['iva_riga'];
 
         $padre_temp_id = (string)($r['offerta_riga_padre_id'] ?? '');
         $newPadreId = isset($map[$padre_temp_id]) ? $map[$padre_temp_id] : null;

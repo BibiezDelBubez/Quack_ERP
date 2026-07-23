@@ -581,3 +581,58 @@ function qk_resolve_destinatario_ddt_stampa(PDO $pdo, array $ddt): array
     }
     return qk_calcola_destinatario_ddt($pdo, (int)$ddt['destinatario_id'], !empty($ddt['indirizzo_destinazione_id']) ? (int)$ddt['indirizzo_destinazione_id'] : null);
 }
+
+/**
+ * Calcola in modo centralizzato e uniforme l'imponibile, l'IVA di riga e il totale riga.
+ *
+ * @param float $qty       Quantità
+ * @param float $price     Prezzo unitario
+ * @param float $discount  Percentuale sconto (0-100)
+ * @param float $vatPerc   Percentuale IVA (es. 22.0)
+ * @return array{imponibile:float, iva_riga:float, totale_riga:float}
+ */
+function qk_calcola_totali_riga(float $qty, float $price, float $discount = 0.0, float $vatPerc = 22.0): array
+{
+    $imponibile = round($qty * $price * (1.0 - ($discount / 100.0)), 2);
+    $iva_riga   = round($imponibile * ($vatPerc / 100.0), 2);
+    $totale_riga = round($imponibile + $iva_riga, 2);
+
+    return [
+        'imponibile'  => $imponibile,
+        'iva_riga'    => $iva_riga,
+        'totale_riga' => $totale_riga,
+    ];
+}
+
+/**
+ * Valida che le righe di un documento abbiano quantità > 0 e prezzo >= 0 (o > 0 se $requirePrice è true).
+ *
+ * @param array $righe        Array delle righe dal form POST
+ * @param array &$errors      Riferimento all'array degli errori
+ * @param bool  $requirePrice Se true, il prezzo unitario deve essere strettamente > 0
+ * @return bool True se valide, false in presenza di errori
+ */
+function qk_validate_document_rows(array $righe, array &$errors, bool $requirePrice = false): bool
+{
+    $valid = true;
+    if (empty($righe)) {
+        $errors['righe'] = 'Inserisci almeno una riga.';
+        return false;
+    }
+
+    foreach ($righe as $i => $r) {
+        $qta    = (float)($r['quantita'] ?? $r['quantita_richiesta'] ?? $r['quantita_offerta'] ?? $r['quantita_ordinata'] ?? 0);
+        $prezzo = (float)($r['prezzo_unitario'] ?? $r['prezzo_indicativo'] ?? 0);
+
+        if ($qta <= 0) {
+            $errors["riga_{$i}_quantita"] = 'La quantità deve essere maggiore di zero.';
+            $valid = false;
+        }
+        if ($requirePrice ? ($prezzo <= 0) : ($prezzo < 0)) {
+            $errors["riga_{$i}_prezzo"] = $requirePrice ? 'Il prezzo unitario deve essere maggiore di zero.' : 'Il prezzo non può essere negativo.';
+            $valid = false;
+        }
+    }
+
+    return $valid;
+}

@@ -84,6 +84,7 @@ class CustomersController extends BaseController
         $extra_css = ['searchable-select.css'];
 
         $listini = qk_get_listini_vendita_attivi($this->pdo);
+        $canali_vendita = qk_get_canali_vendita_attivi($this->pdo);
 
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
     }
@@ -165,6 +166,7 @@ class CustomersController extends BaseController
         $extra_css = ['customers-addresses.css', 'customers-compliance.css', 'searchable-select.css', 'suppliers-contacts.css'];
 
         $listini = qk_get_listini_vendita_attivi($this->pdo);
+        $canali_vendita = qk_get_canali_vendita_attivi($this->pdo);
 
         $this->page(APP_ROOT_DIR . '/app/views/customers/_form.php', get_defined_vars());
     }
@@ -196,11 +198,17 @@ class CustomersController extends BaseController
             'category'      => '',
             'discount'      => '',
             'payment_terms' => '',
-            'status'        => 'active',
-            'notes'         => '',
-            'newsletter'    => '0',
-            'listino_id'    => '',
-            'listini'       => [],
+            'status'                    => 'active',
+            'notes'                     => '',
+            'newsletter'                => '0',
+            'listino_id'                => '',
+            'fido_credito'              => '',
+            'iva_esente'                => '0',
+            'codice_esenzione_iva'      => '',
+            'regime_fiscale'            => '',
+            'canale_vendita_default_id' => '',
+            'zona_commerciale'          => '',
+            'listini'                   => [],
         ];
     }
 

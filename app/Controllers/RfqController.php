@@ -265,10 +265,22 @@ class RfqController extends BaseController
         $righe = $detail['righe'];
 
         $azienda = qk_resolve_azienda_emittente($this->pdo, !empty($rfq['azienda_interna_id']) ? (int)$rfq['azienda_interna_id'] : null);
-        $indirizzoFornitore = qk_rfq_get_fornitore_indirizzo($this->pdo, (int)($rfq['fornitore_id'] ?? 0), '<br>');
+        $indirizzoFornitore = !empty($rfq['fornitore_indirizzo_snapshot'])
+            ? $rfq['fornitore_indirizzo_snapshot']
+            : qk_rfq_get_fornitore_indirizzo($this->pdo, (int)($rfq['fornitore_id'] ?? 0), '<br>');
 
-        $service = new \App\Services\RfqDocumentService();
-        $pdfBytes = $service->generatePdf($rfq, $righe, $azienda, $indirizzoFornitore);
+        $archiver = new \App\Services\PdfArchiverService();
+        $pdfBytes = $archiver->getOrRender(
+            $this->pdo,
+            'rfq',
+            $id,
+            'rfq_testata',
+            (string)($rfq['stato'] ?? 'bozza'),
+            function() use ($rfq, $righe, $azienda, $indirizzoFornitore) {
+                $service = new \App\Services\RfqDocumentService();
+                return $service->generatePdf($rfq, $righe, $azienda, $indirizzoFornitore);
+            }
+        );
 
         while (ob_get_level()) {
             ob_end_clean();
@@ -332,35 +344,16 @@ class RfqController extends BaseController
     public function apiFornitori(): void
     {
         ob_start();
-        $q    = get_param('q', '');
-        
-        $whereSearch = "(ragione_sociale LIKE ? OR nome LIKE ? OR codice LIKE ?)";
-        if (mb_strlen($q) === 1) {
-            // Cerca solo fornitori che INIZIANO con la lettera cercata, o che hanno codice corrispondente
-            $like = $q . '%';
-            $codeLike = $q;
-        } else {
-            // Ricerca parziale (contiene) per query più lunghe
-            $like = '%' . $q . '%';
-            $codeLike = '%' . $q . '%';
+        $q = get_param('q', '');
+        $fornitori = qk_search_soggetti($this->pdo, $q, 'fornitore', 30);
+        foreach ($fornitori as &$f) {
+            $f['nome'] = $f['label'];
+            $f['partita_iva'] = $f['partita_iva'] ?? '';
         }
-
-        $st   = $this->pdo->prepare(
-            "SELECT id, codice,
-                    COALESCE(ragione_sociale, nome || ' ' || COALESCE(cognome,'')) AS nome,
-                    partita_iva
-               FROM clienti_fornitori
-              WHERE (tipo = 'fornitore' OR tipo = 'entrambi')
-                AND parent_id IS NULL
-                AND id NOT IN (SELECT soggetto_id FROM aziende_interne)
-                AND attivo = 1
-                AND (ragione_sociale LIKE ? OR nome LIKE ? OR codice LIKE ?)
-              ORDER BY ragione_sociale, nome LIMIT 30"
-        );
-        $st->execute([$like, $like, $codeLike]);
+        unset($f);
         ob_end_clean();
         header('Content-Type: application/json');
-        echo json_encode(['ok' => true, 'fornitori' => $st->fetchAll(PDO::FETCH_ASSOC)]);
+        echo json_encode(['ok' => true, 'fornitori' => $fornitori]);
     }
 
     /** Ricerca prodotti con prezzo fornitore se disponibile. */

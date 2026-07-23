@@ -22,7 +22,7 @@ function qk_get_incoterms_attivi(PDO $pdo): array
  */
 function qk_get_canali_vendita_attivi(PDO $pdo): array
 {
-    return $pdo->query("SELECT codice, nome FROM canali_vendita WHERE attivo = 1 ORDER BY nome")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("SELECT id, codice, nome FROM canali_vendita WHERE attivo = 1 ORDER BY nome")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /**

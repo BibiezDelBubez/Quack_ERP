@@ -283,6 +283,57 @@ $nContatti = count($contatti_preload);
           </div>
         </div>
 
+        <!-- Condizioni Fiscali & Fido Commerciale -->
+        <div class="qk-card mb-3 mt-3">
+          <div class="qk-card-header"><span class="qk-card-title">Fisco, Canale & Fido Commerciale</span></div>
+          <div class="qk-card-body">
+            <div class="qk-form-row">
+              <div class="qk-form-group">
+                <label class="qk-form-label">Fido Credito Max (€)</label>
+                <input type="number" name="fido_credito" form="formCliente" class="qk-form-control"
+                       value="<?= e($v['fido_credito'] ?? '') ?>" placeholder="Illimitato (vuoto)" min="0" step="0.01">
+                <small class="qk-text-muted" style="font-size:0.75rem; display:block; margin-top:0.25rem;">Lasciare vuoto per fido illimitato senza blocchi.</small>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Canale Vendita Predefinito</label>
+                <select name="canale_vendita_default_id" form="formCliente" class="qk-form-control">
+                  <option value="">— Nessuno / Standard —</option>
+                  <?php foreach ($canali_vendita ?? [] as $cv): ?>
+                    <option value="<?= $cv['id'] ?>" <?= (string)($v['canale_vendita_default_id'] ?? '') === (string)$cv['id'] ? 'selected' : '' ?>>
+                      <?= e($cv['nome']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Zona Commerciale</label>
+                <input type="text" name="zona_commerciale" form="formCliente" class="qk-form-control"
+                       value="<?= e($v['zona_commerciale'] ?? '') ?>" placeholder="es. Nord-Est">
+              </div>
+            </div>
+
+            <div class="qk-form-row mt-3">
+              <div class="qk-form-group">
+                <label class="qk-form-label d-block">Esenzione IVA</label>
+                <label class="qk-checkbox-label">
+                  <input type="checkbox" name="iva_esente" value="1" form="formCliente" <?= !empty($v['iva_esente']) ? 'checked' : '' ?>>
+                  Cliente esente IVA (Esportatore / Lettera d'Intento)
+                </label>
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Codice Esenzione IVA</label>
+                <input type="text" name="codice_esenzione_iva" form="formCliente" class="qk-form-control"
+                       value="<?= e($v['codice_esenzione_iva'] ?? '') ?>" placeholder="es. N2.2 ex Art. 8c">
+              </div>
+              <div class="qk-form-group">
+                <label class="qk-form-label">Regime Fiscale</label>
+                <input type="text" name="regime_fiscale" form="formCliente" class="qk-form-control"
+                       value="<?= e($v['regime_fiscale'] ?? '') ?>" placeholder="es. RF01 (Ordinario)">
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Listini prezzi associati molti-a-molti -->
         <div class="qk-card mt-3 mb-3">
           <div class="qk-card-header qk-flex-row qk-justify-between">

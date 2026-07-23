@@ -1741,3 +1741,43 @@ function qk_get_prodotto_stock_info(PDO $pdo, int $id): ?array
     $row = $st->fetch(PDO::FETCH_ASSOC);
     return $row ?: null;
 }
+
+/**
+ * Funzione trasversale di ricerca autocomplete prodotti.
+ *
+ * @param PDO    $pdo
+ * @param string $term  Stringa di ricerca (nome o sku)
+ * @param int    $limit Numero massimo di risultati
+ * @return array Mappa di prodotti trovati con informazioni arricchite
+ */
+function qk_search_prodotti_autocomplete(PDO $pdo, string $term, int $limit = 50): array
+{
+    $term = trim($term);
+    if ($term === '') {
+        return [];
+    }
+
+    $st = $pdo->prepare("
+        SELECT p.id,
+               p.nome AS label,
+               p.nome,
+               p.sku_interno AS sku,
+               p.sku_interno,
+               p.categoria_id,
+               um.codice AS unita_misura,
+               p.unita_misura_stock_id,
+               p.descrizione_confezione AS quantita_confezione,
+               p.unita_contenuto_id,
+               um_comm.codice AS unita_misura_commerciale,
+               p.quantita_contenuto
+          FROM prodotti p
+     LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+     LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
+         WHERE p.attivo = 1
+           AND (p.nome LIKE :q OR p.sku_interno LIKE :q)
+      ORDER BY p.nome ASC
+         LIMIT " . (int)$limit
+    );
+    $st->execute([':q' => '%' . $term . '%']);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}

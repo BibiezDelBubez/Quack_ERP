@@ -225,6 +225,7 @@ CREATE TABLE IF NOT EXISTS clienti_listini (
     data_inizio DATE,
     data_fine DATE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_clienti_listini_cliente_listino (cliente_id, listino_id),
     CONSTRAINT fk_clienti_listini_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id) ON DELETE CASCADE,
     CONSTRAINT fk_clienti_listini_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

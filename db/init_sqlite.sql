@@ -317,7 +317,8 @@ CREATE TABLE IF NOT EXISTS clienti_listini (
     priorita    INTEGER      NOT NULL DEFAULT 10,
     data_inizio DATE,
     data_fine   DATE,
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(cliente_id, listino_id)
 );
 
 -- =============================================================================
@@ -1219,6 +1220,8 @@ CREATE TABLE IF NOT EXISTS preventivi (
     note_cliente            TEXT,
     note_interne            TEXT,
     creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
+    pdf_path                TEXT,
+    pdf_hash                VARCHAR(64),
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME
 );
@@ -1315,6 +1318,8 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     note                    TEXT,
     listino_id              INTEGER      REFERENCES listini(id), -- listino di vendita applicato
     creato_da               INTEGER      NOT NULL REFERENCES utenti(id),
+    pdf_path                TEXT,
+    pdf_hash                VARCHAR(64),
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              DATETIME
 );
@@ -1676,6 +1681,23 @@ FOR EACH ROW
 WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL
 BEGIN
     UPDATE documenti_trasporto SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Impedisci inserimento o aggiornamento di kit nidificati (Kit dentro Kit)
+CREATE TRIGGER IF NOT EXISTS trg_componenti_kit_prevent_nested
+BEFORE INSERT ON componenti_kit
+FOR EACH ROW
+WHEN (SELECT tipo FROM prodotti WHERE id = NEW.componente_id) = 'kit'
+BEGIN
+    SELECT RAISE(ABORT, 'Impossibile inserire un Kit all''interno di un altro Kit.');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_componenti_kit_prevent_nested_update
+BEFORE UPDATE ON componenti_kit
+FOR EACH ROW
+WHEN (SELECT tipo FROM prodotti WHERE id = NEW.componente_id) = 'kit'
+BEGIN
+    SELECT RAISE(ABORT, 'Impossibile inserire un Kit all''interno di un altro Kit.');
 END;
 
 -- =============================================================================
@@ -2069,6 +2091,10 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     contatto_email          VARCHAR(150),
     fornitore_telefono      VARCHAR(20),
     fornitore_email         VARCHAR(150),
+    fornitore_ragione_sociale VARCHAR(255),
+    fornitore_indirizzo_snapshot TEXT,
+    pdf_path                TEXT,
+    pdf_hash                VARCHAR(64),
 
     data_emissione          DATE         NOT NULL DEFAULT (DATE('now')),
     data_scadenza           DATE,        -- Data scadenza risposta del fornitore
@@ -2261,6 +2287,8 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     contatto_email          VARCHAR(150),
     fornitore_telefono      VARCHAR(20),
     fornitore_email         VARCHAR(150),
+    pdf_path                TEXT,
+    pdf_hash                VARCHAR(64),
     listino_acquisto_id     INTEGER      REFERENCES listini_acquisto(id),
     metodo_pagamento_id     INTEGER      REFERENCES metodi_pagamento(id),
     resa_porto              TEXT         CHECK(resa_porto IN ('porto_franco', 'porto_assegnato')),
