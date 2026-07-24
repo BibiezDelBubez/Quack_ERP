@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once INCLUDES_DIR . '/sales_quotes.php';
 require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/compliance.php';
+require_once INCLUDES_DIR . '/impostazioni.php';
 require_once APP_ROOT_DIR . '/app/Services/SalesQuoteDocumentService.php';
 
 final class SalesQuotesController extends BaseController
@@ -18,8 +19,12 @@ final class SalesQuotesController extends BaseController
         $dal    = get_param('dal', '');
         $al     = get_param('al', '');
 
+        // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): 'o.stato_effettivo',
+        // non 'o.stato' — qk_preventivi_count()/_list() interrogano ora
+        // v_preventivi_stato_effettivo, la colonna grezza 'stato' non e' piu'
+        // quella su cui filtrare/ordinare per riflettere davvero la scadenza.
         $sortMap = ['data' => 'o.data_offerta', 'numero' => 'o.numero_preventivo',
-                    'cliente' => 'cliente_nome', 'stato' => 'o.stato',
+                    'cliente' => 'cliente_nome', 'stato' => 'o.stato_effettivo',
                     'scadenza' => 'o.data_scadenza', 'totale' => 'o.totale'];
         $pag      = qk_pagination_params(array_keys($sortMap), 'data', 'desc');
         $orderCol = $sortMap[$pag['sort']] ?? 'o.data_offerta';
@@ -30,7 +35,7 @@ final class SalesQuotesController extends BaseController
             $where[] = "(o.numero_preventivo LIKE :q OR o.riferimento_interno LIKE :q OR cf.ragione_sociale LIKE :q OR cf.nome LIKE :q)";
             $params[':q'] = '%' . $search . '%';
         }
-        if ($status) { $where[] = "o.stato = :stato"; $params[':stato'] = $status; }
+        if ($status) { $where[] = "o.stato_effettivo = :stato"; $params[':stato'] = $status; }
         if ($dal)    { $where[] = "o.data_offerta >= :dal"; $params[':dal'] = $dal; }
         if ($al)     { $where[] = "o.data_offerta <= :al";  $params[':al']  = $al; }
 
@@ -110,6 +115,12 @@ final class SalesQuotesController extends BaseController
         $listini = qk_get_listini_vendita_attivi($this->pdo);
         $canali  = qk_get_canali_vendita_attivi($this->pdo);
 
+        // PIANO - Soglie Margine Configurabili (§1.4): iniettate in
+        // window.QK_QUOTES_CONFIG in _form.php, consumate da
+        // assets/js/margin-semaforo.js tramite sales-quotes.js.
+        $margineSogliaVerde  = (float) get_impostazione($this->pdo, 'margine_soglia_verde', '20.00');
+        $margineSogliaGiallo = (float) get_impostazione($this->pdo, 'margine_soglia_giallo', '10.00');
+
         $active_tab    = 'quotes';
         $page_title    = 'Nuovo preventivo';
         $page_subtitle = 'Crea un preventivo commerciale per un cliente';
@@ -126,6 +137,8 @@ final class SalesQuotesController extends BaseController
             'aziende' => $aziende,
             'listini' => $listini,
             'canali' => $canali,
+            'margineSogliaVerde' => $margineSogliaVerde,
+            'margineSogliaGiallo' => $margineSogliaGiallo,
             'active_tab' => $active_tab,
             'page_title' => $page_title,
             'page_subtitle' => $page_subtitle,
@@ -202,6 +215,10 @@ final class SalesQuotesController extends BaseController
 
         $aziende = qk_aziende_list($this->pdo);
 
+        // PIANO - Soglie Margine Configurabili (§1.4): vedi create(), stesso motivo.
+        $margineSogliaVerde  = (float) get_impostazione($this->pdo, 'margine_soglia_verde', '20.00');
+        $margineSogliaGiallo = (float) get_impostazione($this->pdo, 'margine_soglia_giallo', '10.00');
+
         $active_tab    = 'quotes';
         $page_title    = 'Modifica preventivo ' . $numero_offerta;
         $page_subtitle = 'Modifica i dettagli e le righe del preventivo';
@@ -222,6 +239,8 @@ final class SalesQuotesController extends BaseController
             'listini' => $listini,
             'canali' => $canali,
             'aziende' => $aziende,
+            'margineSogliaVerde' => $margineSogliaVerde,
+            'margineSogliaGiallo' => $margineSogliaGiallo,
             'active_tab' => $active_tab,
             'page_title' => $page_title,
             'page_subtitle' => $page_subtitle,
@@ -361,7 +380,10 @@ final class SalesQuotesController extends BaseController
             'data_scadenza'           => $quote['data_scadenza'] ?? '',
             'data_consegna_richiesta' => $quote['data_consegna_richiesta'] ?? '',
             'canale_vendita'          => $canale_codice,
-            'stato'                   => $quote['stato'] ?? 'bozza',
+            // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): guida
+            // l'intera vista _form.php (badge, pulsanti, pipeline) — verificato
+            // che tutti quei punti gestiscono gia' correttamente 'scaduto'.
+            'stato'                   => $quote['stato_effettivo'] ?? $quote['stato'] ?? 'bozza',
             'condizioni_pagamento'    => $quote['condizioni_pagamento'] ?? '',
             'trasporto'               => $quote['trasporto'] ?? 'Franco destino',
             'valuta'                  => $quote['valuta'] ?? 'EUR',

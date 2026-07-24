@@ -454,13 +454,35 @@ function calcTotali() {
   const marginePct = imponibile > 0 ? (margineEur / imponibile) * 100 : 0;
   document.getElementById('ord-box-margine-eur').textContent = fmt(margineEur);
   document.getElementById('ord-box-margine-pct').textContent = marginePct.toFixed(2).replace('.',',') + '%';
-  ['ord-box-margine-eur-wrap','ord-box-margine-pct-wrap'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.background  = margineEur >= 0 ? 'var(--qk-success-bg)' : 'var(--qk-danger-bg,#fff5f5)';
-    el.style.borderColor = margineEur >= 0 ? 'var(--qk-success)' : 'var(--qk-danger)';
-    el.querySelector('div:last-child').className = 'fs-4 fw-bold mt-1 ' + (margineEur >= 0 ? 'text-success' : 'text-danger');
-  });
+
+  // Box "margine €": binario per segno, invariato (PIANO - Soglie Margine
+  // Configurabili §1.4, §2: metrica di segno, non di fascia di qualità).
+  const elEur = document.getElementById('ord-box-margine-eur-wrap');
+  if (elEur) {
+    elEur.style.background  = margineEur >= 0 ? 'var(--qk-success-bg)' : 'var(--qk-danger-bg,#fff5f5)';
+    elEur.style.borderColor = margineEur >= 0 ? 'var(--qk-success)' : 'var(--qk-danger)';
+    elEur.querySelector('div:last-child').className = 'fs-4 fw-bold mt-1 ' + (margineEur >= 0 ? 'text-success' : 'text-danger');
+  }
+
+  // Box "margine %": tre fasce con soglie configurabili, stessa logica
+  // condivisa già usata in sales-quotes.js (qkMarginSemaforo(),
+  // assets/js/margin-semaforo.js) — prima era binario come il box "€",
+  // estensione di scope decisa nel piano (§2, §4.7) per coerenza tra i due
+  // form che condividono lo stesso concetto di business.
+  const elPct = document.getElementById('ord-box-margine-pct-wrap');
+  if (elPct) {
+    const sogliaVerde = window.QK_ORDERS_CREATE_CONFIG.margineSogliaVerde ?? 20;
+    const sogliaGiallo = window.QK_ORDERS_CREATE_CONFIG.margineSogliaGiallo ?? 10;
+    const semaforo = qkMarginSemaforo(marginePct, sogliaVerde, sogliaGiallo);
+    const stile = {
+      verde:  { bg: 'var(--qk-success-bg)', border: 'var(--qk-success)', cls: 'text-success' },
+      giallo: { bg: 'var(--qk-warning-bg)', border: 'var(--qk-warning)', cls: 'text-warning' },
+      rosso:  { bg: 'var(--qk-danger-bg,#fff5f5)', border: 'var(--qk-danger)', cls: 'text-danger' },
+    }[semaforo];
+    elPct.style.background  = stile.bg;
+    elPct.style.borderColor = stile.border;
+    elPct.querySelector('div:last-child').className = 'fs-4 fw-bold mt-1 ' + stile.cls;
+  }
 }
 
 document.getElementById('ord-btn-aggiungi-riga')?.addEventListener('click', () => buildRiga());

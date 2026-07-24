@@ -6,6 +6,7 @@ require_once INCLUDES_DIR . '/sales_orders.php';
 require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/sales_quotes.php';
 require_once INCLUDES_DIR . '/compliance.php';
+require_once INCLUDES_DIR . '/impostazioni.php';
 
 final class SalesOrdersController extends BaseController
 {
@@ -124,6 +125,14 @@ final class SalesOrdersController extends BaseController
         }
 
         $listini = qk_get_listini_vendita_attivi($this->pdo);
+
+        // PIANO - Soglie Margine Configurabili (§1.4): variabili locali,
+        // propagate automaticamente a _create.php da get_defined_vars() più
+        // sotto — stesso motivo di SalesQuotesController::create()/edit().
+        // SalesOrdersController::edit() non le riceve: il box margine esiste
+        // solo nel form di creazione (vedi §4.5 del piano).
+        $margineSogliaVerde  = (float) get_impostazione($this->pdo, 'margine_soglia_verde', '20.00');
+        $margineSogliaGiallo = (float) get_impostazione($this->pdo, 'margine_soglia_giallo', '10.00');
 
         $active_tab    = 'orders';
         $page_title    = 'Nuovo Ordine Cliente';

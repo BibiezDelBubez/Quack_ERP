@@ -13,12 +13,20 @@ function get_kpi_sales_quotes_bozza(PDO $pdo): int
 }
 
 /**
- * Ritorna il numero di preventivi (sales quotes) inviati ("inviato").
+ * Ritorna il numero di preventivi (sales quotes) inviati ("inviato") e ancora
+ * in attesa di risposta del cliente.
+ *
+ * PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): conta solo gli
+ * 'inviato' NON scaduti (via v_preventivi_stato_effettivo) — un preventivo
+ * scaduto non e' piu' "in attesa di risposta", coerente con lo scopo del KPI.
+ * Decisione presa in autonomia durante l'esecuzione del piano, segnalata
+ * esplicitamente nel documento: se si preferisce continuare a contare anche
+ * gli scaduti (magari con un KPI "Scaduti" separato) e' una modifica minima.
  */
 function get_kpi_sales_quotes_inviati(PDO $pdo): int
 {
     return (int) $pdo->query(
-        "SELECT COUNT(*) FROM preventivi WHERE stato = 'inviato'"
+        "SELECT COUNT(*) FROM v_preventivi_stato_effettivo WHERE stato_effettivo = 'inviato'"
     )->fetchColumn();
 }
 
@@ -37,10 +45,14 @@ function get_kpi_sales_orders_attivi(PDO $pdo): int
  */
 function get_recent_sales_quotes_for_dashboard(PDO $pdo, int $limit = 5): array
 {
+    // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): p.stato_effettivo
+    // AS stato, stesso alias-trick di qk_preventivi_list() — preventivo_badge_dash()
+    // (app/views/sales/sales_dashboard.php) legge $q['stato'] senza modifiche
+    // e gestisce gia' l'etichetta 'scaduto'.
     $stmtQ = $pdo->prepare(
-        "SELECT p.id, p.numero_preventivo, p.stato, p.totale,
+        "SELECT p.id, p.numero_preventivo, p.stato_effettivo AS stato, p.totale,
                 COALESCE(cf.ragione_sociale, TRIM(COALESCE(cf.nome,'') || ' ' || COALESCE(cf.cognome,''))) AS cliente_nome
-         FROM preventivi p
+         FROM v_preventivi_stato_effettivo p
          JOIN clienti_fornitori cf ON cf.id = p.cliente_id
          ORDER BY p.created_at DESC
          LIMIT ?"

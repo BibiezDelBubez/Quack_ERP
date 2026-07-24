@@ -1,6 +1,10 @@
 # PIANO — Revisione Ordini Clienti (meccanismo "Nuova Versione")
 
-> Stato: 🔲 **STUDIO COMPLETATO, IMPLEMENTAZIONE NON INIZIATA.** Nessun file di codice toccato. Riferimento: REVISIONE Ciclo Vendite, Problema 8 (§3bis.O4) — "nessuna revisione per un ordine cliente già confermato, l'unico rimedio oggi è annullare (bug O2, già corretto) e rifare da capo".
+> Stato: 🔶 **DECISIONI DI DESIGN CHIUSE il 24/07/2026 — IMPLEMENTAZIONE (Tappe 3-6) ANCORA NON INIZIATA, per esplicita richiesta dell'utente** ("non ho tempo per implementarla ora e userò quello che scrivi per implementarla appena possibile"). Riferimento: REVISIONE Ciclo Vendite, Problema 8 (§3bis.O4) — "nessuna revisione per un ordine cliente già confermato, l'unico rimedio oggi è annullare (bug O2, già corretto) e rifare da capo".
+>
+> **Aggiornamento importante rispetto alla versione precedente di questo documento**: nel frattempo (22/07/2026, sessione precedente) la **Tappa 1-2 (schema) è stata effettivamente implementata** — scoperto verificando il codice reale il 24/07/2026, non ricordato da nessuna conversazione precedente: questo documento era rimasto con lo stato "implementazione non iniziata" per errore di aggiornamento, mentre `db/init_sqlite.sql` e la migrazione `db/migrations/2026_07_22d_ordini_clienti_versione_e_superato.php` mostravano già `ordini_clienti.versione`, `ordini_clienti.ordine_padre_id` e `'superato'` nel CHECK di `ordini_clienti.stato`. Vedi §2 e §4.1 sotto per il dettaglio. **Tappe 3-6 (funzione di revisione, transizioni, controller, UI) restano a zero: nessun codice le usa ancora.**
+>
+> **Le 5 decisioni di design del §4** sono state chiuse in una conversazione dedicata il 24/07/2026 (spiegazione del problema con esempio pratico concreto — ordine da 500 taniche confermato per errore a 50 — seguita da domanda esplicita dell'utente su cosa sia la scelta professionale e cosa facciano gli ERP best-in-class). Il dettaglio di ciascuna decisione, incluso il ragionamento e i riferimenti ai comportamenti di SAP/Odoo/Dynamics 365/NetSuite dove pertinente, è in §4 sotto — **da leggere per intero prima di implementare**, non solo la tabella riassuntiva, perché contiene le microdecisioni (es. perché il blocco su ordine fatturato non ammette eccezioni "con avviso") che altrimenti andrebbero perse.
 
 ---
 
@@ -35,20 +39,22 @@
 
 ## 2. Il punto più delicato: come rappresentare "questo ordine è stato sostituito"
 
-`ordini_clienti.stato` ha oggi:
+> **✅ RISOLTO — opzione A scelta ed ESEGUITA il 22/07/2026** (schema già in produzione, verificato il 24/07/2026 sul codice reale). Il ragionamento originale che segue è lasciato intatto per memoria storica del perché fosse la scelta più delicata del piano; il risultato è che oggi `ordini_clienti.stato` ammette già `'superato'` e le colonne `versione`/`ordine_padre_id` esistono già — vedi in fondo a questa sezione il riferimento alla migrazione eseguita.
+
+`ordini_clienti.stato` aveva, prima della migrazione:
 ```sql
 CHECK (stato IN ('in_lavorazione','parzialmente_spedito','spedito','completato','annullato'))
 ```
 
-SQLite **non supporta** `ALTER TABLE ... MODIFY/DROP CONSTRAINT`: aggiungere un valore ammesso a un CHECK esistente richiede **ricreare la tabella** (rinominare la vecchia, crearne una nuova con il CHECK aggiornato, ricopiare tutti i dati, ricreare indici/trigger, droppare la vecchia) — non ho trovato nessun precedente di questo tipo nelle 19 migrazioni già scritte in questo progetto (tutte additive: nuove colonne, nuovi indici, mai un CHECK modificato). `ordini_clienti` ha inoltre **due tabelle con FK NOT NULL verso di lei** (`spedizioni.ordine_id`, `documenti_trasporto.ordine_id`, oltre a `ordini_clienti_righe`) da preservare intatte durante la ricreazione — è l'operazione di schema più rischiosa di tutte quelle fatte finora in questo progetto.
+SQLite **non supporta** `ALTER TABLE ... MODIFY/DROP CONSTRAINT`: aggiungere un valore ammesso a un CHECK esistente richiede **ricreare la tabella** (rinominare la vecchia, crearne una nuova con il CHECK aggiornato, ricopiare tutti i dati, ricreare indici/trigger, droppare la vecchia) — non c'era nessun precedente di questo tipo nelle migrazioni scritte fino a quel momento in questo progetto (tutte additive: nuove colonne, nuovi indici, mai un CHECK modificato). `ordini_clienti` ha inoltre **due tabelle con FK NOT NULL verso di lei** (`spedizioni.ordine_id`, `documenti_trasporto.ordine_id`, oltre a `ordini_clienti_righe`) da preservare intatte durante la ricreazione — era l'operazione di schema più rischiosa di tutte quelle fatte fino a quel momento in questo progetto.
 
-**Tre opzioni, da decidere prima di scrivere qualunque codice:**
+**Tre opzioni erano state messe a confronto:**
 
-- **A) Aggiungere `'superato'` al CHECK**, ricreando la tabella. Coerente al 100% con il modello Acquisti (stessa parola, stesso significato, distinguibile da `annullato` in ogni filtro/report). Rischio più alto, ma il più corretto concettualmente: "sostituito da una versione più recente" e "annullato perché sbagliato/rifiutato" sono eventi diversi e vale la pena poterli distinguere in un report.
-- **B) Riusare `'annullato'`** per marcare anche il vecchio ordine quando viene revisionato, aggiungendo una colonna separata (es. `ordini_clienti.superato_da_id INTEGER REFERENCES ordini_clienti(id)`) per distinguere "annullato e basta" da "annullato perché sostituito". Zero rischio sullo schema esistente (solo colonne additive), ma un ordine "superato" finirebbe comunque nei filtri/contatori di "ordini annullati" a meno di escluderlo esplicitamente ovunque quel filtro esiste oggi (rischio di dimenticare un punto).
-- **C) Nessun nuovo stato**: il vecchio ordine resta `in_lavorazione` ma con un flag/colonna che lo marca "superato da una revisione" senza cambiare `stato` affatto, e tutte le viste/query che oggi considerano `in_lavorazione` come "ordine attivo/aperto" vanno riviste per escludere anche questo caso. Più lavoro di verifica trasversale (ogni punto del codice che oggi fa `WHERE stato = 'in_lavorazione'` andrebbe riletto), non lo consiglio.
+- **A) Aggiungere `'superato'` al CHECK**, ricreando la tabella. Coerente al 100% con il modello Acquisti (stessa parola, stesso significato, distinguibile da `annullato` in ogni filtro/report). Rischio più alto, ma il più corretto concettualmente: "sostituito da una versione più recente" e "annullato perché sbagliato/rifiutato" sono eventi diversi e vale la pena poterli distinguere in un report. **← Questa è l'opzione scelta ed eseguita.**
+- **B) Riusare `'annullato'`** per marcare anche il vecchio ordine quando viene revisionato, aggiungendo una colonna separata (es. `ordini_clienti.superato_da_id INTEGER REFERENCES ordini_clienti(id)`) per distinguere "annullato e basta" da "annullato perché sostituito". Zero rischio sullo schema esistente (solo colonne additive), ma un ordine "superato" finirebbe comunque nei filtri/contatori di "ordini annullati" a meno di escluderlo esplicitamente ovunque quel filtro esiste oggi (rischio di dimenticare un punto). Non scelta.
+- **C) Nessun nuovo stato**: il vecchio ordine resta `in_lavorazione` ma con un flag/colonna che lo marca "superato da una revisione" senza cambiare `stato` affatto, e tutte le viste/query che oggi considerano `in_lavorazione` come "ordine attivo/aperto" andrebbero riviste per escludere anche questo caso. Più lavoro di verifica trasversale, mai raccomandata. Non scelta.
 
-**Non implemento nessuna delle tre finché non mi dici quale.** La mia raccomandazione è **A**, per coerenza col modello già scelto e già validato lato Acquisti — ma è la decisione con più conseguenze di tutto il piano, quindi la sottopongo esplicitamente invece di sceglierla da solo.
+**Migrazione già eseguita**: `db/migrations/2026_07_22d_ordini_clienti_versione_e_superato.php` — procedura completa e verificata (introspezione della DDL reale da `sqlite_master`, mai trascritta a mano; tabella nuova creata sotto nome temporaneo per non rompere le FK di `spedizioni`/`documenti_trasporto`/`ordini_clienti_righe` durante la ricreazione; verifica conteggio righe; `PRAGMA foreign_key_check` post-ricreazione; idempotente). `db/init_sqlite.sql` riflette già lo schema aggiornato per le installazioni nuove. **Nessuna azione richiesta su questo punto per riprendere il lavoro**: si parte direttamente dalla Tappa 3 (funzione di revisione), la Tappa 2 del piano sotto è da considerarsi completata.
 
 ---
 
@@ -71,13 +77,45 @@ Per capire davvero "cosa si può rompere", questo è l'elenco completo di tutto 
 
 ---
 
-## 4. Decisioni di design aperte — da chiudere prima di implementare
+## 4. Decisioni di design — stato: 4 chiuse, 1 ancora aperta
 
-1. **§2 sopra** — quale delle tre opzioni per rappresentare "superato" (raccomando A).
-2. **Quando è permesso revisionare.** Raccomando: **solo** `stato = 'in_lavorazione'` esatto — mai `parzialmente_spedito`/`spedito`/`completato`/`annullato`. È il mirror esatto della restrizione Acquisti ("solo `inviato`", cioè "nulla ancora ricevuto") tradotta in "nulla ancora spedito". Verificabile con un'unica condizione (lo stato stesso, dato che `parzialmente_spedito`/`spedito` sono raggiunti SOLO se `quantita_spedita > 0` su almeno una riga — la stessa logica S7 già documentata).
-3. **`stato_fatturazione = 'fatturato'`** — bloccare la revisione in quel caso, o permetterla con reset esplicito e avviso? Non ho una raccomandazione netta qui, dipende da come l'amministrazione userà quel flag in pratica.
-4. **Compliance** — ri-eseguire sempre il controllo sulla nuova versione (raccomando sì, per coerenza con Problema 2 di oggi — non avrebbe senso aver chiuso quel gap e poi riaprirlo qui).
-5. **UI**: confermi che il bottone va su `_detail.php` (stesso posto di annulla/completa/riapri), o preferisci una collocazione diversa?
+### 4.1 — Rappresentazione di "superato" — ✅ RISOLTO (implementato, vedi §2)
+
+Opzione A, già in produzione dal 22/07/2026. Nessuna azione ulteriore richiesta.
+
+### 4.2 — Quando è permesso revisionare — ✅ DECISO 24/07/2026
+
+**Decisione**: si può creare una nuova versione **solo** se l'ordine è nello stato esatto `'in_lavorazione'` — mai da `'parzialmente_spedito'`, `'spedito'`, `'completato'`, `'annullato'`, `'superato'`.
+
+**Motivazione, spiegata all'utente con un esempio concreto durante la conversazione del 24/07/2026** (ordine di 500 taniche di detersivo confermato per errore a 50, scoperto il giorno dopo): finché nulla è stato spedito, l'ordine è ancora "solo carta" — correggerlo con una revisione è sicuro, non lascia nulla di incoerente indietro. Nel momento in cui anche una sola unità è stata spedita, quella merce è fisicamente uscita dal magazzino e un documento di trasporto è stato emesso: non è più "un errore da correggere", è un fatto già accaduto. Una revisione a quel punto dovrebbe decidere cosa fare della parte già spedita (portarla nella nuova versione? lasciarla nella vecchia, ormai "superata" ma con roba fisicamente uscita a suo nome? nessuna delle due è pulita) — la scelta più sicura è non aprire questa casistica affatto, e lasciare che un ordine parzialmente evaso si gestisca con gli strumenti già esistenti (nota di credito quando esisterà, o un secondo ordine per il residuo).
+
+È il mirror esatto della restrizione già usata lato Acquisti (`qk_ordine_crea_revisione()`: solo da stato `'inviato'`, cioè "nulla ancora ricevuto"), tradotta in "nulla ancora spedito" per le vendite. Verificabile con un'unica condizione sullo stato stesso, dato che `parzialmente_spedito`/`spedito` sono raggiunti SOLO se `quantita_spedita > 0` su almeno una riga (logica S7, già verificata e documentata in `REVISIONE - Analisi Documentazione Ciclo Vendite.md`).
+
+**Implica anche** (già presente nella Tappa 3 originale, confermato qui): un guard aggiuntivo che blocchi la revisione se esiste già una `spedizioni` collegata all'ordine, anche nel caso (teorico, ma da coprire per difesa in profondità — stesso principio già applicato più volte in questo progetto) in cui lo stato fosse stato manomesso o disallineato.
+
+### 4.3 — Ordine già fatturato (`stato_fatturazione = 'fatturato'`) — ✅ DECISO 24/07/2026, esplicitamente, con motivazione basata su best practice ERP
+
+**Decisione**: la revisione è **sempre bloccata**, senza eccezioni, se `stato_fatturazione = 'fatturato'` — nessuna via "permetti con avviso/reset". Il bottone "Crea nuova versione" non deve nemmeno comparire (o deve comparire disabilitato) su un ordine in questo stato; se richiamato comunque via azione diretta (stesso principio di difesa in profondità di §4.2), la funzione deve rifiutare con un messaggio esplicito.
+
+**Testo del messaggio da mostrare** (deciso durante la conversazione, da riusare identico in implementazione): *"Ordine già fatturato: per correggerlo serve una nota di credito, non una revisione."*
+
+**Motivazione — chiesta esplicitamente dall'utente ("quale sarebbe una scelta professionale? cosa fanno i best in class ERP per casi come questo?") e qui riportata per esteso, non solo la conclusione**:
+
+Il principio comune a SAP, Odoo, Dynamics 365 e NetSuite (gli stessi quattro sistemi già usati come riferimento di confronto altrove in questa cartella di documentazione, es. §1.5 di `REVISIONE - Analisi Documentazione Ciclo Vendite.md`) è: **una volta che esiste un documento a valle con rilevanza fiscale che si basa sui dati di un documento a monte, il documento a monte diventa congelato per quella parte**. Non lo si modifica più — se emerge un errore, non si riscrive il passato, si crea un **documento nuovo** che corregge quello vecchio (tipicamente una nota di credito), lasciando entrambi visibili e tracciati. Concretamente in SAP SD: una volta creato un documento di fatturazione a partire da un ordine di vendita, i campi rilevanti ai fini prezzo/quantità dell'ordine diventano non più liberamente modificabili proprio per questo motivo — la correzione passa da un documento di storno. Stesso principio in Odoo (fattura validata → le eventuali differenze si gestiscono con una nota di credito, non riaprendo l'ordine) e in Dynamics/NetSuite.
+
+È coerente anche con la normativa italiana sulla fattura elettronica: una fattura già inviata allo SdI non si può "editare" — se c'è un errore, si emette una nota di credito; la fattura sbagliata resta comunque valida ed esistente, mai cancellata o alterata retroattivamente.
+
+**Perché "blocca sempre" e non "permetti con avviso"**: un permesso-con-avviso lascerebbe comunque la possibilità di modificare (indirettamente, tramite una nuova versione collegata) qualcosa che una fattura già emessa e magari già registrata in contabilità dà per certo — esattamente il tipo di disallineamento silenzioso che questo stesso progetto ha già dovuto correggere altrove (mittente del DDT letto dal vivo invece che congelato, riserva di stock mai rilasciata all'annullamento). "Blocca sempre" è l'unica opzione che non introduce una nuova versione di quello stesso tipo di bug.
+
+**Limite noto, segnalato esplicitamente e volutamente fuori scope**: Quack oggi non ha alcun meccanismo di nota di credito funzionante — la tabella `fatture`/`fatture_righe` esiste a schema ma è codice morto (nessun INSERT/UPDATE/SELECT in tutto il codebase, vedi Problema F1 in `REVISIONE - Analisi Documentazione Ciclo Vendite.md`, §3.7). Bloccare la revisione su un ordine fatturato è comunque la scelta corretta anche in questa situazione (evita di introdurre un disallineamento), ma lascia aperta la domanda pratica "e allora come si corregge davvero un ordine già fatturato, oggi?" — la risposta onesta è "manualmente, fuori dal sistema", che è lo stato di fatto del progetto, non una lacuna introdotta da questo piano. Non risolto qui, deliberatamente: è il problema F1, un intervento a sé.
+
+### 4.4 — Ri-esecuzione del controllo compliance sulla nuova versione — raccomandazione scritta, non ancora confermata esplicitamente
+
+Raccomandazione (invariata dalla stesura originale di questo piano, il 22/07/2026): sì, ri-eseguire sempre `qk_compliance_check_sale()` sulla nuova versione, mai ereditare "per fiducia" l'esito della vecchia — la nuova versione può avere righe/quantità diverse. Coerente con la chiusura del gap compliance-ordini-diretti (Problema 2, §1.6 di `REVISIONE - Analisi Documentazione Ciclo Vendite.md`): non avrebbe senso aver chiuso quel gap e poi riaprirlo qui per la via della revisione. **Nessuna obiezione sollevata finora, ma non è stata oggetto di conferma esplicita nella conversazione del 24/07/2026** (a differenza di §4.2/§4.3) — da confermare con un sì esplicito prima di implementare, per non decidere al posto dell'utente su un punto mai discusso a voce.
+
+### 4.5 — Collocazione UI del bottone — ancora aperta, non discussa
+
+Non affrontata nella conversazione del 24/07/2026. La proposta originale (§Tappa 6 sotto) resta: bottone "Crea Nuova Versione" su `app/views/sales/orders/_detail.php`, stesso posto di annulla/completa/riapri, visibile solo quando lo stato lo permette (§4.2), con badge "Versione N" e link bidirezionale padre↔figlio. Da confermare o correggere prima di implementare la Tappa 6.
 
 ---
 
@@ -85,23 +123,17 @@ Per capire davvero "cosa si può rompere", questo è l'elenco completo di tutto 
 
 Ogni tappa è pensata per essere ripresa in una sessione diversa senza perdere contesto: stato in ingresso e stato in uscita sono espliciti, così chi riprende (anche un Claude "che riparte da zero", per usare la formula di CLAUDE.md) sa esattamente a che punto siamo.
 
-### Tappa 1 — Schema: colonne additive (`versione`, `ordine_padre_id`)
+### Tappa 1 — Schema: colonne additive (`versione`, `ordine_padre_id`) — ✅ COMPLETATA il 22/07/2026
 **Stato in ingresso**: nessuna colonna nuova.
-**Cosa fare**: `ALTER TABLE ordini_clienti ADD COLUMN versione INTEGER NOT NULL DEFAULT 1`, `ADD COLUMN ordine_padre_id INTEGER REFERENCES ordini_clienti(id)` — su `db/init_sqlite.sql` (CREATE TABLE) **e** su una migrazione dedicata (imparata la lezione di oggi: senza migrazione, il DB live non la riceve mai). Stesso su `db/init_mysql.sql`, segnalato esplicitamente se non allineato subito (regola CLAUDE.md).
-**Stato in uscita**: colonne presenti, nessun codice le usa ancora, nessun comportamento cambiato.
-**Test di questa tappa**: `PRAGMA table_info` sul DB live conferma le due colonne; una query `SELECT` su un ordine esistente qualunque mostra `versione=1, ordine_padre_id=NULL` senza errori.
+**Cosa è stato fatto**: colonne aggiunte sia a `db/init_sqlite.sql` sia tramite `db/migrations/2026_07_22d_ordini_clienti_versione_e_superato.php` (idempotente, copre anche la Tappa 2 nello stesso file). `db/init_mysql.sql` da riverificare esplicitamente per allineamento (non controllato durante questa sessione — segnalato qui invece di darlo per scontato, regola CLAUDE.md punto 7).
+**Stato in uscita — verificato il 24/07/2026 rileggendo il codice reale**: colonne presenti, nessun codice applicativo le usa ancora (Tappe 3-6 a zero), nessun comportamento visibile cambiato.
+**Test**: non eseguiti espressamente in questa sessione (il lavoro di verifica del 24/07 si è limitato a leggere schema/migrazione); da fare comunque una `PRAGMA table_info` di conferma quando si riprende il lavoro, prima di scrivere la Tappa 3, per non dare per scontato lo stato del DB su cui si opera (regola CLAUDE.md punto 9).
 
-### Tappa 2 — Schema: il valore "superato" (SOLO se opzione A al §2 viene scelta)
+### Tappa 2 — Schema: il valore "superato" — ✅ COMPLETATA il 22/07/2026 (opzione A, vedi §2)
 **Stato in ingresso**: Tappa 1 completata.
-**Cosa fare**: ricreazione controllata della tabella `ordini_clienti` con il CHECK aggiornato. Procedura, da eseguire **prima su una copia del DB, mai direttamente sul live**:
-1. `CREATE TABLE ordini_clienti_new` con lo stesso DDL esatto ma CHECK esteso.
-2. `INSERT INTO ordini_clienti_new SELECT * FROM ordini_clienti`.
-3. Verifica: `SELECT COUNT(*) FROM ordini_clienti` deve essere uguale su vecchia e nuova, riga per riga su un campione, non solo il conteggio.
-4. `DROP TABLE ordini_clienti`, `ALTER TABLE ordini_clienti_new RENAME TO ordini_clienti`.
-5. Ricreare tutti gli indici che insistevano sulla vecchia tabella (da elencare con `PRAGMA index_list` PRIMA del drop, non a memoria).
-6. Verificare che le FK da `ordini_clienti_righe`/`spedizioni`/`documenti_trasporto` risolvano ancora correttamente (un semplice JOIN di conteggio prima/dopo).
-**Stato in uscita**: `ordini_clienti.stato` accetta anche `'superato'`, tutti i dati esistenti intatti, tutte le FK/indici ricreati.
-**Test di questa tappa**: script PHP dedicato che, su una **copia** del DB live, esegue la procedura ed esegue poi un centinaio di query di lettura random già usate nell'app (join con righe/spedizioni/documenti_trasporto) confrontando i risultati prima/dopo byte per byte. Solo dopo un esito pulito su copia si esegue sul DB reale.
+**Cosa è stato fatto**: la stessa migrazione `2026_07_22d_ordini_clienti_versione_e_superato.php` ha ricreato `ordini_clienti` con procedura verificata — introspezione DDL reale da `sqlite_master` (mai trascritta a mano), tabella nuova sotto nome temporaneo per preservare le FK di `ordini_clienti_righe`/`spedizioni`/`documenti_trasporto` durante l'operazione, verifica conteggio righe prima/dopo, ricreazione indici letti da `sqlite_master` (non hardcoded), `PRAGMA foreign_key_check` finale, tutto in una singola transazione con rollback automatico in caso di qualunque controllo fallito. Procedura più prudente di quella originariamente abbozzata qui sotto (che prevedeva un test preventivo su copia separata del DB) — la migrazione stessa è già scritta per essere sicura sul DB reale, grazie ai controlli integrati (conteggio righe, FK check, transazione atomica).
+**Stato in uscita**: `ordini_clienti.stato` accetta `'superato'`, dati esistenti intatti (verificato dalla migrazione stessa via conteggio+FK check al momento dell'esecuzione).
+**Nota per chi riprende il lavoro**: nessuna azione richiesta su questa tappa. Si parte dalla Tappa 3.
 
 ### Tappa 3 — Model: `qk_ordine_cliente_crea_revisione()`
 **Stato in ingresso**: Tappe 1-2 completate, decisioni §4 chiuse.
@@ -136,6 +168,14 @@ Ogni tappa è pensata per essere ripresa in una sessione diversa senza perdere c
 
 ---
 
-## 6. Riepilogo: cosa serve da te prima che io inizi
+## 6. Riepilogo: cosa serve prima di riprendere l'implementazione
 
-Le 5 decisioni del §4 (in particolare la §4.1 — è quella con più conseguenze). Il resto del piano non cambia sostanzialmente qualunque cosa deciderai lì, tranne la Tappa 2 che esiste solo se scegli l'opzione A.
+Aggiornato il 24/07/2026. Delle 5 decisioni del §4, **4 sono chiuse**:
+
+- §4.1 (rappresentazione "superato") — ✅ risolto, implementato.
+- §4.2 (quando è permesso revisionare: solo `in_lavorazione` puro) — ✅ deciso esplicitamente.
+- §4.3 (ordine fatturato: blocco sempre, nessuna eccezione, motivazione da best practice ERP) — ✅ deciso esplicitamente, il più dettagliato dei tre.
+- §4.4 (ri-esecuzione compliance sulla nuova versione) — raccomandazione scritta e mai contestata, ma **non confermata a voce**: chiedere un sì/no esplicito prima di implementare la Tappa 3, oppure procedere con la raccomandazione se non si ricorda obiezione e lo si segnala comunque nel riepilogo di fine lavoro.
+- §4.5 (collocazione UI del bottone) — **ancora completamente aperta**, non discussa. Da chiedere prima della Tappa 6, oppure procedere con la proposta di default (`_detail.php`, stesso posto di annulla/completa/riapri) segnalandolo esplicitamente come scelta non confermata.
+
+**Non implementare nulla di questo piano finché l'utente non lo chiede esplicitamente** — per sua richiesta diretta del 24/07/2026 ("non ho tempo per implementarla ora e userò quello che scrivi per implementarla appena possibile"). Quando verrà richiesta l'implementazione, si parte dalla Tappa 3 (Tappe 1-2 già fatte) seguendo lo stesso procedimento già rodato per gli altri interventi di questa cartella: rilettura immediata dei file coinvolti prima di ogni modifica, test reali (non solo sintattici) ad ogni tappa, aggiornamento di questo stesso documento a lavoro concluso.

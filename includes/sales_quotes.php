@@ -473,7 +473,13 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
  */
 function qk_get_offerta(PDO $pdo, int $id): ?array
 {
-    $st = $pdo->prepare('SELECT * FROM preventivi WHERE id = ?');
+    // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): la vista espone
+    // tutte le colonne di preventivi INVARIATE (incluso 'stato' grezzo) più
+    // 'stato_effettivo' (= 'scaduto' solo se inviato e data_scadenza passata,
+    // calcolato a runtime, mai scritto su preventivi.stato). Chi consuma
+    // questo array e deve reagire alla scadenza usa 'stato_effettivo'; chi non
+    // se ne occupa (es. cache PDF) continua a leggere 'stato' come sempre.
+    $st = $pdo->prepare('SELECT * FROM v_preventivi_stato_effettivo WHERE id = ?');
     $st->execute([$id]);
     $quota = $st->fetch(PDO::FETCH_ASSOC);
     if (!$quota) return null;
@@ -812,7 +818,13 @@ function qk_preventivo_invia(PDO $pdo, int $id): void
  */
 function qk_preventivo_rifiuta(PDO $pdo, int $id): void
 {
-    $st = $pdo->prepare('SELECT stato FROM preventivi WHERE id = ?');
+    // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): legge
+    // stato_effettivo (non 'stato' grezzo) per bloccare anche un tentativo di
+    // rifiutare un preventivo già scaduto — difesa in profondità, stesso
+    // principio già applicato altrove nel progetto: il bottone "Rifiuta"
+    // sparisce dalla UI per uno scaduto (app/views/sales/quotes/_form.php),
+    // questo blocca anche un POST diretto.
+    $st = $pdo->prepare('SELECT stato_effettivo FROM v_preventivi_stato_effettivo WHERE id = ?');
     $st->execute([$id]);
     $stato = $st->fetchColumn();
     if ($stato === false) {
@@ -1015,13 +1027,20 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
         // survey iniziale — stessa classe di vulnerabilità di P3, più grave
         // perché qui la conseguenza è la creazione di un ordine a valle, non
         // solo un cambio di stato.
+        // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): usa
+        // stato_effettivo (fornito da qk_get_offerta() tramite la vista),
+        // non il solo 'stato' grezzo — blocca "Accetta e Crea Ordine" su un
+        // preventivo scaduto riusando questo stesso TransitionGuard già
+        // esistente, senza logica nuova.
         (new \App\Services\TransitionGuard(qk_transizioni_preventivi(), 'preventivo'))
             ->assicuraConMessaggio(
-                $quota['stato'],
+                $quota['stato_effettivo'],
                 'accettato',
-                $quota['stato'] === 'accettato'
+                $quota['stato_effettivo'] === 'accettato'
                     ? 'Il preventivo è già stato accettato.'
-                    : "Impossibile accettare: il preventivo non è in stato 'inviato' (stato attuale: {$quota['stato']})."
+                    : ($quota['stato_effettivo'] === 'scaduto'
+                        ? "Impossibile accettare: il preventivo è scaduto il {$quota['data_scadenza']}. Crea una nuova versione per rinnovare l'offerta."
+                        : "Impossibile accettare: il preventivo non è in stato 'inviato' (stato attuale: {$quota['stato_effettivo']}).")
             );
 
         // 1. Update preventivo status to 'accettato'
@@ -1195,7 +1214,11 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
  */
 function qk_preventivi_count(PDO $pdo, string $whereStr, array $params): int
 {
-    $stCount = $pdo->prepare("SELECT COUNT(*) FROM preventivi o JOIN clienti_fornitori cf ON cf.id = o.cliente_id WHERE $whereStr");
+    // PIANO - Vista Stato Effettivo Preventivi (Scadenza P1): FROM sulla vista
+    // invece della tabella grezza, cosi' $whereStr (condiviso con
+    // qk_preventivi_list(), stessa chiamata nel controller) puo' filtrare su
+    // o.stato_effettivo e trovare/escludere correttamente i preventivi scaduti.
+    $stCount = $pdo->prepare("SELECT COUNT(*) FROM v_preventivi_stato_effettivo o JOIN clienti_fornitori cf ON cf.id = o.cliente_id WHERE $whereStr");
     $stCount->execute($params);
     return (int) $stCount->fetchColumn();
 }
@@ -1206,11 +1229,15 @@ function qk_preventivi_count(PDO $pdo, string $whereStr, array $params): int
 function qk_preventivi_list(PDO $pdo, string $whereStr, array $params, string $orderCol, string $dir, int $limit, int $offset): array
 {
     $nomeClienteSql = qk_nome_cliente_sql_fragment('cf');
-    $sql = "SELECT o.id, o.numero_preventivo, o.stato, o.data_offerta, o.data_scadenza,
+    // o.stato_effettivo AS stato: alias deliberato, cosi' il resto della vista
+    // (app/views/sales/quotes/_list.php) continua a leggere $o['stato'] senza
+    // modifiche, ma il valore che arriva e' gia' quello corretto per un
+    // preventivo scaduto (vedi PIANO - Vista Stato Effettivo Preventivi).
+    $sql = "SELECT o.id, o.numero_preventivo, o.stato_effettivo AS stato, o.data_offerta, o.data_scadenza,
                    o.imponibile, o.totale, o.note_cliente, o.riferimento_interno,
                    {$nomeClienteSql} AS cliente_nome,
                    cv.nome AS canale_vendita
-              FROM preventivi o
+              FROM v_preventivi_stato_effettivo o
               JOIN clienti_fornitori cf ON cf.id = o.cliente_id
               LEFT JOIN canali_vendita cv ON cv.id = o.canale_vendita_id
              WHERE {$whereStr}

@@ -1226,6 +1226,31 @@ CREATE TABLE IF NOT EXISTS preventivi (
     updated_at              DATETIME
 );
 
+-- View: stato effettivo del preventivo, tenendo conto della scadenza.
+-- Decisione (REVISIONE Ciclo Vendite, §3bis P1 / PIANO - Vista Stato Effettivo
+-- Preventivi): niente cron/scheduler esterno alla webapp (Quack gira solo in
+-- locale — un automatismo fuori dal codice applicativo sarebbe invisibile a
+-- chi subentra sul progetto e silenzioso se smette di girare). preventivi.stato
+-- NON viene mai scritto 'scaduto': la scadenza si calcola sempre a runtime,
+-- centralizzata qui invece che ripetuta in ogni query PHP (rischio DRY
+-- altrimenti). Un preventivo risulta 'scaduto' SOLO se è ancora 'inviato' (in
+-- attesa di risposta) e la data_scadenza è passata: bozza/accettato/rifiutato/
+-- annullato non "scadono" mai in questo senso.
+-- Limite noto (stesso trade-off già accettato per v_prezzo_acquisto_base_fornitore/
+-- v_costo_acquisto_prodotti sopra in questo file): SELECT p.* congela l'elenco
+-- colonne al momento della creazione — se preventivi guadagna una colonna, la
+-- vista va ricreata per vederla.
+CREATE VIEW IF NOT EXISTS v_preventivi_stato_effettivo AS
+SELECT p.*,
+       CASE
+           WHEN p.stato = 'inviato'
+                AND p.data_scadenza IS NOT NULL
+                AND p.data_scadenza < DATE('now')
+           THEN 'scaduto'
+           ELSE p.stato
+       END AS stato_effettivo
+FROM preventivi p;
+
 CREATE TABLE IF NOT EXISTS preventivi_righe (
     id              INTEGER       PRIMARY KEY AUTOINCREMENT,
     preventivo_id   INTEGER       NOT NULL REFERENCES preventivi(id) ON DELETE CASCADE,
@@ -1960,10 +1985,18 @@ INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES
 ('azienda_telefono', '0775.201147');
 
 -- Configurazione Preventivi (Canale vendita 1)
-INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES 
+INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES
 ('preventivi_scadenza_giorni', '30'),
 ('preventivi_prefisso', 'PREV-'),
-('markup_fallback_default', '20.00');
+('markup_fallback_default', '20.00'),
+-- PIANO - Soglie Margine Configurabili (§1.4): soglie del semaforo margine %
+-- mostrato nei form preventivo/ordine cliente diretto. Default identici ai
+-- valori finora hardcoded in assets/js/sales-quotes.js e
+-- assets/js/sales-orders-create.js, per non cambiare comportamento finora
+-- esistente finché l'utente non li modifica esplicitamente da Impostazioni
+-- Generali.
+('margine_soglia_verde', '20.00'),
+('margine_soglia_giallo', '10.00');
 
 -- Configurazione WooCommerce (Canale vendita 2)
 INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES 

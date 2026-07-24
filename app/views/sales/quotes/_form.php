@@ -46,6 +46,8 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
         Questo preventivo è stato accettato ed è stato generato l'ordine di vendita collegato.
       <?php elseif ($stato === 'rifiutato'): ?>
         Questo preventivo è stato rifiutato dal cliente. Puoi creare una nuova versione se desideri inviare una proposta aggiornata.
+      <?php elseif ($stato === 'scaduto'): ?>
+        Questo preventivo è scaduto il <strong><?= e(fmt_date($v['data_scadenza'] ?? '')) ?></strong> senza risposta del cliente e non può più essere accettato o rifiutato. Clicca su <strong>"Crea Nuova Versione"</strong> se vuoi rinnovare l'offerta.
       <?php else: ?>
         Questo preventivo è in stato <strong><?= e($stato) ?></strong>.
       <?php endif; ?>
@@ -890,9 +892,12 @@ window.QK_QUOTES_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
   preloadedRighe: <?= json_encode($preloadedRighe ?? []) ?>,
   quoteStato: <?= json_encode($values['stato'] ?? 'bozza') ?>,
-  listini: <?= json_encode(array_map(fn($l) => ['id' => $l['id'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini)) ?>
+  listini: <?= json_encode(array_map(fn($l) => ['id' => $l['id'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini)) ?>,
+  margineSogliaVerde: <?= json_encode($margineSogliaVerde ?? 20.0) ?>,
+  margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>
 };
 </script>
 <script src="<?= asset('js/big.min.js') ?>"></script>
 <script src="<?= asset('js/pricing-widget.js') ?>"></script>
+<script src="<?= asset('js/margin-semaforo.js') ?>"></script>
 <script src="<?= asset('js/sales-quotes.js') ?>"></script>

@@ -871,6 +871,25 @@ CREATE TABLE IF NOT EXISTS preventivi (
     CONSTRAINT fk_preventivi_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- View: stato effettivo del preventivo, tenendo conto della scadenza.
+-- Vedi il commento gemello in db/init_sqlite.sql per la spiegazione completa
+-- (PIANO - Vista Stato Effettivo Preventivi, REVISIONE Ciclo Vendite §3bis P1).
+-- Nota: qui si usa CURDATE(), non DATE('now') (quello è SQLite) — a differenza
+-- delle due viste v_prezzo_acquisto_base_fornitore/v_costo_acquisto_prodotti
+-- più sopra in questo file, che usano DATE('now') anche qui pur non essendo
+-- sintassi MySQL valida (bug preesistente, non toccato in questo intervento
+-- perché fuori perimetro Ciclo Vendite).
+CREATE OR REPLACE VIEW v_preventivi_stato_effettivo AS
+SELECT p.*,
+       CASE
+           WHEN p.stato = 'inviato'
+                AND p.data_scadenza IS NOT NULL
+                AND p.data_scadenza < CURDATE()
+           THEN 'scaduto'
+           ELSE p.stato
+       END AS stato_effettivo
+FROM preventivi p;
+
 CREATE TABLE IF NOT EXISTS preventivi_righe (
     id INT AUTO_INCREMENT PRIMARY KEY,
     preventivo_id INTEGER NOT NULL,
@@ -2039,6 +2058,10 @@ INSERT IGNORE INTO Impostazioni (chiave, valore) VALUES
     ('preventivi_scadenza_giorni', 30),
     ('preventivi_prefisso', 'PREV-'),
     ('markup_fallback_default', 20.00),
+    -- PIANO - Soglie Margine Configurabili (§1.4): vedi init_sqlite.sql per la
+    -- motivazione completa; stessi default (20.00/10.00).
+    ('margine_soglia_verde', 20.00),
+    ('margine_soglia_giallo', 10.00),
     ('wc_api_url', 'https://piscinasuperstore.it/wp-json/wc/v3/'),
     ('wc_consumer_key', '***WC_CONSUMER_KEY_RIMOSSA***'),
     ('wc_consumer_secret', '***WC_CONSUMER_SECRET_RIMOSSA***'),

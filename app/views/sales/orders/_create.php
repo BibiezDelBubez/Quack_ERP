@@ -570,9 +570,12 @@ $v = $values;
 <!-- ══════════════════════════════ JAVASCRIPT ═══════════════════════════════ -->
 <script>
 window.QK_ORDERS_CREATE_CONFIG = {
-  csrf: <?= json_encode(csrf_token()) ?>
+  csrf: <?= json_encode(csrf_token()) ?>,
+  margineSogliaVerde: <?= json_encode($margineSogliaVerde ?? 20.0) ?>,
+  margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>
 };
 </script>
 <script src="<?= url('assets/js/pricing-widget.js') ?>"></script>
+<script src="<?= url('assets/js/margin-semaforo.js') ?>"></script>
 <script src="<?= url('assets/js/sales-orders-create.js') ?>"></script>
 

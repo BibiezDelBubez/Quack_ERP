@@ -65,6 +65,52 @@
             </span>
           </div>
 
+          <hr class="my-4" style="border-color:var(--qk-border)">
+
+          <!-- PIANO - Soglie Margine Configurabili (§1.4) -->
+          <div class="qk-form-group">
+            <label class="qk-form-label">
+              Semaforo Margine % (preventivi e ordini)
+              <span class="ms-1 text-primary"
+                    data-bs-toggle="tooltip" data-bs-placement="top"
+                    title="Soglie usate per colorare il margine percentuale calcolato nei form Preventivo e Ordine Cliente diretto: verde se il margine è almeno pari alla soglia verde, giallo se è almeno pari alla soglia gialla, rosso sotto la soglia gialla."
+                    style="cursor:help">
+                <i class="fa-solid fa-circle-question" style="color:var(--qk-text-muted);font-size:.9em"></i>
+              </span>
+            </label>
+            <div class="d-flex gap-3 flex-wrap">
+              <div>
+                <label class="qk-form-label small mb-1" for="margine_soglia_verde">Soglia verde (%) <span class="required">*</span></label>
+                <div class="input-group" style="max-width: 180px;">
+                  <input type="number" id="margine_soglia_verde" name="margine_soglia_verde"
+                         class="qk-form-control <?= isset($errors['margine_soglia_verde']) ? 'is-invalid' : '' ?>"
+                         value="<?= e($values['margine_soglia_verde']) ?>"
+                         placeholder="20.00" min="0" max="100" step="0.01">
+                  <span class="input-group-text">%</span>
+                </div>
+              </div>
+              <div>
+                <label class="qk-form-label small mb-1" for="margine_soglia_giallo">Soglia gialla (%) <span class="required">*</span></label>
+                <div class="input-group" style="max-width: 180px;">
+                  <input type="number" id="margine_soglia_giallo" name="margine_soglia_giallo"
+                         class="qk-form-control <?= isset($errors['margine_soglia_giallo']) ? 'is-invalid' : '' ?>"
+                         value="<?= e($values['margine_soglia_giallo']) ?>"
+                         placeholder="10.00" min="0" max="100" step="0.01">
+                  <span class="input-group-text">%</span>
+                </div>
+              </div>
+            </div>
+            <?php if (isset($errors['margine_soglia_verde'])): ?>
+              <div class="qk-form-error mt-1"><i class="fa-solid fa-circle-exclamation"></i> <?= e($errors['margine_soglia_verde']) ?></div>
+            <?php endif; ?>
+            <?php if (isset($errors['margine_soglia_giallo'])): ?>
+              <div class="qk-form-error mt-1"><i class="fa-solid fa-circle-exclamation"></i> <?= e($errors['margine_soglia_giallo']) ?></div>
+            <?php endif; ?>
+            <span class="qk-form-hint mt-2 d-block">
+              Sotto la soglia gialla il margine è mostrato in rosso. La soglia verde deve essere maggiore della soglia gialla.
+            </span>
+          </div>
+
         </div>
       </div>
 

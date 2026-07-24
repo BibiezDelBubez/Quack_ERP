@@ -569,13 +569,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const marginPerc = impSc > 0 ? Big(marginEuro).div(impSc).times(100).toNumber() : 0;
     if (boxMarginePerc) {
       boxMarginePerc.textContent = marginPerc.toFixed(2) + '%';
-      if (marginPerc >= 20) {
+      // PIANO - Soglie Margine Configurabili (§1.4): soglie non più
+      // hardcoded, lette da window.QK_QUOTES_CONFIG (Impostazioni →
+      // Generali), calcolo delegato alla funzione condivisa
+      // qkMarginSemaforo() (assets/js/margin-semaforo.js).
+      const sogliaVerde = window.QK_QUOTES_CONFIG.margineSogliaVerde ?? 20;
+      const sogliaGiallo = window.QK_QUOTES_CONFIG.margineSogliaGiallo ?? 10;
+      const semaforo = qkMarginSemaforo(marginPerc, sogliaVerde, sogliaGiallo);
+      if (semaforo === 'verde') {
         boxMarginePerc.className = 'fs-4 fw-bold text-success mt-1';
         if (boxMarginePercCont) {
           boxMarginePercCont.style.backgroundColor = 'rgba(40,167,69,0.06)';
           boxMarginePercCont.style.borderColor = 'rgba(40,167,69,0.2)';
         }
-      } else if (marginPerc >= 10) {
+      } else if (semaforo === 'giallo') {
         boxMarginePerc.className = 'fs-4 fw-bold text-warning mt-1';
         if (boxMarginePercCont) {
           boxMarginePercCont.style.backgroundColor = 'rgba(255,193,7,0.06)';

@@ -30,8 +30,15 @@ final class SettingsController extends BaseController
 
         // Recupera i valori esistenti o imposta i default
         $valoreDb = get_impostazione($this->pdo, 'markup_fallback_default', '20.00');
+        // PIANO - Soglie Margine Configurabili (§1.4): stesso pattern di
+        // markup_fallback_default, due nuove chiavi per il semaforo margine %
+        // usato nei form preventivo/ordine cliente (vedi assets/js/margin-semaforo.js).
+        $valoreSogliaVerde  = get_impostazione($this->pdo, 'margine_soglia_verde', '20.00');
+        $valoreSogliaGiallo = get_impostazione($this->pdo, 'margine_soglia_giallo', '10.00');
         $values = [
-            'markup_fallback_default' => $valoreDb
+            'markup_fallback_default' => $valoreDb,
+            'margine_soglia_verde'    => $valoreSogliaVerde,
+            'margine_soglia_giallo'   => $valoreSogliaGiallo,
         ];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -39,7 +46,7 @@ final class SettingsController extends BaseController
                 $errors['_global'] = 'Token di sicurezza non valido.';
             } else {
                 $markup = trim(post('markup_fallback_default') ?? '');
-                
+
                 if ($markup === '') {
                     $errors['markup_fallback_default'] = 'Ricarico di default obbligatorio.';
                 } elseif (!is_numeric(str_replace(',', '.', $markup))) {
@@ -51,13 +58,57 @@ final class SettingsController extends BaseController
                     }
                 }
 
+                // PIANO - Soglie Margine Configurabili (§1.4): validazione
+                // indipendente da quella del ricarico sopra — range 0-100 (un
+                // margine sul prezzo di vendita non può raggiungere il 100%,
+                // a differenza di un ricarico sul costo, vedi §4.3 del piano),
+                // più il vincolo di coerenza soglia_verde > soglia_giallo.
+                $sogliaVerdeRaw  = trim(post('margine_soglia_verde') ?? '');
+                $sogliaGialloRaw = trim(post('margine_soglia_giallo') ?? '');
+                $sogliaVerdeFloat = null;
+                $sogliaGialloFloat = null;
+
+                if ($sogliaVerdeRaw === '') {
+                    $errors['margine_soglia_verde'] = 'Soglia verde obbligatoria.';
+                } elseif (!is_numeric(str_replace(',', '.', $sogliaVerdeRaw))) {
+                    $errors['margine_soglia_verde'] = 'Inserire un valore numerico valido (es. 20.00).';
+                } else {
+                    $sogliaVerdeFloat = (float)str_replace(',', '.', $sogliaVerdeRaw);
+                    if ($sogliaVerdeFloat < 0 || $sogliaVerdeFloat > 100) {
+                        $errors['margine_soglia_verde'] = 'La soglia deve essere compresa tra 0% e 100%.';
+                    }
+                }
+
+                if ($sogliaGialloRaw === '') {
+                    $errors['margine_soglia_giallo'] = 'Soglia gialla obbligatoria.';
+                } elseif (!is_numeric(str_replace(',', '.', $sogliaGialloRaw))) {
+                    $errors['margine_soglia_giallo'] = 'Inserire un valore numerico valido (es. 10.00).';
+                } else {
+                    $sogliaGialloFloat = (float)str_replace(',', '.', $sogliaGialloRaw);
+                    if ($sogliaGialloFloat < 0 || $sogliaGialloFloat > 100) {
+                        $errors['margine_soglia_giallo'] = 'La soglia deve essere compresa tra 0% e 100%.';
+                    }
+                }
+
+                if (!isset($errors['margine_soglia_verde']) && !isset($errors['margine_soglia_giallo'])
+                    && $sogliaVerdeFloat !== null && $sogliaGialloFloat !== null
+                    && $sogliaVerdeFloat <= $sogliaGialloFloat) {
+                    $errors['margine_soglia_verde'] = 'La soglia verde deve essere maggiore della soglia gialla.';
+                }
+
                 if (empty($errors)) {
                     $normalizedMarkup = number_format((float)str_replace(',', '.', $markup), 2, '.', '');
-                    
+                    $normalizedSogliaVerde  = number_format($sogliaVerdeFloat, 2, '.', '');
+                    $normalizedSogliaGiallo = number_format($sogliaGialloFloat, 2, '.', '');
+
                     // Upsert per salvataggio sicuro della configurazione in Impostazioni
                     set_impostazione($this->pdo, 'markup_fallback_default', $normalizedMarkup);
+                    set_impostazione($this->pdo, 'margine_soglia_verde', $normalizedSogliaVerde);
+                    set_impostazione($this->pdo, 'margine_soglia_giallo', $normalizedSogliaGiallo);
 
                     $values['markup_fallback_default'] = $normalizedMarkup;
+                    $values['margine_soglia_verde']    = $normalizedSogliaVerde;
+                    $values['margine_soglia_giallo']   = $normalizedSogliaGiallo;
                     $success = true;
                 }
             }
