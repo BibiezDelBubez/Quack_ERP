@@ -12,6 +12,7 @@ Qualsiasi intervento sul codice sorgente o stesura di nuovi piani tecnici che vi
 ## Regola sui Controlli e Divieto di Deduzione Automatica
 Quando l'utente richiede un controllo approfondito (o "riga per riga"), questo deve essere eseguito in maniera letterale e rigorosa, senza alcuna scorciatoia. 
 È TASSATIVAMENTE VIETATO usare script Python, script Bash o espressioni regolari (Regex) automatiche per dedurre i risultati. 
+È TASSATIVAMENTE VIETATO usare ricerche testuali (es. `grep`, `strpos`, `preg_match`) come "prova" del funzionamento di una logica. Trovare una parola chiave (come `TransitionGuard` o `quantita_disponibile`) in un file NON significa che venga eseguita correttamente o nel contesto giusto.
 È TASSATIVAMENTE VIETATO basarsi esclusivamente o ciecamente sullo storico di Git, su assunzioni teoriche o sul lavoro fatto precedentemente da altre AI. Non fidarti MAI ciecamente: verifica sempre!
 Le AI devono obbligatoriamente usare gli strumenti nativi di lettura (come il tool `view_file`) per estrarre fisicamente il codice all'interno del proprio contesto di memoria, esplorare TUTTO l'albero delle dipendenze del blocco modificato e leggerlo con i propri "occhi".
 **Inoltre, quando ricontrolli la bontà di un codice da te scritto o modificato, NON limitarti al solo controllo sintattico (es. "la sintassi è corretta"). Questo non basta! Devi assicurarti che il codice funzioni davvero a livello logico.**
@@ -57,6 +58,7 @@ Ogni volta che l'utente pronuncia una di queste frasi, o richiede un deep check 
 DEVI seguire **obbligatoriamente** questo TDD Framework E2E prima di poter dichiarare il lavoro concluso:
 1. **Vietato dedurre:** Non analizzare mentalmente il flusso e non affermare "tutto sembra funzionare". 
 2. **Crea la prova:** Scrivi uno script PHP isolato (nella cartella `scratch/` o `tests/`) che faccia il setup di un ambiente finto (seeding del DB con finti ID, finte richieste HTTP via `$_GET` / `$_POST`).
+   - **DIVIETO ASSOLUTO:** Lo script di test NON DEVE MAI fare il parsing testuale del file sorgente (es. `strpos(file_get_contents(...), 'parola_chiave')`). Deve istanziare classi, richiamare metodi ed emulare il normale stack di esecuzione (MVC).
 3. **Esegui fisicamente:** Fai invocare al tuo script il Controller o il Servizio sotto indagine.
 4. **Analizza l'Output:** Lo script deve fare `echo` o `throw` in base ai byte estratti, parsare i JSON in output, o validare i binari (es. aprendoli con `ZipArchive`).
 5. **Condizione di Uscita:** Il tuo piano è considerato invalido e verrà rifiutato dall'utente se non riesci a produrre nel tuo log la riga di comando (`run_command`) che esegue quello script restituendo un Exit Code 0 (Successo Logico Verificato).
