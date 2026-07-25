@@ -90,11 +90,33 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
           </form>
         <?php endif; ?>
         <?php if ($stato === 'inviato'): ?>
-          <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline" onsubmit="return confirm('Confermare l\'accettazione del preventivo e creare l\'ordine cliente?')">
+          <!-- PIANO - Vendita Allo Scoperto Controllata (P4), §3.4: niente
+               più confirm() nativo (solo testo semplice, non può mostrare
+               una tabella di righe scoperte). assets/js/sales-quotes.js
+               intercetta il click, fa un pre-check AJAX su
+               /sales/quotes/api/verifica-disponibilita e, solo se ci sono
+               righe scoperte, apre la modale #qk-modal-scoperto-preventivo
+               invece di inviare subito il form. -->
+          <form method="post" action="<?= url('sales/quotes/action') ?>" class="d-inline qk-flex-row qk-gap-sm" style="align-items:center;" id="form-conferma-ordine-preventivo">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="azione" value="conferma_ordine">
-            <button type="submit" class="btn-qk btn-qk-success" title="Accetta il preventivo e genera l'ordine di vendita">
+            <input type="hidden" name="conferma_vendita_scoperto" id="input-conferma-vendita-scoperto" value="">
+            <!-- Magazzino di evasione (PIANO - Magazzino Esplicito alla
+                 Conferma Ordine, P4b): NON nella testata del form, perché
+                 quella vive dentro un <fieldset disabled> non appena il
+                 preventivo esce da bozza - proprio quando questa scelta
+                 conta. Vive qui, accanto al bottone, sempre visibile e
+                 modificabile nel momento della decisione. -->
+            <label class="qk-form-label mb-0" for="input-magazzino-ordine" style="white-space:nowrap; font-size:.82rem;">Magazzino di evasione</label>
+            <select name="magazzino_id" id="input-magazzino-ordine" class="qk-form-control" style="width:auto; font-size:.85rem;">
+              <?php foreach ($magazziniOrdine as $mg): ?>
+                <option value="<?= $mg['id'] ?>" <?= $magazzinoOrdineIdDefault === (int)$mg['id'] ? 'selected' : '' ?>>
+                  <?= e($mg['nome']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <button type="submit" class="btn-qk btn-qk-success" id="btn-accetta-crea-ordine" title="Accetta il preventivo e genera l'ordine di vendita">
               <i class="fa-solid fa-circle-check"></i> Accetta e Crea Ordine
             </button>
           </form>
@@ -887,6 +909,42 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
   </div>
 </div>
 
+<!-- ══════════════ MODALE CONFERMA VENDITA ALLO SCOPERTO ══════════════════
+     PIANO - Vendita Allo Scoperto Controllata (P4), §3.4/§8: bottone
+     dedicato ("Conferma comunque"), non una checkbox — stesso pattern del
+     flusso ordine diretto (_create.php). Mai un blocco: la vendita allo
+     scoperto resta sempre permessa, questa modale serve solo a raccogliere
+     una conferma esplicita e visibile. -->
+<div class="modal fade" id="qk-modal-scoperto-preventivo" tabindex="-1" aria-labelledby="qkmsp-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--qk-card-bg);color:var(--qk-text-primary);border:1px solid var(--qk-border)">
+      <div class="modal-header" style="border-color:var(--qk-border)">
+        <h5 class="modal-title" id="qkmsp-title"><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>Disponibilità insufficiente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">
+          La disponibilità a magazzino non copre tutte le righe di questo ordine. La vendita allo scoperto è comunque permessa: verifica le quantità e, se va bene così, conferma qui sotto.
+        </p>
+        <div class="qk-table-wrap">
+          <table class="qk-table" style="font-size:.85rem">
+            <thead>
+              <tr><th>Prodotto</th><th class="text-end">Richiesto</th><th class="text-end">Disponibile</th><th class="text-end">Scoperto</th></tr>
+            </thead>
+            <tbody id="qkmsp-righe-scoperte"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--qk-border)">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn-qk btn-qk-success" id="btn-conferma-scoperto-preventivo">
+          <i class="fa-solid fa-triangle-exclamation"></i> Conferma comunque e crea l'ordine
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 window.QK_QUOTES_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
@@ -894,7 +952,9 @@ window.QK_QUOTES_CONFIG = {
   quoteStato: <?= json_encode($values['stato'] ?? 'bozza') ?>,
   listini: <?= json_encode(array_map(fn($l) => ['id' => $l['id'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini)) ?>,
   margineSogliaVerde: <?= json_encode($margineSogliaVerde ?? 20.0) ?>,
-  margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>
+  margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>,
+  verificaDisponibilitaUrl: <?= json_encode(url('sales/quotes/api/verifica-disponibilita')) ?>,
+  preventivoId: <?= json_encode((int)($id ?? 0)) ?>
 };
 </script>
 <script src="<?= asset('js/big.min.js') ?>"></script>

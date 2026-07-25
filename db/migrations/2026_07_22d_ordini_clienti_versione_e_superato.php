@@ -28,6 +28,25 @@
  *
  * Idempotente: se 'superato' è già nel CHECK e le due colonne già esistono,
  * non fa nulla.
+ *
+ * ATTENZIONE (segnalato il 25/07/2026, scoperto scrivendo la migrazione
+ * gemella db/migrations/2026_07_25_ordini_clienti_contatto_id_fk.php — vedi
+ * REVISIONE - Analisi Documentazione Ciclo Vendite.md §1.7): questa
+ * migrazione usa la stessa sequenza DROP TABLE + ALTER TABLE ... RENAME. Da
+ * quando esiste la vista v_ordini_scoperto_prodotto (PIANO - Vendita Allo
+ * Scoperto Controllata, P4, Tappa 7 — creata DOPO che questa migrazione era
+ * già stata scritta ed eseguita), rieseguire questa sequenza su un DB con
+ * quella vista già presente fallirebbe con "error in view
+ * v_ordini_scoperto_prodotto: no such table: main.ordini_clienti" (verificato
+ * con una riproduzione minima). Sui DB dove questa migrazione è già stata
+ * applicata con successo (prima che la vista esistesse) non c'è alcun
+ * problema — il rischio riguarda solo un'eventuale riesecuzione da zero su un
+ * DB nuovo che avesse la vista ma non ancora questa migrazione, scenario che
+ * oggi non si presenta perché init_sqlite.sql include già entrambe le cose.
+ * Non corretto qui: fuori scope dall'intervento che l'ha scoperto, decisione
+ * lasciata all'utente. Il fix, se servisse, è lo stesso già applicato nella
+ * migrazione gemella: `PRAGMA legacy_alter_table = ON` prima della
+ * transazione, `= OFF` dopo (successo o fallimento).
  */
 
 declare(strict_types=1);

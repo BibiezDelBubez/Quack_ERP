@@ -21,8 +21,27 @@ class OrderCalculatorService
     /**
      * Inserisce un ordine cliente diretto (senza preventivo di origine).
      * Restituisce l'ID del nuovo ordine.
+     *
+     * @param array $venditaScopertoDettaglio Righe scoperte già rilevate e
+     *        confermate esplicitamente dall'utente PRIMA di questa chiamata
+     *        (PIANO - Vendita Allo Scoperto Controllata, P4, §3.3/§3.5): il
+     *        controllo di disponibilità (qk_verifica_disponibilita_ordine())
+     *        vive nel controller, non qui — questo metodo si limita a
+     *        scrivere l'audit trail se gli arriva un dettaglio non vuoto.
+     *        Vuoto (default): nessuna riga scoperta, nessuna colonna di
+     *        audit trail scritta (restano NULL). La riserva stock stessa
+     *        (qk_riserva_stock_ordine() più sotto) resta invariata in
+     *        entrambi i casi: la vendita allo scoperto è sempre permessa.
      */
-    public function insertDirectOrder(array $values, array $righe, int $userId): int
+    /**
+     * @param int $magazzinoId Magazzino di evasione scelto ESPLICITAMENTE
+     *        dall'operatore sul form (PIANO - Magazzino Esplicito alla
+     *        Conferma Ordine, P4b), gia validato dal chiamante con
+     *        qk_valida_magazzino_ordine_esplicito(). Non risolto piu qui
+     *        internamente da qk_magazzino_attivo_id() (sessione) - quel
+     *        comportamento era esattamente il problema P4b.
+     */
+    public function insertDirectOrder(array $values, array $righe, int $userId, int $magazzinoId, array $venditaScopertoDettaglio = []): int
     {
         $this->pdo->beginTransaction();
         try {
@@ -52,8 +71,10 @@ class OrderCalculatorService
             ];
             $contattoSnapshotId = qk_upsert_document_contact($this->pdo, $contPayload);
 
-            // ── Inserimento testata ordine ───────────────────────────────────────
-            $magazzinoRiservaId = qk_magazzino_attivo_id($this->pdo);
+            // Inserimento testata ordine. Magazzino di evasione: ricevuto
+            // esplicito dal chiamante (P4b) - non piu risolto qui da
+            // qk_magazzino_attivo_id() (sessione).
+            $magazzinoRiservaId = $magazzinoId;
 
             $orderData = array_merge($values, $denorm);
             $orderData['indirizzo_consegna_id'] = $indirizzoConsegnaId;
@@ -61,31 +82,34 @@ class OrderCalculatorService
             $orderData['creato_da'] = $userId;
             $orderData['magazzino_id'] = $magazzinoRiservaId;
 
+            // Audit trail vendita allo scoperto (P4, §3.5): valorizzato SOLO
+            // se il chiamante ha già rilevato e fatto confermare righe
+            // scoperte. Vuoto -> le 3 colonne restano NULL (default della
+            // Repository), come per qualunque ordine senza scoperto.
+            if (!empty($venditaScopertoDettaglio)) {
+                $orderData['vendita_scoperto_confermata_da'] = $userId;
+                $orderData['vendita_scoperto_confermata_at'] = date('Y-m-d H:i:s');
+                $orderData['vendita_scoperto_dettaglio'] = json_encode($venditaScopertoDettaglio);
+            }
+
             $ordineId = $this->repository->insertOrderHeader($orderData);
 
             // ── Inserimento righe ────────────────────────────────────────────────
-            $umCache = [];
+            // Conversione UoM centralizzata in qk_calcola_righe_stock_ordine()
+            // (includes/sales_orders.php) — stessa funzione già usata dal
+            // controller per il controllo di disponibilità PRIMA di questa
+            // chiamata (Tappa 4), invece di un loop di conversione duplicato
+            // qui dentro. Stesso ordine di $righe in input.
+            $righeStock = qk_calcola_righe_stock_ordine($this->pdo, $righe);
 
-            foreach ($righe as $r) {
-                $prodottoId = !empty($r['prodotto_id']) ? (int)$r['prodotto_id'] : null;
+            foreach ($righe as $idx => $r) {
+                $prodottoId = $righeStock[$idx]['prodotto_id'];
+                $umId       = $righeStock[$idx]['unita_misura_id'];
+                $uomResult  = $righeStock[$idx]['uom'];
                 $qta = (float) ($r['quantita'] ?? 0);
                 $pu  = (float) ($r['prezzo_unitario'] ?? 0);
                 $sc  = (float) ($r['sconto_perc'] ?? 0);
                 $iva = (float) ($r['iva_perc'] ?? 22);
-
-                $umCodice = $r['unita_misura'] ?? 'pz';
-                if (!array_key_exists($umCodice, $umCache)) {
-                    $umCache[$umCodice] = $this->repository->findUomIdByCode($umCodice);
-                }
-                $umId = $umCache[$umCodice];
-
-                $uomResult = qk_uom_converti_riga(
-                    $this->pdo, 
-                    $prodottoId ? (int)$prodottoId : null, 
-                    $umId ? (int)$umId : null, 
-                    $qta, 
-                    $pu
-                );
 
                 $lineData = [
                     'ordine_id' => $ordineId,

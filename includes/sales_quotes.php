@@ -1004,9 +1004,76 @@ function qk_preventivo_duplica(PDO $pdo, int $id, int $userId): int
 
 
 /**
- * Accetta un preventivo e crea il relativo ordine cliente.
+ * Verifica se la conferma di un preventivo in ordine incontrerebbe righe
+ * scoperte (disponibilità netta insufficiente), sullo stesso magazzino che
+ * userebbe davvero qk_preventivo_conferma_ordine() se procedesse.
+ *
+ * PIANO - Vendita Allo Scoperto Controllata (P4), Tappa 5: funzione
+ * condivisa richiamata sia dal pre-check AJAX
+ * (SalesQuotesController::apiVerificaDisponibilitaOrdine(), lato client
+ * prima del click di conferma) sia dal controllo server-side ripetuto in
+ * SalesQuotesController::action() case 'conferma_ordine' (mai fidarsi solo
+ * del client) — stessa unica fonte di verità, mai due logiche diverse.
+ *
+ * A differenza del percorso ordine diretto (qk_calcola_righe_stock_ordine()),
+ * qui non serve alcuna conversione UoM: le righe di un preventivo hanno già
+ * quantita_stock calcolata e congelata al salvataggio del preventivo stesso.
+ *
+ * @param ?int $magazzinoEsplicito Magazzino scelto ESPLICITAMENTE
+ *        dall'operatore sul controllo accanto al bottone "Accetta e Crea
+ *        Ordine" (PIANO - Magazzino Esplicito alla Conferma Ordine, P4b).
+ *        Null (default) solo per compatibilità con chiamate che non lo hanno
+ *        ancora — ricade sul vecchio comportamento (sessione). I chiamanti
+ *        reali del controller lo passano sempre.
+ * @return array Stesso shape del valore di ritorno di
+ *         qk_verifica_disponibilita_ordine() — vuoto se il preventivo non
+ *         esiste o non ha righe scoperte.
  */
-function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
+function qk_preventivo_verifica_disponibilita(PDO $pdo, int $preventivoId, ?int $magazzinoEsplicito = null): array
+{
+    $detail = qk_get_offerta($pdo, $preventivoId);
+    if (!$detail) {
+        return [];
+    }
+
+    $righePerCheck = [];
+    foreach ($detail['righe'] as $r) {
+        if (!empty($r['prodotto_id'])) {
+            $righePerCheck[] = [
+                'prodotto_id'    => (int)$r['prodotto_id'],
+                'quantita_stock' => (float)($r['quantita_stock'] ?? 0),
+            ];
+        }
+    }
+    if (empty($righePerCheck)) {
+        return [];
+    }
+
+    // P4b: il controllo deve girare sul magazzino che verrebbe DAVVERO usato
+    // per la riserva - quello scelto esplicitamente dall'operatore, non più
+    // quello di sessione (era esattamente il problema P4b).
+    $magazzinoId = $magazzinoEsplicito ?? qk_magazzino_attivo_id($pdo);
+
+    return qk_verifica_disponibilita_ordine($pdo, $righePerCheck, $magazzinoId);
+}
+
+/**
+ * Accetta un preventivo e crea il relativo ordine cliente.
+ *
+ * @param int $magazzinoId Magazzino di evasione scelto ESPLICITAMENTE
+ *        dall'operatore (PIANO - Magazzino Esplicito alla Conferma Ordine,
+ *        P4b), già validato dal chiamante con
+ *        qk_valida_magazzino_ordine_esplicito(). Non risolto più qui
+ *        internamente da qk_magazzino_attivo_id() (sessione).
+ * @param array $venditaScopertoDettaglio Righe scoperte già rilevate (via
+ *        qk_preventivo_verifica_disponibilita()) e confermate esplicitamente
+ *        dall'utente PRIMA di questa chiamata (PIANO - Vendita Allo Scoperto
+ *        Controllata, P4, §3.4/§3.5). Vuoto (default): nessuna riga scoperta,
+ *        nessuna colonna di audit trail scritta (restano NULL). La riserva
+ *        stock stessa (qk_riserva_stock_ordine() più sotto) resta invariata
+ *        in entrambi i casi: la vendita allo scoperto è sempre permessa.
+ */
+function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId, int $magazzinoId, array $venditaScopertoDettaglio = []): int
 {
     $pdo->beginTransaction();
     try {
@@ -1083,8 +1150,10 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             $pdo->prepare("UPDATE preventivi SET contatto_snapshot_id = ? WHERE id = ?")->execute([$contatto_snapshot_id, $id]);
         }
 
-        // 3. Create ordini_clienti head
-        $magazzinoRiservaId = qk_magazzino_attivo_id($pdo);
+        // 3. Create ordini_clienti head. Magazzino di evasione: ricevuto
+        // esplicito dal chiamante (P4b) - non più risolto qui da
+        // qk_magazzino_attivo_id() (sessione).
+        $magazzinoRiservaId = $magazzinoId;
         $sqlHead = "INSERT INTO ordini_clienti (
             numero_ordine, preventivo_id, cliente_id, azienda_interna_id, magazzino_id, data_ordine, data_consegna_prevista,
             stato, stato_fatturazione, riferimento_interno, condizioni_pagamento, trasporto, valuta,
@@ -1096,6 +1165,7 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             indirizzo_consegna_id, contatto_snapshot_id,
             azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
             cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
+            vendita_scoperto_confermata_da, vendita_scoperto_confermata_at, vendita_scoperto_dettaglio,
             creato_da, created_at, updated_at
         ) VALUES (
             :numero_ordine, :preventivo_id, :cliente_id, :azienda_interna_id, :magazzino_id, CURRENT_DATE, :data_consegna_prevista,
@@ -1108,9 +1178,16 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             :indirizzo_consegna_id, :contatto_snapshot_id,
             :azienda_ragione_sociale, :azienda_partita_iva, :azienda_codice_fiscale, :azienda_indirizzo, :azienda_telefono, :azienda_email, :azienda_iban,
             :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
+            :vendita_scoperto_confermata_da, :vendita_scoperto_confermata_at, :vendita_scoperto_dettaglio,
             :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )";
         $stHead = $pdo->prepare($sqlHead);
+        // Audit trail vendita allo scoperto (P4, §3.5): NULL nei 3 campi se
+        // non ci sono righe scoperte confermate — stesso significato
+        // identico alla scrittura gemella in SalesOrderRepository::insertOrderHeader().
+        $venditaScopertoConfermataDa = !empty($venditaScopertoDettaglio) ? $userId : null;
+        $venditaScopertoConfermataAt = !empty($venditaScopertoDettaglio) ? date('Y-m-d H:i:s') : null;
+        $venditaScopertoDettaglioJson = !empty($venditaScopertoDettaglio) ? json_encode($venditaScopertoDettaglio) : null;
         $stHead->execute([
             ':numero_ordine'           => $numeroOrdine,
             ':preventivo_id'           => $id,
@@ -1152,6 +1229,9 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId): int
             ':cliente_partita_iva'     => $quota['cliente_partita_iva'] ?: null,
             ':cliente_codice_fiscale'  => $quota['cliente_codice_fiscale'] ?: null,
             ':cliente_indirizzo'       => $quota['cliente_indirizzo'] ?: null,
+            ':vendita_scoperto_confermata_da' => $venditaScopertoConfermataDa,
+            ':vendita_scoperto_confermata_at' => $venditaScopertoConfermataAt,
+            ':vendita_scoperto_dettaglio'     => $venditaScopertoDettaglioJson,
             ':creato_da'               => $userId
         ]);
         $ordineId = (int)$pdo->lastInsertId();

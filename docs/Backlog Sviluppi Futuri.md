@@ -42,18 +42,22 @@ Quando una voce viene implementata, va rimossa da qui e il lavoro va tracciato n
 
 ## 3. "Magazzino attivo" come filtro invisibile — sostituzione con filtri/campi espliciti
 
-**Fonte:** [Magazzino Attivo - Analisi e Alternative.md](Gestione%20Magazzino%20e%20Lotti/Magazzino%20Attivo%20-%20Analisi%20e%20Alternative.md), §6–7.
+**⚠️ Voce obsoleta, aggiornata il 25/07/2026 dopo lettura integrale del codice reale (nessuna riga a memoria, nessun grep come prova).** Il file sorgente originale di questa voce (`Gestione Magazzino e Lotti/Magazzino Attivo - Analisi e Alternative.md`) non esiste più nella cartella docs (verificato: nessun risultato cercandolo per nome) — coerente con la raccomandazione già fatta in `Gestione Magazzino e Lotti/REVISIONE - Analisi Documentazione Gestione Magazzino e Lotti.md` §1.7/§1.9/§1.11 di archiviarlo come nota storica, essendo la sua decisione (Opzione A, rimozione del selettore dalla topbar) già presa e già implementata. Quella stessa REVISIONE (§1.11) aveva già segnalato questa voce di backlog come obsoleta senza però toccarla, per la regola di processo di questo progetto (le voci di backlog si toccano solo su richiesta esplicita dell'utente) — richiesta ora arrivata.
 
-**Di cosa si tratta.** Il concetto di "magazzino attivo" di sessione (`qk_magazzino_attivo_id()`) è corretto e allineato alle best practice quando pre-compila un campo esplicito e modificabile su un documento (es. `magazzino_destinazione_id` sugli ordini d'acquisto). Non lo è quando agisce come **filtro invisibile** su schermate di lettura senza alcuna indicazione visibile della sede, o come **unico criterio** per un'azione di scrittura senza campo esplicito — pattern che nessuno dei quattro ERP di riferimento (SAP, NetSuite, Dynamics 365, Odoo) usa come unico meccanismo.
+**Di cosa si tratta (ancora valido).** Il concetto di "magazzino attivo" di sessione (`qk_magazzino_attivo_id()`, `includes/magazzino.php:425-458`) è corretto e allineato alle best practice quando pre-compila un campo esplicito e modificabile su un documento. Non lo è quando agisce come **filtro invisibile** su schermate di lettura senza alcuna indicazione visibile della sede, o come **unico criterio** per un'azione di scrittura senza campo esplicito.
 
-**Interventi individuati, in ordine di priorità:**
-1. Campo magazzino esplicito sul form movimento manuale (`app/views/warehouse/_movement_form.php`) — oggi scrive giacenza sul magazzino attivo senza che l'operatore lo veda o lo scelga.
-2. Filtro magazzino esplicito su "Proposte di Riordino" (`warehouse/reorder`) — oggi zero indicazione di sede sulla pagina, pur influenzando decisioni di acquisto.
-3. Filtro magazzino esplicito su "Giacenze Magazzino" (`warehouse/stock`), con opzione "Tutti i magazzini" a somma corretta (`SUM`/`GROUP BY`, non un valore preso da una riga a caso).
-4. Nome sede visibile nel KPI dashboard "Prodotti Sottoscorta".
-5. (Più ampio, dopo) Campo sede esplicito su spedizioni e riserva stock ordini vendita — richiede prima introdurre il concetto di sede di evasione sugli ordini di vendita.
+**Stato reale di ciascun intervento, verificato riga per riga il 25/07/2026:**
+1. ✅ **Fatto.** Campo magazzino esplicito e obbligatorio sul form movimento manuale — `app/Controllers/WarehouseController.php::createMovement()`, righe 791-797 e 826-829 (validazione: "Seleziona il magazzino" se assente).
+2. ✅ **Fatto.** Filtro magazzino esplicito su "Proposte di Riordino" — `WarehouseController::reorder()`, riga 438 (`qk_risolvi_magazzino_filtro()`), con ramo aggregato "tutti i magazzini" a somma `SUM`/`GROUP BY` (righe 452-499).
+3. ✅ **Fatto.** Filtro magazzino esplicito su "Giacenze Magazzino" — `WarehouseController::stock()`, riga 68, stesso meccanismo del punto 2.
+4. ❌ **Ancora aperto, verificato.** Nome sede nel KPI dashboard "Prodotti Sottoscorta" — `app/views/warehouse/dashboard.php` letto per intero: il box KPI (righe 35-43) mostra solo `$sottoscorta_count`, nessun nome di magazzino in nessun punto della pagina.
+5. **Diviso in due parti, stati diversi:**
+   - Campo sede esplicito su spedizioni: ✅ **fatto** — `SpedizioniController::nuova()` ha un campo `<select name="magazzino_id">` esplicito (vedi `docs/Ciclo Vendite/AUDIT 3...md` §3.1, corretto e verificato con test reale).
+   - Campo sede esplicito sulla **riserva stock ordini vendita** (alla conferma ordine cliente, da preventivo o diretto): ✅ **fatto, 25/07/2026** — questo è il problema catalogato come "P4b" in `docs/Ciclo Vendite/REVISIONE - Analisi Documentazione Ciclo Vendite.md` §6.6/§6.8, risolto con `PIANO - Magazzino Esplicito alla Conferma Ordine (P4b).md`, eseguito e verificato con test reale (`suite_magazzino_esplicito_ordine_diretto.php`, `suite_magazzino_esplicito_preventivo_conferma.php`). `qk_preventivo_conferma_ordine()` e `SalesOrdersController::create()` ricevono ora il magazzino come parametro esplicito e obbligatorio invece di leggere `qk_magazzino_attivo_id()` in silenzio; `app/views/sales/orders/_create.php` e `app/views/sales/quotes/_form.php` hanno entrambi un campo `magazzino_id` esplicito.
 
-**Perché è rimandato.** È un intervento di UI/UX trasversale su più schermate, non una singola feature — richiede una sessione dedicata per essere fatto con lo stesso livello di attenzione (test end-to-end per ciascuna vista toccata) riservato al resto del lavoro multi-magazzino. Non richiede modifiche allo schema dati: `magazzino_id` esiste già ovunque serve.
+**Interventi 1-4 comparivano anche nel piano UX di `Magazzino Attivo - Analisi e Alternative.md` §8 come Fix 1-4** — Fix 1-3 fatti, Fix 4 no, coerente con quanto sopra (stesso stato già documentato in `Gestione Magazzino e Lotti/REVISIONE - Analisi Documentazione Gestione Magazzino e Lotti.md` §1.8).
+
+**Cosa resta davvero da fare, aggiornato al 25/07/2026:** solo il punto 4 (nome sede nel KPI dashboard, basso rischio, solo markup) — la parte di P4b del punto 5 è stata risolta lo stesso giorno (vedi sopra). Non richiede modifiche allo schema dati.
 
 ---
 

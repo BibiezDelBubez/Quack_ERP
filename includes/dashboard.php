@@ -65,11 +65,20 @@ function get_kpi_acquisti_in_arrivo(PDO $pdo): int
  */
 function get_kpi_fatturato_mese(PDO $pdo, string $mese_yyyy_mm): float
 {
+    // PIANO - Revisione Ordini Clienti (Nuova Versione), 25/07/2026: prima
+    // dell'introduzione dello stato 'superato', questa query (che esclude
+    // solo 'annullato') non poteva mai contare due volte lo stesso ordine
+    // concettuale. Da quando una revisione crea una nuova riga in
+    // ordini_clienti mantenendo intatta quella vecchia (ora 'superato'),
+    // escludere solo 'annullato' farebbe sommare DUE VOLTE lo stesso importo
+    // (la versione superata + quella nuova) nel fatturato del mese — scoperto
+    // e corretto qui, non dal codice della revisione stessa, che non tocca
+    // questa query.
     $stKpi5 = $pdo->prepare("
         SELECT COALESCE(SUM(r.quantita_ordinata * r.prezzo_unitario * (1 - r.sconto_perc/100.0)), 0.0)
         FROM ordini_clienti_righe r
         JOIN ordini_clienti o ON o.id = r.ordine_id
-        WHERE o.stato != 'annullato' AND o.data_ordine LIKE ?
+        WHERE o.stato NOT IN ('annullato', 'superato') AND o.data_ordine LIKE ?
     ");
     $stKpi5->execute([$mese_yyyy_mm . '%']);
     $fatturato = (float) $stKpi5->fetchColumn();

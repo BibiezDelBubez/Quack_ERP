@@ -1292,6 +1292,18 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     -- congelato qui alla creazione. Nullable: ordini storici pre-esistenti
     -- non hanno modo di saperlo retroattivamente.
     magazzino_id            INTEGER      REFERENCES magazzini(id),
+    -- Audit trail vendita allo scoperto (PIANO - Vendita Allo Scoperto
+    -- Controllata, P4, §3.5): valorizzate SOLO quando l'utente ha dovuto
+    -- confermare esplicitamente una o più righe scoperte (avviso, mai un
+    -- blocco — la vendita allo scoperto resta sempre permessa). NULL in
+    -- tutti gli altri casi, compresi gli ordini storici pre-esistenti a
+    -- questa colonna. vendita_scoperto_dettaglio è uno snapshot JSON delle
+    -- righe scoperte al momento della conferma (stesso stile di
+    -- ordini_clienti_righe.kit_componenti_snapshot, non una tabella satellite:
+    -- qui serve solo poterlo rivedere aprendo l'ordine, non aggregarlo).
+    vendita_scoperto_confermata_da  INTEGER  REFERENCES utenti(id),
+    vendita_scoperto_confermata_at  DATETIME,
+    vendita_scoperto_dettaglio      TEXT,
     data_ordine             DATE         NOT NULL,
     data_consegna_prevista  DATE,
     stato                   TEXT         NOT NULL CHECK (stato IN (
@@ -1334,7 +1346,13 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     consegna_referente       VARCHAR(80),
     consegna_telefono        VARCHAR(20),
     consegna_note            VARCHAR(255),
-    contatto_id              INTEGER,
+    -- FK aggiunta il 25/07/2026 (REVISIONE Ciclo Vendite §1.7): mancava fin
+    -- dall'aggiunta del blocco snapshot del 14/07/2026 (probabile disattenzione
+    -- nel copia-incolla), a differenza della colonna gemella
+    -- preventivi.contatto_id (riga ~1165) che referenzia correttamente
+    -- clienti_fornitori(id) fin dall'inizio. Vedi db/migrations/2026_07_25_ordini_clienti_contatto_id_fk.php
+    -- per l'allineamento sui DB già esistenti.
+    contatto_id              INTEGER      REFERENCES clienti_fornitori(id),
     contatto_nome            VARCHAR(150),
     contatto_email           VARCHAR(150),
     contatto_telefono        VARCHAR(50),
@@ -2781,3 +2799,55 @@ INSERT OR IGNORE INTO iso_lingue (codice, nome) VALUES
     ('uz', 'Uzbeco'), ('ve', 'Venda'), ('vi', 'Vietnamita'), ('vo', 'Volapuk'),
     ('wa', 'Vallone'), ('wo', 'Wolof'), ('xh', 'Xhosa'), ('yi', 'Yiddish'),
     ('yo', 'Yoruba'), ('za', 'Zhuang'), ('zh', 'Cinese'), ('zu', 'Zulu');
+
+-- =============================================================================
+-- v_ordini_scoperto_prodotto — PIANO - Vendita Allo Scoperto Controllata (P4),
+-- Tappa 7 (§3.6 del piano): vista di sola lettura, nessun automatismo di
+-- allocazione. Per ogni prodotto/componente con disponibilità netta negativa
+-- (quantita_disponibile - quantita_riservata < 0) in un magazzino, elenca gli
+-- ordini clienti ancora attivi che vi insistono — così un operatore può
+-- vedere la coda FIFO (ordinando per ordine_creato_at) prima di decidere chi
+-- spedire per primo, senza che l'app scelga automaticamente al posto suo
+-- (stesso livello di automazione di SAP/Odoo/NetSuite: FIFO come suggerimento
+-- di default, mai un'allocazione rigida).
+--
+-- Kit-aware (due branch in UNION ALL): un Kit non ha giacenza fisica propria
+-- (vedi commenti di qk_riserva_stock_ordine(), includes/magazzino.php), quindi
+-- lo scoperto va rilevato sul COMPONENTE scarso, non sul Kit — il secondo
+-- branch risale dal componente in giacenze() alla riga ordine che lo consuma
+-- tramite componenti_kit, moltiplicando la quantità residua per la resa del
+-- Kit. Stesso principio già applicato da qk_espandi_componenti_kit()/
+-- qk_componenti_kit(), qui replicato in SQL puro perché una vista non può
+-- richiamare funzioni PHP.
+--
+-- Solo ordini in stato attivo (in_lavorazione, parzialmente_spedito) e solo
+-- righe non ancora completamente spedite (quantita_ordinata > quantita_spedita)
+-- — un ordine completato/annullato non compete più per lo stock.
+-- =============================================================================
+CREATE VIEW IF NOT EXISTS v_ordini_scoperto_prodotto AS
+SELECT g.prodotto_id, p.nome AS prodotto_nome, g.magazzino_id,
+       (g.quantita_disponibile - g.quantita_riservata) AS disponibile_netto,
+       oc.id AS ordine_id, oc.numero_ordine, oc.cliente_id, oc.created_at AS ordine_creato_at,
+       (ocr.quantita_ordinata - ocr.quantita_spedita) AS quantita_residua
+  FROM giacenze g
+  JOIN prodotti p ON p.id = g.prodotto_id AND p.tipo = 'semplice'
+  JOIN ordini_clienti_righe ocr ON ocr.prodotto_id = g.prodotto_id
+  JOIN ordini_clienti oc ON oc.id = ocr.ordine_id
+       AND (oc.magazzino_id = g.magazzino_id OR oc.magazzino_id IS NULL)
+ WHERE (g.quantita_disponibile - g.quantita_riservata) < 0
+   AND oc.stato IN ('in_lavorazione', 'parzialmente_spedito')
+   AND ocr.quantita_ordinata > ocr.quantita_spedita
+UNION ALL
+SELECT g.prodotto_id, p.nome AS prodotto_nome, g.magazzino_id,
+       (g.quantita_disponibile - g.quantita_riservata) AS disponibile_netto,
+       oc.id AS ordine_id, oc.numero_ordine, oc.cliente_id, oc.created_at AS ordine_creato_at,
+       (ocr.quantita_ordinata - ocr.quantita_spedita) * ck.quantita AS quantita_residua
+  FROM giacenze g
+  JOIN prodotti p ON p.id = g.prodotto_id
+  JOIN componenti_kit ck ON ck.componente_id = g.prodotto_id
+  JOIN ordini_clienti_righe ocr ON ocr.prodotto_id = ck.kit_id
+  JOIN ordini_clienti oc ON oc.id = ocr.ordine_id
+       AND (oc.magazzino_id = g.magazzino_id OR oc.magazzino_id IS NULL)
+ WHERE (g.quantita_disponibile - g.quantita_riservata) < 0
+   AND oc.stato IN ('in_lavorazione', 'parzialmente_spedito')
+   AND ocr.quantita_ordinata > ocr.quantita_spedita;

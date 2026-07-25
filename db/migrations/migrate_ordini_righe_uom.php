@@ -28,6 +28,16 @@
 
 declare(strict_types=1);
 
+// FIX (24/07/2026, scoperto durante PIANO - Vendita Allo Scoperto Controllata,
+// Tappa 3): db/migrate.php esegue ogni migrazione in un processo PHP
+// SEPARATO (exec()), quindi questo file deve bootstrare da solo il proprio
+// ambiente. Mancava questo require: senza le costanti definite in
+// config.php (DB_DRIVER, DB_DIR, ecc.) db.php falliva con "Undefined
+// constant" se questa migrazione fosse mai stata lanciata sul serio tramite
+// il runner ufficiale — nonostante questo file sia citato nei commenti di
+// db/migrate.php come "l'esempio giusto da seguire" per come si scrive una
+// migrazione: l'esempio stesso aveva lo stesso bug.
+require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php'; // adatta al percorso reale del PDO
 
 function column_exists(PDO $pdo, string $table, string $column): bool

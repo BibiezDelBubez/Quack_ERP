@@ -929,9 +929,28 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     cliente_id INTEGER NOT NULL,
     indirizzo_spedizione_id INTEGER,
     azienda_interna_id INTEGER,
+    -- ALLINEATO (24/07/2026, PIANO - Vendita Allo Scoperto Controllata,
+    -- Tappa 3): questo schema MySQL era rimasto indietro rispetto a
+    -- db/init_sqlite.sql -- mancavano magazzino_id, versione,
+    -- ordine_padre_id e lo stato 'superato' (introdotti lato SQLite da
+    -- PIANO - Revisione Ordini Clienti (Nuova Versione), Tappe 1-2, e mai
+    -- riportati qui). Scoperto e corretto qui, non solo segnalato, su
+    -- richiesta esplicita dell'utente -- vedi anche la nota sul CHECK dello
+    -- stato poco sotto.
+    magazzino_id INTEGER,
+    versione INTEGER NOT NULL DEFAULT 1,
+    ordine_padre_id INTEGER,
+    -- Audit trail vendita allo scoperto (P4, §3.5): stesso significato
+    -- identico alla colonna gemella in db/init_sqlite.sql.
+    vendita_scoperto_confermata_da  INTEGER,
+    vendita_scoperto_confermata_at  DATETIME,
+    vendita_scoperto_dettaglio      TEXT,
     data_ordine DATE NOT NULL,
     data_consegna_prevista DATE,
-    stato VARCHAR(30) NOT NULL CHECK (stato IN ('in_lavorazione', 'parzialmente_spedito', 'spedito', 'completato', 'annullato')),
+    -- 'superato' aggiunto il 24/07/2026 (era già in db/init_sqlite.sql da
+    -- PIANO - Revisione Ordini Clienti (Nuova Versione), Tappe 1-2 -- mai
+    -- riportato qui prima d'ora).
+    stato VARCHAR(30) NOT NULL CHECK (stato IN ('in_lavorazione', 'parzialmente_spedito', 'spedito', 'completato', 'annullato', 'superato')),
     stato_fatturazione VARCHAR(255) NOT NULL DEFAULT 'da_fatturare',
     riferimento_interno VARCHAR(100),
     condizioni_pagamento TEXT,
@@ -972,12 +991,20 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     UNIQUE (numero_ordine),
     CONSTRAINT fk_ordini_clienti_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
     CONSTRAINT fk_ordini_clienti_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id),
+    -- Allineato 25/07/2026 (REVISIONE Ciclo Vendite §1.7): mancava, a differenza
+    -- della colonna gemella preventivi.contatto_id (fk_preventivi_contatto_id).
+    CONSTRAINT fk_ordini_clienti_contatto_id FOREIGN KEY (contatto_id) REFERENCES clienti_fornitori(id),
     CONSTRAINT fk_ordini_clienti_contatto_snapshot_id FOREIGN KEY (contatto_snapshot_id) REFERENCES contatti_documenti(id),
     CONSTRAINT fk_ordini_clienti_indirizzo_consegna_id FOREIGN KEY (indirizzo_consegna_id) REFERENCES indirizzi_documenti(id),
     CONSTRAINT fk_ordini_clienti_azienda_interna_id FOREIGN KEY (azienda_interna_id) REFERENCES aziende_interne(id),
     CONSTRAINT fk_ordini_clienti_indirizzo_spedizione_id FOREIGN KEY (indirizzo_spedizione_id) REFERENCES indirizzi(id),
     CONSTRAINT fk_ordini_clienti_cliente_id FOREIGN KEY (cliente_id) REFERENCES clienti_fornitori(id),
-    CONSTRAINT fk_ordini_clienti_preventivo_id FOREIGN KEY (preventivo_id) REFERENCES preventivi(id)
+    CONSTRAINT fk_ordini_clienti_preventivo_id FOREIGN KEY (preventivo_id) REFERENCES preventivi(id),
+    -- Allineamento 24/07/2026 (vedi nota sopra su magazzino_id/versione/ordine_padre_id).
+    CONSTRAINT fk_ordini_clienti_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id),
+    CONSTRAINT fk_ordini_clienti_ordine_padre_id FOREIGN KEY (ordine_padre_id) REFERENCES ordini_clienti(id),
+    -- Audit trail vendita allo scoperto (P4, §3.5).
+    CONSTRAINT fk_ordini_clienti_vendita_scoperto_confermata_da FOREIGN KEY (vendita_scoperto_confermata_da) REFERENCES utenti(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
@@ -2154,5 +2181,39 @@ INSERT IGNORE INTO iso_lingue (codice, nome) VALUES
     ('uz', 'Uzbeco'), ('ve', 'Venda'), ('vi', 'Vietnamita'), ('vo', 'Volapuk'),
     ('wa', 'Vallone'), ('wo', 'Wolof'), ('xh', 'Xhosa'), ('yi', 'Yiddish'),
     ('yo', 'Yoruba'), ('za', 'Zhuang'), ('zh', 'Cinese'), ('zu', 'Zulu');
+
+-- =============================================================================
+-- v_ordini_scoperto_prodotto — PIANO - Vendita Allo Scoperto Controllata (P4),
+-- Tappa 7. Vedi commento gemello in db/init_sqlite.sql per la spiegazione
+-- completa (Kit-aware via UNION ALL, FIFO come suggerimento non come
+-- automatismo, solo ordini attivi con righe non ancora completamente spedite).
+-- =============================================================================
+CREATE OR REPLACE VIEW v_ordini_scoperto_prodotto AS
+SELECT g.prodotto_id, p.nome AS prodotto_nome, g.magazzino_id,
+       (g.quantita_disponibile - g.quantita_riservata) AS disponibile_netto,
+       oc.id AS ordine_id, oc.numero_ordine, oc.cliente_id, oc.created_at AS ordine_creato_at,
+       (ocr.quantita_ordinata - ocr.quantita_spedita) AS quantita_residua
+  FROM giacenze g
+  JOIN prodotti p ON p.id = g.prodotto_id AND p.tipo = 'semplice'
+  JOIN ordini_clienti_righe ocr ON ocr.prodotto_id = g.prodotto_id
+  JOIN ordini_clienti oc ON oc.id = ocr.ordine_id
+       AND (oc.magazzino_id = g.magazzino_id OR oc.magazzino_id IS NULL)
+ WHERE (g.quantita_disponibile - g.quantita_riservata) < 0
+   AND oc.stato IN ('in_lavorazione', 'parzialmente_spedito')
+   AND ocr.quantita_ordinata > ocr.quantita_spedita
+UNION ALL
+SELECT g.prodotto_id, p.nome AS prodotto_nome, g.magazzino_id,
+       (g.quantita_disponibile - g.quantita_riservata) AS disponibile_netto,
+       oc.id AS ordine_id, oc.numero_ordine, oc.cliente_id, oc.created_at AS ordine_creato_at,
+       (ocr.quantita_ordinata - ocr.quantita_spedita) * ck.quantita AS quantita_residua
+  FROM giacenze g
+  JOIN prodotti p ON p.id = g.prodotto_id
+  JOIN componenti_kit ck ON ck.componente_id = g.prodotto_id
+  JOIN ordini_clienti_righe ocr ON ocr.prodotto_id = ck.kit_id
+  JOIN ordini_clienti oc ON oc.id = ocr.ordine_id
+       AND (oc.magazzino_id = g.magazzino_id OR oc.magazzino_id IS NULL)
+ WHERE (g.quantita_disponibile - g.quantita_riservata) < 0
+   AND oc.stato IN ('in_lavorazione', 'parzialmente_spedito')
+   AND ocr.quantita_ordinata > ocr.quantita_spedita;
 
 SET FOREIGN_KEY_CHECKS = 1;

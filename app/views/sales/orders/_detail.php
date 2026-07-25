@@ -15,11 +15,18 @@ $isParzSpedito  = $currStato === 'parzialmente_spedito';
 $isSpedito      = $currStato === 'spedito';
 $isCompletato   = $currStato === 'completato';
 $isAnnullato    = $currStato === 'annullato';
+$isSuperato     = $currStato === 'superato';
 
 $statoFatturazione = $o['stato_fatturazione'] ?? 'da_fatturare';
 $isFatturato = $statoFatturazione === 'fatturato';
 
-$canSave = !$isCompletato && !$isAnnullato;
+// Tappa 6 (PIANO - Revisione Ordini Clienti): 'superato' è uno stato
+// terminale e congelato esattamente come 'annullato' (§2: "l'originale passa
+// a 'superato', mai più modificabile") — va escluso ovunque questo file
+// escludeva già 'annullato'/'completato', altrimenti un ordine superato
+// mostrerebbe ancora i bottoni di modifica (che il model bloccherebbe
+// comunque via TransitionGuard, ma con un errore invece che nasconderli).
+$canSave = !$isCompletato && !$isAnnullato && !$isSuperato;
 
 $soSteps = [
   ['in_lavorazione',       'In Lavorazione'],
@@ -29,6 +36,9 @@ $soSteps = [
 ];
 if ($currStato === 'annullato') {
   $soSteps[] = ['annullato', 'Annullato'];
+}
+if ($currStato === 'superato') {
+  $soSteps[] = ['superato', 'Superato'];
 }
 $soCurrentIdx = 0;
 foreach ($soSteps as $idx => [$s, $lbl]) {
@@ -56,6 +66,8 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
         L'ordine è <strong>completato</strong>. Il ciclo operativo di questo documento è terminato.
       <?php elseif ($isAnnullato): ?>
         L'ordine è <strong>annullato</strong> e inattivo.
+      <?php elseif ($isSuperato): ?>
+        L'ordine è stato <strong>superato</strong> da una nuova versione<?= !empty($ordineFiglio) ? ' (<a href="' . e(url('sales/orders/edit?id=' . (int)$ordineFiglio['id'])) . '">' . e($ordineFiglio['numero_ordine']) . '</a>)' : '' ?> ed è congelato: non più modificabile.
       <?php else: ?>
         Stato attuale: <?= e($currStato) ?>.
       <?php endif; ?>
@@ -72,7 +84,7 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
       </button>
     <?php endif; ?>
 
-    <?php if (!$isCompletato && !$isAnnullato): ?>
+    <?php if (!$isCompletato && !$isAnnullato && !$isSuperato): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -90,6 +102,23 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
         <input type="hidden" name="azione" value="riapri">
         <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm">
           <i class="fa-solid fa-folder-open me-1"></i> Rimetti in Lavorazione
+        </button>
+      </form>
+    <?php endif; ?>
+
+    <?php if ($isInLavorazione): ?>
+      <!-- PIANO - Revisione Ordini Clienti, Tappa 6: stesso bottone, stessa
+           azione "nuova_versione", stessa classe/icona già in produzione per
+           i Preventivi (app/views/sales/quotes/_form.php) — nessun componente
+           nuovo, solo lo stesso pattern copiato identico (§4.5). Visibile
+           solo da 'in_lavorazione' (§4.2), coerente col guard server-side in
+           qk_ordine_cliente_crea_revisione(). -->
+      <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="nuova_versione">
+        <button type="submit" class="btn-qk btn-qk-secondary" title="Crea una nuova versione di questo ordine">
+          <i class="fa-solid fa-code-branch"></i> Crea Nuova Versione
         </button>
       </form>
     <?php endif; ?>
@@ -116,7 +145,7 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
   </div>
 
   <div class="qk-sticky-action-bar-right">
-    <?php if (!$isAnnullato && !$isCompletato): ?>
+    <?php if (!$isAnnullato && !$isCompletato && !$isSuperato): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline"
             onsubmit="return confirm('Sei sicuro di voler annullare questo ordine di vendita?');">
         <?= csrf_field() ?>
@@ -157,8 +186,23 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
     <div class="qk-card-header qk-flex-row qk-justify-between">
       <span class="qk-card-title">
         <i class="fa-solid fa-file-contract me-2"></i> Ordine Cliente <?= e($o['numero_ordine']) ?>
+        <?php if ((int)($o['versione'] ?? 1) > 1 || !empty($ordineFiglio)): ?>
+          <span class="qk-badge draft ms-1" style="font-size:0.75rem" title="Numero di versione di questo ordine">
+            <i class="fa-solid fa-code-branch me-1"></i>Versione <?= (int)($o['versione'] ?? 1) ?>
+          </span>
+        <?php endif; ?>
       </span>
       <div class="qk-flex-row qk-gap-sm">
+        <?php if (!empty($ordinePadre)): ?>
+          <a href="<?= url('sales/orders/edit?id=' . (int)$ordinePadre['id']) ?>" class="qk-badge draft text-decoration-none" style="font-size:0.75rem" title="Ordine da cui è nata questa versione">
+            <i class="fa-solid fa-arrow-left me-1"></i>Versione precedente: <?= e($ordinePadre['numero_ordine']) ?>
+          </a>
+        <?php endif; ?>
+        <?php if (!empty($ordineFiglio)): ?>
+          <a href="<?= url('sales/orders/edit?id=' . (int)$ordineFiglio['id']) ?>" class="qk-badge confirmed text-decoration-none" style="font-size:0.75rem" title="Questo ordine è stato superato da una versione più recente">
+            <i class="fa-solid fa-arrow-right me-1"></i>Versione successiva: <?= e($ordineFiglio['numero_ordine']) ?>
+          </a>
+        <?php endif; ?>
         <span class="qk-badge <?= $isFatturato ? 'confirmed' : 'draft' ?> fw-bold" style="font-size:0.85rem">
           <i class="fa-solid <?= $isFatturato ? 'fa-circle-check' : 'fa-hourglass' ?> me-1"></i>
           Fatturazione: <?= $isFatturato ? 'Fatturato' : 'Da Fatturare' ?>
@@ -340,7 +384,7 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
 <div class="qk-card mb-4">
   <div class="qk-card-header qk-flex-row qk-justify-between">
     <span class="qk-card-title"><i class="fa-solid fa-truck-fast me-2"></i> Spedizioni e DDT</span>
-    <?php if (!$isAnnullato && !$isCompletato): ?>
+    <?php if (!$isAnnullato && !$isCompletato && !$isSuperato): ?>
       <a href="<?= url('sales/shipments/new') ?>?order_id=<?= $id ?>"
          class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
         <i class="fa-solid fa-plus me-1"></i> Nuova Spedizione

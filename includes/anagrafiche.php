@@ -774,7 +774,7 @@ function qk_clienti_list(PDO $pdo, string $search, string $typeFilter, int $limi
     $sql = 'SELECT cf.id, cf.tipo_soggetto, cf.ragione_sociale, cf.nome, cf.cognome,
                    cf.email, cf.telefono, cf.created_at,
                    MAX(i.citta) AS citta,
-                   (SELECT COUNT(*) FROM ordini_clienti oc WHERE oc.cliente_id = cf.id AND oc.stato NOT IN (\'completato\', \'annullato\')) AS ordini_count
+                   (SELECT COUNT(*) FROM ordini_clienti oc WHERE oc.cliente_id = cf.id AND oc.stato NOT IN (\'completato\', \'annullato\', \'superato\')) AS ordini_count
             FROM clienti_fornitori cf
             ' . $joinAddr . '
             WHERE ' . implode(' AND ', $where) . '
@@ -2148,6 +2148,15 @@ function qk_get_cliente_dettagli_per_preventivo(PDO $pdo, int $clienteId): ?arra
 
 /**
  * Calcola l'esposizione commerciale totale di un cliente (ordini aperti).
+ *
+ * Non ancora richiamata da nessun punto del codice (verificato con grep
+ * mirato su tutto il progetto, 25/07/2026) — funzione già pronta ma non
+ * ancora collegata, stessa categoria di codice "dormiente" già documentata
+ * altrove in questo progetto. Aggiornata comunque per escludere anche
+ * 'superato' (PIANO - Revisione Ordini Clienti): altrimenti, quando verrà
+ * collegata, un ordine corretto con una revisione conterebbe qui SIA la
+ * versione vecchia (sbagliata, es. 500 unità) SIA quella nuova corretta (es.
+ * 50), quasi raddoppiando l'esposizione reale del cliente.
  */
 function qk_calcola_esposizione_cliente(PDO $pdo, int $clienteId): float
 {
@@ -2156,7 +2165,7 @@ function qk_calcola_esposizione_cliente(PDO $pdo, int $clienteId): float
            FROM ordini_clienti o
            JOIN ordini_clienti_righe r ON r.ordine_id = o.id
           WHERE o.cliente_id = ?
-            AND o.stato NOT IN ('completato', 'annullato')"
+            AND o.stato NOT IN ('completato', 'annullato', 'superato')"
     );
     $st->execute([$clienteId]);
     return (float) $st->fetchColumn();

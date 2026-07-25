@@ -428,6 +428,7 @@ function status_label(string $status): string {
         'parzialmente_spedito' => 'Parz. spedito',
         'completato'           => 'Completato',
         'annullato'            => 'Annullato',
+        'superato'             => 'Superato',
         'expired'              => 'Scaduto',
         'disattivato'          => 'Disattivato',
     ];

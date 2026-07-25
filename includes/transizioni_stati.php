@@ -76,7 +76,12 @@ function qk_transizioni_ordini_clienti(): array
         // stesso principio di qk_ordine_aggiorna_stato_ricezione() per gli
         // ordini fornitore. Qui si modellano solo gli STATI raggiungibili, non
         // il ricalcolo in sé (che resta un'UPDATE derivata, non guardata).
-        'in_lavorazione'       => ['parzialmente_spedito', 'spedito', 'completato', 'annullato'],
+        // 'superato' (PIANO - Revisione Ordini Clienti, §2/§4.2): raggiungibile
+        // SOLO da 'in_lavorazione', mai dagli altri stati attivi — creare una
+        // nuova versione è permesso solo quando nulla è ancora stato spedito
+        // (mirror esatto della restrizione "solo da 'inviato'" già usata lato
+        // Acquisti in qk_transizioni_ordini_fornitore()).
+        'in_lavorazione'       => ['parzialmente_spedito', 'spedito', 'completato', 'annullato', 'superato'],
         'parzialmente_spedito' => ['parzialmente_spedito', 'spedito', 'completato', 'annullato'],
         // Self-loop spedito->spedito: una spedizione aggiuntiva (es. sostituzione
         // merce danneggiata) su un ordine già interamente spedito ricalcola lo
@@ -87,6 +92,9 @@ function qk_transizioni_ordini_clienti(): array
         // mostrato solo quando isCompletato && !isAnnullato).
         'completato'           => ['in_lavorazione'],
         'annullato'            => [],
+        // Stato terminale: un ordine superato da una revisione non transisce
+        // più altrove (mirror di 'annullato' e dello stesso stato lato Acquisti).
+        'superato'             => [],
     ];
 }
 

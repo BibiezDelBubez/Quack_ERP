@@ -1437,6 +1437,86 @@ document.addEventListener('DOMContentLoaded', function () {
     refetchAllRowPrices();
   });
 
+  /* ── PIANO - Vendita Allo Scoperto Controllata (P4), §3.4 ─────────────────
+     Intercetta il submit di "Accetta e Crea Ordine": pre-check AJAX su
+     /sales/quotes/api/verifica-disponibilita, mostra la modale di conferma
+     SOLO se ci sono righe scoperte. Fail-safe (§8 del piano): se il
+     pre-check fallisce (rete/errore), NON procede — mai lasciar passare
+     come se non ci fosse scoperto solo perché non si è riusciti a
+     verificare. Il controllo autorevole resta comunque server-side
+     (SalesQuotesController::action(), case 'conferma_ordine') — questo è
+     solo un miglioramento UX, non l'unica linea di difesa. */
+  (function () {
+    const form = document.getElementById('form-conferma-ordine-preventivo');
+    const btn = document.getElementById('btn-accetta-crea-ordine');
+    const inputConferma = document.getElementById('input-conferma-vendita-scoperto');
+    const selectMagazzino = document.getElementById('input-magazzino-ordine');
+    if (!form || !btn || !inputConferma) return;
+
+    function fmtQta(n) {
+      return Number(n ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+    }
+
+    // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b): cambiare il
+    // magazzino invalida un'eventuale conferma di scoperto già data - il
+    // pre-check va rifatto sul nuovo magazzino, non riusato su dati stale.
+    selectMagazzino?.addEventListener('change', () => {
+      inputConferma.value = '';
+    });
+
+    form.addEventListener('submit', async (e) => {
+      // Se il campo hidden è già stato valorizzato dal bottone della modale
+      // (vedi listener più sotto), il submit prosegue senza rifare il check.
+      if (inputConferma.value === '1') return;
+
+      e.preventDefault();
+      btn.disabled = true;
+
+      let warnings;
+      try {
+        const magazzinoScelto = selectMagazzino ? selectMagazzino.value : '';
+        const url = QK_QUOTES_CONFIG.verificaDisponibilitaUrl
+          + '?id=' + encodeURIComponent(QK_QUOTES_CONFIG.preventivoId)
+          + '&magazzino_id=' + encodeURIComponent(magazzinoScelto);
+        const res = await fetch(url, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        warnings = Array.isArray(data.warnings) ? data.warnings : [];
+      } catch (err) {
+        console.error('Verifica disponibilità fallita:', err);
+        btn.disabled = false;
+        alert('Impossibile verificare la disponibilità a magazzino (errore di rete). Riprova.');
+        return; // fail-safe: non procede senza aver potuto verificare
+      }
+
+      if (warnings.length === 0) {
+        btn.disabled = false;
+        form.submit();
+        return;
+      }
+
+      const tbody = document.getElementById('qkmsp-righe-scoperte');
+      if (tbody) {
+        tbody.innerHTML = warnings.map(w => `
+          <tr>
+            <td>${esc(w.prodotto_nome)}</td>
+            <td class="text-end">${fmtQta(w.richiesto)}</td>
+            <td class="text-end">${fmtQta(w.disponibile)}</td>
+            <td class="text-end">${fmtQta(w.scoperto)}</td>
+          </tr>
+        `).join('');
+      }
+      btn.disabled = false;
+      openModal('qk-modal-scoperto-preventivo');
+    });
+
+    document.getElementById('btn-conferma-scoperto-preventivo')?.addEventListener('click', () => {
+      inputConferma.value = '1';
+      bootstrap.Modal.getInstance(document.getElementById('qk-modal-scoperto-preventivo'))?.hide();
+      form.submit();
+    });
+  })();
+
   if (elClienteId && elClienteId.value) {
     loadClienteDettagli();
   }

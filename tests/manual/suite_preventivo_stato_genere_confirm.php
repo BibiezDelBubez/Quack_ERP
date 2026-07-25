@@ -80,6 +80,10 @@ $adminId = (int)$pdo->query("SELECT id FROM utenti WHERE username = 'admin'")->f
 $pdo->exec("INSERT INTO clienti_fornitori (id, codice, tipo, tipo_soggetto, ragione_sociale, partita_iva, codice_fiscale, attivo)
             VALUES (9001, 'CLI-9001', 'cliente', 'azienda', 'Cliente Test Srl', '00000000091', 'CLITEST91', 1)");
 $pdo->exec("INSERT INTO listini (id, nome, valuta, is_default, attivo) VALUES (9000, 'Listino Default Test', 'EUR', 1, 1)");
+// Magazzino di evasione: dal P4b (25/07/2026) qk_preventivo_conferma_ordine()
+// riceve il magazzino esplicito dal chiamante invece di risolverlo dalla
+// sessione — serve un magazzino reale in tabella (FK ordini_clienti.magazzino_id).
+$pdo->exec("INSERT INTO magazzini (id, codice, nome, attivo) VALUES (9001, 'MAG-9001', 'Magazzino Test', 1)");
 $pdo->prepare("INSERT INTO preventivi (id, numero_preventivo, cliente_id, data_offerta, stato, creato_da)
             VALUES (9001, 'PRV-TEST-0001', 9001, '2026-07-20', 'bozza', ?)")->execute([$adminId]);
 
@@ -94,7 +98,7 @@ chk("Stato dopo 'invia' = 'inviato'", 'inviato', $pdo->query("SELECT stato FROM 
 // 2. qk_preventivo_conferma_ordine() — funzione vera, corretta
 // ============================================================================
 echo "\n=== 2. qk_preventivo_conferma_ordine() ===\n";
-$nuovoOrdineId = qk_preventivo_conferma_ordine($pdo, 9001, $adminId);
+$nuovoOrdineId = qk_preventivo_conferma_ordine($pdo, 9001, $adminId, 9001);
 chk("Stato preventivo dopo conferma = 'accettato'", 'accettato', $pdo->query("SELECT stato FROM preventivi WHERE id=9001")->fetchColumn());
 chk("Ordine cliente creato (id valido)", true, $nuovoOrdineId > 0);
 $numeroOrdine = $pdo->query("SELECT numero_ordine FROM ordini_clienti WHERE id = $nuovoOrdineId")->fetchColumn();
@@ -102,7 +106,7 @@ chk("Ordine cliente ha numero_ordine valorizzato", true, !empty($numeroOrdine));
 
 chkThrows(
     "Guard 'già accettato' (sales_quotes.php:901) blocca una seconda conferma sullo stesso preventivo",
-    function () use ($pdo, $adminId) { qk_preventivo_conferma_ordine($pdo, 9001, $adminId); }
+    function () use ($pdo, $adminId) { qk_preventivo_conferma_ordine($pdo, 9001, $adminId, 9001); }
 );
 
 // ============================================================================

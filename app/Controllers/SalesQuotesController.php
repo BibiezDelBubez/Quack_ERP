@@ -115,6 +115,13 @@ final class SalesQuotesController extends BaseController
         $listini = qk_get_listini_vendita_attivi($this->pdo);
         $canali  = qk_get_canali_vendita_attivi($this->pdo);
 
+        // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b): usato solo
+        // dal controllo accanto al bottone "Accetta e Crea Ordine" (non
+        // ancora rilevante in create(), preventivo appena creato è sempre
+        // bozza - passato comunque per coerenza col template condiviso).
+        $magazziniOrdine = qk_magazzini_list($this->pdo, true, true);
+        $magazzinoOrdineIdDefault = qk_magazzino_attivo_id($this->pdo);
+
         // PIANO - Soglie Margine Configurabili (§1.4): iniettate in
         // window.QK_QUOTES_CONFIG in _form.php, consumate da
         // assets/js/margin-semaforo.js tramite sales-quotes.js.
@@ -137,6 +144,8 @@ final class SalesQuotesController extends BaseController
             'aziende' => $aziende,
             'listini' => $listini,
             'canali' => $canali,
+            'magazziniOrdine' => $magazziniOrdine,
+            'magazzinoOrdineIdDefault' => $magazzinoOrdineIdDefault,
             'margineSogliaVerde' => $margineSogliaVerde,
             'margineSogliaGiallo' => $margineSogliaGiallo,
             'active_tab' => $active_tab,
@@ -215,6 +224,12 @@ final class SalesQuotesController extends BaseController
 
         $aziende = qk_aziende_list($this->pdo);
 
+        // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b): vedi
+        // create(), qui è il caso reale d'uso (il bottone "Accetta e Crea
+        // Ordine" vive solo su un preventivo esistente in stato 'inviato').
+        $magazziniOrdine = qk_magazzini_list($this->pdo, true, true);
+        $magazzinoOrdineIdDefault = qk_magazzino_attivo_id($this->pdo);
+
         // PIANO - Soglie Margine Configurabili (§1.4): vedi create(), stesso motivo.
         $margineSogliaVerde  = (float) get_impostazione($this->pdo, 'margine_soglia_verde', '20.00');
         $margineSogliaGiallo = (float) get_impostazione($this->pdo, 'margine_soglia_giallo', '10.00');
@@ -239,6 +254,8 @@ final class SalesQuotesController extends BaseController
             'listini' => $listini,
             'canali' => $canali,
             'aziende' => $aziende,
+            'magazziniOrdine' => $magazziniOrdine,
+            'magazzinoOrdineIdDefault' => $magazzinoOrdineIdDefault,
             'margineSogliaVerde' => $margineSogliaVerde,
             'margineSogliaGiallo' => $margineSogliaGiallo,
             'active_tab' => $active_tab,
@@ -270,7 +287,44 @@ final class SalesQuotesController extends BaseController
                     break;
 
                 case 'conferma_ordine':
-                    $nuovoOrderId = qk_preventivo_conferma_ordine($this->pdo, $id, (int)current_user()['id']);
+                    // PIANO - Vendita Allo Scoperto Controllata (P4), §3.4:
+                    // ripetuto qui il controllo già fatto lato client dal
+                    // pre-check AJAX (apiVerificaDisponibilitaOrdine()) —
+                    // mai fidarsi solo del client, un POST costruito a mano
+                    // potrebbe bypassare la modale JS. MAI un blocco: solo
+                    // richiesta di conferma esplicita (bottone dedicato
+                    // nella modale, non una checkbox — vedi §8 del piano).
+                    // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b):
+                    // campo obbligatorio, letto dal controllo accanto al
+                    // bottone "Accetta e Crea Ordine" - mai un fallback
+                    // silenzioso sulla sessione. Un valore mancante/non
+                    // valido non blocca con un errore fatale ma rimanda alla
+                    // stessa pagina con un messaggio chiaro, stesso schema
+                    // già usato per lo scoperto qui sotto.
+                    $magazzinoOrdineId = qk_valida_magazzino_ordine_esplicito($this->pdo, post('magazzino_id', ''));
+                    if ($magazzinoOrdineId === null) {
+                        flash_set('error', 'Seleziona il magazzino di evasione prima di accettare il preventivo.');
+                        redirect(url('sales/quotes/edit') . '?id=' . $id);
+                        break;
+                    }
+                    $confermaVenditaScoperto = post('conferma_vendita_scoperto', '') === '1';
+                    $warningsScoperto = qk_preventivo_verifica_disponibilita($this->pdo, $id, $magazzinoOrdineId);
+                    if (!empty($warningsScoperto) && !$confermaVenditaScoperto) {
+                        $dettagli = [];
+                        foreach ($warningsScoperto as $w) {
+                            $dettagli[] = sprintf(
+                                '%s (richiesti %s, disponibili %s)',
+                                $w['prodotto_nome'],
+                                rtrim(rtrim(number_format($w['richiesto'], 3, ',', '.'), '0'), ','),
+                                rtrim(rtrim(number_format($w['disponibile'], 3, ',', '.'), '0'), ',')
+                            );
+                        }
+                        flash_set('error', 'Disponibilità insufficiente per: ' . implode('; ', $dettagli)
+                            . '. La vendita allo scoperto è comunque permessa: riprova cliccando "Accetta e Crea Ordine" e conferma nella finestra che compare.');
+                        redirect(url('sales/quotes/edit') . '?id=' . $id);
+                        break;
+                    }
+                    $nuovoOrderId = qk_preventivo_conferma_ordine($this->pdo, $id, (int)current_user()['id'], $magazzinoOrdineId, $warningsScoperto);
                     flash_set('success', 'Preventivo accettato e Ordine di Vendita creato.');
                     redirect(url('sales/quotes/edit') . '?id=' . $id);
                     break;
@@ -692,6 +746,38 @@ final class SalesQuotesController extends BaseController
             ob_end_clean();
             echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
+        exit;
+    }
+
+    /**
+     * GET /sales/quotes/api/verifica-disponibilita?id=NN
+     *
+     * PIANO - Vendita Allo Scoperto Controllata (P4), Tappa 5: pre-check
+     * richiamato da assets/js/sales-quotes.js PRIMA che l'utente clicchi
+     * "Accetta e Crea Ordine", per decidere se mostrare la modale di
+     * conferma scoperto. Stesso stile di apiLottiDisponibili()
+     * (SalesOrdersController.php) — GET, nessun CSRF (sola lettura).
+     *
+     * Il controllo autorevole resta comunque server-side in action()
+     * (case 'conferma_ordine'): questo endpoint è solo per l'anteprima UX,
+     * mai fidarsi ciecamente del client.
+     */
+    public function apiVerificaDisponibilitaOrdine(): void
+    {
+        ob_start();
+        $id = (int) get_param('id', '0');
+        // P4b: se il client passa un magazzino esplicito (scelto sul
+        // controllo accanto al bottone di conferma), il pre-check gira su
+        // quello - altrimenti ricade sul default di sessione, per non
+        // rompere un'eventuale chiamata che non lo passa ancora.
+        $magazzinoParam = get_param('magazzino_id', '');
+        $magazzinoEsplicito = $magazzinoParam !== '' ? qk_valida_magazzino_ordine_esplicito($this->pdo, $magazzinoParam) : null;
+
+        $warnings = $id > 0 ? qk_preventivo_verifica_disponibilita($this->pdo, $id, $magazzinoEsplicito) : [];
+
+        ob_end_clean();
+        header('Content-Type: application/json');
+        echo json_encode(['warnings' => $warnings]);
         exit;
     }
 

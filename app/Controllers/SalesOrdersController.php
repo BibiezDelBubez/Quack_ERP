@@ -68,6 +68,10 @@ final class SalesOrdersController extends BaseController
     public function create(): void
     {
         $errors = [];
+        // PIANO - Vendita Allo Scoperto Controllata (P4): inizializzato qui
+        // (non solo nel ramo POST) così la vista può sempre contare su
+        // $warnings definito, anche al primo caricamento GET della pagina.
+        $warnings = [];
         $values = $this->defaultOrderValues();
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -77,6 +81,15 @@ final class SalesOrdersController extends BaseController
                 $values = $this->readPostOrderValues();
                 $righe  = $this->readPostOrderRighe();
                 $errors = qk_ordine_diretto_validate($values, $righe);
+
+                // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b):
+                // campo obbligatorio, mai un fallback silenzioso sulla
+                // sessione in fase di salvataggio - a differenza del default
+                // comodo precompilato in GET.
+                $magazzinoOrdineId = qk_valida_magazzino_ordine_esplicito($this->pdo, $values['magazzino_id']);
+                if ($magazzinoOrdineId === null) {
+                    $errors['magazzino_id'] = 'Seleziona il magazzino.';
+                }
 
                 if (empty($errors)) {
                     // Compliance checks (REVISIONE Ciclo Vendite §1.6/§3bis.O1): un
@@ -97,12 +110,43 @@ final class SalesOrdersController extends BaseController
                     }
                 }
 
+                // Controllo disponibilità (PIANO - Vendita Allo Scoperto
+                // Controllata, P4, §3.3): MAI un blocco — la vendita allo
+                // scoperto resta sempre permessa — ma se ci sono righe
+                // scoperte serve una conferma esplicita dell'utente (bottone
+                // dedicato "Conferma comunque", non una checkbox: vedi §8 del
+                // piano) prima di procedere al salvataggio. $warnings resta
+                // vuoto se non c'è nulla da segnalare, o se $errors è già
+                // popolato (in quel caso il salvataggio non avverrebbe
+                // comunque: inutile calcolarlo).
+                $confermaVenditaScoperto = ($_POST['conferma_vendita_scoperto'] ?? '') === '1';
                 if (empty($errors)) {
+                    $righeStock = qk_calcola_righe_stock_ordine($this->pdo, $righe);
+                    $righePerCheck = [];
+                    foreach ($righeStock as $rs) {
+                        if ($rs['prodotto_id']) {
+                            $righePerCheck[] = [
+                                'prodotto_id'    => $rs['prodotto_id'],
+                                'quantita_stock' => $rs['uom']['quantita_stock'],
+                            ];
+                        }
+                    }
+                    // P4b: il pre-check di disponibilita gira sul magazzino
+                    // scelto esplicitamente dall'operatore, non piu su
+                    // quello di sessione - altrimenti l'avviso di scoperto
+                    // potrebbe riferirsi a una sede diversa da quella
+                    // effettivamente scelta per la riserva.
+                    $magazzinoPerCheck = $magazzinoOrdineId;
+                    $warnings = qk_verifica_disponibilita_ordine($this->pdo, $righePerCheck, $magazzinoPerCheck);
+                }
+                $bisognaConfermareScoperto = !empty($warnings) && !$confermaVenditaScoperto;
+
+                if (empty($errors) && !$bisognaConfermareScoperto) {
                     try {
                         $userId   = (int)(current_user()['id'] ?? 0);
                         // AUDIT 3 §2.2: checkbox già presente nel form, mai letta finora.
                         qk_maybe_create_one_time_address($this->pdo, $values);
-                        $ordineId = qk_insert_ordine_diretto($this->pdo, $values, $righe, $userId);
+                        $ordineId = qk_insert_ordine_diretto($this->pdo, $values, $righe, $userId, $magazzinoOrdineId, $warnings);
                         qk_compliance_log_transactions($this->pdo, $ordineId, $righe);
                         flash_set('success', 'Ordine ' . e($values['numero_ordine']) . ' creato con successo!');
                         redirect(url('sales/orders/edit') . '?id=' . $ordineId);
@@ -125,6 +169,11 @@ final class SalesOrdersController extends BaseController
         }
 
         $listini = qk_get_listini_vendita_attivi($this->pdo);
+
+        // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b): solo
+        // magazzini fisici radice selezionabili - stesso filtro gia usato
+        // per risolvere il default di sessione (includes/header.php:37).
+        $magazziniOrdine = qk_magazzini_list($this->pdo, true, true);
 
         // PIANO - Soglie Margine Configurabili (§1.4): variabili locali,
         // propagate automaticamente a _create.php da get_defined_vars() più
@@ -153,6 +202,11 @@ final class SalesOrdersController extends BaseController
             'cliente_id'              => '',
             'cliente_label'           => '',
             'azienda_interna_id'      => '',
+            // PIANO - Magazzino Esplicito alla Conferma Ordine (P4b):
+            // precompilato col magazzino attivo di sessione solo come
+            // default comodo al primo GET - resta sempre visibile e
+            // modificabile, mai risolto piu in silenzio al salvataggio.
+            'magazzino_id'            => (string) qk_magazzino_attivo_id($this->pdo),
             'numero_ordine'           => '',
             'data_ordine'             => date('Y-m-d'),
             'data_consegna_prevista'  => '',
@@ -189,6 +243,7 @@ final class SalesOrdersController extends BaseController
             'cliente_id'              => $s('cliente_id'),
             'cliente_label'           => $s('cliente_label'),
             'azienda_interna_id'      => $s('azienda_interna_id'),
+            'magazzino_id'            => $s('magazzino_id'),
             'numero_ordine'           => $s('numero_ordine'),
             'data_ordine'             => $s('data_ordine'),
             'data_consegna_prevista'  => $s('data_consegna_prevista'),
@@ -421,6 +476,11 @@ final class SalesOrdersController extends BaseController
 
         $ddts = qk_get_ordine_cliente_ddt($this->pdo, $id);
 
+        // Tappa 6 (PIANO - Revisione Ordini Clienti): link bidirezionale
+        // padre/figlio per il badge "Versione N" nel dettaglio.
+        $ordinePadre  = !empty($order['ordine_padre_id']) ? qk_get_ordine_cliente_riferimento($this->pdo, (int)$order['ordine_padre_id']) : null;
+        $ordineFiglio = qk_get_ordine_cliente_figlio($this->pdo, $id);
+
         $totImponibile = 0.0;
         $totCosto      = 0.0;
         foreach ($lines as $l) {
@@ -476,6 +536,16 @@ final class SalesOrdersController extends BaseController
                 case 'crea_spedizione':
                     $this->elaboraCreaSpedizione($id);
                     break;
+                case 'nuova_versione':
+                    // PIANO - Revisione Ordini Clienti, Tappa 5: a differenza
+                    // degli altri case, il redirect deve puntare al NUOVO
+                    // ordine (id diverso da $id), non a quello appena superato
+                    // — uscita anticipata dal metodo invece del redirect
+                    // comune in fondo.
+                    $nuovoId = qk_ordine_cliente_crea_revisione($this->pdo, $id);
+                    flash_set('success', 'Nuova versione creata correttamente.');
+                    redirect(url('sales/orders/edit') . '?id=' . $nuovoId);
+                    return;
                 default:
                     flash_set('error', "Azione '$azione' non riconosciuta.");
             }

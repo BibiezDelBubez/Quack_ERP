@@ -36,6 +36,7 @@ class SalesOrderRepository
                 indirizzo_consegna_id, contatto_snapshot_id,
                 azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
                 cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
+                vendita_scoperto_confermata_da, vendita_scoperto_confermata_at, vendita_scoperto_dettaglio,
                 creato_da, created_at, updated_at
             ) VALUES (
                 ?, ?, ?, ?, ?,
@@ -51,6 +52,7 @@ class SalesOrderRepository
                 ?, ?,
                 ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
+                ?, ?, ?,
                 ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
         ");
@@ -99,6 +101,12 @@ class SalesOrderRepository
             $data['cliente_partita_iva'] ?? null,
             $data['cliente_codice_fiscale'] ?? null,
             $data['cliente_indirizzo'] ?? null,
+            // Audit trail vendita allo scoperto (PIANO - Vendita Allo Scoperto
+            // Controllata, P4, §3.5): NULL nei 3 campi se l'ordine non ha mai
+            // avuto righe scoperte — vedi OrderCalculatorService::insertDirectOrder().
+            $data['vendita_scoperto_confermata_da'] ?? null,
+            $data['vendita_scoperto_confermata_at'] ?? null,
+            $data['vendita_scoperto_dettaglio'] ?? null,
             $data['creato_da']
         ]);
 

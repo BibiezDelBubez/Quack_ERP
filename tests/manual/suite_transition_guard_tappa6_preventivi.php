@@ -86,6 +86,11 @@ $UID = 9601;
 $pdo->exec("INSERT INTO clienti_fornitori (id, codice, tipo, tipo_soggetto, ragione_sociale) VALUES (9601, 'CLI-9601', 'cliente', 'azienda', 'Cliente Test')");
 $cliId = 9601;
 $pdo->exec("INSERT INTO listini (id, nome, valuta, is_default, attivo) VALUES (9601, 'Listino Test', 'EUR', 1, 1)");
+// Magazzino di evasione: dal P4b (25/07/2026) qk_preventivo_conferma_ordine()
+// riceve il magazzino esplicito dal chiamante invece di risolverlo dalla
+// sessione — serve un magazzino reale in tabella (FK ordini_clienti.magazzino_id).
+$pdo->exec("INSERT INTO magazzini (id, codice, nome, attivo) VALUES (9601, 'MAG-9601', 'Magazzino Test', 1)");
+$magId = 9601;
 
 function nuovoPreventivo(PDO $pdo, int &$seq, int $cliId, string $stato, int $uid): int
 {
@@ -113,7 +118,7 @@ chkNoThrow("inviato -> rifiutato (qk_preventivo_rifiuta) ammessa", fn() => qk_pr
 chk('Stato ora rifiutato', 'rifiutato', $pdo->query("SELECT stato FROM preventivi WHERE id=$p2")->fetchColumn());
 
 $p3 = nuovoPreventivo($pdo, $seq, $cliId, 'inviato', $UID);
-chkNoThrow("inviato -> accettato (qk_preventivo_conferma_ordine) ammessa", fn() => qk_preventivo_conferma_ordine($pdo, $p3, $UID));
+chkNoThrow("inviato -> accettato (qk_preventivo_conferma_ordine) ammessa", fn() => qk_preventivo_conferma_ordine($pdo, $p3, $UID, $magId));
 chk('Stato ora accettato', 'accettato', $pdo->query("SELECT stato FROM preventivi WHERE id=$p3")->fetchColumn());
 
 echo "\n=== P3 ORIGINALE — chiuso: 'invia'/'rifiuta' ora bloccano transizioni non ammesse ===\n";
@@ -136,7 +141,7 @@ foreach (['bozza', 'rifiutato', 'annullato'] as $statoNonValido) {
     $ordiniPrimaCount = (int) $pdo->query("SELECT COUNT(*) FROM ordini_clienti")->fetchColumn();
     chkThrows(
         "conferma_ordine su preventivo '$statoNonValido' viene bloccata (prima NON lo era)",
-        fn() => qk_preventivo_conferma_ordine($pdo, $pTest, $UID),
+        fn() => qk_preventivo_conferma_ordine($pdo, $pTest, $UID, $magId),
         "Impossibile accettare: il preventivo non è in stato 'inviato' (stato attuale: {$statoNonValido})."
     );
     $ordiniDopoCount = (int) $pdo->query("SELECT COUNT(*) FROM ordini_clienti")->fetchColumn();
@@ -144,7 +149,7 @@ foreach (['bozza', 'rifiutato', 'annullato'] as $statoNonValido) {
 }
 chkThrows(
     "conferma_ordine su preventivo già accettato viene bloccata (messaggio preesistente invariato)",
-    fn() => qk_preventivo_conferma_ordine($pdo, $p3, $UID),
+    fn() => qk_preventivo_conferma_ordine($pdo, $p3, $UID, $magId),
     'Il preventivo è già stato accettato.'
 );
 

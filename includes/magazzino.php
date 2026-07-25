@@ -108,6 +108,36 @@ function qk_prodotto_e_kit(PDO $pdo, int $prodottoId): bool
 }
 
 /**
+ * Ritorna la composizione "grezza" di un Kit (quantità per SINGOLA unità di
+ * Kit, non ancora moltiplicata per la quantità richiesta), leggendo
+ * componenti_kit. Il chiamante deve già aver verificato qk_prodotto_e_kit()
+ * prima di invocarla — questa funzione non lo fa da sola, stesso schema già
+ * in uso da qk_riserva_stock_ordine()/qk_rilascia_stock_ordine() qui sotto.
+ *
+ * Estratta il 24/07/2026 (PIANO - Vendita Allo Scoperto Controllata, Tappa 1)
+ * dalle due copie identiche della stessa query, prima inline sia dentro
+ * qk_riserva_stock_ordine() sia dentro il ramo di fallback "live" di
+ * qk_rilascia_stock_ordine() — usata ora anche da qk_verifica_disponibilita_ordine().
+ * Il valore di ritorno ha lo stesso identico shape ({componente_id, quantita})
+ * già usato per lo snapshot JSON salvato su ordini_clienti_righe.kit_componenti_snapshot,
+ * per non introdurre una trasformazione in più tra la lettura e la scrittura
+ * dello snapshot.
+ *
+ * @return array<int, array{componente_id:int, quantita:float}>
+ */
+function qk_componenti_kit(PDO $pdo, int $kitId): array
+{
+    $st = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
+    $st->execute([$kitId]);
+
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $out[] = ['componente_id' => (int)$c['componente_id'], 'quantita' => (float)$c['quantita']];
+    }
+    return $out;
+}
+
+/**
  * Riserva quantità a magazzino per una riga d'ordine, "consapevole" dei Kit.
  *
  * Un Kit non ha giacenza fisica propria: è una collezione di prodotti singoli,
@@ -143,20 +173,16 @@ function qk_riserva_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, int
 
     $righeDaRiservare = [];
     if (qk_prodotto_e_kit($pdo, $prodottoId)) {
-        $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
-        $stComp->execute([$prodottoId]);
-        $componenti = $stComp->fetchAll(PDO::FETCH_ASSOC);
+        $componenti = qk_componenti_kit($pdo, $prodottoId);
         foreach ($componenti as $c) {
-            $righeDaRiservare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
+            $righeDaRiservare[] = [$c['componente_id'], $c['quantita'] * $qtaStock];
         }
 
         if ($rigaId !== null) {
-            $snapshot = array_map(
-                fn($c) => ['componente_id' => (int)$c['componente_id'], 'quantita' => (float)$c['quantita']],
-                $componenti
-            );
+            // $componenti ha già lo shape corretto per lo snapshot (vedi
+            // qk_componenti_kit()): nessuna trasformazione aggiuntiva.
             $pdo->prepare("UPDATE ordini_clienti_righe SET kit_componenti_snapshot = ? WHERE id = ?")
-                ->execute([json_encode($snapshot), $rigaId]);
+                ->execute([json_encode($componenti), $rigaId]);
         }
     } else {
         $righeDaRiservare[] = [$prodottoId, $qtaStock];
@@ -234,9 +260,7 @@ function qk_rilascia_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, in
             // Nessuno snapshot disponibile (rigaId non passato, o riga
             // creata prima di questa correzione): fallback sulla
             // composizione live, comportamento identico a prima di AUDIT 3 §3.3.
-            $stComp = $pdo->prepare("SELECT componente_id, quantita FROM componenti_kit WHERE kit_id = ?");
-            $stComp->execute([$prodottoId]);
-            $componenti = $stComp->fetchAll(PDO::FETCH_ASSOC);
+            $componenti = qk_componenti_kit($pdo, $prodottoId);
         }
         foreach ($componenti as $c) {
             $righeDaRilasciare[] = [(int)$c['componente_id'], (float)$c['quantita'] * $qtaStock];
@@ -253,6 +277,92 @@ function qk_rilascia_stock_ordine(PDO $pdo, int $prodottoId, float $qtaStock, in
     foreach ($righeDaRilasciare as [$compId, $qta]) {
         $stRilascio->execute([$qta, $qta, $compId, $magazzinoId]);
     }
+}
+
+/**
+ * Verifica, riga per riga, se la quantità richiesta da un ordine (diretto o
+ * da conferma preventivo) supera la disponibilità netta
+ * (giacenze.quantita_disponibile - giacenze.quantita_riservata) nel magazzino
+ * indicato. NON blocca, NON scrive nulla: si limita a restituire l'elenco
+ * delle righe in scoperto, lasciando al chiamante la decisione (avviso con
+ * conferma esplicita, mai un blocco — PIANO - Vendita Allo Scoperto
+ * Controllata, P4/REVISIONE §6).
+ *
+ * Kit-aware: usa qk_prodotto_e_kit()/qk_componenti_kit() — le stesse funzioni
+ * già usate da qk_riserva_stock_ordine() — per valutare un Kit sui suoi
+ * componenti reali, non sul Kit stesso (che non ha giacenza fisica propria).
+ *
+ * Se un ordine ha più righe sullo stesso prodotto/componente (es. due righe
+ * dello stesso articolo, o due Kit diversi che condividono un componente), le
+ * quantità vengono sommate PRIMA di confrontarle con la disponibilità: due
+ * righe da 5 su un disponibile netto di 8 sono scoperte insieme anche se
+ * nessuna delle due lo sarebbe da sola.
+ *
+ * @param array $righe Ogni elemento: ['prodotto_id' => int, 'quantita_stock' => float]
+ *        — stesso shape già usato dai chiamanti di qk_riserva_stock_ordine()
+ *        (OrderCalculatorService::insertDirectOrder(), qk_preventivo_conferma_ordine()).
+ * @return array<int, array{prodotto_id:int, prodotto_nome:string,
+ *         richiesto:float, disponibile:float, scoperto:float}>
+ *         Vuoto se tutte le righe sono coperte dalla disponibilità netta.
+ */
+function qk_verifica_disponibilita_ordine(PDO $pdo, array $righe, int $magazzinoId): array
+{
+    // 1. Espande ogni riga sui componenti reali (kit-aware) e somma la
+    //    quantità richiesta per prodotto/componente.
+    $richiestoPerProdotto = [];
+    foreach ($righe as $r) {
+        $prodottoId = (int)($r['prodotto_id'] ?? 0);
+        $qta = (float)($r['quantita_stock'] ?? 0);
+        if ($prodottoId <= 0 || $qta <= 0) {
+            continue;
+        }
+        if (qk_prodotto_e_kit($pdo, $prodottoId)) {
+            foreach (qk_componenti_kit($pdo, $prodottoId) as $c) {
+                $compId = $c['componente_id'];
+                $richiestoPerProdotto[$compId] = ($richiestoPerProdotto[$compId] ?? 0.0) + ($c['quantita'] * $qta);
+            }
+        } else {
+            $richiestoPerProdotto[$prodottoId] = ($richiestoPerProdotto[$prodottoId] ?? 0.0) + $qta;
+        }
+    }
+
+    if (empty($richiestoPerProdotto)) {
+        return [];
+    }
+
+    // 2. Legge la disponibilità netta per ciascun prodotto/componente coinvolto
+    //    e confronta col totale richiesto.
+    $scoperti = [];
+    $stGiac = $pdo->prepare("
+        SELECT quantita_disponibile, quantita_riservata
+          FROM giacenze
+         WHERE prodotto_id = ? AND magazzino_id = ?
+    ");
+    $stNome = $pdo->prepare("SELECT nome FROM prodotti WHERE id = ?");
+
+    // Tolleranza per confronti float, stesso ordine di grandezza già usato in
+    // questo file (vedi qk_seleziona_lotti_fefo(), $residuo <= 0.0005).
+    foreach ($richiestoPerProdotto as $prodottoId => $richiesto) {
+        $stGiac->execute([$prodottoId, $magazzinoId]);
+        $giac = $stGiac->fetch(PDO::FETCH_ASSOC);
+        $disponibileNetto = $giac
+            ? ((float)$giac['quantita_disponibile'] - (float)$giac['quantita_riservata'])
+            : 0.0;
+
+        if ($richiesto > $disponibileNetto + 0.0005) {
+            $stNome->execute([$prodottoId]);
+            $nome = $stNome->fetchColumn();
+            $scoperti[] = [
+                'prodotto_id'   => (int)$prodottoId,
+                'prodotto_nome' => $nome !== false ? (string)$nome : ('#' . $prodottoId),
+                'richiesto'     => $richiesto,
+                'disponibile'   => $disponibileNetto,
+                'scoperto'      => $richiesto - $disponibileNetto,
+            ];
+        }
+    }
+
+    return $scoperti;
 }
 
 /**
@@ -303,11 +413,18 @@ function qk_seleziona_lotti_fefo(PDO $pdo, int $prodottoId, int $magazzinoId, fl
 
 /**
  * Risolve l'id del magazzino "attivo" da usare quando non ne viene passato uno
- * esplicito: prima $_SESSION['magazzino_attivo_id'] (impostata dal selettore
- * in topbar, §3.3/§3.10, stesso pattern di azienda_attiva_id in
- * includes/header.php), poi il magazzino marcato `predefinito = 1`, infine il
- * primo magazzino attivo per id. Cache statica per richiesta: chiamata più
- * volte nella stessa pagina non ripete la query.
+ * esplicito: prima $_SESSION['magazzino_attivo_id'] — impostata NON da un
+ * selettore in topbar (rimosso, vedi `includes/header.php:182-193`, Opzione A
+ * di "Magazzino Attivo - Analisi e Alternative.md" §9) ma come effetto
+ * collaterale di un filtro/campo magazzino esplicito usato altrove (Giacenze,
+ * Riordino, Lotti in scadenza, Nuovo movimento, Trasferimenti — vedi
+ * `WarehouseController.php`) — poi il magazzino marcato `predefinito = 1`,
+ * infine il primo magazzino attivo per id. Cache statica per richiesta:
+ * chiamata più volte nella stessa pagina non ripete la query.
+ *
+ * Corretto il commento originale il 25/07/2026 (era stale: parlava ancora di
+ * un selettore in topbar già rimosso — vedi CLAUDE.md punto 11 su questo
+ * stesso episodio, e PIANO - Magazzino Esplicito alla Conferma Ordine (P4b).md).
  *
  * @throws \RuntimeException se non esiste alcun magazzino attivo/predefinito
  *         (dataset non ancora inizializzato con il seed di magazzini)
@@ -371,6 +488,38 @@ function qk_risolvi_magazzino_filtro(PDO $pdo, string $magazzinoParam): int
     $st = $pdo->prepare('SELECT id FROM magazzini WHERE id = ? AND attivo = 1');
     $st->execute([$candidato]);
     return $st->fetchColumn() ? $candidato : qk_magazzino_attivo_id($pdo);
+}
+
+/**
+ * Valida un `magazzino_id` ricevuto da un campo ESPLICITO e OBBLIGATORIO sul
+ * documento (conferma ordine cliente, diretto o da preventivo — PIANO -
+ * Magazzino Esplicito alla Conferma Ordine (P4b), §3), a differenza di
+ * `qk_risolvi_magazzino_filtro()` che è per un filtro di lettura con fallback
+ * comodo sulla sessione. Qui NON esiste un fallback silenzioso: un valore
+ * mancante o non valido restituisce null, e il chiamante deve trattarlo come
+ * errore di validazione bloccante (stesso principio già in uso per
+ * `magazzino_id` nel form "Nuovo movimento", `WarehouseController::createMovement()`).
+ *
+ * Solo magazzini fisici radice sono ammessi (`tipo = 'fisico' AND parent_id
+ * IS NULL`, stesso filtro di `qk_magazzini_list($pdo, true, true)`): non ha
+ * senso riservare stock di un ordine cliente su una sede virtuale/conto_terzi/
+ * conto_lavoro.
+ *
+ * @return ?int  l'id validato, oppure null se il valore è mancante/non
+ *         numerico/non esistente/non attivo/non fisico-radice.
+ */
+function qk_valida_magazzino_ordine_esplicito(PDO $pdo, string $magazzinoParam): ?int
+{
+    if ($magazzinoParam === '' || !ctype_digit($magazzinoParam)) {
+        return null;
+    }
+    $candidato = (int) $magazzinoParam;
+    if ($candidato <= 0) {
+        return null;
+    }
+    $st = $pdo->prepare("SELECT id FROM magazzini WHERE id = ? AND attivo = 1 AND tipo = 'fisico' AND parent_id IS NULL");
+    $st->execute([$candidato]);
+    return $st->fetchColumn() ? $candidato : null;
 }
 
 /**

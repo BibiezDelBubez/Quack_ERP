@@ -29,3 +29,9 @@ Thumbs.db
 db/*.sqlite
 db/.fuse_hidden*
 
+# Runtime PHP portatile per il sandbox di sviluppo senza root (vedi
+# tools/dev-php-sandbox/README.md) — binari scaricati, rigenerabili in pochi
+# secondi con setup.sh, non hanno senso in un repository git.
+/tools/dev-php-sandbox/runtime/
+/tools/dev-php-sandbox/.debs-cache/
+

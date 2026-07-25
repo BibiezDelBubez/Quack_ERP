@@ -88,6 +88,10 @@ if (!$adminId) {
 $pdo->exec("INSERT INTO clienti_fornitori (id, codice, tipo, tipo_soggetto, ragione_sociale, partita_iva, codice_fiscale, attivo)
             VALUES (9301, 'CLI-9301', 'cliente', 'azienda', 'Cliente Test Scadenza Srl', '00000000931', 'CLITEST931', 1)");
 $pdo->exec("INSERT INTO listini (id, nome, valuta, is_default, attivo) VALUES (9300, 'Listino Default Test SSE', 'EUR', 1, 1)");
+// Magazzino di evasione: dal P4b (25/07/2026) qk_preventivo_conferma_ordine()
+// riceve il magazzino esplicito dal chiamante invece di risolverlo dalla
+// sessione — serve un magazzino reale in tabella (FK ordini_clienti.magazzino_id).
+$pdo->exec("INSERT INTO magazzini (id, codice, nome, attivo) VALUES (9301, 'MAG-9301', 'Magazzino Test SSE', 1)");
 
 $PASSATA = '2020-01-01';
 $FUTURA  = '2099-01-01';
@@ -201,7 +205,7 @@ echo "\n=== Fase D: qk_preventivo_conferma_ordine() ===\n";
 $ordiniPrimaBlocco = (int)$pdo->query("SELECT COUNT(*) FROM ordini_clienti")->fetchColumn();
 chkThrows(
     "conferma_ordine su 9403 (scaduto) -> bloccato",
-    fn() => qk_preventivo_conferma_ordine($pdo, 9403, $adminId),
+    fn() => qk_preventivo_conferma_ordine($pdo, 9403, $adminId, 9301),
     'scaduto'
 );
 chk("9403: nessun ordine creato (rollback)", $ordiniPrimaBlocco, (int)$pdo->query("SELECT COUNT(*) FROM ordini_clienti")->fetchColumn());
@@ -209,7 +213,7 @@ chk("9403: preventivi.stato resta 'inviato' (non 'accettato')", 'inviato', $pdo-
 
 $nuovoOrdineId = chkNoThrow(
     "conferma_ordine su 9410 (inviato, non scaduto) -> OK, non-regressione",
-    fn() => qk_preventivo_conferma_ordine($pdo, 9410, $adminId)
+    fn() => qk_preventivo_conferma_ordine($pdo, 9410, $adminId, 9301)
 );
 chk("9410: ordine creato (id valido)", true, ($nuovoOrdineId ?? 0) > 0);
 chk("9410: preventivi.stato ora 'accettato'", 'accettato', $pdo->query("SELECT stato FROM preventivi WHERE id=9410")->fetchColumn());

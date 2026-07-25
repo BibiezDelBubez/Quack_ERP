@@ -7,6 +7,11 @@ require_once __DIR__ . '/document_common.php';
 require_once __DIR__ . '/magazzino.php';
 require_once __DIR__ . '/transizioni_stati.php';
 require_once __DIR__ . '/../app/Services/TransitionGuard.php';
+// qk_ordine_cliente_crea_revisione() (sotto) chiama qk_compliance_check_sale()
+// — dipendenza dichiarata qui (CLAUDE.md punto 4: require_once sempre in
+// testa al file), non lasciata al caso che il chiamante (oggi
+// SalesOrdersController.php) la includa lui per un altro motivo.
+require_once __DIR__ . '/compliance.php';
 
 /**
  * Genera il prossimo numero progressivo per l'ordine cliente diretto.
@@ -50,10 +55,67 @@ function qk_ordine_diretto_validate(array $values, array $righe): array
 }
 
 /**
+ * Converte le righe "grezze" di un ordine diretto (form) nei dati di
+ * conversione UoM necessari sia per l'inserimento vero e proprio sia per il
+ * controllo preventivo di disponibilità (qk_verifica_disponibilita_ordine()).
+ *
+ * Estratta dal loop di conversione che viveva solo dentro
+ * OrderCalculatorService::insertDirectOrder() (PIANO - Vendita Allo Scoperto
+ * Controllata, P4, Tappa 4): il controllo di disponibilità deve girare PRIMA
+ * di inserire qualunque cosa (avviso con conferma esplicita, mai un blocco —
+ * ma comunque prima di scrivere), quindi il controller ha bisogno delle
+ * stesse quantità in UoM di stock che userebbe l'inserimento vero. Senza
+ * questa estrazione il controller avrebbe dovuto ricopiare lo stesso loop
+ * "risolvi UoM + converti", violando la Regola Aurea DRY di AGENTS.md.
+ * OrderCalculatorService::insertDirectOrder() è stata aggiornata per usare
+ * questa stessa funzione invece del suo loop inline originale — stesso
+ * identico comportamento, unica fonte di verità.
+ *
+ * @return array<int, array{prodotto_id:?int, unita_misura_id:?int, uom:array}>
+ *         Stesso ordine di $righe in input. 'uom' è il valore di ritorno
+ *         completo di qk_uom_converti_riga().
+ */
+function qk_calcola_righe_stock_ordine(PDO $pdo, array $righe): array
+{
+    require_once __DIR__ . '/../app/Repositories/SalesOrderRepository.php';
+    $repository = new \App\Repositories\SalesOrderRepository($pdo);
+
+    $umCache = [];
+    $out = [];
+    foreach ($righe as $r) {
+        $prodottoId = !empty($r['prodotto_id']) ? (int)$r['prodotto_id'] : null;
+        $qta = (float) ($r['quantita'] ?? 0);
+        $pu  = (float) ($r['prezzo_unitario'] ?? 0);
+
+        $umCodice = $r['unita_misura'] ?? 'pz';
+        if (!array_key_exists($umCodice, $umCache)) {
+            $umCache[$umCodice] = $repository->findUomIdByCode($umCodice);
+        }
+        $umId = $umCache[$umCodice];
+
+        $uomResult = qk_uom_converti_riga($pdo, $prodottoId, $umId ? (int)$umId : null, $qta, $pu);
+
+        $out[] = [
+            'prodotto_id'     => $prodottoId,
+            'unita_misura_id' => $umId,
+            'uom'             => $uomResult,
+        ];
+    }
+    return $out;
+}
+
+/**
  * Inserisce un ordine cliente diretto (senza preventivo di origine).
  * Restituisce l'ID del nuovo ordine.
+ *
+ * @param array $venditaScopertoDettaglio Righe scoperte già rilevate e
+ *        confermate esplicitamente dall'utente (PIANO - Vendita Allo
+ *        Scoperto Controllata, P4, §3.3/§3.5) — stesso shape del valore di
+ *        ritorno di qk_verifica_disponibilita_ordine(). Vuoto (default) se
+ *        l'ordine non ha righe scoperte: in quel caso nessuna colonna di
+ *        audit trail viene scritta (restano NULL).
  */
-function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $user_id): int
+function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $user_id, int $magazzinoId, array $venditaScopertoDettaglio = []): int
 {
     require_once __DIR__ . '/../app/Repositories/SalesOrderRepository.php';
     require_once __DIR__ . '/../app/Services/OrderCalculatorService.php';
@@ -61,7 +123,7 @@ function qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $us
     $repository = new \App\Repositories\SalesOrderRepository($pdo);
     $service = new \App\Services\OrderCalculatorService($pdo, $repository);
 
-    return $service->insertDirectOrder($values, $righe, $user_id);
+    return $service->insertDirectOrder($values, $righe, $user_id, $magazzinoId, $venditaScopertoDettaglio);
 }
 
 /**
@@ -232,6 +294,241 @@ function qk_ordine_cliente_annulla(PDO $pdo, int $id): void
         $pdo->rollBack();
         throw $e;
     }
+}
+
+/**
+ * Clona una riga di indirizzi_documenti/contatti_documenti come nuova riga
+ * fisica indipendente (stesso id-copy dell'originale, mai un riferimento
+ * condiviso), restituendo il nuovo id o null se $id era già null/non trovato.
+ *
+ * Estratto come helper invece di ripetere due volte lo stesso blocco dentro
+ * qk_ordine_cliente_crea_revisione() (sotto) — la versione Acquisti
+ * (qk_ordine_crea_revisione(), includes/purchases_orders.php:654-684) lo
+ * scrive due volte inline; qui, per non introdurre la stessa duplicazione
+ * anche nel nuovo codice, è isolato una sola volta. $tabella è sempre una
+ * stringa letterale passata dal chiamante (mai da input utente), quindi
+ * l'interpolazione diretta nel nome tabella è sicura.
+ */
+function _clona_riga_snapshot_documento(PDO $pdo, string $tabella, ?int $id): ?int
+{
+    if (!$id) {
+        return null;
+    }
+    $st = $pdo->prepare("SELECT * FROM {$tabella} WHERE id = ?");
+    $st->execute([$id]);
+    $riga = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$riga) {
+        return null;
+    }
+    unset($riga['id']);
+    $colonne = implode(', ', array_keys($riga));
+    $placeholders = implode(', ', array_fill(0, count($riga), '?'));
+    $pdo->prepare("INSERT INTO {$tabella} ({$colonne}) VALUES ({$placeholders})")
+        ->execute(array_values($riga));
+    return (int) $pdo->lastInsertId();
+}
+
+/**
+ * Crea una nuova versione di un ordine cliente "in_lavorazione", marcando
+ * l'originale come 'superato'. Mirror esatto di qk_ordine_crea_revisione()
+ * lato Acquisti (includes/purchases_orders.php:625-802) — stessa struttura,
+ * stessa transazione, stesso principio "duplica come righe fisiche nuove,
+ * mai riferimenti condivisi" — adattato ai guard specifici delle vendite
+ * decisi in docs/Ciclo Vendite/PIANO - Revisione Ordini Clienti (Nuova
+ * Versione).md §4 (letto e verificato riga per riga in questa sessione):
+ *
+ *  - §4.2: permesso SOLO da stato esatto 'in_lavorazione', mai da
+ *    'parzialmente_spedito'/'spedito'/'completato'/'annullato'/'superato';
+ *    più un guard aggiuntivo (difesa in profondità, stesso principio già
+ *    applicato altrove in questo file) che blocca comunque se esiste già una
+ *    riga in `spedizioni` collegata, anche nel caso teorico in cui lo stato
+ *    fosse disallineato.
+ *  - §4.3: bloccata SEMPRE, senza eccezioni, se `stato_fatturazione =
+ *    'fatturato'` — testo del messaggio deciso esplicitamente nella
+ *    conversazione, riusato identico qui.
+ *  - §4.4: il controllo compliance viene sempre ri-eseguito sulla nuova
+ *    versione, mai ereditato "per fiducia" da quella vecchia.
+ *
+ * A differenza della versione Acquisti, `ordini_clienti.contatto_id`
+ * referenzia `clienti_fornitori(id)` (un riferimento vivo, non uno snapshot
+ * — verificato in db/init_sqlite.sql:1355) e va quindi copiato as-is, non
+ * clonato: la colonna analoga a `ordini_testata.contatto_id` (che invece
+ * referenzia `contatti_documenti`) qui si chiama `contatto_snapshot_id`
+ * (db/init_sqlite.sql:1360) — nomi diversi per lo stesso concetto, da non
+ * confondere copiando ciecamente il pattern Acquisti.
+ *
+ * @return int id del nuovo ordine (in stato 'in_lavorazione', versione+1)
+ */
+function qk_ordine_cliente_crea_revisione(PDO $pdo, int $ordine_id): int
+{
+    $pdo->beginTransaction();
+    try {
+        $ordine = _ordine_cliente_carica($pdo, $ordine_id);
+
+        (new \App\Services\TransitionGuard(qk_transizioni_ordini_clienti(), 'ordine cliente'))
+            ->assicuraConMessaggio(
+                (string) $ordine['stato'],
+                'superato',
+                "È possibile creare una nuova versione solo di un ordine in stato 'in lavorazione' (stato attuale: {$ordine['stato']})."
+            );
+
+        // Difesa in profondità (§3 punto 2 / §4.2): nessuna spedizione deve
+        // già esistere, anche se lo stato fosse manomesso/disallineato.
+        $stSped = $pdo->prepare("SELECT COUNT(*) FROM spedizioni WHERE ordine_id = ?");
+        $stSped->execute([$ordine_id]);
+        if ((int) $stSped->fetchColumn() > 0) {
+            throw new \RuntimeException('Impossibile creare una nuova versione: esiste già una spedizione collegata a questo ordine.');
+        }
+
+        // §4.3: blocco assoluto, testo del messaggio deciso esplicitamente.
+        if ((string) $ordine['stato_fatturazione'] === 'fatturato') {
+            throw new \RuntimeException("Ordine già fatturato: per correggerlo serve una nota di credito, non una revisione.");
+        }
+
+        // 1. Duplica snapshot indirizzo di consegna, se presente.
+        $nuovoIndirizzoId = _clona_riga_snapshot_documento($pdo, 'indirizzi_documenti', $ordine['indirizzo_consegna_id'] ? (int) $ordine['indirizzo_consegna_id'] : null);
+
+        // 2. Duplica snapshot contatto referente, se presente (NB: colonna
+        // contatto_snapshot_id, non contatto_id — vedi commento sopra).
+        $nuovoContattoSnapshotId = _clona_riga_snapshot_documento($pdo, 'contatti_documenti', $ordine['contatto_snapshot_id'] ? (int) $ordine['contatto_snapshot_id'] : null);
+
+        // 3. Nuovo numero con suffisso di versione, stesso schema Acquisti.
+        $nuovaVersione = (int) ($ordine['versione'] ?? 1) + 1;
+        $baseNumero = preg_replace('/ v\d+$/', '', (string) $ordine['numero_ordine']);
+        $nuovoNumero = $baseNumero . ' v' . $nuovaVersione;
+
+        // 4. Inserisce la nuova testata copiando la vecchia riga per intero
+        // (SELECT * già caricata in $ordine) e sovrascrivendo solo i campi che
+        // devono cambiare — evita di elencare a mano le ~50 colonne di
+        // ordini_clienti (rischio concreto di dimenticarne una NOT NULL,
+        // CLAUDE.md punto 2), stesso principio già usato per gli snapshot sopra.
+        $nuova = $ordine;
+        unset($nuova['id'], $nuova['created_at'], $nuova['updated_at'], $nuova['pdf_path'], $nuova['pdf_hash']);
+        $nuova['numero_ordine']       = $nuovoNumero;
+        // Mirror del comportamento Acquisti (qk_ordine_crea_revisione() usa
+        // CURRENT_DATE per la nuova testata, non la data dell'ordine
+        // originale) — la nuova versione è un documento creato oggi.
+        $nuova['data_ordine']         = date('Y-m-d');
+        $nuova['stato']               = 'in_lavorazione';
+        $nuova['versione']            = $nuovaVersione;
+        $nuova['ordine_padre_id']     = $ordine_id;
+        $nuova['stato_fatturazione']  = 'da_fatturare';
+        $nuova['indirizzo_consegna_id']   = $nuovoIndirizzoId;
+        $nuova['contatto_snapshot_id']    = $nuovoContattoSnapshotId;
+        // Audit vendita allo scoperto (P4): riguarda la conferma esplicita
+        // fatta sull'ordine ORIGINALE al momento della SUA riserva — la nuova
+        // versione riserva di nuovo da zero (punto 6 sotto), quindi non eredita
+        // una conferma che si riferiva a un'altra riserva.
+        $nuova['vendita_scoperto_confermata_da'] = null;
+        $nuova['vendita_scoperto_confermata_at'] = null;
+        $nuova['vendita_scoperto_dettaglio']     = null;
+
+        $colonne = implode(', ', array_keys($nuova));
+        $placeholders = implode(', ', array_fill(0, count($nuova), '?'));
+        $pdo->prepare("INSERT INTO ordini_clienti ({$colonne}) VALUES ({$placeholders})")
+            ->execute(array_values($nuova));
+        $nuovoOrdineId = (int) $pdo->lastInsertId();
+
+        // 5. Duplica le righe (stesso principio: copia intera + override dei
+        // soli campi che cambiano, invece di elencarle a mano).
+        $stRighe = $pdo->prepare('SELECT * FROM ordini_clienti_righe WHERE ordine_id = ?');
+        $stRighe->execute([$ordine_id]);
+        $righeVecchie = $stRighe->fetchAll(PDO::FETCH_ASSOC);
+
+        $righeNuove = []; // righe complete della NUOVA versione, per riserva/compliance sotto
+        foreach ($righeVecchie as $rigaVecchia) {
+            $rigaNuova = $rigaVecchia;
+            unset($rigaNuova['id'], $rigaNuova['created_at']);
+            $rigaNuova['ordine_id']              = $nuovoOrdineId;
+            $rigaNuova['quantita_spedita']        = 0;
+            // Lo snapshot Kit (AUDIT 3 §3.3) va ricongelato dalla riserva vera
+            // e propria della nuova riga (punto 6 sotto), non ereditato.
+            $rigaNuova['kit_componenti_snapshot'] = null;
+
+            $colonneR = implode(', ', array_keys($rigaNuova));
+            $placeholdersR = implode(', ', array_fill(0, count($rigaNuova), '?'));
+            $pdo->prepare("INSERT INTO ordini_clienti_righe ({$colonneR}) VALUES ({$placeholdersR})")
+                ->execute(array_values($rigaNuova));
+            $rigaNuova['id'] = (int) $pdo->lastInsertId();
+            $rigaNuova['_vecchia_riga_id'] = (int) $rigaVecchia['id'];
+            $righeNuove[] = $rigaNuova;
+        }
+
+        // 6. Sposta la riserva di giacenza dal vecchio ordine al nuovo, riga
+        // per riga (§3 punto 3): rilascia sul vecchio, riserva sul nuovo,
+        // stesso magazzino congelato su ordini_clienti.magazzino_id. Se
+        // l'ordine è storico (magazzino_id NULL, pre-fix O2) si salta il
+        // movimento e si logga, stesso fallback già usato in
+        // qk_ordine_cliente_annulla() — la creazione della revisione resta
+        // comunque permessa.
+        $magazzinoId = $ordine['magazzino_id'] ?? null;
+        if ($magazzinoId) {
+            foreach ($righeNuove as $r) {
+                if (empty($r['prodotto_id'])) {
+                    continue;
+                }
+                $qtaOrdinata = (float) $r['quantita_ordinata'];
+                $qtaStock    = (float) ($r['quantita_stock'] ?? 0);
+                if ($qtaOrdinata <= 0 || $qtaStock <= 0) {
+                    continue;
+                }
+                // quantita_spedita è garantita 0 dal guard del punto precedente
+                // (nessuna spedizione esiste); si usa comunque la stessa
+                // formula proporzionale di qk_ordine_cliente_annulla() per
+                // difesa in profondità, non un presupposto non verificato.
+                qk_rilascia_stock_ordine($pdo, (int) $r['prodotto_id'], $qtaStock, (int) $magazzinoId, (int) $r['_vecchia_riga_id']);
+                qk_riserva_stock_ordine($pdo, (int) $r['prodotto_id'], $qtaStock, (int) $magazzinoId, (int) $r['id']);
+            }
+        } else {
+            error_log("[qk_ordine_cliente_crea_revisione] Ordine $ordine_id senza magazzino_id: riserva NON spostata (ordine storico pre-fix, magazzino di origine sconosciuto).");
+        }
+
+        // 7. Ri-esegue il controllo compliance sulla nuova versione (§4.4):
+        // mai ereditato "per fiducia" da quella vecchia, perché righe/quantità
+        // possono essere diverse.
+        $itemsCompliance = array_map(static fn (array $r) => ['prodotto_id' => $r['prodotto_id']], $righeNuove);
+        $violazioni = qk_compliance_check_sale($pdo, (int) $ordine['cliente_id'], $itemsCompliance);
+        if (!empty($violazioni)) {
+            $messaggi = array_map(static fn (array $v) => $v['message'], $violazioni);
+            throw new \RuntimeException('Impossibile creare la nuova versione per motivi di compliance: ' . implode(' | ', $messaggi));
+        }
+
+        // 8. Marca il vecchio ordine come 'superato'.
+        $pdo->prepare("UPDATE ordini_clienti SET stato = 'superato', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+            ->execute([$ordine_id]);
+
+        $pdo->commit();
+        return $nuovoOrdineId;
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * Recupera id e numero_ordine di un ordine cliente per un link di
+ * riferimento (padre/figlio di una revisione) — non l'intero dettaglio.
+ * Riusata sia per "versione precedente" sia per "versione successiva"
+ * (Tappa 6, badge/link nel dettaglio ordine).
+ */
+function qk_get_ordine_cliente_riferimento(PDO $pdo, int $id): ?array
+{
+    $st = $pdo->prepare('SELECT id, numero_ordine FROM ordini_clienti WHERE id = ?');
+    $st->execute([$id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+/**
+ * Recupera l'eventuale "figlio" di un ordine (la nuova versione creata da
+ * qk_ordine_cliente_crea_revisione() a partire da questo ordine, se esiste).
+ */
+function qk_get_ordine_cliente_figlio(PDO $pdo, int $ordinePadreId): ?array
+{
+    $st = $pdo->prepare('SELECT id, numero_ordine FROM ordini_clienti WHERE ordine_padre_id = ? LIMIT 1');
+    $st->execute([$ordinePadreId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
 }
 
 /**

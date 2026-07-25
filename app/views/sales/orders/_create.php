@@ -18,13 +18,54 @@ $v = $values;
 </div>
 <?php endif; ?>
 
+<?php if (!empty($warnings)): ?>
+<!-- PIANO - Vendita Allo Scoperto Controllata (P4), §3.3: MAI un blocco —
+     la vendita allo scoperto resta sempre permessa — ma richiede una
+     conferma esplicita (bottone dedicato in barra azioni, non una
+     checkbox) prima di procedere al salvataggio. -->
+<div class="qk-alert qk-alert-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Disponibilità insufficiente per <?= count($warnings) ?> prodotto/i.</strong>
+    La vendita allo scoperto è comunque permessa: verifica le quantità e, se va bene così,
+    clicca su <strong>"Conferma comunque e crea l'ordine"</strong> nella barra in alto.
+    <div class="qk-table-wrap mt-2">
+      <table class="qk-table" style="font-size:.85rem">
+        <thead>
+          <tr><th>Prodotto</th><th class="text-end">Richiesto</th><th class="text-end">Disponibile</th><th class="text-end">Scoperto</th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($warnings as $w): ?>
+          <tr>
+            <td><?= e($w['prodotto_nome']) ?></td>
+            <td class="text-end"><?= e(number_format((float)$w['richiesto'], 3, ',', '.')) ?></td>
+            <td class="text-end"><?= e(number_format((float)$w['disponibile'], 3, ',', '.')) ?></td>
+            <td class="text-end"><?= e(number_format((float)$w['scoperto'], 3, ',', '.')) ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 
 <!-- Barra Azioni Sticky -->
 <div class="qk-sticky-action-bar mb-4">
   <div class="qk-sticky-action-bar-left">
-    <button type="submit" form="form-ordine-diretto" class="btn-qk btn-qk-primary">
-      <i class="fa-solid fa-circle-check"></i> Conferma Ordine
-    </button>
+    <?php if (!empty($warnings)): ?>
+      <!-- Bottone dedicato invece di una checkbox (PIANO P4 §8): submit che
+           porta con sé conferma_vendita_scoperto=1 solo se è QUESTO bottone
+           a essere cliccato (attributi name/value sul <button>, standard HTML). -->
+      <button type="submit" form="form-ordine-diretto" name="conferma_vendita_scoperto" value="1" class="btn-qk btn-qk-primary">
+        <i class="fa-solid fa-triangle-exclamation"></i> Conferma comunque e crea l'ordine
+      </button>
+    <?php else: ?>
+      <button type="submit" form="form-ordine-diretto" class="btn-qk btn-qk-primary">
+        <i class="fa-solid fa-circle-check"></i> Conferma Ordine
+      </button>
+    <?php endif; ?>
     <a href="<?= url('sales/orders') ?>" class="btn-qk btn-qk-secondary">Annulla</a>
   </div>
   <div class="qk-sticky-action-bar-right">
@@ -105,6 +146,26 @@ $v = $values;
                   </option>
                 <?php endforeach; ?>
               </select>
+            </div>
+
+            <!-- Magazzino di evasione (PIANO - Magazzino Esplicito alla
+                 Conferma Ordine, P4b): precompilato col magazzino attivo di
+                 sessione come default comodo, ma sempre visibile e
+                 modificabile - mai piu risolto in silenzio al salvataggio. -->
+            <div class="qk-form-group" style="flex:0 0 190px; min-width:170px;">
+              <label class="qk-form-label">Magazzino di evasione <span class="required">*</span></label>
+              <select name="magazzino_id" class="qk-form-control <?= isset($errors['magazzino_id']) ? 'is-invalid' : '' ?>" style="font-size:.85rem;">
+                <?php foreach ($magazziniOrdine as $mg): ?>
+                  <option value="<?= $mg['id'] ?>" <?= (string)($v['magazzino_id'] ?? '') === (string)$mg['id'] ? 'selected' : '' ?>>
+                    <?= e($mg['nome']) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+              <?php if (isset($errors['magazzino_id'])): ?>
+              <span class="qk-form-error mt-1"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['magazzino_id']) ?></span>
+              <?php else: ?>
+              <div class="text-muted small mt-1">Da qui verrà riservata la merce alla conferma.</div>
+              <?php endif; ?>
             </div>
           </div>
 

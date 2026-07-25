@@ -26,6 +26,10 @@ function ordine_badge_dash(string $stato): string {
         'spedito'              => ['delivered', 'Spedito'],
         'completato'           => ['delivered', 'Completato'],
         'annullato'            => ['draft',     'Annullato'],
+        // PIANO - Revisione Ordini Clienti: senza questa riga uno stesso
+        // 'superato' cadrebbe nel fallback sotto (classe 'draft', etichetta
+        // grezza "superato" minuscola) — non un errore, solo meno chiaro.
+        'superato'             => ['draft',     'Superato'],
     ];
     [$cls, $lbl] = $map[$stato] ?? ['draft', $stato];
     return '<span class="qk-badge ' . $cls . '">' . e($lbl) . '</span>';

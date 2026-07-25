@@ -1,6 +1,14 @@
 # AUDIT 3 — Conformità del Ciclo Vendite a Prezzi/UoM, Anagrafiche, Magazzino/Lotti, AGENTS.md
 
-> Stato: 🟡 **PARZIALE.** Implementati e verificati con esecuzione reale: 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 4.A.1, 4.A.2, 4.B.1 — vedi le note ✅ dentro ciascuna sezione. Gli altri punti (4.A.3, 4.A.4, 4.A.5, 4.B.2, 4.B.3, 4.C.1, 4.C.2, 4.C.3, 4.C.4) restano solo analisi, esplicitamente non ancora approvati per l'implementazione ("il resto lo guardo con più attenzione") — da riprendere UNO ALLA VOLTA quando l'utente decide.
+> Stato: 🟡 **PARZIALE — RIVERIFICATO IL 24/07/2026 (sera), aggiornamento importante.** La dichiarazione precedente ("il resto resta solo analisi, non ancora approvato") **non è più vera per diversi punti**: un controllo a tappeto sul codice reale, fatto dopo che l'utente ha segnalato di aver ricevuto informazioni superate, ha trovato che **4.A.3, 4.A.4, 4.B.3 e 4.C.1/4.C.2 sono stati implementati e sono oggi in produzione**, senza che nessun documento lo dichiarasse: verosimilmente lavoro fatto nell'ambito dell'esecuzione di `PIANO - Eliminazione SQL Grezzo nei Controller.md` (oggi anch'esso corretto per riflettere questo), che copriva esattamente questi punti. Dettaglio verificato riga per riga:
+> - **4.A.3 (CSS duplicato)** — ✅ risolto: la stringa `style='color:#721c24;...'` non esiste più in nessuno dei due controller, sostituita da `class='qk-alert-link'` (verificato in `SalesQuotesController.php:338`).
+> - **4.A.4 (SQL grezzo)** — ✅ risolto: conteggio rifatto da zero, zero query dirette in tutti e 4 i controller (non più le 20 residue di `SalesPricelistsController`).
+> - **4.B.3 (segna fatturato non allineato)** — ✅ risolto: esistono ora `qk_ordine_cliente_segna_fatturato()`/`qk_ordine_cliente_segna_da_fatturare()` in `includes/sales_orders.php:292-304`, stesso pattern già usato lato Acquisti.
+> - **4.C.1 (God Object `elaboraCreaSpedizione`)** — ✅ risolto: `qk_elabora_crea_spedizione()` è oggi un wrapper di 10 righe su `SpedizioneRepository`+`SpedizioneCalculatorService`.
+> - **4.C.2 (God Object `apiImportPrezzi`)** — ✅ risolto: `ListinoPrezziRepository`+`ListinoImportService` esistono e sono richiesti da `SalesPricelistsController.php`.
+> - **Restano genuinamente aperti, verificati ancora presenti nel codice**: 4.A.5 (docblock impreciso, non verificato di nuovo puntualmente ma minore), 4.B.2 (due filosofie per creare un ordine: `qk_preventivo_conferma_ordine()` fa ancora un INSERT scritto a mano su ~44 colonne, `includes/sales_quotes.php:1088`, mentre l'ordine diretto passa da `SalesOrderRepository`), 4.C.3 (`SalesPricelistsController` resta il file più esteso del modulo, anche se non più con SQL diretto), 4.C.4 (le due implementazioni di rendering PDF/DOCX restano separate, nessuna unificazione dei renderer).
+>
+> Per il dettaglio completo di come e cosa è stato verificato, vedi anche `PIANO - Eliminazione SQL Grezzo nei Controller (Regola Aurea).md`, aggiornato in parallelo a questa stessa verifica.
 
 Prodotto lanciando 4 revisioni indipendenti in parallelo, ciascuna con lettura integrale (non a campione) sia della documentazione di riferimento sia del codice del Ciclo Vendite coinvolto, verificando ogni riga citata con lo strumento di lettura file (non fidandosi di grep per punteggiatura/commenti). Nessuna delle 4 revisioni ripete i 10 problemi già trovati e corretti in `AUDIT 2` / `PIANO - Correzione Violazioni MVC-DRY-God Object (Audit 2).md` in questa stessa giornata di lavoro (bug `qk_preventivo_duplica()`, `apiCreaCliente()` senza colonna `codice`, registro compliance mai scritto, duplicazione compliance-check/indirizzo tra `create()`/`edit()`, `require_once` dentro le funzioni di `compliance.php`, buffer PDF non ripulito, `sconto_perc` ignorato nei totali in 5 punti, SQL grezzo per `canali_vendita` in una vista, CSS hardcoded ridondante in un alert).
 
@@ -182,15 +190,18 @@ Un solo problema trovato, ed era nel test nuovo che ho scritto io stesso (non ne
 | 2.1 | ✅ Azienda emittente disattivata selezionabile su ordine diretto — CORRETTO E VERIFICATO | Alta | Dati fiscali sbagliati congelati permanentemente |
 | 2.2 | ✅ Checkbox "salva indirizzo" non collegata (ordine diretto) — CORRETTO E VERIFICATO | Alta | Funzionalità dichiarata implementata ma silenziosamente assente |
 | 3.2 | ✅ Kit + lotti: nessuna tracciabilità in spedizione — CORRETTO E VERIFICATO | Alta (ADR) | Rottura tracciabilità per richiami prodotto |
-| 4.B.2 | Due filosofie per creare un ordine nella stessa tabella | Alta (architetturale) | Manutenzione doppia, rischio di divergenza futura |
-| 4.C.1 | `elaboraCreaSpedizione()` God Object (~400 righe) — sembra già rifattorizzata (vedi nota), da confermare | Alta (architetturale) | — |
+| 4.B.2 | Due filosofie per creare un ordine nella stessa tabella — **RICONFERMATO ANCORA APERTO il 24/07/2026** (verificato: `qk_preventivo_conferma_ordine()` ancora INSERT a mano, ordine diretto ancora via Repository) | Alta (architetturale) | Manutenzione doppia, rischio di divergenza futura |
+| 4.C.1 | ✅ `elaboraCreaSpedizione()`/`qk_elabora_crea_spedizione()` — CORRETTO E VERIFICATO il 24/07/2026 (wrapper sottile su `SpedizioneRepository`+`SpedizioneCalculatorService`, duplicazione 4x eliminata) | Alta (architetturale) | — |
 | 4.A.2 | ✅ CSRF mancante su `apiCheckCompliance()` — CORRETTO E VERIFICATO | Media | — |
 | 4.B.1 | ✅ PDF/DOCX Vendite su Service+template esterno — IMPLEMENTATO E VERIFICATO A FONDO (33 asserzioni) | Media | — |
-| 4.B.3, 4.C.2, 4.C.4 | Incoerenze architetturali varie | Media | — |
-| 4.A.4 | SQL crudo nei controller — **78 occorrenze esaustive** (non più campione) + 8 duplicazioni nome cliente | Alta (volume) | Sistemico, richiede un progetto a sé per dimensione, non un fix puntuale |
+| 4.B.3 | ✅ "Segna fatturato/da fatturare" allineato — CORRETTO E VERIFICATO il 24/07/2026 (`qk_ordine_cliente_segna_fatturato()`/`_segna_da_fatturare()` in `includes/sales_orders.php`) | Media | — |
+| 4.C.2 | ✅ `apiImportPrezzi()` God Object — CORRETTO E VERIFICATO il 24/07/2026 (`ListinoPrezziRepository`+`ListinoImportService`) | Media | — |
+| 4.C.4 | Rendering PDF/DOCX non unificato (due implementazioni separate, mPDF vs PhpWord) — **ancora aperto**, riverificato il 24/07/2026 | Media | — |
+| 4.A.4 | ✅ SQL crudo nei controller — CORRETTO E VERIFICATO il 24/07/2026: zero query dirette in tutti e 4 i controller (conteggio rifatto da zero, non più le 78/20 residue) | Alta (volume) | — |
 | — | ✅ 2.3 Clienti disattivati in `apiClienteDettagli()` (ordini) — CORRETTO E VERIFICATO | Bassa | — |
 | 3.3 | ✅ Rilascio riserva Kit su snapshot, non su ricetta live — CORRETTO E VERIFICATO (9 asserzioni, 3 scenari) | Bassa | — |
 | — | ✅ 4.A.1 `require_once` fuori dagli `if` — CORRETTO E VERIFICATO | Bassa | — |
-| 4.A.3, 4.A.5, 4.C.3 | Minori / già note come sistemiche | Bassa-Media | — |
+| 4.A.3 | ✅ CSS duplicato — CORRETTO E VERIFICATO il 24/07/2026 (sostituito da `class='qk-alert-link'`) | Bassa | — |
+| 4.A.5, 4.C.3 | Minori / già note come sistemiche — non riverificate puntualmente il 24/07 | Bassa-Media | — |
 
-Nessun file è stato toccato. Aspetto le tue decisioni, punto per punto, con lo stesso formato già usato per gli altri problemi aperti di questo ciclo.
+**Aggiornamento 24/07/2026**: la frase originale "nessun file è stato toccato, aspetto le tue decisioni" non è più accurata — la maggior parte dei punti di questa tabella risulta implementata, verosimilmente nell'ambito dell'esecuzione di `PIANO - Eliminazione SQL Grezzo nei Controller.md`, senza che questo documento fosse aggiornato di conseguenza. Restano davvero da decidere/implementare solo 4.B.2, 4.C.4, 4.A.5, 4.C.3.

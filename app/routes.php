@@ -46,6 +46,9 @@ return [
     '/sales/quotes/api/crea-prodotto' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCreaProdotto', 'auth' => true, 'permission' => 'manage_catalog'],
     '/sales/quotes/api/check-compliance' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCheckCompliance', 'auth' => true],
     '/sales/quotes/api/cliente-dettagli' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiClienteDettagli', 'auth' => true],
+    // PIANO - Vendita Allo Scoperto Controllata (P4), Tappa 5: pre-check AJAX
+    // richiamato da assets/js/sales-quotes.js prima di "Accetta e Crea Ordine".
+    '/sales/quotes/api/verifica-disponibilita' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiVerificaDisponibilitaOrdine', 'auth' => true],
     '/sales/orders'              => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'index',    'auth' => true],
     '/sales/orders/create'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'create',   'auth' => true, 'permission' => 'manage_orders'],
     '/sales/orders/edit'         => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'edit',     'auth' => true, 'permission' => 'manage_orders'],
