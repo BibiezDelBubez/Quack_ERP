@@ -7,6 +7,9 @@ require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/sales_quotes.php';
 require_once INCLUDES_DIR . '/compliance.php';
 require_once INCLUDES_DIR . '/impostazioni.php';
+// _detail.php (vista di edit()) chiama qk_correzioni_ordine_lista() — PIANO
+// - Revisione Ordini Clienti (Nuova Versione), §7.7/Tappa 9 (26/07/2026).
+require_once INCLUDES_DIR . '/correzioni_ordini.php';
 
 final class SalesOrdersController extends BaseController
 {
@@ -150,6 +153,20 @@ final class SalesOrdersController extends BaseController
                         qk_compliance_log_transactions($this->pdo, $ordineId, $righe);
                         flash_set('success', 'Ordine ' . e($values['numero_ordine']) . ' creato con successo!');
                         redirect(url('sales/orders/edit') . '?id=' . $ordineId);
+                    } catch (\PDOException $e) {
+                        // PIANO - Normalizzazione Stringa Vuota su Campi FK
+                        // Opzionali, punto 1 (eseguito il 26/07/2026): prima
+                        // qualunque errore SQL arrivava grezzo all'utente
+                        // (es. "SQLSTATE[23000]: Integrity constraint
+                        // violation..."). dbMessage() (BaseController.php,
+                        // già usata da ProductsController/WarehouseController/
+                        // ecc.) traduce i casi noti (FOREIGN KEY, UNIQUE) in
+                        // una frase leggibile — catch separato da quello
+                        // sotto per non intercettare anche i RuntimeException
+                        // "di dominio" (es. blocchi compliance), che hanno
+                        // già un messaggio scritto apposta per l'utente.
+                        error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
+                        $errors['_global'] = $this->dbMessage($e);
                     } catch (\Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore durante la creazione: ' . $e->getMessage();

@@ -380,6 +380,17 @@ function truncate(string $str, int $max = 50): string {
  *   manage_catalog    → può creare/modificare prodotti e categorie
  *   manage_warehouse  → può fare movimenti di magazzino
  *   manage_orders     → può creare/confermare ordini e offerte
+ *   approvare_correzioni    → PIANO - Revisione Ordini Clienti (Nuova
+ *                             Versione), Tappa 8 (26/07/2026): può creare/
+ *                             approvare/rifiutare una richiesta di
+ *                             correzione su un ordine già fatturato.
+ *                             Aggiunto qui (estensione della mappa esistente,
+ *                             non una tabella nuova) perché il piano gemello
+ *                             di redesign ruoli/permessi non è stato deciso
+ *                             — fallback esplicitamente previsto dal piano.
+ *   bypass_maker_checker    → può approvare una propria richiesta di
+ *                             correzione senza un secondo utente (§7.7.3/
+ *                             §7.7.5). Solo admin, sempre.
  */
 function can(string $permission): bool
 {
@@ -389,6 +400,7 @@ function can(string $permission): bool
         'admin' => [
             'manage_users', 'view_costs', 'edit_prices',
             'manage_catalog', 'manage_warehouse', 'manage_orders',
+            'approvare_correzioni', 'bypass_maker_checker',
         ],
         'commerciale' => [
             'view_costs', 'edit_prices', 'manage_orders',

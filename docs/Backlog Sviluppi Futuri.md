@@ -149,9 +149,11 @@ Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere s
 
 ---
 
-## 12. Modulo di fatturazione elettronica (con distinzione IT/estero fin dalla progettazione)
+## 12. Modulo di fatturazione elettronica — ❌ NON SI FARÀ (decisione permanente, 26/07/2026)
 
-**Fonte:** [Revisione Incrociata - Concetti Ripetuti e Incongruenze.md](Guide%20Anagrafiche%20Clienti%2C%20Fornitori%2C%20Indirizzi/Revisione%20Incrociata%20-%20Concetti%20Ripetuti%20e%20Incongruenze.md), §5.5.1.
+> **Decisione dell'utente, 26/07/2026, che sostituisce quanto scritto sotto**: Quack non emetterà mai fatture elettroniche reali (nessun XML FatturaPA, nessun invio SDI, nessun `FatturaController`) — non è "rimandato in attesa del bisogno reale" come diceva la voce originale, è escluso in modo permanente dallo scopo del progetto. Questo **non vuol dire** che Quack non terrà mai dati di fatturazione: nel breve termine basta sapere **se** un ordine è stato fatturato (il flag `stato_fatturazione` già esistente); in futuro si potrà eventualmente registrare a mano dati più ricchi (numero fattura esterna, data, importo) su una fattura emessa altrove, senza mai generare o inviare il documento fiscale — quella parte resta e resterà fuori da Quack. **Decisione presa anche sulle tabelle `fatture`/`fatture_righe`**: restano integralmente a schema, senza togliere nulla — il futuro è incerto, meglio non buttare via un design già fatto. Vedi `docs/Ciclo Vendite/AUDIT 4 - Controllo Generale Problemi Aperti (25-07-2026).md`, punto 1, per il dettaglio.
+
+**Descrizione originale (superata), per lo storico. Fonte:** [Revisione Incrociata - Concetti Ripetuti e Incongruenze.md](Guide%20Anagrafiche%20Clienti%2C%20Fornitori%2C%20Indirizzi/Revisione%20Incrociata%20-%20Concetti%20Ripetuti%20e%20Incongruenze.md), §5.5.1.
 
 **Di cosa si tratta.** F1 cita la fatturazione elettronica (SDI, Sistema di Interscambio) come motivazione di design per l'Anagrafica Unica, ma il modulo vero e proprio non è mai stato costruito. Verificato: `codice_sdi` (`dettagli_clienti.codice_sdi`) è un campo di testo libero opzionale, mai validato in base alla nazione del cliente. Esiste una tabella `fatture`/`fatture_righe` nello schema (`db/init_sqlite.sql:1332-1370` circa), con colonne base (numero, tipo, date, cliente, stato, importi) ma **nessuna colonna SDI-specifica** (codice destinatario, percorso XML, stato invio) e **nessun controller la gestisce** — nessun `FatturaController`, nessuna view, nessuna funzione che crei o invii una fattura elettronica. È uno scheletro di schema, non una funzionalità.
 
@@ -164,7 +166,7 @@ Sviluppi rimandati per scelta esplicita, di impatto limitato — da riprendere s
 4. **Integrazione SDI reale**: valutare se l'invio allo SDI avviene tramite un intermediario (es. Aruba, Fatture in Cloud, o un provider PEC/SDI dedicato) o direttamente — decisione che condiziona buona parte dell'architettura del punto 2, da prendere con chi gestisce il processo di fatturazione reale dell'azienda prima di scrivere codice.
 5. **Anagrafica**: nessuna modifica strutturale necessaria a `codice_sdi` (già libero e opzionale, compatibile con l'assenza per clienti esteri) — eventualmente aggiungere una validazione di formato (7 caratteri alfanumerici) solo quando compilato e `nazione = 'IT'`.
 
-**Perché è rimandato.** È un modulo intero non ancora iniziato, non un fix su qualcosa di esistente — non c'è nulla di rotto oggi perché non c'è ancora nulla che funzioni in questo ambito. Da programmare come progetto a sé quando si deciderà di implementare la fatturazione elettronica reale, con il coinvolgimento di chi gestisce il processo contabile/fiscale dell'azienda per le decisioni di provider e formato.
+**Perché non si farà (aggiornato 26/07/2026).** Non è più "rimandato in attesa del bisogno": è escluso in modo permanente dallo scopo di Quack, per decisione esplicita dell'utente — vedi nota in cima a questa voce.
 
 ---
 
@@ -682,6 +684,111 @@ spazio disco più velocemente del previsto, o formati indesiderati che iniziano 
 4. Collegamento automatico del movimento generato alla spedizione di origine (`documento_tipo`/`documento_id`), aggiornamento di `quantita_spedita` sulla riga ordine e dello stato spedizione (`consegnata`/`reso`, finalmente utilizzati) nella stessa operazione.
 
 **Perché è rimandato.** Nessun caso d'uso urgente lo richiede oggi — il movimento manuale da Magazzino copre l'operatività corrente. Stesso trattamento già dato al reso fornitore (voce 18): riconosciuto come lavoro futuro, non un fix su qualcosa di rotto in produzione, da programmare come intervento a sé quando la fase Spedizioni/ADR/Compliance (oggi dichiaratamente ancora in studio) sarà definita nel suo complesso.
+
+---
+
+## 35. Spedizione dello stesso ordine su indirizzi di consegna diversi
+
+**Fonte:** [Ciclo Vendite/AUDIT 4 - Controllo Generale Problemi Aperti (25-07-2026).md](Ciclo%20Vendite/AUDIT%204%20-%20Controllo%20Generale%20Problemi%20Aperti%20%2825-07-2026%29.md), punto 4. Decisione dell'utente il 26/07/2026: caso raro nell'uso reale, ma già in gran parte predisposto lato database — rimandato al backlog, non scartato, perché sarebbe uno spreco non approfittare di un lavoro già fatto quando servirà davvero.
+
+### Scopo
+
+Permettere di spedire un singolo ordine cliente su più indirizzi di consegna diversi — es. un ordine di 100 unità dove 60 devono arrivare alla sede di Milano del cliente e 40 alla sede di Bari — scegliendo l'indirizzo per ciascuna spedizione al momento della sua creazione, invece di ereditare sempre e comunque l'unico indirizzo congelato sull'ordine.
+
+### Motivazione
+
+Oggi la schermata "Nuova Spedizione" (`app/views/sales/shipments/_nuova.php`) non ha alcun campo per scegliere l'indirizzo — verificato: zero occorrenze di `indirizzo_spedizione_id` in tutta la vista. `SpedizioneCalculatorService.php:91` conferma perché: l'indirizzo di ogni spedizione viene sempre e solo ereditato da `$order['indirizzo_spedizione_id']`, mai scelto dall'operatore. Il caso "stesso ordine, indirizzi diversi", descritto solo in una riga concettuale nel Manuale ("un ordine può generare N spedizioni, ognuna col proprio indirizzo"), non è quindi oggi realizzabile con lo strumento attuale — non è una scomodità, è un'impossibilità strutturale. Motivo del rimando: è un caso d'uso raro per la base clienti attuale di Quack (multi-sede), quindi non urgente; ma **il lavoro da fare è sorprendentemente piccolo**, perché gran parte dell'infrastruttura esiste già (vedi sotto) — motivo per cui si tiene in backlog pronto all'uso invece di scartarlo.
+
+### Decisioni lato DB
+
+**Nessuna modifica di schema necessaria.** Verificato leggendo `db/init_sqlite.sql:1455-1476`: la tabella `spedizioni` ha già una colonna `indirizzo_spedizione_id INTEGER REFERENCES indirizzi(id)` (riga 1460), oggi semplicemente sempre valorizzata con lo stesso indirizzo dell'ordine. Anche il lato stampa è già pronto: `documenti_trasporto` congela già l'indirizzo scelto al momento della creazione del DDT (colonne `destinatario_*`, popolate da `indirizzo_destinazione_id` — vedi `PIANO - Congelare Destinatario sul DDT.md`, già eseguito) — quindi il DDT stamperebbe già correttamente qualunque indirizzo scelto in fase di spedizione, senza bisogno di toccare nulla su quel fronte.
+
+### Decisioni lato Backend
+
+1. `SpedizioniController::nuova()` (metodo GET, righe 62-132): recuperare la lista degli indirizzi attivi del cliente dell'ordine (stesso tipo di query già usata per popolare la tendina equivalente nel form ordine diretto) e passarla alla vista, con l'indirizzo attuale dell'ordine preselezionato come default.
+2. Il gestore del POST che crea davvero la spedizione (`SalesOrdersController::action()` con azionamento `crea_spedizione`, che delega a `qk_elabora_crea_spedizione()` / `SpedizioneCalculatorService::creaSpedizione()`): leggere un nuovo campo `indirizzo_spedizione_id` dai dati POST; se presente e valido, usarlo al posto del valore ereditato dall'ordine (righe 91-107 di `SpedizioneCalculatorService.php`, che oggi lo calcolano solo dall'ordine); se assente (retrocompatibilità con eventuali chiamate esistenti), comportamento identico a oggi.
+3. Validazione server-side obbligatoria: l'indirizzo scelto deve appartenere davvero al cliente dell'ordine (stesso controllo già presente altrove nel progetto per evitare di associare l'indirizzo di un cliente diverso) — errore esplicito bloccante se non valido, mai un fallback silenzioso.
+4. Nessuna modifica alla logica di stock/riserva/compliance: l'indirizzo non influisce su magazzino, lotti o disponibilità — è un cambiamento isolato al solo dato di destinazione.
+
+### Decisioni lato Frontend / UI / UX
+
+1. Aggiungere alla schermata "Nuova Spedizione" una tendina "Indirizzo di consegna", riusando lo stesso componente già presente nel form dell'ordine diretto (`app/views/sales/orders/_create.php:385-391` — `<select name="indirizzo_spedizione_id">`, stesso markup/stile, solo precompilato server-side invece che via JS dato che il cliente è già noto in questo contesto).
+2. Preselezionare sempre l'indirizzo congelato sull'ordine come default, per non cambiare il comportamento attuale per chi non ha bisogno di questa funzione — l'operatore deve scegliere attivamente per deviare dal default.
+3. Per il caso "stesso ordine, più indirizzi": nessuna schermata nuova di suddivisione automatica delle quantità — l'operatore crea più spedizioni separate (già supportato oggi, il sistema traccia già `quantita_spedita`/`quantita_ordinata` per riga), scegliendo un indirizzo diverso ogni volta. Stessa impostazione già usata da Odoo per le consegne parziali (backorder), non un aiuto automatico nella suddivisione — coerente con quanto osservato al punto 4 dell'audit su cosa fanno i grandi ERP.
+4. Un avviso testuale (non bloccante) quando l'indirizzo scelto per la spedizione è diverso da quello dell'ordine, per rendere visibile la deviazione a chi rilegge la spedizione più tardi.
+
+### Perché è rimandato
+
+Nessun caso d'uso urgente lo richiede oggi — capita raramente nell'attuale base clienti di Quack. Tenuto in backlog, con il piano già scritto in dettaglio, proprio perché il costo di implementazione futuro è basso (nessuna modifica di schema, un solo componente UI da riusare, una sola condizione da aggiungere lato backend) — da programmare quando (e se) emergerà un caso reale che lo giustifichi.
+
+---
+
+## 36. Registro di Fatturazione — far diventare "Fatturato"/"Da Fatturare" una conseguenza automatica invece di un interruttore libero
+
+**Spostato qui dal documento a sé `docs/Ciclo Vendite/PIANO - Registro Fatturazione e Stato Derivato (§6 AUDIT 4).md` il 26/07/2026, su richiesta esplicita dell'utente. Non è in corso di costruzione — è un'idea completa e pronta, lasciata in attesa di una decisione futura.** Origine: `AUDIT 4 - Controllo Generale Problemi Aperti (25-07-2026).md`, punto 6.
+
+**Decisione presa il 26/07/2026 su questo punto, importante**: per ora, e finché non deciderai diversamente, va bene che lo stato "Fatturato"/"Da Fatturare" resti come oggi — un'etichetta che chiunque può cambiare con un click, senza controlli. Quanto scritto qui sotto descrive solo COSA si potrebbe fare in futuro, non qualcosa che sto costruendo adesso.
+
+### Spiegazione da zero, con un esempio concreto, senza dare nulla per scontato
+
+Immagina di aprire, dentro il programma, la scheda di un ordine cliente — per esempio l'ordine numero 1042, quello delle taniche di detersivo per il cliente "Rossi Srl". In questa scheda c'è una piccola etichetta colorata che dice "Da Fatturare" oppure "Fatturato". Serve solo a ricordare all'amministrazione se quell'ordine è già stato fatturato — cioè se è già stata emessa la fattura vera, quella fiscale. Attenzione: quella fattura vera **Quack non la emette e non la emetterà mai da sola** — la fattura vera la emette un altro programma o il commercialista, fuori da Quack. L'etichetta dentro Quack è solo un promemoria interno.
+
+Oggi, in questa scheda dell'ordine, ci sono due bottoni:
+- Un bottone "Segna come Fatturato" (visibile se l'ordine è ancora "Da Fatturare")
+- Un bottone "Ripristina Da Fatturare" (visibile se l'ordine è già "Fatturato")
+
+**Il problema di oggi, spiegato con l'esempio.** Chiunque abbia accesso al programma — non importa se è un magazziniere, un commerciale o chiunque altro — può cliccare uno di questi due bottoni. Basta un click. Il programma non chiede nessun dato (non chiede il numero della fattura vera, non chiede l'importo, non chiede la data), non controlla chi sei, e non scrive da nessuna parte chi ha fatto quel cambiamento né quando. È un po' come se, in un ufficio, chiunque passasse davanti a una scrivania potesse timbrare da solo un foglio con scritto "pagato", senza che nessuno controlli e senza lasciare una firma o una data su quel timbro.
+
+Questo oggi **non rompe nulla nel programma** — non è un errore che causa un malfunzionamento visibile. È più un rischio silenzioso: col tempo, quell'etichetta potrebbe non corrispondere più alla realtà (un ordine segnato "Fatturato" senza che sia mai stata fatta davvero una fattura, oppure il contrario), e nessuno se ne accorgerebbe finché qualcuno non va a controllare a mano, confrontando con i dati veri dell'amministrazione.
+
+### Come cambierebbe, con questa proposta — di nuovo con lo stesso esempio, passo per passo
+
+**Oggi**: apri l'ordine 1042, clicchi "Segna come Fatturato". Fatto. Un click, zero domande, l'etichetta cambia subito in "Fatturato".
+
+**Con questa proposta, se venisse costruita**: apri l'ordine 1042. Il bottone "Segna come Fatturato" non ci sarebbe più uguale a oggi — al suo posto ci sarebbe un bottone con scritto "Registra Fattura". Lo clicchi, e **non succede subito nulla all'etichetta** — si apre invece una piccola finestra (un modulo da compilare) che chiede tre informazioni:
+
+1. Il numero della fattura vera (quella emessa fuori da Quack — esempio: "FT-2026-00123")
+2. La data in cui è stata emessa quella fattura vera
+3. L'importo di quella fattura
+
+Solo dopo aver scritto questi tre dati e aver confermato, il programma farebbe, uno dietro l'altro, questi passaggi automatici:
+1. Salva questi tre dati (numero, data, importo) in un posto del database pensato apposta per questo (spiegato più sotto).
+2. **Solo come conseguenza di questo salvataggio**, cambia l'etichetta dell'ordine da "Da Fatturare" a "Fatturato".
+3. Scrive automaticamente, in un registro interno che il programma già usa per tenere traccia di altri cambiamenti simili sugli ordini, chi ha fatto questa operazione (quale utente) e in che momento esatto.
+
+In parole semplici: con questa proposta, l'etichetta "Fatturato" non la cambieresti più tu manualmente con un click — cambierebbe da sola, in automatico, solo come conseguenza del fatto che hai appena registrato i dati di una fattura vera. Se non registri nessuna fattura, l'etichetta resterebbe sempre "Da Fatturare": nessuno potrebbe più forzarla a mano.
+
+In più: se l'ordine fosse stato annullato (es. il cliente ha disdetto, o è stato inserito per errore), il bottone "Registra Fattura" non sarebbe nemmeno cliccabile — il programma impedirebbe proprio di registrare una fattura su un ordine annullato, perché non avrebbe senso farlo.
+
+### Dove verrebbero salvati questi tre dati, spiegato senza termini tecnici
+
+Il database di Quack (il "magazzino digitale" dove sono conservati tutti i dati del programma: clienti, ordini, prodotti eccetera) contiene già, da tempo, due strutture pensate apposta per registrare le fatture — chiamale pure due fogli di calcolo dedicati: uno chiamato "fatture" (dove andrebbero scritti il numero, la data, l'importo, e a quale ordine è collegata la fattura) e uno chiamato "fatture_righe" (per un dettaglio più fine, riga per riga del prodotto — per adesso non verrebbe usato, si userebbe solo il primo). Queste due strutture esistono già dentro il database di Quack, pronte, ma oggi sono completamente vuote: nessuna parte del programma le usa o le legge. Questa proposta le metterebbe finalmente al lavoro, per lo scopo per cui erano state pensate fin dall'inizio.
+
+**Punto importante, già deciso in una conversazione precedente**: queste due strutture non servirebbero MAI a creare o inviare una fattura elettronica vera (niente a che vedere con il Sistema di Interscambio, l'invio telematico all'Agenzia delle Entrate, o simili) — servirebbero solo ad annotare, dentro Quack, che una fattura già emessa altrove esiste e ha questi dati. Un "quaderno degli appunti" su fatture fatte fuori dal programma — non un generatore di fatture.
+
+**Nessuna modifica al database sarebbe necessaria** per questa proposta: le due strutture ("fatture"/"fatture_righe") esistono già, pronte, con tutte le colonne che servono (numero, tipo, data, cliente, ordine collegato, stato, importo) — basterebbe iniziare a scriverci sopra.
+
+### Chi potrebbe registrare o annullare una fattura
+
+**Deciso**: solo l'utente con il ruolo di amministratore ("admin") potrebbe vedere e cliccare il bottone "Registra Fattura" o "Annulla registrazione". Gli altri ruoli del programma (commerciale, magazziniere) non vedrebbero nemmeno il bottone — per loro la scheda ordine resterebbe come oggi, senza quel pulsante. Questa scelta è dovuta al fatto che gestire la fatturazione è considerato, come in molte aziende reali, un compito amministrativo/contabile diverso dal vendere o spedire la merce — di solito è una persona diversa (l'amministrazione) a occuparsene rispetto a chi vende o spedisce.
+
+### Un ordine, una fattura (per adesso, nella prima versione)
+
+**Deciso**: nella prima versione di questa eventuale funzione, ogni fattura registrata riguarderebbe un solo ordine — non più ordini raggruppati in un'unica fattura, e non un singolo ordine diviso su più fatture parziali. Se in futuro servisse davvero gestire casi più complessi (per esempio una fattura che copre insieme 3 ordini diversi), si potrebbe comunque registrare più fatture separate ma tutte collegate allo stesso ordine, oppure ripensare la cosa più avanti quando servirà per davvero — ma per iniziare, si terrebbe il caso più semplice possibile.
+
+### Nessuna scorciatoia manuale, nemmeno per l'amministratore
+
+**Deciso**: non ci sarebbe nessun'altra via per cambiare l'etichetta "a mano", nemmeno per l'amministratore in casi eccezionali. L'unico modo per cambiare lo stato di fatturazione sarebbe registrare (o annullare la registrazione di) una fattura vera tramite il nuovo modulo. Questo per evitare di ricreare, attraverso una porta secondaria, lo stesso identico problema che questa proposta vuole risolvere (un'etichetta libera che chiunque può toccare).
+
+### Il controllo di sicurezza sui due bottoni attuali — e la decisione presa oggi di NON toccarlo per ora
+
+In una discussione precedente su questa stessa proposta, si era considerato se questa modifica dovesse anche chiudere subito una piccola falla di sicurezza già segnalata altrove nella documentazione: il fatto che oggi, come spiegato sopra, chiunque possa cliccare senza nessun controllo i due bottoni attuali ("Segna come Fatturato"/"Ripristina Da Fatturare").
+
+**Deciso oggi, 26 luglio 2026: per il momento va bene così com'è.** Si lascia che chiunque possa continuare a cliccare quei due bottoni liberamente, senza nessun controllo — questo non viene toccato né ora, né nell'ambito del lavoro separato in corso sul punto 5 (la correzione degli ordini già fatturati, che è un'altra funzionalità, in costruzione in questi giorni ma su un aspetto diverso). Il controllo "solo l'admin può registrare/annullare una fattura", descritto qui sopra, riguarda solo ed esclusivamente il nuovo bottone "Registra Fattura" di QUESTA proposta — e quindi si attiverebbe solo se e quando questa intera proposta verrà davvero costruita in futuro, non prima e non per i bottoni attuali.
+
+### Perché questa proposta non viene costruita adesso
+
+Perché al momento non è stato chiesto esplicitamente di costruirla — è un'idea completa e già pronta all'uso, messa qui nel backlog in attesa che in futuro si decida se e quando realizzarla davvero. Nel frattempo il programma continua esattamente come funziona oggi, senza alcun cambiamento: i due bottoni attuali restano uguali, cliccabili da chiunque, senza nessuna richiesta di dati.
 
 ---
 

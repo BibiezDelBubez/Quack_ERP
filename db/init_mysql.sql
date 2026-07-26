@@ -1039,6 +1039,41 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
     CONSTRAINT fk_ordini_clienti_righe_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- PIANO - Revisione Ordini Clienti (Nuova Versione), §7.7.6/Tappa 9 (26/07/2026)
+-- — mirror esatto delle tabelle gemelle in db/init_sqlite.sql (CLAUDE.md §7).
+CREATE TABLE IF NOT EXISTS richieste_correzione_ordine (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ordine_id INTEGER NOT NULL,
+    motivo TEXT,
+    stato VARCHAR(20) NOT NULL DEFAULT 'in_approvazione' CHECK (stato IN ('in_approvazione','approvata','rifiutata')),
+    riferimento_doc_esterno VARCHAR(50),
+    motivo_rifiuto TEXT,
+    creato_da INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    chiusa_da INTEGER,
+    chiusa_il DATETIME,
+    CONSTRAINT fk_richieste_correzione_ordine_ordine_id FOREIGN KEY (ordine_id) REFERENCES ordini_clienti(id),
+    CONSTRAINT fk_richieste_correzione_ordine_creato_da FOREIGN KEY (creato_da) REFERENCES utenti(id),
+    CONSTRAINT fk_richieste_correzione_ordine_chiusa_da FOREIGN KEY (chiusa_da) REFERENCES utenti(id),
+    CONSTRAINT chk_richieste_correzione_ordine_riferimento CHECK ( (stato = 'approvata' AND riferimento_doc_esterno IS NOT NULL) OR stato != 'approvata' ),
+    CONSTRAINT chk_richieste_correzione_ordine_motivo_rifiuto CHECK ( (stato = 'rifiutata' AND motivo_rifiuto IS NOT NULL) OR stato != 'rifiutata' )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS richieste_correzione_righe (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    richiesta_id INTEGER NOT NULL,
+    riga_ordine_id_originale INTEGER NOT NULL,
+    prodotto_id INTEGER,
+    quantita_originale DECIMAL(10,3) NOT NULL,
+    prezzo_unitario_originale DECIMAL(10,4) NOT NULL,
+    quantita_corretta DECIMAL(10,3) NOT NULL,
+    prezzo_unitario_corretta DECIMAL(10,4) NOT NULL,
+    CONSTRAINT fk_richieste_correzione_righe_richiesta_id FOREIGN KEY (richiesta_id) REFERENCES richieste_correzione_ordine(id) ON DELETE CASCADE,
+    CONSTRAINT fk_richieste_correzione_righe_riga_ordine_id FOREIGN KEY (riga_ordine_id_originale) REFERENCES ordini_clienti_righe(id),
+    CONSTRAINT fk_richieste_correzione_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),
+    CONSTRAINT chk_richieste_correzione_righe_diverso CHECK (quantita_originale != quantita_corretta OR prezzo_unitario_originale != prezzo_unitario_corretta)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS fatture (
     id INT AUTO_INCREMENT PRIMARY KEY,
     numero_fattura VARCHAR(20) NOT NULL,

@@ -16,6 +16,14 @@ require_once __DIR__ . '/compliance.php';
 // sales_quotes.php (come una suite di test isolata) va in errore fatale.
 require_once __DIR__ . '/tabelle_base.php';
 require_once __DIR__ . '/../app/Services/TransitionGuard.php';
+// sales_orders.php: qk_preventivo_conferma_ordine() chiama qk_ordine_cliente_salva()
+// (PIANO - Unificazione Creazione Ordine Cliente, eseguito il 26/07/2026) —
+// stesso identico motivo del require di tabelle_base.php sopra (CLAUDE.md
+// regola 4), scoperto stavolta SUBITO dalla batteria di regressione invece
+// di restare mascherato: le suite di test che richiedono solo
+// sales_quotes.php (senza passare da un bootstrap applicativo completo)
+// fallivano con "Call to undefined function qk_ordine_cliente_salva()".
+require_once __DIR__ . '/sales_orders.php';
 
 /**
  * Genera il prossimo numero progressivo per il preventivo cliente.
@@ -1114,8 +1122,22 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId, int $maga
         $stUp = $pdo->prepare("UPDATE preventivi SET stato = 'accettato', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stUp->execute([$id]);
 
-        // 2. Generate ODC number
-        $numeroOrdine = qk_next_numero_ordine_cliente($pdo);
+        // PIANO - Unificazione Creazione Ordine Cliente (eseguito il
+        // 26/07/2026): il numero ordine non viene più generato qui — lo
+        // genera internamente qk_ordine_cliente_salva() (stessa
+        // qk_next_sequence_number(), niente doppia numerazione).
+        //
+        // Data ordine: il codice originale scriveva CURRENT_DATE (letterale
+        // SQL, calcolato da SQLite stesso, sempre UTC) direttamente
+        // nell'INSERT. qk_ordine_cliente_salva() accetta invece un parametro
+        // $dataOrdine lato PHP con fallback date('Y-m-d') (timezone del
+        // server PHP, NON necessariamente UTC) — per non introdurre una
+        // differenza di comportamento vicino alla mezzanotte se le due
+        // timezone non coincidono, si interroga qui SQLite stesso per lo
+        // stesso identico valore che avrebbe scritto CURRENT_DATE, e lo si
+        // passa esplicito, invece di fidarsi che date() lato PHP dia lo
+        // stesso risultato.
+        $dataOrdineOggiSqlite = (string) $pdo->query('SELECT CURRENT_DATE')->fetchColumn();
 
         // 2a. Check and generate snapshot IDs if missing (for older quotes)
         $indirizzo_consegna_id = $quota['indirizzo_consegna_id'] ?? null;
@@ -1150,136 +1172,109 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId, int $maga
             $pdo->prepare("UPDATE preventivi SET contatto_snapshot_id = ? WHERE id = ?")->execute([$contatto_snapshot_id, $id]);
         }
 
-        // 3. Create ordini_clienti head. Magazzino di evasione: ricevuto
+        // 3. Crea testata + righe ordine. Magazzino di evasione: ricevuto
         // esplicito dal chiamante (P4b) - non più risolto qui da
         // qk_magazzino_attivo_id() (sessione).
+        //
+        // PIANO - Unificazione Creazione Ordine Cliente (eseguito il
+        // 26/07/2026): i due INSERT scritti a mano (testata + righe) sono
+        // stati sostituiti da UNA chiamata a qk_ordine_cliente_salva()
+        // (includes/sales_orders.php), lo stesso identico punto di scrittura
+        // usato oggi anche dal percorso "ordine diretto"
+        // (OrderCalculatorService::insertDirectOrder()). $data qui sotto
+        // mappa $quota 1:1 sulle chiavi lette da qk_ordine_cliente_salva()
+        // (stessi nomi di colonna, nessuna rinominazione) — il fallback "??"
+        // usato dentro qk_ordine_cliente_salva() sostituisce l'operatore
+        // "?:" usato qui PRIMA di questo piano (differenza "1.5" del piano):
+        // "??" scatta solo su chiave mancante o NULL reale, mai su stringa
+        // vuota/"0"/false come faceva "?:" — comportamento più permissivo,
+        // preserva valori legittimi come "0" che "?:" avrebbe silenziosamente
+        // sostituito con NULL.
         $magazzinoRiservaId = $magazzinoId;
-        $sqlHead = "INSERT INTO ordini_clienti (
-            numero_ordine, preventivo_id, cliente_id, azienda_interna_id, magazzino_id, data_ordine, data_consegna_prevista,
-            stato, stato_fatturazione, riferimento_interno, condizioni_pagamento, trasporto, valuta,
-            listino_id, note, indirizzo_spedizione_id,
-            consegna_via, consegna_civico, consegna_cap, consegna_citta,
-            consegna_provincia, consegna_nazione, consegna_presso,
-            consegna_referente, consegna_telefono, consegna_note,
-            contatto_id, contatto_nome, contatto_email, contatto_telefono,
-            indirizzo_consegna_id, contatto_snapshot_id,
-            azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
-            cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
-            vendita_scoperto_confermata_da, vendita_scoperto_confermata_at, vendita_scoperto_dettaglio,
-            creato_da, created_at, updated_at
-        ) VALUES (
-            :numero_ordine, :preventivo_id, :cliente_id, :azienda_interna_id, :magazzino_id, CURRENT_DATE, :data_consegna_prevista,
-            'in_lavorazione', 'da_fatturare', :riferimento_interno, :condizioni_pagamento, :trasporto, :valuta,
-            :listino_id, :note, :indirizzo_spedizione_id,
-            :consegna_via, :consegna_civico, :consegna_cap, :consegna_citta,
-            :consegna_provincia, :consegna_nazione, :consegna_presso,
-            :consegna_referente, :consegna_telefono, :consegna_note,
-            :contatto_id, :contatto_nome, :contatto_email, :contatto_telefono,
-            :indirizzo_consegna_id, :contatto_snapshot_id,
-            :azienda_ragione_sociale, :azienda_partita_iva, :azienda_codice_fiscale, :azienda_indirizzo, :azienda_telefono, :azienda_email, :azienda_iban,
-            :cliente_ragione_sociale, :cliente_partita_iva, :cliente_codice_fiscale, :cliente_indirizzo,
-            :vendita_scoperto_confermata_da, :vendita_scoperto_confermata_at, :vendita_scoperto_dettaglio,
-            :creato_da, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        )";
-        $stHead = $pdo->prepare($sqlHead);
-        // Audit trail vendita allo scoperto (P4, §3.5): NULL nei 3 campi se
-        // non ci sono righe scoperte confermate — stesso significato
-        // identico alla scrittura gemella in SalesOrderRepository::insertOrderHeader().
-        $venditaScopertoConfermataDa = !empty($venditaScopertoDettaglio) ? $userId : null;
-        $venditaScopertoConfermataAt = !empty($venditaScopertoDettaglio) ? date('Y-m-d H:i:s') : null;
-        $venditaScopertoDettaglioJson = !empty($venditaScopertoDettaglio) ? json_encode($venditaScopertoDettaglio) : null;
-        $stHead->execute([
-            ':numero_ordine'           => $numeroOrdine,
-            ':preventivo_id'           => $id,
-            ':cliente_id'              => $quota['cliente_id'],
-            ':azienda_interna_id'      => $quota['azienda_interna_id'] ?: null,
-            ':magazzino_id'            => $magazzinoRiservaId,
-            ':data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
-            ':riferimento_interno'     => $quota['riferimento_interno'] ?: null,
-            ':condizioni_pagamento'    => $quota['condizioni_pagamento'] ?: null,
-            ':trasporto'               => $quota['trasporto'] ?: null,
-            ':valuta'                  => $quota['valuta'] ?: 'EUR',
-            ':listino_id'              => !empty($quota['listino_id']) ? (int)$quota['listino_id'] : qk_get_listino_default_id($pdo),
-            ':note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),
-            ':indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?: null,
-            ':consegna_via'            => $quota['consegna_via'] ?: null,
-            ':consegna_civico'         => $quota['consegna_civico'] ?: null,
-            ':consegna_cap'            => $quota['consegna_cap'] ?: null,
-            ':consegna_citta'          => $quota['consegna_citta'] ?: null,
-            ':consegna_provincia'      => $quota['consegna_provincia'] ?: null,
-            ':consegna_nazione'        => $quota['consegna_nazione'] ?: 'IT',
-            ':consegna_presso'         => $quota['consegna_presso'] ?: null,
-            ':consegna_referente'      => $quota['consegna_referente'] ?: null,
-            ':consegna_telefono'       => $quota['consegna_telefono'] ?: null,
-            ':consegna_note'           => $quota['consegna_note'] ?: null,
-            ':contatto_id'             => $quota['contatto_id'] ?: null,
-            ':contatto_nome'           => $quota['contatto_nome'] ?: null,
-            ':contatto_email'          => $quota['contatto_email'] ?: null,
-            ':contatto_telefono'       => $quota['contatto_telefono'] ?: null,
-            ':indirizzo_consegna_id'   => $indirizzo_consegna_id ?: null,
-            ':contatto_snapshot_id'    => $contatto_snapshot_id ?: null,
-            ':azienda_ragione_sociale' => $quota['azienda_ragione_sociale'] ?: null,
-            ':azienda_partita_iva'     => $quota['azienda_partita_iva'] ?: null,
-            ':azienda_codice_fiscale'  => $quota['azienda_codice_fiscale'] ?: null,
-            ':azienda_indirizzo'       => $quota['azienda_indirizzo'] ?: null,
-            ':azienda_telefono'        => $quota['azienda_telefono'] ?: null,
-            ':azienda_email'           => $quota['azienda_email'] ?: null,
-            ':azienda_iban'            => $quota['azienda_iban'] ?: null,
-            ':cliente_ragione_sociale' => $quota['cliente_ragione_sociale'] ?: null,
-            ':cliente_partita_iva'     => $quota['cliente_partita_iva'] ?: null,
-            ':cliente_codice_fiscale'  => $quota['cliente_codice_fiscale'] ?: null,
-            ':cliente_indirizzo'       => $quota['cliente_indirizzo'] ?: null,
-            ':vendita_scoperto_confermata_da' => $venditaScopertoConfermataDa,
-            ':vendita_scoperto_confermata_at' => $venditaScopertoConfermataAt,
-            ':vendita_scoperto_dettaglio'     => $venditaScopertoDettaglioJson,
-            ':creato_da'               => $userId
-        ]);
-        $ordineId = (int)$pdo->lastInsertId();
 
-        // 4. Create ordini_clienti_righe and reserve stock quantities
-        $sqlLine = "INSERT INTO ordini_clienti_righe (
-            ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata, quantita_spedita,
-            unita_misura_id, prezzo_unitario, sconto_perc, iva_perc, costo_unitario,
-            quantita_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
-            num_factor_snapshot, den_factor_snapshot, quantita_confezione, note
-        ) VALUES (
-            :ordine_id, :preventivo_riga_id, :prodotto_id, :descrizione, :quantita_ordinata, 0,
-            :unita_misura_id, :prezzo_unitario, :sconto_perc, :iva_perc, :costo_unitario,
-            :quantita_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
-            :num_factor_snapshot, :den_factor_snapshot, :quantita_confezione, :note
-        )";
-        $stLine = $pdo->prepare($sqlLine);
+        $data = [
+            'cliente_id'              => $quota['cliente_id'],
+            'azienda_interna_id'      => $quota['azienda_interna_id'] ?? null,
+            'data_consegna_prevista'  => qk_null_if_empty($quota['data_consegna_richiesta'] ?? ''),
+            'riferimento_interno'     => $quota['riferimento_interno'] ?? null,
+            'condizioni_pagamento'    => $quota['condizioni_pagamento'] ?? null,
+            'trasporto'               => $quota['trasporto'] ?? null,
+            'valuta'                  => $quota['valuta'] ?? 'EUR',
+            'listino_id'              => $quota['listino_id'] ?? null, // fallback sul default gestito DENTRO qk_ordine_cliente_salva()
+            'note'                    => qk_null_if_empty($quota['note_cliente'] ?? ''),
+            'indirizzo_spedizione_id' => $quota['indirizzo_spedizione_id'] ?? null,
+            'consegna_via'            => $quota['consegna_via'] ?? null,
+            'consegna_civico'         => $quota['consegna_civico'] ?? null,
+            'consegna_cap'            => $quota['consegna_cap'] ?? null,
+            'consegna_citta'          => $quota['consegna_citta'] ?? null,
+            'consegna_provincia'      => $quota['consegna_provincia'] ?? null,
+            'consegna_nazione'        => $quota['consegna_nazione'] ?? 'IT',
+            'consegna_presso'         => $quota['consegna_presso'] ?? null,
+            'consegna_referente'      => $quota['consegna_referente'] ?? null,
+            'consegna_telefono'       => $quota['consegna_telefono'] ?? null,
+            'consegna_note'           => $quota['consegna_note'] ?? null,
+            'contatto_id'             => $quota['contatto_id'] ?? null,
+            'contatto_nome'           => $quota['contatto_nome'] ?? null,
+            'contatto_email'          => $quota['contatto_email'] ?? null,
+            'contatto_telefono'       => $quota['contatto_telefono'] ?? null,
+            'indirizzo_consegna_id'   => $indirizzo_consegna_id ?? null,
+            'contatto_snapshot_id'    => $contatto_snapshot_id ?? null,
+            'azienda_ragione_sociale' => $quota['azienda_ragione_sociale'] ?? null,
+            'azienda_partita_iva'     => $quota['azienda_partita_iva'] ?? null,
+            'azienda_codice_fiscale'  => $quota['azienda_codice_fiscale'] ?? null,
+            'azienda_indirizzo'       => $quota['azienda_indirizzo'] ?? null,
+            'azienda_telefono'        => $quota['azienda_telefono'] ?? null,
+            'azienda_email'           => $quota['azienda_email'] ?? null,
+            'azienda_iban'            => $quota['azienda_iban'] ?? null,
+            'cliente_ragione_sociale' => $quota['cliente_ragione_sociale'] ?? null,
+            'cliente_partita_iva'     => $quota['cliente_partita_iva'] ?? null,
+            'cliente_codice_fiscale'  => $quota['cliente_codice_fiscale'] ?? null,
+            'cliente_indirizzo'       => $quota['cliente_indirizzo'] ?? null,
+        ];
 
+        // Righe in forma canonica (stesse chiavi lette da
+        // qk_ordine_cliente_salva(), vedi anche
+        // OrderCalculatorService::insertDirectOrder() per lo stesso mapping
+        // sul percorso gemello): 'quantita' -> 'quantita_ordinata',
+        // 'id' (riga preventivo) -> 'preventivo_riga_id', 'note_riga' -> 'note'.
+        $righeCanoniche = [];
         foreach ($righe as $r) {
-            $stLine->execute([
-                ':ordine_id'          => $ordineId,
-                ':preventivo_riga_id' => $r['id'],
-                ':prodotto_id'        => $r['prodotto_id'] ?: null,
-                ':descrizione'        => $r['descrizione'],
-                ':quantita_ordinata'  => $r['quantita'],
-                ':unita_misura_id'    => $r['unita_misura_id'] ?: null,
-                ':prezzo_unitario'    => $r['prezzo_unitario'] ?? 0,
-                ':sconto_perc'        => $r['sconto_perc'] ?? 0,
-                ':iva_perc'           => $r['iva_perc'] ?? 22,
-                ':costo_unitario'     => $r['costo_unitario'] ?? 0,
-                ':quantita_stock'     => $r['quantita_stock'],
-                ':unita_misura_stock_id' => $r['unita_misura_stock_id'] ?: null,
-                ':quantita_contenuto_snapshot' => $r['quantita_contenuto_snapshot'] ?? 1.0,
-                ':num_factor_snapshot' => $r['num_factor_snapshot'] ?? 1,
-                ':den_factor_snapshot' => $r['den_factor_snapshot'] ?? 1,
-                ':quantita_confezione' => $r['quantita_confezione'] ?? null,
-                ':note'               => qk_null_if_empty($r['note_riga'] ?? '')
-            ]);
-            $rigaOrdineId = (int)$pdo->lastInsertId();
-
-            // Reserve stock (kit-aware: vedi qk_riserva_stock_ordine in includes/magazzino.php)
-            // $rigaOrdineId passato per congelare lo snapshot Kit (AUDIT 3 §3.3).
-            if (!empty($r['prodotto_id']) && (float)$r['quantita_stock'] > 0) {
-                qk_riserva_stock_ordine($pdo, (int)$r['prodotto_id'], (float)$r['quantita_stock'], $magazzinoRiservaId, $rigaOrdineId);
-            }
+            $righeCanoniche[] = [
+                'preventivo_riga_id'          => $r['id'],
+                'prodotto_id'                 => $r['prodotto_id'] ?? null,
+                'descrizione'                 => $r['descrizione'],
+                'quantita_ordinata'           => $r['quantita'],
+                'unita_misura_id'             => $r['unita_misura_id'] ?? null,
+                'prezzo_unitario'             => $r['prezzo_unitario'] ?? 0,
+                'sconto_perc'                 => $r['sconto_perc'] ?? 0,
+                'iva_perc'                    => $r['iva_perc'] ?? 22,
+                'costo_unitario'              => $r['costo_unitario'] ?? 0,
+                'quantita_stock'              => $r['quantita_stock'],
+                'unita_misura_stock_id'       => $r['unita_misura_stock_id'] ?? null,
+                'quantita_contenuto_snapshot' => $r['quantita_contenuto_snapshot'] ?? 1.0,
+                'num_factor_snapshot'         => $r['num_factor_snapshot'] ?? 1,
+                'den_factor_snapshot'         => $r['den_factor_snapshot'] ?? 1,
+                'quantita_confezione'         => $r['quantita_confezione'] ?? null,
+                // Risolve differenza "1.7" del piano: prima questo percorso
+                // non scriveva mai system_unit_price_stock (restava sempre al
+                // default di colonna 0.00) — qk_ordine_cliente_salva() lo
+                // scrive sempre, quindi va passato qui invece di essere
+                // omesso come prima.
+                'system_unit_price_stock'     => $r['system_unit_price_stock'] ?? 0,
+                'note'                        => qk_null_if_empty($r['note_riga'] ?? ''),
+            ];
         }
 
-        qk_compliance_log_transactions($pdo, $ordineId, $righe);
+        $ordineId = qk_ordine_cliente_salva(
+            $pdo,
+            $data,
+            $righeCanoniche,
+            $userId,
+            $magazzinoRiservaId,
+            $id, // preventivoId
+            $venditaScopertoDettaglio,
+            $dataOrdineOggiSqlite
+        );
 
         $pdo->commit();
         return $ordineId;

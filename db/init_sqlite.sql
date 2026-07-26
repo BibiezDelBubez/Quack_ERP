@@ -1407,6 +1407,44 @@ CREATE TABLE IF NOT EXISTS ordini_clienti_righe (
 
 
 -- =============================================================================
+-- 21bis. RICHIESTE DI CORREZIONE ORDINE CLIENTE (ordine già fatturato)
+-- =============================================================================
+-- PIANO - Revisione Ordini Clienti (Nuova Versione), §7.7.6/Tappa 9 (26/07/2026).
+-- Copre il caso: un ordine già marcato stato_fatturazione='fatturato' contiene
+-- un errore (quantità/prezzo) scoperto tardi. "Crea Nuova Versione" resta
+-- bloccato apposta in questo caso (§4.3) — qui si registra una richiesta di
+-- correzione con approvazione di un secondo utente (maker-checker), MAI una
+-- riscrittura diretta dell'ordine. Tipi decimali allineati a
+-- ordini_clienti_righe.quantita_ordinata/prezzo_unitario (righe 1376,1379).
+CREATE TABLE IF NOT EXISTS richieste_correzione_ordine (
+    id                       INTEGER      PRIMARY KEY AUTOINCREMENT,
+    ordine_id                INTEGER      NOT NULL REFERENCES ordini_clienti(id),
+    motivo                   TEXT,                          -- nota discorsiva, opzionale: il dettaglio vero sta nelle righe
+    stato                    TEXT         NOT NULL DEFAULT 'in_approvazione'
+                                          CHECK (stato IN ('in_approvazione','approvata','rifiutata')),
+    riferimento_doc_esterno  VARCHAR(50),                   -- es. "SGA-NC-2026-045"; obbligatorio solo se approvata
+    motivo_rifiuto           TEXT,                          -- obbligatorio solo se rifiutata
+    creato_da                INTEGER      NOT NULL REFERENCES utenti(id),
+    created_at               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    chiusa_da                INTEGER      REFERENCES utenti(id),
+    chiusa_il                DATETIME,
+    CHECK ( (stato = 'approvata' AND riferimento_doc_esterno IS NOT NULL) OR stato != 'approvata' ),
+    CHECK ( (stato = 'rifiutata' AND motivo_rifiuto IS NOT NULL) OR stato != 'rifiutata' )
+);
+
+CREATE TABLE IF NOT EXISTS richieste_correzione_righe (
+    id                        INTEGER       PRIMARY KEY AUTOINCREMENT,
+    richiesta_id              INTEGER       NOT NULL REFERENCES richieste_correzione_ordine(id) ON DELETE CASCADE,
+    riga_ordine_id_originale  INTEGER       NOT NULL REFERENCES ordini_clienti_righe(id),
+    prodotto_id               INTEGER       REFERENCES prodotti(id),
+    quantita_originale        DECIMAL(10,3) NOT NULL,
+    prezzo_unitario_originale DECIMAL(10,4) NOT NULL,
+    quantita_corretta         DECIMAL(10,3) NOT NULL,
+    prezzo_unitario_corretta  DECIMAL(10,4) NOT NULL,
+    CHECK (quantita_originale != quantita_corretta OR prezzo_unitario_originale != prezzo_unitario_corretta)
+);
+
+-- =============================================================================
 -- 22. FATTURE
 -- =============================================================================
 

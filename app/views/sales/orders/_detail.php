@@ -142,7 +142,57 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
         </button>
       </form>
     <?php endif; ?>
+
+    <?php if ($isFatturato): ?>
+      <!-- PIANO - Revisione Ordini Clienti (Nuova Versione), §7.7/Tappa 9
+           (26/07/2026): "Crea Nuova Versione" resta bloccato per un ordine
+           già fatturato (§4.3) — questo è lo strumento sostitutivo, con
+           approvazione, mai una riscrittura diretta dell'ordine. -->
+      <a href="<?= url('sales/orders/correzioni/new') ?>?ordine_id=<?= $id ?>" class="btn-qk btn-qk-secondary btn-qk-sm">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i> Richiedi Correzione
+      </a>
+    <?php endif; ?>
   </div>
+
+  <?php $richiesteCorrezione = qk_correzioni_ordine_lista($this->pdo, $id); ?>
+  <?php if (!empty($richiesteCorrezione)): ?>
+    <div class="qk-card mt-3">
+      <div class="qk-card-header">Richieste di Correzione</div>
+      <div class="qk-card-body">
+        <?php foreach ($richiesteCorrezione as $rc): ?>
+          <div class="qk-correzione-item mb-3">
+            <p>
+              <strong>Richiesta #<?= (int)$rc['id'] ?></strong>
+              — stato: <strong><?= e($rc['stato']) ?></strong>
+              — creata da <?= e($rc['creato_da_completo'] ?? '—') ?> il <?= e($rc['created_at']) ?>
+              <?php if (!empty($rc['motivo'])): ?><br>Motivo: <?= e($rc['motivo']) ?><?php endif; ?>
+              <?php if ($rc['stato'] === 'approvata'): ?><br>Riferimento documento esterno: <?= e($rc['riferimento_doc_esterno']) ?><?php endif; ?>
+              <?php if ($rc['stato'] === 'rifiutata'): ?><br>Motivo rifiuto: <?= e($rc['motivo_rifiuto']) ?><?php endif; ?>
+            </p>
+
+            <?php if ($rc['stato'] === 'in_approvazione' && can('approvare_correzioni')): ?>
+              <form action="<?= url('sales/orders/correzioni/action') ?>" method="post" class="d-inline">
+                <?= csrf_field() ?>
+                <input type="hidden" name="azione" value="approva">
+                <input type="hidden" name="ordine_id" value="<?= $id ?>">
+                <input type="hidden" name="richiesta_id" value="<?= (int)$rc['id'] ?>">
+                <input type="text" name="riferimento_doc_esterno" class="qk-form-control d-inline-block" style="width:auto" placeholder="Numero nota di credito esterna" required>
+                <button type="submit" class="btn-qk btn-qk-primary btn-qk-sm">Approva</button>
+              </form>
+              <form action="<?= url('sales/orders/correzioni/action') ?>" method="post" class="d-inline">
+                <?= csrf_field() ?>
+                <input type="hidden" name="azione" value="rifiuta">
+                <input type="hidden" name="ordine_id" value="<?= $id ?>">
+                <input type="hidden" name="richiesta_id" value="<?= (int)$rc['id'] ?>">
+                <input type="text" name="motivo_rifiuto" class="qk-form-control d-inline-block" style="width:auto" placeholder="Motivo del rifiuto" required>
+                <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm text-danger">Rifiuta</button>
+              </form>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <div class="qk-sticky-action-bar-right">
     <?php if (!$isAnnullato && !$isCompletato && !$isSuperato): ?>

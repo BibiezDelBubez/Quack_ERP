@@ -65,6 +65,11 @@ return [
     '/sales/shipments/new'        => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'nuova',       'auth' => true, 'permission' => 'manage_warehouse'],
     '/sales/shipments/ddt/view'   => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'ddtView',     'auth' => true],
 
+    // ─── Vendite — Correzioni ordine già fatturato (PIANO - Revisione Ordini
+    // Clienti (Nuova Versione), §7.7/Tappa 9, 26/07/2026) ───────────────────
+    '/sales/orders/correzioni/new'    => ['type' => 'controller', 'controller' => 'CorrezioniOrdiniController', 'action' => 'nuova',  'auth' => true, 'permission' => 'manage_orders'],
+    '/sales/orders/correzioni/action' => ['type' => 'controller', 'controller' => 'CorrezioniOrdiniController', 'action' => 'action', 'auth' => true, 'permission' => 'manage_orders'],
+
     // ─── Vendite — Listini vendita ─────────────────────────────────────────
     '/sales/pricelists'                  => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'index',          'auth' => true],
     '/sales/pricelists/create'           => ['type' => 'controller', 'controller' => 'SalesPricelistsController', 'action' => 'create',         'auth' => true, 'permission' => 'edit_prices'],

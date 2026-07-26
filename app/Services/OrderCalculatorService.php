@@ -7,6 +7,13 @@ use PDO;
 use App\Repositories\SalesOrderRepository;
 use Throwable;
 
+// qk_ordine_cliente_salva() (PIANO - Unificazione Creazione Ordine Cliente,
+// eseguito il 26/07/2026) vive in includes/sales_orders.php — richiesta qui
+// in testa al file (CLAUDE.md punto 4), non lasciata al caso che il
+// chiamante di questa classe (qk_insert_ordine_diretto(), stesso file)
+// l'abbia già inclusa per un altro motivo.
+require_once __DIR__ . '/../../includes/sales_orders.php';
+
 class OrderCalculatorService
 {
     private PDO $pdo;
@@ -43,6 +50,23 @@ class OrderCalculatorService
      */
     public function insertDirectOrder(array $values, array $righe, int $userId, int $magazzinoId, array $venditaScopertoDettaglio = []): int
     {
+        // PIANO - Unificazione Creazione Ordine Cliente (eseguito il
+        // 26/07/2026): questo metodo non scrive più direttamente
+        // ordini_clienti/ordini_clienti_righe tramite
+        // $this->repository->insertOrderHeader()/::insertOrderLine() — le
+        // costruisce ancora (righe invariate rispetto a prima), ma la
+        // SCRITTURA vera e propria è delegata a qk_ordine_cliente_salva()
+        // (includes/sales_orders.php), stesso identico punto usato anche dal
+        // percorso "da preventivo" (qk_preventivo_conferma_ordine()).
+        //
+        // La transazione esterna resta qui (invariata) per includere anche
+        // la creazione degli snapshot indirizzo/contatto sotto, che devono
+        // restare atomici col resto esattamente come prima di questo piano;
+        // qk_ordine_cliente_salva() rileva la transazione già aperta
+        // ($pdo->inTransaction()) e si appoggia ad essa invece di aprirne
+        // una propria annidata (stesso pattern già usato da
+        // qk_next_sequence_number(), verificato con un test dedicato nella
+        // suite tests/manual/suite_ordine_cliente_salva_unificata.php §5).
         $this->pdo->beginTransaction();
         try {
             $denorm = qk_denormalize_document_details($this->pdo, $values);
@@ -79,47 +103,36 @@ class OrderCalculatorService
             $orderData = array_merge($values, $denorm);
             $orderData['indirizzo_consegna_id'] = $indirizzoConsegnaId;
             $orderData['contatto_snapshot_id'] = $contattoSnapshotId;
-            $orderData['creato_da'] = $userId;
             $orderData['magazzino_id'] = $magazzinoRiservaId;
+            // NB: 'creato_da' non entra più in $orderData — qk_ordine_cliente_salva()
+            // lo riceve come parametro esplicito $userId (usato SEMPRE per la
+            // colonna creato_da, mai letto da $data), non da questo array.
 
-            // Audit trail vendita allo scoperto (P4, §3.5): valorizzato SOLO
-            // se il chiamante ha già rilevato e fatto confermare righe
-            // scoperte. Vuoto -> le 3 colonne restano NULL (default della
-            // Repository), come per qualunque ordine senza scoperto.
-            if (!empty($venditaScopertoDettaglio)) {
-                $orderData['vendita_scoperto_confermata_da'] = $userId;
-                $orderData['vendita_scoperto_confermata_at'] = date('Y-m-d H:i:s');
-                $orderData['vendita_scoperto_dettaglio'] = json_encode($venditaScopertoDettaglio);
-            }
-
-            $ordineId = $this->repository->insertOrderHeader($orderData);
-
-            // ── Inserimento righe ────────────────────────────────────────────────
+            // ── Righe in forma canonica ──────────────────────────────────────────
             // Conversione UoM centralizzata in qk_calcola_righe_stock_ordine()
             // (includes/sales_orders.php) — stessa funzione già usata dal
             // controller per il controllo di disponibilità PRIMA di questa
             // chiamata (Tappa 4), invece di un loop di conversione duplicato
-            // qui dentro. Stesso ordine di $righe in input.
+            // qui dentro. Stesso ordine di $righe in input. Stessa forma già
+            // costruita PRIMA di questo piano (solo non più passata alla
+            // Repository riga per riga, ma accumulata e passata in blocco a
+            // qk_ordine_cliente_salva() sotto).
             $righeStock = qk_calcola_righe_stock_ordine($this->pdo, $righe);
 
+            $righeCanoniche = [];
             foreach ($righe as $idx => $r) {
                 $prodottoId = $righeStock[$idx]['prodotto_id'];
                 $umId       = $righeStock[$idx]['unita_misura_id'];
                 $uomResult  = $righeStock[$idx]['uom'];
-                $qta = (float) ($r['quantita'] ?? 0);
-                $pu  = (float) ($r['prezzo_unitario'] ?? 0);
-                $sc  = (float) ($r['sconto_perc'] ?? 0);
-                $iva = (float) ($r['iva_perc'] ?? 22);
 
-                $lineData = [
-                    'ordine_id' => $ordineId,
+                $righeCanoniche[] = [
                     'prodotto_id' => $prodottoId,
                     'descrizione' => $r['descrizione'],
-                    'quantita_ordinata' => $qta,
+                    'quantita_ordinata' => (float) ($r['quantita'] ?? 0),
                     'unita_misura_id' => $umId,
-                    'prezzo_unitario' => $pu,
-                    'sconto_perc' => $sc,
-                    'iva_perc' => $iva,
+                    'prezzo_unitario' => (float) ($r['prezzo_unitario'] ?? 0),
+                    'sconto_perc' => (float) ($r['sconto_perc'] ?? 0),
+                    'iva_perc' => (float) ($r['iva_perc'] ?? 22),
                     'costo_unitario' => (float) ($r['costo_unitario'] ?? 0),
                     'quantita_confezione' => $r['quantita_confezione'] ?? null,
                     'quantita_contenuto_snapshot' => $uomResult['quantita_contenuto_snapshot'],
@@ -130,14 +143,26 @@ class OrderCalculatorService
                     'unita_misura_stock_id' => $uomResult['unita_misura_stock_id'],
                     'note' => $r['note_riga'] ?? null,
                 ];
-
-                $rigaOrdineId = $this->repository->insertOrderLine($lineData);
-
-                if ($prodottoId) {
-                    // $rigaOrdineId passato per congelare lo snapshot Kit (AUDIT 3 §3.3).
-                    qk_riserva_stock_ordine($this->pdo, $prodottoId, $uomResult['quantita_stock'], $magazzinoRiservaId, $rigaOrdineId);
-                }
             }
+
+            $ordineId = qk_ordine_cliente_salva(
+                $this->pdo,
+                $orderData,
+                $righeCanoniche,
+                $userId,
+                $magazzinoRiservaId,
+                null, // preventivoId: percorso diretto, nessun preventivo di origine.
+                $venditaScopertoDettaglio,
+                // $dataOrdine ESPLICITO: la data scelta dall'utente sul form
+                // (Repository::insertOrderHeader() la leggeva direttamente da
+                // $data['data_ordine'], obbligatoria — qk_ordine_diretto_validate()
+                // la richiede). Senza passarla qui esplicitamente,
+                // qk_ordine_cliente_salva() userebbe il proprio default "oggi",
+                // scartando silenziosamente la data scelta dall'utente — bug
+                // trovato e corretto in questa stessa sessione PRIMA di
+                // eseguire qualunque test sul percorso da preventivo.
+                $orderData['data_ordine'] ?? null
+            );
 
             $this->pdo->commit();
             return $ordineId;

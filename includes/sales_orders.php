@@ -12,6 +12,10 @@ require_once __DIR__ . '/../app/Services/TransitionGuard.php';
 // testa al file), non lasciata al caso che il chiamante (oggi
 // SalesOrdersController.php) la includa lui per un altro motivo.
 require_once __DIR__ . '/compliance.php';
+// qk_ordine_cliente_salva() (sotto, PIANO - Unificazione Creazione Ordine
+// Cliente) chiama qk_get_listino_default_id() — stessa motivazione del
+// require sopra, dichiarata qui e non lasciata al caso del chiamante.
+require_once __DIR__ . '/tabelle_base.php';
 
 /**
  * Genera il prossimo numero progressivo per l'ordine cliente diretto.
@@ -102,6 +106,310 @@ function qk_calcola_righe_stock_ordine(PDO $pdo, array $righe): array
         ];
     }
     return $out;
+}
+
+/**
+ * Crea un ordine cliente (testata + righe) — UNICO punto di scrittura su
+ * ordini_clienti/ordini_clienti_righe in fase di CREAZIONE, sia per il
+ * percorso diretto sia per il percorso da preventivo accettato.
+ *
+ * PIANO - Unificazione Creazione Ordine Cliente (eseguito il 26/07/2026 su
+ * autorizzazione esplicita "esegui"): prima di questa funzione esistevano
+ * due INSERT scritti a mano indipendenti — SalesOrderRepository::
+ * insertOrderHeader()/::insertOrderLine() per il percorso diretto, due
+ * INSERT inline dentro qk_preventivo_conferma_ordine() per il percorso da
+ * preventivo — stesso risultato finale ma derive indipendenti nel tempo (8
+ * differenze reali documentate nel piano). La più grave: sul percorso
+ * diretto il log compliance veniva scritto DAL CONTROLLER, dopo che la
+ * transazione di inserimento era già stata committata — un ordine poteva
+ * restare creato con l'audit trail compliance silenziosamente mancante se
+ * quella chiamata falliva. Qui il log compliance è DENTRO la stessa
+ * transazione (vedi sotto), un suo fallimento fa rollback dell'intero
+ * ordine.
+ *
+ * Precedente diretto in questo progetto: stesso trattamento già dato in
+ * Ciclo Acquisti a offerte-da-RFQ vs offerte "spontanee" con
+ * qk_offerta_save() (includes/purchases_quotes.php:155-316) — un solo punto
+ * di scrittura, l'origine (RFQ/preventivo) è solo un campo opzionale in più.
+ *
+ * qk_ordine_cliente_crea_revisione() (sopra) resta FUORI SCOPO e NON chiama
+ * questa funzione: non fa "creazione" nel senso qui inteso (parte da un
+ * ordine già esistente) e usa già un pattern strutturalmente diverso e
+ * robusto (SELECT * + unset()) per conto proprio.
+ *
+ * @param array $data Dati di testata GIÀ RISOLTI dal chiamante — in
+ *        particolare indirizzo_consegna_id/contatto_snapshot_id devono
+ *        arrivare già calcolati (snapshot creato ex-novo o riusato da uno
+ *        esistente: quella logica resta a monte, nel chiamante, invariata
+ *        rispetto a oggi, stesso principio di $v['rfq_id'] in
+ *        qk_offerta_save()). Chiavi lette: cliente_id, azienda_interna_id,
+ *        data_consegna_prevista, stato, stato_fatturazione,
+ *        riferimento_interno, condizioni_pagamento, trasporto, valuta,
+ *        listino_id, note, indirizzo_spedizione_id, consegna_via/civico/cap/
+ *        citta/provincia/nazione/presso/referente/telefono/note, contatto_id,
+ *        contatto_nome, contatto_email, contatto_telefono,
+ *        indirizzo_consegna_id, contatto_snapshot_id, azienda_ragione_sociale/
+ *        partita_iva/codice_fiscale/indirizzo/telefono/email/iban,
+ *        cliente_ragione_sociale/partita_iva/codice_fiscale/indirizzo.
+ * @param array $righe Righe in forma canonica (stessa forma già costruita
+ *        oggi da OrderCalculatorService::insertDirectOrder()): prodotto_id,
+ *        descrizione, quantita_ordinata, unita_misura_id, prezzo_unitario,
+ *        sconto_perc, iva_perc, costo_unitario, quantita_confezione,
+ *        quantita_contenuto_snapshot, num_factor_snapshot, den_factor_snapshot,
+ *        quantita_stock, system_unit_price_stock, unita_misura_stock_id, note,
+ *        preventivo_riga_id (opzionale, solo per righe nate da un preventivo).
+ * @param ?int $preventivoId Se valorizzato, l'ordine nasce da un preventivo
+ *        accettato — mirror esatto di $v['rfq_id'] in qk_offerta_save().
+ * @param array $venditaScopertoDettaglio Righe scoperte già confermate
+ *        esplicitamente dal chiamante PRIMA di questa chiamata (PIANO -
+ *        Vendita Allo Scoperto Controllata, P4, §3.3/§3.5). Vuoto (default):
+ *        nessuna riga scoperta, le 3 colonne di audit trail restano NULL.
+ * @param ?string $dataOrdine Data ordine esplicita; default "oggi" (mirror
+ *        del CURRENT_DATE già usato oggi da qk_preventivo_conferma_ordine()
+ *        — nessun cambiamento di comportamento visibile, solo la possibilità
+ *        futura di passare una data diversa).
+ * @return int id del nuovo ordine.
+ */
+function qk_ordine_cliente_salva(
+    PDO $pdo,
+    array $data,
+    array $righe,
+    int $userId,
+    int $magazzinoId,
+    ?int $preventivoId = null,
+    array $venditaScopertoDettaglio = [],
+    ?string $dataOrdine = null
+): int {
+    // Entrambi i chiamanti reali (OrderCalculatorService::insertDirectOrder()
+    // e qk_preventivo_conferma_ordine()) aprono GIÀ una propria transazione
+    // esterna prima di arrivare qui (per la logica di snapshot indirizzo/
+    // contatto e, nel caso preventivo, per la guardia di stato) — PDO/SQLite
+    // non supporta beginTransaction() annidate (solleva subito una
+    // PDOException). Stesso identico pattern "$ownTransaction =
+    // !$pdo->inTransaction()" già usato da qk_next_sequence_number()
+    // (includes/functions.php:540) per lo stesso motivo: se questa funzione
+    // viene chiamata da sola (come nella suite dedicata isolata), gestisce la
+    // propria transazione; se viene chiamata da dentro una transazione già
+    // aperta, si appoggia a quella del chiamante e lascia a LUI l'ultima
+    // parola su commit/rollback.
+    $ownTransaction = !$pdo->inTransaction();
+    if ($ownTransaction) {
+        $pdo->beginTransaction();
+    }
+    try {
+        // qk_next_sequence_number() diretta, non qk_next_numero_ordine_cliente()
+        // (che vive in includes/sales_quotes.php, non richiesto da questo file
+        // — stesso identico pattern già usato 20 righe sopra da
+        // qk_next_numero_ordine_diretto()): eviterebbe una dipendenza da un
+        // file che oggi non fa parte della require chain di sales_orders.php.
+        $numeroOrdine = qk_next_sequence_number($pdo, 'ordine_cliente');
+
+        // Risolve differenza "1.2" del piano: fallback sul listino di
+        // default applicato SEMPRE, non solo sul percorso preventivo (prima
+        // il percorso diretto non lo applicava mai, restava NULL).
+        $listinoId = !empty($data['listino_id']) ? (int) $data['listino_id'] : qk_get_listino_default_id($pdo);
+
+        // Audit trail vendita allo scoperto (P4, §3.5): NULL nei 3 campi se
+        // non ci sono righe scoperte confermate — stesso significato
+        // identico nelle due scritture gemelle preesistenti.
+        $venditaScopertoConfermataDa  = !empty($venditaScopertoDettaglio) ? $userId : null;
+        $venditaScopertoConfermataAt  = !empty($venditaScopertoDettaglio) ? date('Y-m-d H:i:s') : null;
+        $venditaScopertoDettaglioJson = !empty($venditaScopertoDettaglio) ? json_encode($venditaScopertoDettaglio) : null;
+
+        $st = $pdo->prepare("
+            INSERT INTO ordini_clienti (
+                numero_ordine, cliente_id, preventivo_id, azienda_interna_id, magazzino_id,
+                data_ordine, data_consegna_prevista,
+                stato, stato_fatturazione,
+                riferimento_interno, condizioni_pagamento, trasporto, valuta,
+                listino_id, note,
+                indirizzo_spedizione_id,
+                consegna_via, consegna_civico, consegna_cap, consegna_citta,
+                consegna_provincia, consegna_nazione, consegna_presso,
+                consegna_referente, consegna_telefono, consegna_note,
+                contatto_id, contatto_nome, contatto_email, contatto_telefono,
+                indirizzo_consegna_id, contatto_snapshot_id,
+                azienda_ragione_sociale, azienda_partita_iva, azienda_codice_fiscale, azienda_indirizzo, azienda_telefono, azienda_email, azienda_iban,
+                cliente_ragione_sociale, cliente_partita_iva, cliente_codice_fiscale, cliente_indirizzo,
+                vendita_scoperto_confermata_da, vendita_scoperto_confermata_at, vendita_scoperto_dettaglio,
+                creato_da, created_at, updated_at
+            ) VALUES (
+                ?, ?, ?, ?, ?,
+                ?, ?,
+                ?, ?,
+                ?, ?, ?, ?,
+                ?, ?,
+                ?,
+                ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+        ");
+        $st->execute([
+            $numeroOrdine,
+            $data['cliente_id'],
+            $preventivoId,
+            // PIANO - Normalizzazione Stringa Vuota su Campi FK Opzionali
+            // (eseguito il 26/07/2026): un campo opzionale lasciato in
+            // bianco sul form arriva qui come stringa vuota '', mai come
+            // null — "??" non la intercetta (scatta solo su chiave assente
+            // o null vero), quindi '' veniva scritta intatta su una colonna
+            // FK, violando il vincolo (SQLite la rifiuta come se fosse un
+            // id inesistente). Stesso identico pattern "!empty(...) ? (int)
+            // ... : null" già usato due righe sotto per listino_id in
+            // questa stessa funzione — nessun codice nuovo, solo esteso.
+            !empty($data['azienda_interna_id']) ? (int) $data['azienda_interna_id'] : null,
+            $magazzinoId,
+            $dataOrdine ?? date('Y-m-d'),
+            $data['data_consegna_prevista'] ?? null,
+            $data['stato'] ?? 'in_lavorazione',
+            $data['stato_fatturazione'] ?? 'da_fatturare',
+            $data['riferimento_interno'] ?? null,
+            $data['condizioni_pagamento'] ?? null,
+            $data['trasporto'] ?? null,
+            $data['valuta'] ?? 'EUR',
+            $listinoId,
+            $data['note'] ?? null,
+            // Stessa correzione di azienda_interna_id sopra: FK nullable,
+            // '' va convertita in null, non lasciata passare da "??".
+            !empty($data['indirizzo_spedizione_id']) ? (int) $data['indirizzo_spedizione_id'] : null,
+            $data['consegna_via'] ?? null,
+            $data['consegna_civico'] ?? null,
+            $data['consegna_cap'] ?? null,
+            $data['consegna_citta'] ?? null,
+            $data['consegna_provincia'] ?? null,
+            $data['consegna_nazione'] ?? 'IT',
+            $data['consegna_presso'] ?? null,
+            $data['consegna_referente'] ?? null,
+            $data['consegna_telefono'] ?? null,
+            $data['consegna_note'] ?? null,
+            // Stessa correzione: FK nullable verso clienti_fornitori(id),
+            // '' va convertita in null.
+            !empty($data['contatto_id']) ? (int) $data['contatto_id'] : null,
+            $data['contatto_nome'] ?? null,
+            $data['contatto_email'] ?? null,
+            $data['contatto_telefono'] ?? null,
+            $data['indirizzo_consegna_id'] ?? null,
+            $data['contatto_snapshot_id'] ?? null,
+            $data['azienda_ragione_sociale'] ?? null,
+            $data['azienda_partita_iva'] ?? null,
+            $data['azienda_codice_fiscale'] ?? null,
+            $data['azienda_indirizzo'] ?? null,
+            $data['azienda_telefono'] ?? null,
+            $data['azienda_email'] ?? null,
+            $data['azienda_iban'] ?? null,
+            $data['cliente_ragione_sociale'] ?? null,
+            $data['cliente_partita_iva'] ?? null,
+            $data['cliente_codice_fiscale'] ?? null,
+            $data['cliente_indirizzo'] ?? null,
+            $venditaScopertoConfermataDa,
+            $venditaScopertoConfermataAt,
+            $venditaScopertoDettaglioJson,
+            $userId,
+        ]);
+        $ordineId = (int) $pdo->lastInsertId();
+
+        $stRiga = $pdo->prepare("
+            INSERT INTO ordini_clienti_righe (
+                ordine_id, preventivo_riga_id, prodotto_id, descrizione, quantita_ordinata,
+                unita_misura_id, prezzo_unitario, sconto_perc, iva_perc, costo_unitario,
+                quantita_confezione, quantita_contenuto_snapshot,
+                num_factor_snapshot, den_factor_snapshot,
+                quantita_stock, system_unit_price_stock, unita_misura_stock_id,
+                quantita_spedita, note, created_at
+            ) VALUES (
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?,
+                ?, ?,
+                ?, ?, ?,
+                0, ?, CURRENT_TIMESTAMP
+            )
+        ");
+
+        // Righe nella stessa forma canonica passate anche al log compliance
+        // sotto, ma RIMAPPATE lì (vedi commento più sotto: logTransactions()
+        // legge la chiave 'quantita', non 'quantita_ordinata' — verificato
+        // leggendo App\Services\ComplianceCheckerService::logTransactions()
+        // riga 134 in questa stessa sessione, non assunto per somiglianza di
+        // nome).
+        foreach ($righe as $r) {
+            $prodottoId = !empty($r['prodotto_id']) ? (int) $r['prodotto_id'] : null;
+            $qtaStock   = (float) ($r['quantita_stock'] ?? 0);
+
+            $stRiga->execute([
+                $ordineId,
+                $r['preventivo_riga_id'] ?? null,
+                $prodottoId,
+                $r['descrizione'],
+                $r['quantita_ordinata'],
+                $r['unita_misura_id'] ?? null,
+                $r['prezzo_unitario'] ?? 0,
+                $r['sconto_perc'] ?? 0,
+                $r['iva_perc'] ?? 22,
+                $r['costo_unitario'] ?? 0,
+                $r['quantita_confezione'] ?? null,
+                $r['quantita_contenuto_snapshot'] ?? 1.0,
+                $r['num_factor_snapshot'] ?? 1,
+                $r['den_factor_snapshot'] ?? 1,
+                // Risolve differenza "1.8" del piano: arrotondamento applicato
+                // sempre, non solo sul percorso diretto.
+                round($qtaStock, 3),
+                // Risolve differenza "1.7" del piano: scritto SEMPRE, anche dal
+                // percorso preventivo (prima restava sempre al default di
+                // colonna 0.00 — dato silenziosamente falso; nessuna funzione
+                // lo legge oggi, ma resta una lacuna di integrità dati).
+                $r['system_unit_price_stock'] ?? 0,
+                $r['unita_misura_stock_id'] ?? null,
+                $r['note'] ?? null,
+            ]);
+            $rigaOrdineId = (int) $pdo->lastInsertId();
+
+            if ($prodottoId && $qtaStock > 0) {
+                // $rigaOrdineId passato per congelare lo snapshot Kit (AUDIT 3 §3.3).
+                qk_riserva_stock_ordine($pdo, $prodottoId, $qtaStock, $magazzinoId, $rigaOrdineId);
+            }
+        }
+
+        // Risolve differenza "1.1" del piano, IL PUNTO PIÙ GRAVE: log
+        // compliance DENTRO la stessa transazione dell'inserimento — prima,
+        // sul percorso diretto, veniva scritto dal controller DOPO che
+        // insertDirectOrder() aveva già committato la propria transazione
+        // interna (un fallimento qui lasciava l'ordine creato senza audit
+        // trail compliance). Ora un fallimento qui fa rollback dell'intero
+        // ordine, incluse le righe e la riserva appena scritte sopra.
+        //
+        // ComplianceCheckerService::logTransactions() (verificato riga
+        // 132-135 in questa sessione) legge $item['quantita'] (o
+        // 'quantity'), MAI 'quantita_ordinata' — rimappata esplicitamente
+        // qui per non ripetere silenziosamente lo stesso bug di
+        // "quantità sempre letta come 0, riga saltata senza errore" che
+        // avrebbe reso questa stessa correzione inefficace.
+        $itemsCompliance = array_map(static function (array $r): array {
+            return [
+                'prodotto_id'     => $r['prodotto_id'] ?? null,
+                'quantita'        => $r['quantita_ordinata'] ?? 0,
+                'unita_misura_id' => $r['unita_misura_id'] ?? null,
+            ];
+        }, $righe);
+        qk_compliance_log_transactions($pdo, $ordineId, $itemsCompliance);
+
+        if ($ownTransaction) {
+            $pdo->commit();
+        }
+        return $ordineId;
+    } catch (\Throwable $e) {
+        if ($ownTransaction) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
 }
 
 /**
