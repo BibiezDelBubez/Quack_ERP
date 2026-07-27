@@ -47,24 +47,19 @@ const elHelperContent= document.getElementById('ord-cliente-helper-content');
 let _spedOriginal = {}; // dati originali dell'indirizzo selezionato
 let _contOriginal = {};
 
-function selectCliente(item) {
-  elClienteId.value    = item.id;
-  elClienteLabel.value = item.label;
-  elClienteSearch.value = item.label;
+function selectCliente(id, row) {
+  elClienteLabel.value = row.label;
   if (elBtnClear) elBtnClear.classList.remove('d-none');
-  const parts = [item.email, item.telefono].filter(Boolean);
+  const parts = [row.email, row.telefono].filter(Boolean);
   if (parts.length > 0 && elHelper) {
     elHelperContent.textContent = parts.join(' · ');
     elHelper.style.display = '';
   }
-  loadClienteDettagli(item.id);
+  loadClienteDettagli(id);
 }
 
 function clearCliente() {
-  elClienteId.value = '';
   elClienteLabel.value = '';
-  elClienteSearch.value = '';
-  if (elBtnClear) elBtnClear.classList.add('d-none');
   if (elHelper) elHelper.style.display = 'none';
   const spedSel = document.getElementById('ord-indirizzo-spedizione-id');
   const contSel = document.getElementById('ord-contatto-id');
@@ -73,16 +68,34 @@ function clearCliente() {
   document.getElementById('ord-sped-fields-box').style.display = 'none';
 }
 
-elBtnClear?.addEventListener('click', clearCliente);
 elClienteSearch?.addEventListener('input', () => { if (!elClienteSearch.value.trim()) clearCliente(); });
 
-window.qkAutocomplete({
-  input:    elClienteSearch,
-  dropdown: elClienteDrop,
-  fetchFn:  (q) => apiFetch('/sales/orders/api/clienti?q=' + encodeURIComponent(q)),
-  onSelect: selectCliente,
-  onCreate: () => openModal('ord-modal-nuovo-cliente'),
-  createLabel: 'Crea nuovo cliente',
+// Migrato da window.qkAutocomplete a QkM2O (componente condiviso, vedi
+// docs/plans/PIANO - Unificazione Autocomplete, 27/07/2026). elClienteId/
+// elClienteSearch sono gestiti automaticamente da QkM2O (hiddenEl/inputEl);
+// elClienteLabel resta un secondo campo nascosto separato, non coperto da
+// QkM2O, aggiornato a mano in selectCliente/clearCliente come già prima.
+// D3: QkPicker "Cerca di più…" tiene raggiungibile il "+Crea" anche a vuoto.
+const clientePicker = new QkPicker({
+  title:       'Cerca cliente',
+  apiUrl:      BASE + '/sales/orders/api/clienti',
+  columns:     [{ key: 'label', label: 'Nome' }, { key: 'email', label: 'E-mail' }],
+  onSelect:    selectCliente,
+  allowCreate: true,
+  onCreate:    () => openModal('ord-modal-nuovo-cliente'),
+});
+
+new QkM2O({
+  inputEl:    elClienteSearch,
+  hiddenEl:   elClienteId,
+  dropdownEl: elClienteDrop,
+  clearBtn:   elBtnClear,
+  apiUrl:     BASE + '/sales/orders/api/clienti',
+  labelKey:   'label',
+  picker:     clientePicker,
+  onSelect:   selectCliente,
+  onClear:    clearCliente,
+  onCreate:   () => openModal('ord-modal-nuovo-cliente'),
 });
 
 async function loadClienteDettagli(clienteId) {
@@ -275,9 +288,9 @@ function buildRiga(prefill = {}) {
 
   tr.innerHTML = `
     <td class="col-search">
-      <div class="qk-ac-wrap">
-        <input type="text" class="qk-form-control ord-riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione||'')}">
-        <div class="qk-ac-dropdown ord-riga-ac-drop"></div>
+      <div class="qk-m2o-wrap">
+        <input type="text" class="qk-form-control qk-m2o-input ord-riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione||'')}">
+        <div class="qk-m2o-dropdown ord-riga-ac-drop"></div>
       </div>
       <div class="riga-sku">${prefill.sku ? 'SKU: '+esc(prefill.sku) : ''}</div>
       <input type="hidden" name="righe[${idx}][prodotto_id]" class="ord-inp-prodotto-id" value="${prefill.prodotto_id||''}">
@@ -342,40 +355,59 @@ function buildRiga(prefill = {}) {
     tr.querySelector('.' + cls)?.addEventListener('input', calcTotali);
   });
 
-  // Autocomplete prodotto
+  // Autocomplete prodotto — migrato da window.qkAutocomplete a QkM2O (vedi
+  // docs/plans/PIANO - Unificazione Autocomplete, 27/07/2026). hiddenEl copre
+  // .ord-inp-prodotto-id e srch.value automaticamente; il resto (uom, prezzo,
+  // dataset riga) resta gestito qui come prima.
   const srch = tr.querySelector('.ord-riga-search');
   const drop = tr.querySelector('.ord-riga-ac-drop');
-  window.qkAutocomplete({
-    input:    srch,
-    dropdown: drop,
-    fetchFn:  (q) => apiFetch('/sales/orders/api/prodotti?q=' + encodeURIComponent(q)),
-    onSelect: (item) => {
-      tr.querySelector('.ord-inp-prodotto-id').value  = item.id;
-      tr.querySelector('.ord-inp-desc').value         = item.label;
-      tr.querySelector('.ord-inp-qta').value          = '1';
-      tr.querySelector('.ord-inp-pu').value           = '';
-      tr.dataset.uomStock         = item.unita_misura || 'pz';
-      tr.dataset.uomStockId       = item.unita_misura_stock_id || '';
-      tr.dataset.uomCommercial    = item.unita_misura_commerciale || item.unita_misura || 'pz';
-      tr.dataset.uomCommercialId  = item.unita_contenuto_id || item.unita_misura_stock_id || '';
-      tr.dataset.quantitaContenuto= item.quantita_contenuto || '1';
-      tr.dataset.costoBase        = item.costo_base || '0';
-      tr.querySelector('.ord-inp-uom-stock').value         = tr.dataset.uomStock;
-      tr.querySelector('.ord-inp-uom-stock-id').value      = tr.dataset.uomStockId;
-      tr.querySelector('.ord-inp-uom-commercial').value    = tr.dataset.uomCommercial;
-      tr.querySelector('.ord-inp-uom-commercial-id').value = tr.dataset.uomCommercialId;
-      tr.querySelector('.ord-inp-qcont').value             = tr.dataset.quantitaContenuto;
-      tr.querySelector('.ord-inp-sku').value               = item.sku || '';
-      tr.querySelector('.ord-inp-costo-hidden').value      = tr.dataset.costoBase;
-      const skuDiv = tr.querySelector('.riga-sku');
-      if (skuDiv) skuDiv.textContent = item.sku ? 'SKU: '+item.sku : '';
-      setRowUomMode(tr, currentUomMode, 'stock');
-      srch.value = item.label;
-      fetchOrdinePrice(tr, item);
-      calcTotali();
-    },
-    onCreate: () => openModal('ord-modal-nuovo-prodotto'),
-    createLabel: 'Crea nuovo prodotto',
+  const prodottoIdHidden = tr.querySelector('.ord-inp-prodotto-id');
+
+  function selectProdottoRiga(id, row) {
+    tr.querySelector('.ord-inp-prodotto-id').value  = id;
+    tr.querySelector('.ord-riga-search').value      = row.label;
+    tr.querySelector('.ord-inp-desc').value         = row.label;
+    tr.querySelector('.ord-inp-qta').value          = '1';
+    tr.querySelector('.ord-inp-pu').value           = '';
+    tr.dataset.uomStock         = row.unita_misura || 'pz';
+    tr.dataset.uomStockId       = row.unita_misura_stock_id || '';
+    tr.dataset.uomCommercial    = row.unita_misura_commerciale || row.unita_misura || 'pz';
+    tr.dataset.uomCommercialId  = row.unita_contenuto_id || row.unita_misura_stock_id || '';
+    tr.dataset.quantitaContenuto= row.quantita_contenuto || '1';
+    tr.dataset.costoBase        = row.costo_base || '0';
+    tr.querySelector('.ord-inp-uom-stock').value         = tr.dataset.uomStock;
+    tr.querySelector('.ord-inp-uom-stock-id').value      = tr.dataset.uomStockId;
+    tr.querySelector('.ord-inp-uom-commercial').value    = tr.dataset.uomCommercial;
+    tr.querySelector('.ord-inp-uom-commercial-id').value = tr.dataset.uomCommercialId;
+    tr.querySelector('.ord-inp-qcont').value             = tr.dataset.quantitaContenuto;
+    tr.querySelector('.ord-inp-sku').value               = row.sku || '';
+    tr.querySelector('.ord-inp-costo-hidden').value      = tr.dataset.costoBase;
+    const skuDiv = tr.querySelector('.riga-sku');
+    if (skuDiv) skuDiv.textContent = row.sku ? 'SKU: '+row.sku : '';
+    setRowUomMode(tr, currentUomMode, 'stock');
+    fetchOrdinePrice(tr, row);
+    calcTotali();
+  }
+
+  // D3: QkPicker "Cerca di più…" per riga, stesso onSelect di QkM2O.
+  const prodottoPicker = new QkPicker({
+    title:       'Cerca prodotto',
+    apiUrl:      BASE + '/sales/orders/api/prodotti',
+    columns:     [{ key: 'label', label: 'Prodotto' }, { key: 'sku', label: 'SKU' }],
+    onSelect:    selectProdottoRiga,
+    allowCreate: true,
+    onCreate:    () => openModal('ord-modal-nuovo-prodotto'),
+  });
+
+  new QkM2O({
+    inputEl:    srch,
+    hiddenEl:   prodottoIdHidden,
+    dropdownEl: drop,
+    apiUrl:     BASE + '/sales/orders/api/prodotti',
+    labelKey:   'label',
+    picker:     prodottoPicker,
+    onSelect:   selectProdottoRiga,
+    onCreate:   () => openModal('ord-modal-nuovo-prodotto'),
   });
 
   // Auto-resize textarea descrizione

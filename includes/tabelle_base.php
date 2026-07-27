@@ -26,15 +26,32 @@ function qk_get_canali_vendita_attivi(PDO $pdo): array
 }
 
 /**
- * Ritorna l'elenco dei listini di vendita attivi
+ * Ritorna l'elenco dei listini di vendita attivi.
+ *
+ * $q (PIANO - Unificazione Autocomplete, D2, 27/07/2026): filtro opzionale per
+ * nome, usato dal nuovo endpoint di ricerca listini (SalesQuotesController::
+ * apiListini) che sostituisce il filtro client-side che il campo "listino" in
+ * sales-quotes.js faceva su un array già scaricato in memoria — qui invece
+ * interroga davvero il server, come tutti gli altri campi di ricerca migrati
+ * su QkM2O. Parametro opzionale: tutti i chiamanti esistenti (verificati con
+ * grep su tutto il repo: CustomersController, ProductsController,
+ * SalesOrdersController, SalesQuotesController, nessuno passa un 3° argomento)
+ * continuano a funzionare identici.
  */
-function qk_get_listini_vendita_attivi(PDO $pdo, bool $excludeDefault = false): array
+function qk_get_listini_vendita_attivi(PDO $pdo, bool $excludeDefault = false, string $q = ''): array
 {
-    $where = "WHERE attivo = 1";
+    $where  = "WHERE attivo = 1";
+    $params = [];
     if ($excludeDefault) {
         $where .= " AND is_default = 0";
     }
-    return $pdo->query("SELECT id, nome, valuta FROM listini $where ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
+    if ($q !== '') {
+        $where .= " AND nome LIKE :q";
+        $params[':q'] = '%' . $q . '%';
+    }
+    $stmt = $pdo->prepare("SELECT id, nome, valuta FROM listini $where ORDER BY nome ASC");
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /**

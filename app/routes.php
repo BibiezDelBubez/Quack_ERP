@@ -42,6 +42,7 @@ return [
     '/sales/quotes/docx'         => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'docx',     'auth' => true],
     '/sales/quotes/api/clienti'  => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiClienti', 'auth' => true],
     '/sales/quotes/api/prodotti' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiProdotti', 'auth' => true],
+    '/sales/quotes/api/listini'  => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiListini', 'auth' => true],
     '/sales/quotes/api/crea-cliente'  => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCreaCliente', 'auth' => true, 'permission' => 'manage_orders'],
     '/sales/quotes/api/crea-prodotto' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCreaProdotto', 'auth' => true, 'permission' => 'manage_catalog'],
     '/sales/quotes/api/check-compliance' => ['type' => 'controller', 'controller' => 'SalesQuotesController', 'action' => 'apiCheckCompliance', 'auth' => true],

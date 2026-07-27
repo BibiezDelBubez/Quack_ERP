@@ -1,5 +1,7 @@
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
   'use strict';
+
+  if (typeof window.QkPurchaseQuote === 'undefined') return;
 
   const API_FORNITORI = window.QkPurchaseQuote.apiFornitori;
   const API_PRODOTTI  = window.QkPurchaseQuote.apiProdotti;
@@ -10,103 +12,54 @@
   let fornitoreSel = { id: window.QkPurchaseQuote.fornitoreId, nome: '' };
   let rigaIdx      = 0;
 
-  function autocomplete({ inputEl, dropdownEl, clearEl, hiddenEl, fetchFn, onSelect }) {
-    let timer = null;
-
-    inputEl.addEventListener('input', () => {
-      clearTimeout(timer);
-      const q = inputEl.value.trim();
-      if (q.length < 1) { dropdownEl.innerHTML = ''; dropdownEl.style.display = 'none'; return; }
-      timer = setTimeout(async () => {
-        const items = await fetchFn(q);
-        if (!items.length) {
-          dropdownEl.innerHTML = '<div class="qk-m2o-item qk-text-muted" style="font-size:.83rem">Nessun risultato</div>';
-        } else {
-          dropdownEl.innerHTML = items.map(it =>
-            `<div class="qk-m2o-item" data-id="${it.id}" data-label="${it.label?.replace(/"/g,'&quot;') ?? ''}" data-extra='${JSON.stringify(it)}'>${it.label ?? ''}</div>`
-          ).join('');
-        }
-        dropdownEl.style.display = 'block';
-
-        dropdownEl.querySelectorAll('.qk-m2o-item[data-id]').forEach(el => {
-          el.addEventListener('mousedown', e => {
-            e.preventDefault();
-            const data = JSON.parse(el.dataset.extra);
-            hiddenEl.value  = el.dataset.id;
-            inputEl.value   = el.dataset.label;
-            dropdownEl.style.display = 'none';
-            if (clearEl) { clearEl.classList.remove('d-none'); }
-            onSelect && onSelect(data);
-          });
-        });
-      }, 220);
-    });
-
-    inputEl.addEventListener('blur', () => {
-      setTimeout(() => { dropdownEl.style.display = 'none'; }, 200);
-    });
-
-    if (clearEl) {
-      clearEl.addEventListener('click', () => {
-        hiddenEl.value = '';
-        inputEl.value  = '';
-        clearEl.classList.add('d-none');
-        dropdownEl.style.display = 'none';
-        onSelect && onSelect(null);
-      });
-    }
+  const prodottoM2oInstances = [];
+  function buildProdottoApiUrl() {
+    return `${API_PRODOTTI}?fornitore_id=${fornitoreSel.id || 0}`;
   }
 
-  async function fetchFornitori(q) {
-    const res = await fetch(`${API_FORNITORI}?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    return (data.fornitori ?? []).map(f => ({
-      id: f.id,
-      label: f.nome,
-      codice: f.codice,
-      ...f
-    }));
+  function fillRigaProdotto(tr, row) {
+    tr.querySelector('.r-sku').value = row.sku_fornitore ?? '';
+    tr.querySelector('.r-uom-id').value = row.uom_id ?? '';
+    tr.querySelector('.r-uom-label').textContent = row.uom ?? '—';
+    tr.querySelector('.r-prezzo').value = row.prezzo_unitario ?? '';
   }
 
-  async function fetchProdotti(q) {
-    const url = `${API_PRODOTTI}?q=${encodeURIComponent(q)}&fornitore_id=${fornitoreSel.id || 0}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    return (data.prodotti ?? []).map(p => ({
-      id:            p.id,
-      label:         `${p.nome} (${p.sku_interno})`,
-      nome:          p.nome,
-      sku_interno:   p.sku_interno,
-      sku_fornitore: p.sku_fornitore ?? '',
-      uom_id:        p.unita_misura_id ?? '',
-      uom:           p.uom ?? '',
-      prezzo:        p.prezzo_unitario ?? '',
-    }));
+  function clearRigaProdotto(tr) {
+    tr.querySelector('.r-sku').value = '';
+    tr.querySelector('.r-uom-id').value = '';
+    tr.querySelector('.r-uom-label').textContent = '—';
+    tr.querySelector('.r-prezzo').value = '';
   }
 
   if (CAN_EDIT && IS_SPONTANEOUS) {
-    // Autocomplete fornitore
     const fInput    = document.getElementById('off-fornitore-label');
     const fHidden   = document.getElementById('off-fornitore-id');
     const fDropdown = document.getElementById('off-fornitore-dropdown');
     const fClear    = document.getElementById('off-fornitore-clear');
 
     if (fInput) {
-      autocomplete({
+      new QkM2O({
         inputEl:    fInput,
-        dropdownEl: fDropdown,
-        clearEl:    fClear,
         hiddenEl:   fHidden,
-        fetchFn:    fetchFornitori,
-        onSelect:   (sel) => {
-          fornitoreSel = sel ? { id: String(sel.id), nome: sel.label } : { id: '', nome: '' };
+        dropdownEl: fDropdown,
+        clearBtn:   fClear,
+        apiUrl:     API_FORNITORI,
+        labelKey:   'nome',
+        columns:    [{ key: 'nome', label: 'Fornitore' }, { key: 'partita_iva', label: 'P.IVA' }],
+        onSelect: (id, row) => {
+          fornitoreSel = { id: String(id), nome: row.nome };
+          prodottoM2oInstances.forEach(m2o => { m2o.cfg.apiUrl = buildProdottoApiUrl(); });
+          loadFornitoreDettagli();
+        },
+        onClear: () => {
+          fornitoreSel = { id: '', nome: '' };
+          prodottoM2oInstances.forEach(m2o => { m2o.cfg.apiUrl = buildProdottoApiUrl(); });
           loadFornitoreDettagli();
         },
       });
       if (fHidden.value) fClear?.classList.remove('d-none');
     }
 
-    // Righe dinamiche
     const tbody   = document.querySelector('#form-offerta table.qk-table tbody');
     const tplRiga = document.getElementById('tpl-riga');
     const btnAdd  = document.getElementById('btn-add-riga');
@@ -129,33 +82,6 @@
       const pDropdown = tr.querySelector('.r-prodotto-dropdown');
       const pClear    = tr.querySelector('.r-prodotto-clear');
 
-      autocomplete({
-        inputEl:    pInput,
-        dropdownEl: pDropdown,
-        clearEl:    pClear,
-        hiddenEl:   pHidden,
-        fetchFn:    fetchProdotti,
-        onSelect:   (p) => {
-          if (p) {
-            tr.querySelector('.r-sku').value = p.sku_fornitore ?? '';
-            tr.querySelector('.r-uom-id').value = p.uom_id ?? '';
-            tr.querySelector('.r-uom-label').textContent = p.uom ?? '—';
-            tr.querySelector('.r-prezzo').value = p.prezzo ?? '';
-          } else {
-            tr.querySelector('.r-sku').value = '';
-            tr.querySelector('.r-uom-id').value = '';
-            tr.querySelector('.r-uom-label').textContent = '—';
-            tr.querySelector('.r-prezzo').value = '';
-          }
-        }
-      });
-
-      tr.querySelector('.r-rimuovi').addEventListener('click', () => {
-        tr.remove();
-      });
-
-      const defaultDateInput = document.getElementById('off-data-consegna-default');
-      if (defaultDateInput && defaultDateInput.value) {
         const rowDate = tr.querySelector('.r-consegna');
         if (rowDate && !rowDate.value) {
           rowDate.value = defaultDateInput.value;
@@ -246,20 +172,15 @@
       const pClear    = container.querySelector('.r-prodotto-clear');
       const tr        = container.closest('tr');
 
-      autocomplete({
+      new QkM2O({
         inputEl:    pInput,
-        dropdownEl: pDropdown,
-        clearEl:    pClear,
         hiddenEl:   pHidden,
-        fetchFn:    fetchProdotti,
-        onSelect:   (p) => {
-          if (p) {
-            tr.querySelector('.r-sku').value = p.sku_fornitore ?? '';
-            tr.querySelector('.r-uom-id').value = p.uom_id ?? '';
-            tr.querySelector('.r-uom-label').textContent = p.uom ?? '—';
-            tr.querySelector('.r-prezzo').value = p.prezzo ?? '';
-          }
-        }
+        dropdownEl: pDropdown,
+        clearBtn:   pClear,
+        apiUrl:     buildProdottoApiUrl(),
+        labelKey:   'nome',
+        columns:    [{ key: 'nome', label: 'Prodotto' }, { key: 'sku_interno', label: 'SKU' }],
+        onSelect:   (id, row) => fillRigaProdotto(tr, row),
       });
 
       // Tasto crea prodotto al volo per sostituto

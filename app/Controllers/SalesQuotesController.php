@@ -455,11 +455,14 @@ final class SalesQuotesController extends BaseController
     public function apiClienti(): void
     {
         header('Content-Type: application/json; charset=utf-8');
-        $q = get_param('q');
-        if (strlen($q) < 1) {
-            echo '[]';
-            exit;
-        }
+        // Il guard "query vuota -> []" e' stato rimosso (PIANO - Unificazione
+        // Autocomplete, D3, 27/07/2026): con QkPicker "Cerca di piu'" il primo
+        // caricamento del modale usa sempre q='', quindi questo guard
+        // renderebbe il picker permanentemente vuoto per il campo cliente.
+        // qk_search_clienti() gestisce gia' bene q='' (LIKE '%%', tutti i
+        // clienti attivi) - stesso comportamento di SalesOrdersController::
+        // apiClienti(), che non ha mai avuto questo guard.
+        $q = get_param('q', '');
         echo json_encode(qk_search_clienti($this->pdo, $q), JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -471,6 +474,22 @@ final class SalesQuotesController extends BaseController
         header('Content-Type: application/json; charset=utf-8');
         $q = get_param('q');
         echo json_encode(qk_search_prodotti_sales($this->pdo, $q), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    /* ── API: ricerca listini (JSON) ──────────────────────────────────────────
+       PIANO - Unificazione Autocomplete, D2, 27/07/2026: sostituisce il
+       filtro client-side che il campo "listino" del form preventivo faceva
+       su un array preload (window.QK_QUOTES_CONFIG.listini), migrato su
+       QkM2O che richiede sempre un vero endpoint di ricerca. */
+
+    public function apiListini(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $q = get_param('q', '');
+        $listini = qk_get_listini_vendita_attivi($this->pdo, false, $q);
+        $result = array_map(fn($l) => ['id' => $l['id'], 'nome' => $l['nome'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini);
+        echo json_encode($result, JSON_UNESCAPED_UNICODE);
         exit;
     }
 

@@ -230,20 +230,40 @@ function qk_load_categorie(PDO $pdo): array
     return $result;
 }
 
-/** Restituisce categorie filtrabili per il picker (ricerca testuale). */
-function qk_search_categorie(PDO $pdo, string $q = '', int $limit = 50): array
+/**
+ * Restituisce categorie filtrabili per il picker (ricerca testuale).
+ *
+ * $excludeId (PIANO - Unificazione Autocomplete, D4, 27/07/2026): permette di
+ * escludere una categoria specifica dai risultati — usato dal campo "categoria
+ * genitore" nel form di modifica categoria, per evitare che una categoria
+ * compaia come possibile genitore di se stessa. Prima di questa modifica il
+ * filtro esisteva solo client-side (assets/js/products-categories.js), perso
+ * migrando il campo su QkM2O (che interroga l'endpoint direttamente).
+ */
+function qk_search_categorie(PDO $pdo, string $q = '', int $limit = 50, ?int $excludeId = null): array
 {
+    $conditions = [];
+    $params     = [];
+
     if ($q !== '') {
-        $stmt = $pdo->prepare(
-            'SELECT id, nome FROM categorie_prodotto WHERE nome LIKE :q ORDER BY nome LIMIT :lim'
-        );
-        $stmt->execute([':q' => '%' . $q . '%', ':lim' => $limit]);
-    } else {
-        $stmt = $pdo->prepare(
-            'SELECT id, nome FROM categorie_prodotto ORDER BY nome LIMIT :lim'
-        );
-        $stmt->execute([':lim' => $limit]);
+        $conditions[] = 'nome LIKE :q';
+        $params[':q'] = '%' . $q . '%';
     }
+    if ($excludeId !== null) {
+        $conditions[] = 'id != :exclude_id';
+        $params[':exclude_id'] = $excludeId;
+    }
+
+    $where = $conditions ? ' WHERE ' . implode(' AND ', $conditions) : '';
+
+    $stmt = $pdo->prepare(
+        'SELECT id, nome FROM categorie_prodotto' . $where . ' ORDER BY nome LIMIT :lim'
+    );
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, $key === ':exclude_id' ? PDO::PARAM_INT : PDO::PARAM_STR);
+    }
+    $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+    $stmt->execute();
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 

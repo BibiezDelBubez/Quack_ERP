@@ -261,66 +261,27 @@
       return s;
     }
 
-    /* ── Prodotto autocomplete ───────────────────────────────────────────── */
+    /* ── Prodotto: ricerca via QkM2O (componente condiviso, vedi audit DRY/UI
+       27/07/2026 — prima qui c'era una ricerca scritta a mano con classi
+       .qkwh-dd-* proprie, mai riusate altrove). L'indicatore "traccia lotti"
+       che compariva come icona nel menu di ricerca non ha un equivalente
+       diretto nel rendering standard di QkM2O (due colonne testo, niente
+       badge): resta comunque visibile subito dopo la selezione, nel box
+       informativo del prodotto (infoLottiRow/infoLottiOffRow più sotto). */
 
-    let debounceTimer = null;
-
-    prodSearch.addEventListener('input', function () {
-      clearTimeout(debounceTimer);
-      const q = this.value.trim();
-      if (q.length < 2) { closeDropdown(); return; }
-      debounceTimer = setTimeout(() => searchProdotti(q), 250);
+    new QkM2O({
+      inputEl:    prodSearch,
+      hiddenEl:   prodIdInput,
+      dropdownEl: prodDropdown,
+      apiUrl:     cfg.apiProdottiSearch,
+      labelKey:   'nome',
+      columns:    [{ key: 'nome', label: 'Prodotto' }, { key: 'sku_interno', label: 'SKU' }],
+      onSelect:   (id, row) => { selectProdotto(row); },
     });
-
-    prodSearch.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { closeDropdown(); }
-    });
-
-    document.addEventListener('click', function (e) {
-      if (!prodSearch.contains(e.target) && !prodDropdown.contains(e.target)) {
-        closeDropdown();
-      }
-    });
-
-    async function searchProdotti(q) {
-      try {
-        const res  = await fetch(cfg.apiProdottiSearch + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) return;
-        renderDropdown(data.prodotti);
-      } catch (e) {
-        console.error('[warehouse-movement] Errore ricerca prodotti:', e);
-      }
-    }
-
-    function renderDropdown(prodotti) {
-      prodDropdown.innerHTML = '';
-      if (prodotti.length === 0) {
-        prodDropdown.innerHTML = '<div class="qkwh-dd-empty">Nessun prodotto trovato</div>';
-        prodDropdown.hidden = false;
-        return;
-      }
-      prodotti.forEach(p => {
-        const item = document.createElement('div');
-        item.className = 'qkwh-dd-item';
-        item.innerHTML =
-          '<span class="qkwh-dd-sku">' + esc(p.sku_interno) + '</span>' +
-          '<span class="qkwh-dd-nome">' + esc(p.nome) + '</span>' +
-          (p.traccia_lotti ? '<span class="qkwh-dd-lotti"><i class="fa-solid fa-tag"></i></span>' : '');
-        item.addEventListener('click', () => selectProdotto(p));
-        prodDropdown.appendChild(item);
-      });
-      prodDropdown.hidden = false;
-    }
-
-    function closeDropdown() {
-      prodDropdown.hidden = true;
-    }
 
     async function selectProdotto(p) {
       prodSearch.value  = p.sku_interno + ' — ' + p.nome;
       prodIdInput.value = p.id;
-      closeDropdown();
       await loadProdottoInfo(p.id);
     }
 
@@ -368,10 +329,6 @@
       } catch (e) {
         console.error('[warehouse-movement] Errore caricamento info prodotto:', e);
       }
-    }
-
-    function esc(s) {
-      return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     /* ── Cambio magazzino a prodotto già scelto: ricarica giacenza e lotti

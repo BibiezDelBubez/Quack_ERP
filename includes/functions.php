@@ -327,6 +327,25 @@ function get_param(string $key, string|int|float|bool|null $default = ''): strin
     return trim((string) $_GET[$key]);
 }
 
+/**
+ * Restituisce un intero da POST, o null se il campo è assente, vuoto o
+ * non è un intero valido. Usare per id opzionali su form condivisi tra
+ * creazione e modifica: filter_input() da solo, in quel caso, ritorna
+ * `false` invece di `null` — causa nota di TypeError sulle funzioni con
+ * parametro tipizzato `?int $id` (vedi qk_save_category, qk_save_tag).
+ */
+function post_int(string $key): ?int {
+    return filter_input(INPUT_POST, $key, FILTER_VALIDATE_INT) ?: null;
+}
+
+/**
+ * Restituisce un intero da GET, o null se il campo è assente, vuoto o
+ * non è un intero valido. Stesse regole di post_int(), vedi sopra.
+ */
+function get_int(string $key): ?int {
+    return filter_input(INPUT_GET, $key, FILTER_VALIDATE_INT) ?: null;
+}
+
 /* ── Formattazione ────────────────────────────────────────────────────────── */
 
 /** Formatta un importo in euro */

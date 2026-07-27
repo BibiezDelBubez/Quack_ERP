@@ -7,57 +7,31 @@
   var CAT_COLS = ['nome','parent_nome','posizione_categoria','immagine_path'];
   var CAT_HEADERS = ['nome *','parent_nome','posizione_categoria','immagine_path'];
 
-  // ── Autocomplete per Categoria Genitore ─────────────────────────────────────
-  function fetchParentCategories(term, callback) {
-    var selfId = document.getElementById('cat-id').value;
-    fetch(cfg.apiUrl + '?q=' + encodeURIComponent(term))
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        var results = data.map(function(item) {
-          return { id: item.id, label: item.nome };
-        });
-        if (selfId) {
-          results = results.filter(function(item) {
-            return String(item.id) !== String(selfId);
-          });
-        }
-        callback(results);
-      })
-      .catch(function(err) {
-        console.error('Errore caricamento categorie:', err);
-        callback([]);
-      });
-  }
-
+  // ── Categoria Genitore ───────────────────────────────────────────────────
+  // Migrato da window.qkAutocomplete a QkM2O (componente condiviso, vedi
+  // docs/plans/PIANO - Unificazione Autocomplete, D4, 27/07/2026).
+  // L'esclusione della categoria stessa dai risultati (non puo' essere
+  // genitore di se stessa) prima era un filtro client-side qui; ora e'
+  // lato server via exclude_id (qk_search_categorie), perche' QkM2O
+  // interroga l'endpoint direttamente senza hook di trasformazione dati.
   document.addEventListener('DOMContentLoaded', function() {
     var pInput = document.getElementById('cat-parent-label');
     var pHidden = document.getElementById('cat-parent-id');
     var pDropdown = document.getElementById('cat-parent-dropdown');
     var pClear = document.getElementById('cat-parent-clear');
+    var selfId = document.getElementById('cat-id') ? document.getElementById('cat-id').value : '';
 
     if (pInput) {
-      window.qkAutocomplete({
-        input: pInput,
-        dropdown: pDropdown,
-        fetchFn: fetchParentCategories,
-        onSelect: function(sel) {
-          if (sel) {
-            pHidden.value = sel.id;
-            pInput.value = sel.label;
-            pClear.classList.remove('d-none');
-          } else {
-            pHidden.value = '';
-            pInput.value = '';
-            pClear.classList.add('d-none');
-          }
-        }
-      });
+      var apiUrl = cfg.apiUrl + (selfId ? '?exclude_id=' + encodeURIComponent(selfId) : '');
 
-      pClear.addEventListener('click', function() {
-        pHidden.value = '';
-        pInput.value = '';
-        pClear.classList.add('d-none');
-        pDropdown.style.display = 'none';
+      new QkM2O({
+        inputEl:    pInput,
+        hiddenEl:   pHidden,
+        dropdownEl: pDropdown,
+        clearBtn:   pClear,
+        apiUrl:     apiUrl,
+        labelKey:   'nome',
+        columns:    [{ key: 'nome', label: 'Nome' }],
       });
     }
   });

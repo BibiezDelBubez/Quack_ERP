@@ -164,14 +164,14 @@ $_qk_export_cat  = url('products/categories/export');
         <div class="qk-form-group">
           <label class="qk-form-label">Categoria Genitore</label>
           <input type="hidden" name="parent_id" id="cat-parent-id" value="">
-          <div class="qk-m2o-wrap" style="position:relative;">
+          <div class="qk-m2o-wrap">
             <input type="text"
                    class="qk-form-control qk-m2o-input"
                    id="cat-parent-label"
                    placeholder="Cerca categoria genitore…"
                    autocomplete="off">
             <button type="button" class="qk-m2o-clear d-none" id="cat-parent-clear">&times;</button>
-            <div class="qk-m2o-dropdown shadow-sm" id="cat-parent-dropdown" style="display:none; position:absolute; z-index:1050; background:var(--qk-card-bg); border:1px solid var(--qk-border); width:100%; max-height:200px; overflow-y:auto;"></div>
+            <div class="qk-m2o-dropdown shadow-sm" id="cat-parent-dropdown"></div>
           </div>
           <?php if (isset($errors['parent_id'])): ?>
             <div class="qk-form-error"><?= e($errors['parent_id']) ?></div>

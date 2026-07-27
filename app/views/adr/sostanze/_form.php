@@ -107,7 +107,7 @@ $pitt_selezionati = $pitt_selezionati ?? [];
               <input type="hidden" name="codice_onu_id" id="codice-onu-id" value="<?= e($v['codice_onu_id'] ?? '') ?>"
                      data-check-url="<?= url('adr/sostanze/api/check-onu') ?>"
                      data-exclude-id="<?= $sostanzaId ?>">
-              <div class="qk-m2o-wrap" style="position:relative;">
+              <div class="qk-m2o-wrap">
                 <?php
                 $onuLabel = '';
                 if (!empty($v['codice_onu'])) {
@@ -124,7 +124,7 @@ $pitt_selezionati = $pitt_selezionati ?? [];
                        value="<?= e($onuLabel) ?>"
                        autocomplete="off">
                 <button type="button" class="qk-m2o-clear <?= empty($v['codice_onu_id']) ? 'd-none' : '' ?>" id="codice-onu-clear">&times;</button>
-                <div class="qk-m2o-dropdown shadow-sm" id="codice-onu-dropdown" style="display:none; position:absolute; z-index:1050; background:var(--qk-card-bg); border:1px solid var(--qk-border); width:100%; max-height:200px; overflow-y:auto;"></div>
+                <div class="qk-m2o-dropdown shadow-sm" id="codice-onu-dropdown"></div>
               </div>
               <div id="onu-dedup-banner" style="display:none" class="mt-2 p-2 rounded small"></div>
             </div>

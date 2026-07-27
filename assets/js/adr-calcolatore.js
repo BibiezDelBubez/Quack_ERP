@@ -183,8 +183,8 @@ class QkAdrCalcolatore {
 
       const colSostanza = row.type === 'sostanza'
         ? `<select class="qk-form-control qk-form-control-sm qkac-sel-sostanza">${this._buildSelectSostanze(row.sostanzaId)}</select>`
-        : `<div style="position:relative">
-             <input type="text" class="qk-form-control qk-form-control-sm qkac-inp-search"
+        : `<div class="qk-m2o-wrap">
+             <input type="text" class="qk-form-control qk-form-control-sm qk-m2o-input qkac-inp-search"
                     value="${this._esc(row.label)}" placeholder="Cerca prodotto…"
                     ${row.prodottoId ? 'readonly' : ''}>
              ${row.prodottoId
@@ -310,70 +310,36 @@ class QkAdrCalcolatore {
 
   /* ── Typeahead prodotto ─────────────────────────────────────────────── */
 
+  /* Sostituisce fetch+dropdown scritti a mano (classi .qkac-ta-dd/.qkac-ta-
+     item mai riusate altrove) con QkM2O, il componente condiviso già usato
+     nel resto dell'app — vedi audit DRY/UI 27/07/2026. Qui non serve "crea
+     al volo" (è un calcolatore, non un form di salvataggio), quindi nessun
+     onCreate/picker.
+     Nota sul trade-off: il vecchio suggerimento combinava UN + sostanza +
+     categoria in un'unica riga sotto il nome; il rendering standard di
+     QkM2O supporta una sola colonna secondaria — ho scelto il codice UN
+     (il dato più rilevante in un calcolatore ADR). Sostanza e categoria
+     restano comunque visibili nella riga della tabella subito dopo la
+     selezione (celle .qkac-cell-un/.qkac-cell-cat, vedi _selectProdotto). */
   _setupTypeahead(rowId, inputEl, tr) {
-    // Crea dropdown se non esiste
-    let dd = inputEl.parentElement.querySelector('.qkac-ta-dd');
+    let dd = inputEl.parentElement.querySelector('.qk-m2o-dropdown');
     if (!dd) {
       dd = document.createElement('div');
-      dd.className = 'qkac-ta-dd';
-      dd.style.cssText = [
-        'position:absolute', 'z-index:9999', 'left:0', 'right:0', 'top:100%',
-        'background:var(--qk-card-bg)', 'border:1px solid var(--qk-border)',
-        'border-radius:var(--qk-radius)', 'box-shadow:0 4px 12px rgba(0,0,0,.12)',
-        'max-height:220px', 'overflow-y:auto', 'display:none',
-      ].join(';');
-      inputEl.parentElement.style.position = 'relative';
+      dd.className = 'qk-m2o-dropdown';
       inputEl.parentElement.appendChild(dd);
     }
 
-    inputEl.addEventListener('input', () => {
-      clearTimeout(this._debounce);
-      const q = inputEl.value.trim();
-      if (q.length < 1) { dd.style.display = 'none'; return; }
-      this._debounce = setTimeout(() => this._fetchProdotti(q, dd, rowId, inputEl), 220);
-    });
-
-    inputEl.addEventListener('blur', () => {
-      setTimeout(() => { dd.style.display = 'none'; }, 180);
+    new QkM2O({
+      inputEl:    inputEl,
+      dropdownEl: dd,
+      apiUrl:     this._apiProdottiAdr,
+      labelKey:   'nome',
+      columns:    [{ key: 'nome', label: 'Prodotto' }, { key: 'codice_onu', label: 'UN' }],
+      onSelect:   (id, row) => this._selectProdotto(rowId, row, inputEl),
     });
   }
 
-  _fetchProdotti(q, dd, rowId, inputEl) {
-    fetch(this._apiProdottiAdr + '?q=' + encodeURIComponent(q))
-      .then(r => r.json())
-      .then(data => {
-        if (!data.length) {
-          dd.innerHTML = `<div style="padding:.5rem .75rem;font-size:.85rem;color:var(--qk-text-muted)">Nessun prodotto ADR trovato</div>`;
-        } else {
-          dd.innerHTML = data.map(p => {
-            const sub = [
-              p.codice_onu         ? 'UN' + p.codice_onu       : null,
-              p.sostanza_nome      ? p.sostanza_nome            : null,
-              p.categoria_trasporto != null ? 'Cat.' + p.categoria_trasporto : null,
-            ].filter(Boolean).join(' · ');
-            return `<div class="qkac-ta-item" data-id="${p.id}"
-                        style="padding:.4rem .75rem;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--qk-border)"
-                        onmouseenter="this.style.background='var(--qk-bg-subtle)'"
-                        onmouseleave="this.style.background=''">
-                      <div class="fw-semibold">${this._esc(p.nome)}
-                        <span style="color:var(--qk-text-muted);font-weight:400"> ${this._esc(p.sku_interno)}</span>
-                      </div>
-                      <div style="color:var(--qk-text-muted);font-size:.78rem">${this._esc(sub)}</div>
-                    </div>`;
-          }).join('');
-          dd.querySelectorAll('.qkac-ta-item').forEach(item => {
-            item.addEventListener('mousedown', () => {
-              const prodotto = data.find(p => String(p.id) === item.dataset.id);
-              if (prodotto) this._selectProdotto(rowId, prodotto, inputEl, dd);
-            });
-          });
-        }
-        dd.style.display = 'block';
-      })
-      .catch(() => { dd.style.display = 'none'; });
-  }
-
-  _selectProdotto(rowId, p, inputEl, dd) {
+  _selectProdotto(rowId, p, inputEl) {
     const row = this._rows.find(r => r.id === rowId);
     if (!row) return;
     row.prodottoId     = p.id;
@@ -384,7 +350,7 @@ class QkAdrCalcolatore {
     row.moltiplicatore = p.moltiplicatore_punti != null ? parseInt(p.moltiplicatore_punti) : null;
     inputEl.value    = row.label;
     inputEl.readOnly = true;
-    dd.style.display = 'none';
+    // Nessun dd.style.display='none' qui: QkM2O chiude da sé il proprio dropdown alla selezione.
 
     // Aggiorna le celle statiche senza re-render completo
     const tr = this._tbody.querySelector(`[data-row-id="${rowId}"]`);

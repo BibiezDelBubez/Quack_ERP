@@ -61,14 +61,6 @@
       });
     }
 
-    function debounce(fn, wait) {
-      let t;
-      return function (...args) {
-        clearTimeout(t);
-        t = setTimeout(function () { fn.apply(null, args); }, wait);
-      };
-    }
-
     function caricaLottiRiga(tr, prodottoId) {
       const selectLotto = tr.querySelector('.riga-lotto-select');
       const magazzinoId = selectOrigine.value;
@@ -98,10 +90,10 @@
       const tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' +
-          '<div class="qkwh-prod-search-wrap" style="position:relative">' +
-            '<input type="text" class="qk-form-control riga-prodotto-search" placeholder="Cerca per nome o SKU…" autocomplete="off">' +
+          '<div class="qk-m2o-wrap">' +
+            '<input type="text" class="qk-form-control qk-m2o-input riga-prodotto-search" placeholder="Cerca per nome o SKU…" autocomplete="off">' +
             '<input type="hidden" class="riga-prodotto-id" name="riga_prodotto_id[]" value="">' +
-            '<div class="qkwh-dropdown riga-prodotto-dropdown" hidden style="position:absolute;z-index:20;background:var(--qk-bg);border:1px solid var(--qk-border);width:100%;max-height:220px;overflow-y:auto"></div>' +
+            '<div class="qk-m2o-dropdown riga-prodotto-dropdown"></div>' +
           '</div>' +
         '</td>' +
         '<td>' +
@@ -114,45 +106,29 @@
 
       righeBody.appendChild(tr);
 
-      const search   = tr.querySelector('.riga-prodotto-search');
-      const hiddenId = tr.querySelector('.riga-prodotto-id');
-      const dropdown = tr.querySelector('.riga-prodotto-dropdown');
+      const search    = tr.querySelector('.riga-prodotto-search');
+      const hiddenId  = tr.querySelector('.riga-prodotto-id');
+      const dropdown  = tr.querySelector('.riga-prodotto-dropdown');
       const removeBtn = tr.querySelector('.riga-remove');
 
-      const doSearch = debounce(function () {
-        const q = search.value.trim();
-        if (q.length < 1) { dropdown.hidden = true; dropdown.innerHTML = ''; return; }
-        fetch(cfg.apiProdottiSearch + '?q=' + encodeURIComponent(q))
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            dropdown.innerHTML = '';
-            const prodotti = (data.ok && data.prodotti) ? data.prodotti : [];
-            if (!prodotti.length) { dropdown.hidden = true; return; }
-            prodotti.forEach(function (p) {
-              const item = document.createElement('div');
-              item.className = 'qkwh-dropdown-item';
-              item.style.padding = '.4rem .6rem';
-              item.style.cursor = 'pointer';
-              item.textContent = p.sku_interno ? (p.nome + ' — ' + p.sku_interno) : p.nome;
-              item.addEventListener('click', function () {
-                hiddenId.value = p.id;
-                search.value = p.nome;
-                dropdown.hidden = true;
-                caricaLottiRiga(tr, p.id);
-              });
-              dropdown.appendChild(item);
-            });
-            dropdown.hidden = false;
-          })
-          .catch(function () { dropdown.hidden = true; });
-      }, 250);
-
-      search.addEventListener('input', function () {
-        hiddenId.value = ''; // invalida la selezione precedente finché non si sceglie di nuovo
-        doSearch();
+      // Sostituisce la ricerca scritta a mano (classi .qkwh-dropdown/.qkwh-
+      // dropdown-item mai riusate altrove) con QkM2O, il componente condiviso
+      // già usato nel resto dell'app — vedi audit DRY/UI 27/07/2026.
+      new QkM2O({
+        inputEl:    search,
+        hiddenEl:   hiddenId,
+        dropdownEl: dropdown,
+        apiUrl:     cfg.apiProdottiSearch,
+        labelKey:   'nome',
+        columns:    [{ key: 'nome', label: 'Prodotto' }, { key: 'sku_interno', label: 'SKU' }],
+        onSelect:   (id, row) => { caricaLottiRiga(tr, id); },
       });
-      search.addEventListener('blur', function () {
-        setTimeout(function () { dropdown.hidden = true; }, 150);
+
+      // Invalida la selezione precedente finché non se ne sceglie una nuova
+      // (comportamento preesistente: evita di inviare un id ormai non più
+      // corrispondente al testo digitato).
+      search.addEventListener('input', function () {
+        hiddenId.value = '';
       });
 
       removeBtn.addEventListener('click', function () {

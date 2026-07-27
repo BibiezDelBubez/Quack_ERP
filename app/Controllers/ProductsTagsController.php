@@ -40,7 +40,7 @@ final class ProductsTagsController extends BaseController
             if (!csrf_verify()) {
                 $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina.';
             } else {
-                $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+                $id = post_int('id');
                 $nome = trim(post('nome') ?? '');
 
                 if ($nome === '') {

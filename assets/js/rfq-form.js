@@ -66,18 +66,6 @@ document.addEventListener('DOMContentLoaded', function () {
         : (tr.dataset.uomCommercialId || '');
     }
   }
-  /* ── Fetch fornitori ─────────────────────────────────────────────────── */
-  async function fetchFornitori(q) {
-    const res = await fetch(`${API_FORNITORI}?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    return (data.fornitori ?? []).map(f => ({
-      id: f.id,
-      label: f.nome,
-      codice: f.codice,
-      ...f
-    }));
-  }
-
   /* ── Fetch prodotti (con prezzo fornitore se selezionato) ─────────────── */
   async function fetchProdotti(q) {
     const url = `${API_PRODOTTI}?q=${encodeURIComponent(q)}&fornitore_id=${fornitoreSel.id || 0}`;
@@ -139,7 +127,11 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   /* ══════════════════════════════════════════════════════════════════════
-     CAMPO FORNITORE (solo se editabile)
+     CAMPO FORNITORE (solo se editabile) — migrato da window.qkAutocomplete a
+     QkM2O (componente condiviso, vedi docs/plans/PIANO - Unificazione
+     Autocomplete, 27/07/2026, D1: SOLO questo campo migra, la riga prodotto
+     resta su qkAutocomplete per via del secondo listener di Invio che
+     naviga tra le righe — vedi commento su initRiga() più sotto).
   ═══════════════════════════════════════════════════════════════════════ */
   if (CAN_EDIT) {
     const fInput    = document.getElementById('rfq-fornitore-label');
@@ -148,22 +140,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const fClear    = document.getElementById('rfq-fornitore-clear');
 
     if (fInput) {
-      window.qkAutocomplete({
-        input:       fInput,
-        dropdown:    fDropdown,
-        fetchFn:     fetchFornitori,
-        onSelect:    (sel) => {
-          if (sel) {
-            fHidden.value = sel.id;
-            fInput.value = sel.label || sel.nome || '';
-            fClear?.classList.remove('d-none');
-            fornitoreSel = { id: String(sel.id), nome: sel.label || sel.nome || '' };
-          } else {
-            fHidden.value = '';
-            fInput.value = '';
-            fClear?.classList.add('d-none');
-            fornitoreSel = { id: '', nome: '' };
-          }
+      new QkM2O({
+        inputEl:    fInput,
+        hiddenEl:   fHidden,
+        dropdownEl: fDropdown,
+        clearBtn:   fClear,
+        apiUrl:     API_FORNITORI,
+        labelKey:   'label',
+        onSelect: (id, row) => {
+          fornitoreSel = { id: String(id), nome: row.label || row.nome || '' };
           loadFornitoreDettagli();
           // §1.9, punto 5 del piano: il fornitore abituale è calcolato per
           // riga al momento della selezione prodotto, ma il confronto con la
@@ -171,19 +156,12 @@ document.addEventListener('DOMContentLoaded', function () {
           // il fornitore scelto — non solo sulle righe aggiunte dopo.
           refreshAllFornitoreAbitualeWarnings();
         },
-      });
-
-      if (fClear) {
-        fClear.addEventListener('click', () => {
-          fHidden.value = '';
-          fInput.value = '';
-          fClear.classList.add('d-none');
-          fDropdown.style.display = 'none';
+        onClear: () => {
           fornitoreSel = { id: '', nome: '' };
           loadFornitoreDettagli();
           refreshAllFornitoreAbitualeWarnings();
-        });
-      }
+        },
+      });
 
       // Se c'è già un valore, mostra il tasto X
       if (fHidden.value) fClear?.classList.remove('d-none');
@@ -237,6 +215,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const rimuoviBtn   = tr.querySelector('.r-rimuovi');
     const qtyInput     = tr.querySelector('.r-qty');
 
+    // NON migrato a QkM2O (decisione D1, PIANO - Unificazione Autocomplete,
+    // 27/07/2026): questo campo ha un secondo listener di Invio più sotto
+    // (navigazione tra le righe) che si combina con la selezione da tastiera
+    // di qkAutocomplete; QkM2O non ha navigazione da frecce, quindi
+    // premere Invio dopo aver evidenziato un suggerimento salterebbe riga
+    // senza selezionare nulla. Lasciato invariato di proposito.
     window.qkAutocomplete({
       input:       prodInput,
       dropdown:    prodDropdown,

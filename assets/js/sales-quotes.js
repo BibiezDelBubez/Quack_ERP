@@ -18,16 +18,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const chkShowRange = document.getElementById('chk-show-range');
   const chkShowCosto = document.getElementById('chk-show-costo');
 
-  /* ─────────────────────────────────────────────────────────────────────────
-     UTILITÀ & AC FETCH
-     ───────────────────────────────────────────────────────────────────────── */
-  async function fetchClienti(q) {
-    try {
-      const res  = await fetch(BASE + '/sales/quotes/api/clienti?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
-      return await res.json();
-    } catch (e) { return []; }
-  }
-
+  // Riusata anche dal Catalogo Prodotti (renderCatalogo, piu' sotto) — non
+  // rimossa insieme a fetchClienti perche' ha un secondo chiamante reale.
   async function fetchProdotti(q) {
     try {
       const res  = await fetch(BASE + '/sales/quotes/api/prodotti?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
@@ -36,7 +28,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
-     GESTIONE CLIENTE
+     GESTIONE CLIENTE — migrato da window.qkAutocomplete a QkM2O (componente
+     condiviso, vedi docs/plans/PIANO - Unificazione Autocomplete, 27/07/2026)
      ───────────────────────────────────────────────────────────────────────── */
   const elClienteSearch       = document.getElementById('cliente_search');
   const elClienteId           = document.getElementById('cliente_id');
@@ -46,13 +39,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const elHelperText          = document.getElementById('cliente-helper-text');
   const elHelperContent       = document.getElementById('cliente-helper-content');
 
-  function selectCliente(item) {
-    elClienteId.value    = item.id;
-    elClienteLabel.value = item.label;
-    elClienteSearch.value = item.label;
-    if (elBtnClearInline) elBtnClearInline.classList.remove('d-none');
-    
-    const parts = [item.email, item.telefono].filter(Boolean);
+  function selectCliente(id, row) {
+    elClienteLabel.value = row.label;
+
+    const parts = [row.email, row.telefono].filter(Boolean);
     if (elHelperText && elHelperContent && parts.length > 0) {
       elHelperContent.textContent = parts.join(' · ');
       elHelperText.style.display = '';
@@ -65,26 +55,19 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function clearCliente() {
-    elClienteId.value    = '';
     elClienteLabel.value = '';
-    elClienteSearch.value = '';
-    if (elBtnClearInline) elBtnClearInline.classList.add('d-none');
-    
+
     if (elHelperText && elHelperContent) {
       elHelperContent.textContent = '';
       elHelperText.style.display = 'none';
     }
 
     checkAllRowsCompliance();
-    
+
     const spedSelect = document.getElementById('quote-indirizzo-spedizione-id');
     const contSelect = document.getElementById('quote-contatto-id');
     if (spedSelect) spedSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
     if (contSelect) contSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
-  }
-
-  if (elBtnClearInline) {
-    elBtnClearInline.addEventListener('click', clearCliente);
   }
 
   if (elClienteSearch) {
@@ -92,45 +75,53 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!elClienteSearch.value.trim()) clearCliente();
     });
 
-    window.qkAutocomplete({
-      input:       elClienteSearch,
-      dropdown:    elClienteDrop,
-      fetchFn:     fetchClienti,
+    // D3 (PIANO - Unificazione Autocomplete, 27/07/2026): QkPicker "Cerca di
+    // più…" tiene raggiungibile il "+Crea" anche a campo vuoto (QkM2O lo
+    // mostra solo dopo aver digitato). Nessun triggerEl: si apre solo dalla
+    // voce "Cerca di più…" che QkM2O stesso genera quando gli si passa `picker`.
+    const clientePicker = new QkPicker({
+      title:       'Cerca cliente',
+      apiUrl:      BASE + '/sales/quotes/api/clienti',
+      columns:     [{ key: 'label', label: 'Nome' }, { key: 'email', label: 'E-mail' }],
       onSelect:    selectCliente,
+      allowCreate: true,
       onCreate:    () => openModal('modal-nuovo-cliente'),
-      createLabel: 'Crea nuovo cliente',
+    });
+
+    new QkM2O({
+      inputEl:    elClienteSearch,
+      hiddenEl:   elClienteId,
+      dropdownEl: elClienteDrop,
+      clearBtn:   elBtnClearInline,
+      apiUrl:     BASE + '/sales/quotes/api/clienti',
+      labelKey:   'label',
+      picker:     clientePicker,
+      onSelect:   selectCliente,
+      onClear:    clearCliente,
+      onCreate:   () => openModal('modal-nuovo-cliente'),
     });
   }
 
-  // Autocomplete Listino
+  /* ─────────────────────────────────────────────────────────────────────────
+     GESTIONE LISTINO — migrato da un filtro client-side su un array preload
+     (window.QK_QUOTES_CONFIG.listini) a un vero endpoint di ricerca lato
+     server (D2, PIANO - Unificazione Autocomplete, 27/07/2026): il campo non
+     era la stessa violazione DRY degli altri (nessuna rete), ma non aveva
+     senso lasciarlo su un componente diverso solo per quello.
+     ───────────────────────────────────────────────────────────────────────── */
   const elListinoSearch = document.getElementById('quote-listino-label');
   const elListinoId     = document.getElementById('quote-listino-id');
   const elListinoDrop   = document.getElementById('quote-listino-dropdown');
   const elListinoClear  = document.getElementById('quote-listino-clear');
 
-  function fetchListini(q) {
-    const listini = window.QK_QUOTES_CONFIG.listini || [];
-    if (!q) return listini;
-    const lowerQ = q.toLowerCase();
-    return listini.filter(item => item.label.toLowerCase().includes(lowerQ));
-  }
-
-  function selectListino(item) {
-    if (elListinoId) elListinoId.value = item.id;
-    if (elListinoSearch) elListinoSearch.value = item.label;
+  function selectListino(id, row) {
     if (elListinoClear) elListinoClear.classList.remove('d-none');
     if (elListinoId) elListinoId.dispatchEvent(new Event('change'));
   }
 
   function clearListino() {
-    if (elListinoId) elListinoId.value = '';
-    if (elListinoSearch) elListinoSearch.value = '';
     if (elListinoClear) elListinoClear.classList.add('d-none');
     if (elListinoId) elListinoId.dispatchEvent(new Event('change'));
-  }
-
-  if (elListinoClear) {
-    elListinoClear.addEventListener('click', clearListino);
   }
 
   if (elListinoSearch) {
@@ -138,11 +129,15 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!elListinoSearch.value.trim()) clearListino();
     });
 
-    window.qkAutocomplete({
-      input:    elListinoSearch,
-      dropdown: elListinoDrop,
-      fetchFn:  fetchListini,
-      onSelect: selectListino
+    new QkM2O({
+      inputEl:    elListinoSearch,
+      hiddenEl:   elListinoId,
+      dropdownEl: elListinoDrop,
+      clearBtn:   elListinoClear,
+      apiUrl:     BASE + '/sales/quotes/api/listini',
+      labelKey:   'label',
+      onSelect:   selectListino,
+      onClear:    clearListino,
     });
   }
 
@@ -250,9 +245,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     tr.innerHTML = `
       <td class="col-search">
-        <div class="qk-ac-wrap">
-          <input type="text" class="qk-form-control riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione || '')}">
-          <div class="qk-ac-dropdown riga-ac-drop"></div>
+        <div class="qk-m2o-wrap">
+          <input type="text" class="qk-form-control qk-m2o-input riga-search" placeholder="Cerca…" autocomplete="off" value="${esc(prefill.descrizione || '')}">
+          <div class="qk-m2o-dropdown riga-ac-drop"></div>
         </div>
         <div class="riga-sku" data-sku="">${prefill.sku ? 'SKU: ' + esc(prefill.sku) : ''}</div>
         <div class="riga-compliance-warn mt-1 text-warning small fw-bold" style="display:none; line-height: 1.2;"></div>
@@ -361,41 +356,60 @@ document.addEventListener('DOMContentLoaded', function () {
       fetchQuotePrice(tr);
     });
 
+    // Migrato da window.qkAutocomplete a QkM2O (componente condiviso, vedi
+    // docs/plans/PIANO - Unificazione Autocomplete, 27/07/2026). hiddenEl
+    // copre .inp-prodotto-id e searchInput.value automaticamente.
     const searchInput = tr.querySelector('.riga-search');
     const searchDrop  = tr.querySelector('.riga-ac-drop');
+    const prodottoIdHidden = tr.querySelector('.inp-prodotto-id');
 
-    window.qkAutocomplete({
-      input:       searchInput,
-      dropdown:    searchDrop,
-      fetchFn:     fetchProdotti,
-      onSelect:    (item) => {
-        tr.querySelector('.inp-prodotto-id').value  = item.id;
-        tr.querySelector('.inp-desc').value         = item.label;
-        tr.querySelector('.inp-qta').value          = '1';
-        tr.querySelector('.inp-pu').value           = '';
-        
-        syncRowMetadata(tr, {
-          uomStock: item.unita_misura || 'pz',
-          uomStockId: item.unita_misura_stock_id || '',
-          uomCommercial: item.unita_misura_commerciale || item.unita_misura || 'pz',
-          uomCommercialId: item.unita_contenuto_id || item.unita_misura_stock_id || '',
-          quantitaContenuto: item.quantita_contenuto || '1',
-          sku: item.sku || '',
-          quantitaConfezione: item.quantita_confezione || '',
-          costoBase: item.costo_base || '0',
-          rrpMin: item.rrp_min !== undefined && item.rrp_min !== null ? item.rrp_min : '',
-          rrpMax: item.rrp_max !== undefined && item.rrp_max !== null ? item.rrp_max : ''
-        });
+    function selectProdottoRiga(id, row) {
+      tr.querySelector('.inp-prodotto-id').value  = id;
+      tr.querySelector('.riga-search').value      = row.label;
+      tr.querySelector('.inp-desc').value         = row.label;
+      tr.querySelector('.inp-qta').value          = '1';
+      tr.querySelector('.inp-pu').value           = '';
 
-        setRowUomMode(tr, currentUomMode, 'stock');
+      syncRowMetadata(tr, {
+        uomStock: row.unita_misura || 'pz',
+        uomStockId: row.unita_misura_stock_id || '',
+        uomCommercial: row.unita_misura_commerciale || row.unita_misura || 'pz',
+        uomCommercialId: row.unita_contenuto_id || row.unita_misura_stock_id || '',
+        quantitaContenuto: row.quantita_contenuto || '1',
+        sku: row.sku || '',
+        quantitaConfezione: row.quantita_confezione || '',
+        costoBase: row.costo_base || '0',
+        rrpMin: row.rrp_min !== undefined && row.rrp_min !== null ? row.rrp_min : '',
+        rrpMax: row.rrp_max !== undefined && row.rrp_max !== null ? row.rrp_max : ''
+      });
 
-        searchInput.value = item.label;
-        calcTotali();
-        checkRowCompliance(tr);
-        fetchQuotePrice(tr);
-      },
+      setRowUomMode(tr, currentUomMode, 'stock');
+
+      calcTotali();
+      checkRowCompliance(tr);
+      fetchQuotePrice(tr);
+    }
+
+    // D3: QkPicker "Cerca di più…" per riga, stesso onSelect di QkM2O (unica
+    // fonte di verità per "cosa succede quando si sceglie un prodotto").
+    const prodottoPicker = new QkPicker({
+      title:       'Cerca prodotto',
+      apiUrl:      BASE + '/sales/quotes/api/prodotti',
+      columns:     [{ key: 'label', label: 'Prodotto' }, { key: 'sku', label: 'SKU' }],
+      onSelect:    selectProdottoRiga,
+      allowCreate: true,
       onCreate:    () => openModal('modal-nuovo-prodotto', tr),
-      createLabel: 'Crea nuovo prodotto',
+    });
+
+    new QkM2O({
+      inputEl:    searchInput,
+      hiddenEl:   prodottoIdHidden,
+      dropdownEl: searchDrop,
+      apiUrl:     BASE + '/sales/quotes/api/prodotti',
+      labelKey:   'label',
+      picker:     prodottoPicker,
+      onSelect:   selectProdottoRiga,
+      onCreate:   () => openModal('modal-nuovo-prodotto', tr),
     });
 
     let savedMode = currentUomMode;

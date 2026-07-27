@@ -19,51 +19,31 @@ document.addEventListener('DOMContentLoaded', function () {
   const banner = document.getElementById('onu-dedup-banner');
 
   if (labelInput && idInput) {
-    window.qkAutocomplete({
-      input: labelInput,
-      dropdown: dropdownEl,
-      fetchFn: function(term, callback) {
-        fetch('"+window.QkAdrSostanze.lookupUrl+"?type=codici_onu&q=' + encodeURIComponent(term))
-          .then(res => res.json())
-          .then(data => {
-            const results = data.map(item => {
-              let label = 'UN' + item.label;
-              if (item.sub) {
-                label += ' — ' + item.sub;
-              }
-              return { id: item.id, label: label };
-            });
-            callback(results);
-          })
-          .catch(err => {
-            console.error('Error lookup ONU:', err);
-            callback([]);
-          });
-      },
-      onSelect: function(selItem) {
-        if (selItem) {
-          idInput.value = selItem.id;
-          labelInput.value = selItem.label;
-          if (clearBtn) clearBtn.classList.remove('d-none');
-          checkOnu();
-        } else {
-          idInput.value = '';
-          labelInput.value = '';
-          if (clearBtn) clearBtn.classList.add('d-none');
-          checkOnu();
-        }
-      }
-    });
-
-    if (clearBtn) {
-      clearBtn.addEventListener('click', function() {
-        idInput.value = '';
-        labelInput.value = '';
-        clearBtn.classList.add('d-none');
-        dropdownEl.style.display = 'none';
+    // Migrato da window.qkAutocomplete a QkM2O (componente condiviso, vedi
+    // docs/plans/PIANO - Unificazione Autocomplete, 27/07/2026). L'endpoint
+    // restituisce {id, label, sub}; il prefisso "UN" e il suffisso "— sub"
+    // che il vecchio fetchFn ricomponeva prima della resa nel menu sono
+    // ora ricostruiti solo per il valore scritto nel campo (onSelect),
+    // non nella lista del menu a tendina (piccola differenza visiva
+    // accettata, segnalata nel piano).
+    new QkM2O({
+      inputEl:    labelInput,
+      hiddenEl:   idInput,
+      dropdownEl: dropdownEl,
+      clearBtn:   clearBtn,
+      apiUrl:     window.QkAdrSostanze.lookupUrl + '?type=codici_onu',
+      labelKey:   'label',
+      columns:    [{ key: 'label', label: 'ONU' }, { key: 'sub', label: '' }],
+      onSelect:   function (id, row) {
+        let label = 'UN' + row.label;
+        if (row.sub) label += ' — ' + row.sub;
+        labelInput.value = label;
         checkOnu();
-      });
-    }
+      },
+      onClear:    function () {
+        checkOnu();
+      },
+    });
   }
 
   const baseUrl   = idInput ? idInput.dataset.checkUrl : '';
@@ -79,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fetch(baseUrl + qs).then(r=>r.json()).then(data => {
       if (!data.sostanze || !data.sostanze.length) { banner.style.display='none'; return; }
       const lista = data.sostanze.map(s => {
-        const href = '"+window.QkAdrSostanze.editUrl+"' + s.id;
+        const href = window.QkAdrSostanze.editUrl + s.id;
         return '<a href="'+href+'" target="_blank" class="fw-semibold text-decoration-none" style="color:inherit">'+s.nome+(s.gruppo_imballaggio?' · GI '+s.gruppo_imballaggio:'')+(s.codice_cas?' · '+s.codice_cas:'')+'</a>';
       }).join('<br>');
       banner.style.cssText='display:block;background:#fffbeb;border:1px solid #f59e0b;border-radius:var(--qk-radius,4px);padding:.5rem .75rem';
@@ -587,7 +567,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="fw-semibold text-success" style="font-size: 0.85rem;">${escapeHTML(p.nome)}</div>
             <div class="text-muted font-monospace small d-flex align-items-center justify-content-between" style="font-size: 0.72rem;">
               <span>SKU: ${escapeHTML(p.sku)}</span>
-              <a href=""+window.QkAdrSostanze.productsEditUrl+"${p.id}" class="text-decoration-none text-muted" target="_blank" title="Apri scheda prodotto" style="cursor: pointer;">
+              <a href="${window.QkAdrSostanze.productsEditUrl}${p.id}" class="text-decoration-none text-muted" target="_blank" title="Apri scheda prodotto" style="cursor: pointer;">
                 Apri scheda <i class="fa-solid fa-arrow-up-right-from-square ms-1" style="font-size:0.65rem;"></i>
               </a>
             </div>
@@ -664,7 +644,7 @@ document.addEventListener('DOMContentLoaded', function () {
     `;
 
     try {
-      const response = await fetch('"+window.QkAdrSostanze.salesQuotesApiProdottiUrl+"?q=' + encodeURIComponent(query));
+      const response = await fetch(window.QkAdrSostanze.salesQuotesApiProdottiUrl + '?q=' + encodeURIComponent(query));
       const data = await response.json();
 
       let results = data.map(p => ({
@@ -729,7 +709,7 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
       try {
-        const response = await fetch('"+window.QkAdrSostanze.apiAssociaProdotti+"', {
+        const response = await fetch(window.QkAdrSostanze.apiAssociaProdotti, {
           method: 'POST',
           body: fd
         });
@@ -787,7 +767,7 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
       try {
-        const response = await fetch('"+window.QkAdrSostanze.apiDisassociaProdotto+"', {
+        const response = await fetch(window.QkAdrSostanze.apiDisassociaProdotto, {
           method: 'POST',
           body: fd
         });

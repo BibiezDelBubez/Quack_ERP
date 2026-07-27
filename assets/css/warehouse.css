@@ -89,36 +89,10 @@
 .qkwh-tipo-option:has(input[value=rettifica]).selected i,
 .qkwh-tipo-option:has(input[value=rettifica]).selected .qkwh-tipo-name { color: var(--qk-warning); }
 
-/* ── Autocomplete prodotto ────────────────────────────────────────────────── */
-.qkwh-prod-search-wrap { position: relative; }
-
-.qkwh-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--qk-card-bg);
-  border: 1px solid var(--qk-card-border);
-  border-radius: var(--qk-radius-sm);
-  box-shadow: 0 4px 16px rgba(0,0,0,.12);
-  z-index: 100;
-  max-height: 260px;
-  overflow-y: auto;
-}
-.qkwh-dd-item {
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  padding: .5rem .75rem;
-  cursor: pointer;
-  font-size: .85rem;
-  transition: background var(--qk-transition);
-}
-.qkwh-dd-item:hover { background: color-mix(in srgb, var(--qk-accent) 8%, transparent); }
-.qkwh-dd-sku   { font-size: .75rem; color: var(--qk-text-muted); font-family: monospace; flex-shrink: 0; }
-.qkwh-dd-nome  { flex: 1; color: var(--qk-text-primary); }
-.qkwh-dd-lotti { color: var(--qk-warning); font-size: .75rem; flex-shrink: 0; }
-.qkwh-dd-empty { padding: .75rem; text-align: center; color: var(--qk-text-muted); font-size: .82rem; }
+/* Ricerca prodotto: dal 27/07/2026 usa QkM2O (componente condiviso, classi
+   .qk-m2o-wrap/.qk-m2o-input/.qk-m2o-dropdown/.qk-m2o-option già definite in
+   app.css) al posto delle classi .qkwh-prod-search-wrap/.qkwh-dropdown/.qkwh-
+   dd-* proprie di questo modulo — vedi audit DRY/UI. */
 
 /* ── Info prodotto selezionato ────────────────────────────────────────────── */
 .qkwh-prodotto-info {

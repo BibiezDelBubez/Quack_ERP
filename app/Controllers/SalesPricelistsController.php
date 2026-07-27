@@ -69,6 +69,7 @@ final class SalesPricelistsController extends BaseController
             'page_title'    => 'Listini vendita',
             'page_subtitle' => 'Gestione dei listini prezzi di vendita',
             'breadcrumbs'   => [['label' => 'Vendite', 'url' => url('sales')], ['label' => 'Listini vendita']],
+            'page_actions'  => '<a href="' . url('sales/pricelists/create') . '" class="btn-qk btn-qk-primary"><i class="fa-solid fa-plus me-1"></i>Nuovo Listino</a>',
             'pricelists'    => $pricelists,
             'total'         => $total,
             'pag'           => $pag,

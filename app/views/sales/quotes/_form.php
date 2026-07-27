@@ -233,7 +233,7 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
             <div class="qk-form-group flex-grow-1">
               <label class="qk-form-label">Cliente <span class="required">*</span></label>
               <div class="qk-flex-row qk-gap-sm">
-                <div class="qk-m2o-wrap flex-grow-1" style="position:relative;">
+                <div class="qk-m2o-wrap flex-grow-1">
                   <input type="text" id="cliente_search" class="qk-form-control qk-m2o-input <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
                          placeholder="Cerca cliente per nome, ragione sociale, email…"
                          value="<?= e($v['cliente_label']) ?>" autocomplete="off">
@@ -269,7 +269,7 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
               <?php if (true): // Sempre autocomplete come richiesto ?>
                 <!-- Autotrasformazione in Autocomplete sempre attiva -->
                 <input type="hidden" name="listino_id" id="quote-listino-id" value="<?= e($v['listino_id'] ?? '') ?>">
-                <div class="qk-m2o-wrap" style="position:relative;">
+                <div class="qk-m2o-wrap">
                   <?php
                   $listinoLabel = '';
                   foreach ($listini as $lst) {
@@ -286,7 +286,7 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
                          value="<?= e($listinoLabel) ?>"
                          autocomplete="off">
                 <button type="button" class="qk-m2o-clear <?= empty($v['listino_id']) ? 'd-none' : '' ?>" id="quote-listino-clear">&times;</button>
-                <div class="qk-m2o-dropdown shadow-sm" id="quote-listino-dropdown" style="display:none; position:absolute; z-index:1050; background:var(--qk-card-bg); border:1px solid var(--qk-border); width:100%; max-height:200px; overflow-y:auto;"></div>
+                <div class="qk-m2o-dropdown shadow-sm" id="quote-listino-dropdown"></div>
               </div>
               <?php endif; ?>
             </div>

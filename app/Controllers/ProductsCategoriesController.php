@@ -44,9 +44,14 @@ final class ProductsCategoriesController extends BaseController
     public function searchCategorie(): void
     {
         header('Content-Type: application/json; charset=utf-8');
-        $q     = trim(get_param('q'));
-        $limit = min(100, max(1, (int) get_param('limit', '50')));
-        echo json_encode(qk_search_categorie($this->pdo, $q, $limit));
+        $q         = trim(get_param('q'));
+        $limit     = min(100, max(1, (int) get_param('limit', '50')));
+        // D4 (PIANO - Unificazione Autocomplete, 27/07/2026): esclude la categoria
+        // in modifica dai risultati, per evitare che compaia come genitore di se
+        // stessa nel campo di ricerca. get_int() (non filter_input diretto) per
+        // evitare lo stesso bug ?int/false già corretto altrove nel progetto.
+        $excludeId = get_int('exclude_id');
+        echo json_encode(qk_search_categorie($this->pdo, $q, $limit, $excludeId));
         exit;
     }
 
@@ -61,9 +66,9 @@ final class ProductsCategoriesController extends BaseController
             if (!csrf_verify()) {
                 $errors['_global'] = 'Token di sicurezza non valido. Ricarica la pagina.';
             } else {
-                $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+                $id = post_int('id');
                 $nome = trim(post('nome') ?? '');
-                $parent_id = filter_input(INPUT_POST, 'parent_id', FILTER_VALIDATE_INT) ?: null;
+                $parent_id = post_int('parent_id');
                 $posizione_categoria = (int) post('posizione_categoria', '0');
                 $immagine_path = trim(post('immagine_path') ?? '') ?: null;
 
@@ -115,22 +120,20 @@ final class ProductsCategoriesController extends BaseController
 
                 if (empty($errors)) {
                     try {
-                        if ($id) {
-                            $oldImg = qk_save_category($this->pdo, $id, $nome, $parent_id, $posizione_categoria, $immagine_path);
+                        $oldImg = qk_save_category($this->pdo, $id, $nome, $parent_id, $posizione_categoria, $immagine_path);
 
-                            // Se avevamo un'immagine vecchia ed è diversa dalla nuova (cioè abbiamo fatto upload), la eliminiamo
-                            if ($oldImg && $oldImg !== $immagine_path) {
-                                $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
-                                if (is_file($absPath)) {
-                                    if (!unlink($absPath)) {
-                                        error_log("ProductsController: Impossibile eliminare la vecchia immagine categoria: " . $absPath);
-                                    }
+                        // Se avevamo un'immagine vecchia ed è diversa dalla nuova (cioè abbiamo fatto upload), la eliminiamo
+                        if ($oldImg && $oldImg !== $immagine_path) {
+                            $absPath = APP_ROOT_DIR . '/public/' . ltrim($oldImg, '/\\');
+                            if (is_file($absPath)) {
+                                if (!unlink($absPath)) {
+                                    error_log("ProductsController: Impossibile eliminare la vecchia immagine categoria: " . $absPath);
                                 }
                             }
-
-                            $msg = $id ? 'Categoria aggiornata con successo.' : 'Categoria creata con successo.';
-                            redirect_with('products/categories', 'success', $msg);
                         }
+
+                        $msg = $id ? 'Categoria aggiornata con successo.' : 'Categoria creata con successo.';
+                        redirect_with('products/categories', 'success', $msg);
                     } catch (Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());
                         $errors['_global'] = 'Errore nel salvataggio: ' . $e->getMessage();

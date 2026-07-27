@@ -92,15 +92,15 @@ if ($prefillProdId && $values['prodotto_id'] === '') {
         <div class="qk-card-body">
           <div class="qk-form-group">
             <label class="qk-form-label">Prodotto <span class="required">*</span></label>
-            <div class="qkwh-prod-search-wrap">
+            <div class="qk-m2o-wrap">
               <input type="text" id="prodottoSearch"
-                     class="qk-form-control <?= isset($errors['prodotto_id']) ? 'is-invalid' : '' ?>"
+                     class="qk-form-control qk-m2o-input <?= isset($errors['prodotto_id']) ? 'is-invalid' : '' ?>"
                      placeholder="Cerca per nome o SKU…"
                      autocomplete="off"
                      value="">
               <input type="hidden" name="prodotto_id" id="prodottoId"
                      value="<?= e($values['prodotto_id']) ?>">
-              <div id="prodottoDropdown" class="qkwh-dropdown" hidden></div>
+              <div id="prodottoDropdown" class="qk-m2o-dropdown shadow-sm"></div>
             </div>
             <?php if (isset($errors['prodotto_id'])): ?>
             <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['prodotto_id']) ?></span>

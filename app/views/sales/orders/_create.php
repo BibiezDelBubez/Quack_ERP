@@ -117,12 +117,12 @@ $v = $values;
             <div class="qk-form-group flex-grow-1">
               <label class="qk-form-label">Cliente <span class="required">*</span></label>
               <div class="qk-flex-row qk-gap-sm">
-                <div class="qk-ac-wrap flex-grow-1" style="position:relative;">
-                  <input type="text" id="ord-cliente-search" class="qk-form-control <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
+                <div class="qk-m2o-wrap flex-grow-1">
+                  <input type="text" id="ord-cliente-search" class="qk-form-control qk-m2o-input <?= isset($errors['cliente_id']) ? 'is-invalid' : '' ?>"
                          placeholder="Cerca cliente per nome, ragione sociale, email…"
-                         value="<?= e($v['cliente_label']) ?>" autocomplete="off" style="padding-right:28px;">
-                  <button type="button" class="qk-ac-clear <?= $v['cliente_id'] ? '' : 'd-none' ?>" id="ord-btn-clear-cliente" title="Rimuovi cliente">&times;</button>
-                  <div class="qk-ac-dropdown" id="ord-ac-clienti-drop"></div>
+                         value="<?= e($v['cliente_label']) ?>" autocomplete="off">
+                  <button type="button" class="qk-m2o-clear <?= $v['cliente_id'] ? '' : 'd-none' ?>" id="ord-btn-clear-cliente" title="Rimuovi cliente">&times;</button>
+                  <div class="qk-m2o-dropdown" id="ord-ac-clienti-drop"></div>
                 </div>
                 <button type="button" class="btn-qk btn-qk-secondary" id="ord-btn-nuovo-cliente" title="Crea nuovo cliente" style="white-space:nowrap">
                   <i class="fa-solid fa-plus"></i> Nuovo

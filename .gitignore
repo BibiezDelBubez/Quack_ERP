@@ -35,3 +35,15 @@ db/.fuse_hidden*
 /tools/dev-php-sandbox/runtime/
 /tools/dev-php-sandbox/.debs-cache/
 
+# Test E2E Python / Playwright
+tests/e2e/.venv/
+.pytest_cache/
+__pycache__/
+playwright-report/
+test-results/
+
+# Ignora node_modules nei test manuali
+tests/manual/js/node_modules/
+tests/manual/js/node_modules_todelete
+tests/manual/js/test_symlink_probe
+
