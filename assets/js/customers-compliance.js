@@ -64,6 +64,32 @@
       return icons[mod] ?? 'fa-circle';
     }
 
+    // ── API helper ─────────────────────────────────────────────────────────
+
+    /**
+     * Chiamata API condivisa dai 5 punti di questo file (DRY 27/07/2026,
+     * PIANO Punti 1-2-3 Basso Rischio, Punto 3). Centralizza la validazione
+     * HTTP/content-type (via window.qkApiFetch, assets/js/app.js) senza
+     * imporre un messaggio d'errore unico: ogni chiamante resta libero di
+     * scegliere il proprio prefisso — vedi `networkError` sotto — perché i 5
+     * messaggi originali erano intenzionalmente diversi tra loro e non un
+     * caso di duplicazione da correggere.
+     *
+     * @param {string} url
+     * @param {FormData} [formData] se presente la richiesta è una POST
+     * @returns {Promise<{ok:true, data:object}|{ok:false, networkError:true, error:string}>}
+     */
+    async function apiCall(url, formData) {
+      try {
+        const data = formData
+          ? await window.qkApiFetch(url, { method: 'POST', body: formData })
+          : await window.qkApiFetch(url);
+        return { ok: true, data };
+      } catch (e) {
+        return { ok: false, networkError: true, error: e.message };
+      }
+    }
+
     // ── Fetch & render ─────────────────────────────────────────────────────
 
     async function fetchComplianceData() {
@@ -71,17 +97,17 @@
         <div class="qkc-empty">
           <i class="fa-solid fa-spinner fa-spin fa-lg mb-2"></i><br>Caricamento…
         </div>`;
-      try {
-        const res  = await fetch(`${cfg.apiGet}?customer_id=${cfg.customerId}`);
-        const data = await res.json();
-        if (!data.ok) {
-          container.innerHTML = `<div class="alert alert-danger m-3">${esc(data.error)}</div>`;
-          return;
-        }
-        renderCompliance(data.compliance);
-      } catch (e) {
-        container.innerHTML = `<div class="alert alert-danger m-3">Errore: ${esc(e.message)}</div>`;
+      const result = await apiCall(`${cfg.apiGet}?customer_id=${cfg.customerId}`);
+      if (!result.ok) {
+        container.innerHTML = `<div class="alert alert-danger m-3">Errore: ${esc(result.error)}</div>`;
+        return;
       }
+      const data = result.data;
+      if (!data.ok) {
+        container.innerHTML = `<div class="alert alert-danger m-3">${esc(data.error)}</div>`;
+        return;
+      }
+      renderCompliance(data.compliance);
     }
 
     function renderCompliance(list) {
@@ -319,12 +345,11 @@
           fd.set('customer_id', cfg.customerId);
           fd.set('restriction_type_id', typeId);
           fd.set('csrf_token', cfg.csrfToken);
-          try {
-            const res  = await fetch(cfg.apiSave, { method: 'POST', body: fd });
-            const data = await res.json();
-            if (!data.ok) { alert('Errore: ' + data.error); btn.disabled = false; return; }
-            await fetchComplianceData();
-          } catch (e) { alert('Errore di rete: ' + e.message); btn.disabled = false; }
+          const result = await apiCall(cfg.apiSave, fd);
+          if (!result.ok) { alert('Errore di rete: ' + result.error); btn.disabled = false; return; }
+          const data = result.data;
+          if (!data.ok) { alert('Errore: ' + data.error); btn.disabled = false; return; }
+          await fetchComplianceData();
         });
       });
 
@@ -342,12 +367,11 @@
           const origHtml = lbl.innerHTML;
           lbl.innerHTML = '<i class="fa-solid fa-spinner fa-spin fa-xs"></i>';
 
-          try {
-            const res  = await fetch(cfg.apiUpload, { method: 'POST', body: fd });
-            const data = await res.json();
-            if (!data.ok) { alert('Errore caricamento: ' + data.error); lbl.innerHTML = origHtml; return; }
-            await fetchComplianceData();
-          } catch (e) { alert('Errore: ' + e.message); lbl.innerHTML = origHtml; }
+          const result = await apiCall(cfg.apiUpload, fd);
+          if (!result.ok) { alert('Errore: ' + result.error); lbl.innerHTML = origHtml; return; }
+          const data = result.data;
+          if (!data.ok) { alert('Errore caricamento: ' + data.error); lbl.innerHTML = origHtml; return; }
+          await fetchComplianceData();
         });
       });
 
@@ -358,12 +382,11 @@
           fd.set('upload_id',   this.dataset.fileId);
           fd.set('verified',    this.checked ? '1' : '0');
           fd.set('csrf_token',  cfg.csrfToken);
-          try {
-            const res  = await fetch(cfg.apiVerify, { method: 'POST', body: fd });
-            const data = await res.json();
-            if (!data.ok) { alert('Errore: ' + data.error); this.checked = !this.checked; return; }
-            await fetchComplianceData();
-          } catch (e) { alert('Errore: ' + e.message); this.checked = !this.checked; }
+          const result = await apiCall(cfg.apiVerify, fd);
+          if (!result.ok) { alert('Errore: ' + result.error); this.checked = !this.checked; return; }
+          const data = result.data;
+          if (!data.ok) { alert('Errore: ' + data.error); this.checked = !this.checked; return; }
+          await fetchComplianceData();
         });
       });
 
@@ -383,12 +406,11 @@
           fd.set('expiry_date',      expiryDate);
           fd.set('csrf_token',       cfg.csrfToken);
           btn.disabled = true;
-          try {
-            const res  = await fetch(cfg.apiApprove, { method: 'POST', body: fd });
-            const data = await res.json();
-            if (!data.ok) { alert('Impossibile aggiornare: ' + data.error); btn.disabled = false; return; }
-            await fetchComplianceData();
-          } catch (e) { alert('Errore: ' + e.message); btn.disabled = false; }
+          const result = await apiCall(cfg.apiApprove, fd);
+          if (!result.ok) { alert('Errore: ' + result.error); btn.disabled = false; return; }
+          const data = result.data;
+          if (!data.ok) { alert('Impossibile aggiornare: ' + data.error); btn.disabled = false; return; }
+          await fetchComplianceData();
         });
       });
     }

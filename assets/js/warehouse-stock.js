@@ -21,8 +21,9 @@
     }
 
     try {
-      const res = await fetch(`${window.QkWhStockConfig.apiUrl}?id=${prodottoId}`);
-      const data = await res.json();
+      // DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type
+      // delegata a window.qkApiFetch() (assets/js/app.js).
+      const data = await window.qkApiFetch(`${window.QkWhStockConfig.apiUrl}?id=${prodottoId}`);
 
       if (!data.ok) {
         bodyEl.innerHTML = `<div class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Errore: ${data.error}</div>`;

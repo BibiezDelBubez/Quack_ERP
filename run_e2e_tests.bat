@@ -35,8 +35,25 @@ if /I "%VIEW_BROWSER%"=="s" (
 echo.
 :: Calcola dinamicamente l'URL in base al nome della cartella in cui si trova questo file
 for %%I in (.) do set CURRENT_DIR=%%~nxI
+
+echo Rilevamento automatico dell'URL del server in corso...
 set QUACK_TEST_URL=http://localhost/%CURRENT_DIR%/
-echo URL base rilevato per i test: %QUACK_TEST_URL%
+
+:: Prova a contattare la porta 8080
+curl -s -f -m 2 "http://localhost:8080/%CURRENT_DIR%/login" >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    set QUACK_TEST_URL=http://localhost:8080/%CURRENT_DIR%/
+) else (
+    :: Prova a contattare la porta 80
+    curl -s -f -m 2 "http://localhost/%CURRENT_DIR%/login" >nul 2>&1
+    if %ERRORLEVEL% EQU 0 (
+        set QUACK_TEST_URL=http://localhost/%CURRENT_DIR%/
+    ) else (
+        echo [!] Nessun server locale rilevato su 80 o 8080. Uso l'URL di default.
+    )
+)
+
+echo URL base impostato per i test: %QUACK_TEST_URL%
 
 :: Attivazione ambiente e lancio pytest
 call tests\e2e\.venv\Scripts\activate.bat

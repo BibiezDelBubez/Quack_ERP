@@ -954,6 +954,7 @@ window.QK_QUOTES_CONFIG = {
   margineSogliaVerde: <?= json_encode($margineSogliaVerde ?? 20.0) ?>,
   margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>,
   verificaDisponibilitaUrl: <?= json_encode(url('sales/quotes/api/verifica-disponibilita')) ?>,
+  ottieniPrezzoUrl: <?= json_encode(url('sales/pricelists/api/ottieni-prezzo')) ?>,
   preventivoId: <?= json_encode((int)($id ?? 0)) ?>
 };
 </script>

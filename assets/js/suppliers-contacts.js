@@ -215,24 +215,16 @@
 
     /**
      * POST wrapper con gestione robusta degli errori.
-     * Se il server restituisce HTML invece di JSON (es. PHP notice in dev)
-     * l'errore viene loggato in console con il testo raw della risposta.
+     * DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type e
+     * parsing delegati a window.qkApiFetch() (assets/js/app.js), condiviso
+     * con altri 5 file che duplicavano la stessa logica. Contratto verso i
+     * chiamanti invariato.
      */
     async function postJson(url, formData) {
-      const res = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin',
-      });
-
-      const text = await res.text();
       try {
-        return JSON.parse(text);
-      } catch (_) {
-        // La risposta non è JSON: logga il testo grezzo per debug
-        console.error('[suppliers-contacts] Risposta non-JSON da', url);
-        console.error('[suppliers-contacts] HTTP status:', res.status);
-        console.error('[suppliers-contacts] Body raw:', text);
+        return await window.qkApiFetch(url, { method: 'POST', body: formData });
+      } catch (e) {
+        console.error('[suppliers-contacts]', e.message);
         throw new Error('Errore del server. Riprova o controlla la console.');
       }
     }

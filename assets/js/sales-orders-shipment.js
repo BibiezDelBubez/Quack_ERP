@@ -82,10 +82,14 @@
     }
 
     /* ── Fetch lotti disponibili ────────────────────────────────────────── */
+    // DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type
+    // delegata a window.qkApiFetch() (assets/js/app.js). Contratto invariato:
+    // qualunque fallimento (rete, HTTP, JSON non valido) ritorna ancora [] in
+    // silenzio, esattamente come prima — qui cambia solo la diagnosi interna,
+    // non il comportamento visibile ai chiamanti.
     async function fetchLotti(prodId) {
       try {
-        const res  = await fetch(cfg.apiLotti + '?prodotto_id=' + prodId);
-        const data = await res.json();
+        const data = await window.qkApiFetch(cfg.apiLotti + '?prodotto_id=' + prodId);
         return data.lotti || [];
       } catch (e) {
         return [];

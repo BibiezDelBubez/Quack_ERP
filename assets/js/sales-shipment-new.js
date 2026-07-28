@@ -162,12 +162,14 @@
     }
 
     /* ── Fetch lotti disponibili ────────────────────────────────────────── */
+    // DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type
+    // delegata a window.qkApiFetch() (assets/js/app.js). Contratto invariato:
+    // qualunque fallimento ritorna ancora [] in silenzio, come prima.
     async function fetchLotti(prodId) {
       try {
         const includi = cfg.includiScaduti ? '1' : '0';
         const url = cfg.apiLotti + '?prodotto_id=' + prodId + '&includi_scaduti=' + includi + '&magazzino_id=' + cfg.magazzinoId;
-        const res  = await fetch(url);
-        const data = await res.json();
+        const data = await window.qkApiFetch(url);
         return data.lotti || [];
       } catch {
         return [];

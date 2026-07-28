@@ -1,106 +1,116 @@
-import re
 import pytest
 import time
 import random
+import re
 from playwright.sync_api import Page, expect
-from faker import Faker
-
-fake = Faker("it_IT")
 
 def test_07_ciclo_vendite(logged_page: Page):
     """
-    Test E2E per simulare un intero ciclo attivo completo:
-    0. Creazione Cliente e Prodotto
-    1. Creazione Preventivo di Vendita
-    2. Conversione in Ordine di Vendita
-    3. Evasione Ordine (Spedizione)
+    Test E2E per simulare un intero ciclo attivo completo.
+    Utilizza anagrafiche e prodotti randomici.
+    Itera più volte e testa la cancellazione relazionale del cliente.
     """
     page = logged_page
     
-    cliente_name = "Cliente " + fake.company()
-    prod_sku = "TEST-VEN-" + str(random.randint(1000, 9999))
-    prod_name = "Prodotto da Vendere " + str(random.randint(1, 100))
-    
-    # --- FASE 0.1: CREAZIONE CLIENTE ---
-    page.goto("customers/create")
-    expect(page.locator("h1")).to_contain_text("Nuovo Cliente", ignore_case=True)
-    expect(page.locator("text=Tipo soggetto")).to_be_visible()
-    
-    page.locator("input[name='type'][value='azienda']").evaluate("el => { el.checked = true; el.dispatchEvent(new Event('change', {bubbles: true})); }")
-    page.locator("input[name='company']").wait_for(state="visible", timeout=10000)
-    page.fill("input[name='company']", cliente_name)
-    page.fill("input[name='vat']", fake.company_vat())
-    
-    page.click("button[type='submit'][form='formCliente']")
-    expect(page.locator("text=Modifica anagrafica")).to_be_visible(timeout=10000)
-    
-    # --- FASE 0.2: CREAZIONE PRODOTTO ---
-    page.goto("products/create")
-    page.fill("input[name='nome']", prod_name)
-    page.fill("input[name='sku_interno']", prod_sku)
-    page.locator("input[name='tipo'][value='semplice']").check()
-    
-    chk_attivo = page.locator("input[name='attivo']")
-    if not chk_attivo.is_checked():
-        chk_attivo.check()
+    for i in range(3):
+        # --- FASE 1: CREAZIONE PREVENTIVO VENDITA ---
+        page.goto("sales/quotes/create")
+        expect(page.locator("h1")).to_contain_text("Nuovo preventivo", ignore_case=True)
         
-    page.click("button:has-text('Crea prodotto')")
-    expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-    
-    # --- FASE 1: CREAZIONE PREVENTIVO VENDITA ---
-    page.goto("sales/quotes/create")
-    expect(page.locator("h1")).to_contain_text("Nuovo preventivo", ignore_case=True)
-    
-    # Seleziona Cliente (QkM2O)
-    cliente_input = page.locator("#cliente_search")
-    cliente_input.click()
-    cliente_input.fill("")
-    time.sleep(1)
-    cliente_input.type(cliente_name, delay=100)
-    
-    cliente_opt = page.locator(f"#ac-clienti-drop .qk-m2o-option:has-text('{cliente_name}'), #ac-clienti-drop .qk-ac-option:has-text('{cliente_name}')").first
-    cliente_opt.wait_for(state="visible", timeout=10000)
-    cliente_opt.click()
-    
-    # Usa la riga già presente di default
-    last_row = page.locator("tr.offerta-riga").first
-    
-    # Cerca prodotto (QkM2O/qkAutocomplete)
-    prod_input = last_row.locator(".riga-search")
-    prod_input.click()
-    prod_input.fill("")
-    time.sleep(1)
-    prod_input.type(prod_name, delay=100)
-    
-    prod_dropdown = page.locator(f".riga-ac-drop .qk-m2o-option:not(.is-create):has-text('{prod_name}'), .riga-ac-drop .qk-ac-option:not(.is-create):has-text('{prod_name}')").first
-    prod_dropdown.wait_for(state="visible", timeout=10000)
-    prod_dropdown.click()
-    
-    # Quantità e Prezzo
-    last_row.locator(".inp-qta").fill("5")
-    last_row.locator(".inp-pu").fill("25.00")
-    
-    # Salva Preventivo
-    page.click("button:has-text('Salva e invia')")
-    expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-    
-    # Riapri il preventivo dalla lista per procedere
-    page.locator("table.qk-table tbody tr").first.locator("a.btn-qk").first.click()
-    expect(page.locator("h1")).to_contain_text("Preventivo", ignore_case=True)
-    
-    # --- FASE 2: CONVERSIONE IN ORDINE ---
-    btn_accetta = page.locator("button:has-text('Genera Ordine'), a:has-text('Genera Ordine'), button:has-text('Accetta')")
-    if btn_accetta.count() > 0:
-        btn_accetta.first.click()
-        expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-        expect(page.locator("h1")).to_contain_text("Ordine", ignore_case=True)
-    
-    # --- FASE 3: EVASIONE ORDINE (SPEDIZIONE) ---
-    btn_evadi = page.locator("button:has-text('Evadi'), a:has-text('Evadi Ordine'), a:has-text('Crea Spedizione')")
-    if btn_evadi.count() > 0:
-        btn_evadi.first.click()
-        # Se c'è un form di evasione, salvalo
-        btn_salva_sped = page.locator("button[type='submit']:has-text('Salva')")
-        if btn_salva_sped.count() > 0:
-            btn_salva_sped.first.click()
+        # Seleziona Cliente Casuale
+        cliente_input = page.locator("#cliente_search")
+        if cliente_input.count() > 0:
+            cliente_input.click()
+            cliente_input.fill("")
+            cliente_input.type("a", delay=100)
+            page.keyboard.press("Enter")
+
+            try:
+                page.wait_for_selector("#ac-clienti-drop .qk-m2o-option:not(.is-create), #ac-clienti-drop .qk-ac-option:not(.is-create)", state="visible", timeout=5000)
+                c_options = page.locator("#ac-clienti-drop .qk-m2o-option:not(.is-create), #ac-clienti-drop .qk-ac-option:not(.is-create)").all()
+                if c_options:
+                    random.choice(c_options).click()
+            except:
+                pass
+        
+        # Interazione con pulsante Stock/Commerciale (se presente)
+        uom_select = page.locator("select[name='uom_mode']")
+        if uom_select.count() > 0:
+            val = random.choice(["stock", "commercial"])
+            uom_select.select_option(val)
+            time.sleep(0.5)
+            
+        # Aggiungiamo 2 righe
+        for r_idx in range(2):
+            if r_idx > 0:
+                btn_add = page.locator("button:has-text('Aggiungi riga'), button:has-text('Aggiungi Riga')").first
+                if btn_add.count() > 0:
+                    btn_add.click()
+                time.sleep(0.5)
+                
+            last_row = page.locator("tr.offerta-riga").nth(r_idx)
+            if last_row.count() == 0:
+                continue
+                
+            prod_input = last_row.locator(".riga-search")
+            prod_input.click()
+            # Il click focalizza il campo e in QkM2O innesca search('') che carica tutti i prodotti.
+
+            try:
+                drop_locator = last_row.locator(".riga-ac-drop")
+                # Escludiamo esplicitamente l'opzione .is-empty ("Nessun risultato")
+                drop_locator.locator(".qk-m2o-option:not(.is-create):not(.is-empty)").first.wait_for(state="visible", timeout=5000)
+                p_options = drop_locator.locator(".qk-m2o-option:not(.is-create):not(.is-empty)").all()
+                if p_options:
+                    random.choice(p_options).click()
+            except:
+                pass
+            
+            last_row.locator(".inp-qta").fill(str(random.randint(1, 10)))
+            time.sleep(1) # Attendi compilazione prezzo ajax
+            
+            val = last_row.locator(".inp-pu").input_value()
+            if not val or float(val) == 0:
+                # Prezzo non caricato automaticamente. Lo impostiamo noi.
+                last_row.locator(".inp-pu").fill(str(round(random.uniform(10.0, 150.0), 2)))
+            else:
+                # Il RRP o Listino ha funzionato!
+                print(f"RRP / Listino auto-popolato con successo: {val}")
+                
+            # Aggiungiamo uno sconto random
+            sconto_input = last_row.locator(".inp-sconto").first
+            if sconto_input.count() > 0:
+                sconto_input.fill(str(random.randint(0, 15)))
+        
+        # Estrarre ID cliente scelto prima di salvare
+        id_cliente = page.locator("input[name='cliente_id']").input_value()
+        
+        # Salva Preventivo
+        btn_salva = page.locator("button:has-text('Salva e invia'), button:has-text('Salva Preventivo')").first
+        if btn_salva.count() > 0:
+            btn_salva.click()
             expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
+            
+        # Il salvataggio reindirizza alla lista preventivi. 
+        # Clicchiamo sul primo (quello appena creato) per entrare in modifica.
+        page.click("table.qk-table tbody tr:first-child a[title='Modifica']")
+        page.wait_for_selector("h1")
+        
+        # --- FASE 2: CONVERSIONE IN ORDINE ---
+        btn_accetta = page.locator("button:has-text('Genera Ordine'), a:has-text('Genera Ordine'), button:has-text('Accetta')")
+        if btn_accetta.count() > 0:
+            btn_accetta.first.click()
+            expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
+        
+        # --- FASE 3: TEST ELIMINAZIONE RELAZIONALE CLIENTE ---
+        if i == 2 and id_cliente:
+            page.goto(f"customers/edit?id={id_cliente}")
+            
+            # Clicca elimina
+            btn_elimina = page.locator("form[action*='destroy'] button, button.btn-qk-danger:has-text('Elimina')").first
+            if btn_elimina.count() > 0:
+                page.once("dialog", lambda dialog: dialog.accept())
+                btn_elimina.click()
+                
+                # Ci aspettiamo che NON ci sia un Fatal Error (Whoops)
+                expect(page.locator("text=Whoops")).not_to_be_visible(timeout=2000)

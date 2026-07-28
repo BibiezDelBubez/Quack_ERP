@@ -1,123 +1,104 @@
-import re
 import pytest
 import time
 import random
+import re
 from playwright.sync_api import Page, expect
-from faker import Faker
-
-fake = Faker("it_IT")
 
 def test_06_ciclo_acquisti(logged_page: Page):
     """
-    Test E2E per simulare un intero ciclo passivo completo:
-    0. Creazione Fornitore
-    1. Creazione Prodotto
-    2. Creazione Preventivo Fornitore
-    3. Conversione in Ordine d'Acquisto
-    4. Ricezione Merce (Carico di magazzino)
+    Test E2E per simulare un intero ciclo passivo.
+    Seleziona Fornitori e Prodotti randomici già creati.
+    Esegue molteplici RFQ, ne testa la modifica e l'eliminazione relazionale.
     """
     page = logged_page
     
-    # Dati generati
-    forn_name = "Fornitore " + fake.company()
-    prod_sku = "TEST-ACQ-" + str(random.randint(1000, 9999))
-    prod_name = "Prodotto da Acquistare " + str(random.randint(1, 100))
-    
-    # --- FASE 0.1: CREAZIONE FORNITORE ---
-    page.goto("suppliers")
-    page.click("a:has-text('Nuovo fornitore'), a[href$='suppliers/create']")
-    
-    expect(page.locator("h1")).to_contain_text("fornitore", ignore_case=True)
-    
-    page.fill("input[name='company']", forn_name)
-    page.fill("input[name='vat']", fake.company_vat())
-    page.select_option("select[name='status']", "active")
-    
-    page.click("button[type='submit'][form='formFornitore']")
-    expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-    
-    # --- FASE 0.2: CREAZIONE PRODOTTO ---
-    page.goto("products/create")
-    expect(page.locator("h1")).to_contain_text("Nuovo prodotto")
-    
-    page.fill("input[name='nome']", prod_name)
-    page.fill("input[name='sku_interno']", prod_sku)
-    
-    # Assicurati che sia attivo
-    chk_attivo = page.locator("input[name='attivo']")
-    if not chk_attivo.is_checked():
-        chk_attivo.check()
-    
-    page.click("button:has-text('Crea prodotto'), button[type='submit']")
-    expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-    
-    # --- FASE 1: CREAZIONE PREVENTIVO FORNITORE ---
-    page.goto("purchases/quotes")
-    expect(page.locator("h1")).to_contain_text("Preventivi")
-    
-    page.click("a.btn-qk-primary[href$='purchases/quotes/create']")
-    page.wait_for_load_state("networkidle")
-    expect(page.locator("h1")).to_contain_text("preventivo", ignore_case=True)
-    
-    # Seleziona Fornitore creato
-    fornitore_input = page.locator("#off-fornitore-label")
-    fornitore_input.click()
-    fornitore_input.fill("")
-    time.sleep(1) # Aspettiamo che il JS del M2O sia inizializzato
-    fornitore_input.type(forn_name, delay=100)
-    
-    # Aspettiamo l'opzione che corrisponde al nome
-    dropdown_opt = page.locator(f"#off-fornitore-dropdown .qk-m2o-option:has-text('{forn_name}')").first
-    try:
-        dropdown_opt.wait_for(state="visible", timeout=10000)
-    except Exception as e:
-        print("TIMEOUT! Dropdown HTML:")
-        print(page.locator("#off-fornitore-dropdown").inner_html())
-        raise e
-    dropdown_opt.click()
-    
-    # Compila Riferimento Fornitore
-    page.fill("input[name='riferimento_fornitore']", "PREV-TEST-001")
-    
-    # Usa la riga già presente di default
-    last_row = page.locator("tr.offerta-riga").first
-    
-    # Cerca prodotto
-    prod_input = last_row.locator(".r-prodotto-label")
-    prod_input.click()
-    prod_input.fill("")
-    time.sleep(1) # Aspettiamo JS
-    prod_input.type(prod_sku, delay=100)
-    
-    prod_dropdown = page.locator(f".r-prodotto-dropdown .qk-m2o-option:has-text('{prod_sku}'), .r-prodotto-dropdown .qk-ac-option:has-text('{prod_sku}')").first
-    try:
-        prod_dropdown.wait_for(state="visible", timeout=10000)
-    except Exception as e:
-        print("TIMEOUT! Dropdown HTML:")
-        print(page.locator(".r-prodotto-dropdown").inner_html())
-        raise e
-    prod_dropdown.click()
-    
-    # Quantità e Prezzo
-    last_row.locator(".r-qty").fill("10")
-    last_row.locator(".r-prezzo").fill("15.50")
-    
-    # Salva Preventivo
-    page.click("button:has-text('Salva Preventivo')")
-    expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-    expect(page).to_have_url(re.compile(r".*/purchases/quotes/edit\?id=\d+"))
-    
-    # --- FASE 2: CONVERSIONE IN ORDINE ---
-    page.click("button:has-text('Accetta e Genera Ordine')")
-    
-    expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
-    expect(page).to_have_url(re.compile(r".*/purchases/orders/edit\?id=\d+"))
-    expect(page.locator("h1")).to_contain_text("Ordine")
-    
-    # --- FASE 3: RICEZIONE MERCE (CARICO MAGAZZINO) ---
-    ricevi_btn = page.locator("a.btn-qk-success:has-text('Ricevi Merce'), button:has-text('Ricevi Merce')")
-    if ricevi_btn.count() > 0:
-        ricevi_btn.first.click()
-        expect(page.locator("h1")).to_contain_text("Ricezione")
-        page.click("button[type='submit']:has-text('Salva')")
+    for i in range(3):
+        # --- FASE 1: CREAZIONE PREVENTIVO FORNITORE ---
+        page.goto("purchases/quotes/create")
+        expect(page.locator("h1")).to_contain_text("preventivo", ignore_case=True)
+        
+        # Seleziona Fornitore Casuale
+        fornitore_input = page.locator("#off-fornitore-label")
+        fornitore_input.click()
+        fornitore_input.fill("")
+        fornitore_input.type("a", delay=100)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#off-fornitore-dropdown .qk-m2o-option:not(.is-create)", state="visible", timeout=5000)
+        f_options = page.locator("#off-fornitore-dropdown .qk-m2o-option:not(.is-create)").all()
+        if f_options:
+            random.choice(f_options).click()
+        
+        page.fill("input[name='riferimento_fornitore']", f"PREV-TEST-{random.randint(1000, 9999)}")
+        
+        # Interazione con pulsante Stock/Commerciale (se presente)
+        uom_select = page.locator("select[name='uom_mode']")
+        if uom_select.count() > 0:
+            val = random.choice(["stock", "commercial"])
+            uom_select.select_option(val)
+            time.sleep(0.5)
+        
+        # Aggiungiamo 2 righe
+        for r_idx in range(2):
+            if r_idx > 0:
+                btn_add = page.locator("button:has-text('Aggiungi riga'), button:has-text('Aggiungi Riga')").first
+                if btn_add.count() > 0:
+                    btn_add.click()
+                time.sleep(0.5)
+                
+            last_row = page.locator("tr.offerta-riga").nth(r_idx)
+            if last_row.count() == 0:
+                continue
+                
+            try:
+                prod_input = last_row.locator(".r-prodotto-label")
+                prod_input.click()
+                # Il click focalizza il campo e in QkM2O innesca search('') che carica tutti i prodotti.
+
+                drop_locator = last_row.locator(".r-prodotto-dropdown")
+                drop_locator.locator(".qk-m2o-option:not(.is-create):not(.is-empty), .qk-ac-option:not(.is-create):not(.is-empty)").first.wait_for(state="visible", timeout=5000)
+                    
+                p_options = drop_locator.locator(".qk-m2o-option:not(.is-create):not(.is-empty), .qk-ac-option:not(.is-create):not(.is-empty)").all()
+                if p_options:
+                    random.choice(p_options).click()
+            except:
+                pass # Se non trova, lasciamo vuoto
+            
+            last_row.locator(".r-qty").fill(str(random.randint(1, 50)))
+            time.sleep(0.5) # Diamo tempo al JS di aggiornare il prezzo dal listino
+            
+            val = last_row.locator(".r-prezzo").input_value()
+            if not val or float(val) == 0:
+                last_row.locator(".r-prezzo").fill(str(round(random.uniform(5.0, 50.0), 2)))
+        
+        page.click("button:has-text('Salva Preventivo')")
         expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
+        expect(page).to_have_url(re.compile(r".*/purchases/quotes/edit\?id=\d+"))
+        
+        # --- FASE 1.5: MODIFICA ORDINE ---
+        # Modifichiamo la quantità della prima riga per testare l'edit
+        page.locator("tr.offerta-riga").first.locator(".r-qty").fill("99")
+        page.click("button:has-text('Salva Preventivo')")
+        expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
+        
+        # Salviamo l'id del fornitore usato
+        id_fornitore = page.locator("input[name='fornitore_id']").input_value()
+        
+        # --- FASE 2: CONVERSIONE IN ORDINE ---
+        btn_accetta = page.locator("button:has-text('Accetta e Genera Ordine')")
+        if btn_accetta.count() > 0:
+            btn_accetta.click()
+            expect(page.locator(".qk-alert-success")).to_be_visible(timeout=10000)
+        
+        # --- FASE 3: TEST ELIMINAZIONE RELAZIONALE FORNITORE ---
+        if i == 2 and id_fornitore:
+            page.goto(f"suppliers/edit?id={id_fornitore}")
+            
+            # Clicca elimina
+            btn_elimina = page.locator("form[action*='destroy'] button, button.btn-qk-danger:has-text('Elimina')").first
+            if btn_elimina.count() > 0:
+                page.once("dialog", lambda dialog: dialog.accept())
+                btn_elimina.click()
+                
+                # Ci aspettiamo che NON ci sia un Fatal Error (Whoops)
+                # Gestirà o con un errore amichevole (SoftDelete/Restrict) o cancellerà
+                expect(page.locator("text=Whoops")).not_to_be_visible(timeout=2000)

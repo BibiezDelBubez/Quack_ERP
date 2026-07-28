@@ -84,12 +84,12 @@ def test_creazione_prodotti_da_excel(logged_page: Page):
             cat_input.click()
             cat_input.fill("")
             cat_input.type(categoria, delay=100)
-            # Aspettiamo che appaia il dropdown
-            page.wait_for_selector("#cat-m2o-dd .qk-m2o-option", state="visible", timeout=10000)
+            # Aspettiamo che appaia il dropdown col risultato o col bottone crea
+            page.wait_for_selector(f"#cat-m2o-dd .qk-m2o-option:not(.is-loading):not(.is-create):has-text('{categoria}'), #cat-m2o-dd .qk-m2o-option.is-create", state="visible", timeout=10000)
             
             # Clicchiamo la categoria giusta, se esiste
             opt_exist = page.locator(f"#cat-m2o-dd .qk-m2o-option:not(.is-create):has-text('{categoria}')")
-            if opt_exist.count() > 0:
+            if opt_exist.count() > 0 and opt_exist.first.is_visible():
                 opt_exist.first.click()
             else:
                 # Clicca su crea
@@ -121,7 +121,7 @@ def test_creazione_prodotti_da_excel(logged_page: Page):
                 
         # IS ADR
         # il form HTML per ADR si trova nel tab ADR, quindi clicchiamo il tab
-        page.click("#ptab-btn-adr")
+        page.click("#ptab-btn-adr", force=True)
         page.wait_for_selector("#ptab-adr", state="visible")
         is_adr = str(prod.get('is_adr', '0')).strip()
         chk_adr = page.locator("input[name='is_adr']")
@@ -133,7 +133,7 @@ def test_creazione_prodotti_da_excel(logged_page: Page):
                 chk_adr.uncheck()
                 
         # Torniamo al tab Dati prodotto
-        page.click("#ptab-btn-dati")
+        page.click("#ptab-btn-dati", force=True)
         
         # Descrizioni
         desc_breve = str(prod.get('descrizione_breve', '')).strip()
@@ -190,7 +190,7 @@ def test_creazione_prodotti_da_excel(logged_page: Page):
             page.fill("textarea[name='note_interne']", note)
             
         # Salva
-        page.click("button:has-text('Crea prodotto')")
+        page.click("button:has-text('Crea prodotto'), button:has-text('Salva Prodotto')")
         
         # Verifica successo (dovrebbe ricaricare con il flash message)
         expect(page.locator(".qk-alert-success")).to_be_visible()

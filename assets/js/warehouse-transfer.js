@@ -68,8 +68,9 @@
       selectLotto.disabled = true;
       if (!prodottoId || !magazzinoId) return;
 
-      fetch(cfg.apiLottiPerMagazzino + '?prodotto_id=' + encodeURIComponent(prodottoId) + '&magazzino_id=' + encodeURIComponent(magazzinoId))
-        .then(function (r) { return r.json(); })
+      // DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type
+      // delegata a window.qkApiFetch() (assets/js/app.js).
+      window.qkApiFetch(cfg.apiLottiPerMagazzino + '?prodotto_id=' + encodeURIComponent(prodottoId) + '&magazzino_id=' + encodeURIComponent(magazzinoId))
         .then(function (data) {
           if (!data.ok) return;
           selectLotto.disabled = false;

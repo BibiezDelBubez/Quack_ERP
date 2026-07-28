@@ -289,8 +289,10 @@
       try {
         const magazzinoId = selectMagazzino ? selectMagazzino.value : '';
         const url = cfg.apiProdottoInfo + '?id=' + id + (magazzinoId ? '&magazzino_id=' + magazzinoId : '');
-        const res  = await fetch(url, { credentials: 'same-origin' });
-        const data = await res.json();
+        // DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type delegata
+        // a window.qkApiFetch() (assets/js/app.js). credentials:'same-origin' era
+        // gia' il default, l'opzione esplicita non serve piu'.
+        const data = await window.qkApiFetch(url);
         if (!data.ok || !data.prodotto) return;
 
         const p = data.prodotto;

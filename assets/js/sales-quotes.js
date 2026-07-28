@@ -1364,6 +1364,7 @@ document.addEventListener('DOMContentLoaded', function () {
     try {
       const data = await qkFetchPrezzoSuggerito({
         prodottoId, listinoId, clienteId, quantita: qty, unitaMisuraId: unitaMisuraRichiestaId,
+        apiUrl: window.QK_QUOTES_CONFIG.ottieniPrezzoUrl,
       });
 
       if (data && data.ok) {

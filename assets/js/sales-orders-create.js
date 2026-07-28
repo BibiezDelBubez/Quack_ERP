@@ -434,7 +434,10 @@ async function fetchOrdinePrice(tr, item) {
     // sbagliata (prezzo invece di prezzo_unitario) — tre bug indipendenti
     // sullo stesso percorso. Ora usa la stessa funzione condivisa e corretta
     // già usata dal form preventivi (pricing-widget.js).
-    const data = await qkFetchPrezzoSuggerito({ prodottoId: item.id, listinoId, clienteId, quantita: 1 });
+    const data = await qkFetchPrezzoSuggerito({
+      prodottoId: item.id, listinoId, clienteId, quantita: 1,
+      apiUrl: window.QK_ORDERS_CREATE_CONFIG.ottieniPrezzoUrl,
+    });
     if (data && data.ok && data.prezzo_unitario !== undefined && data.prezzo_unitario !== null) {
       const puInput = tr.querySelector('.ord-inp-pu');
       const badge   = tr.querySelector('.ord-price-badge');

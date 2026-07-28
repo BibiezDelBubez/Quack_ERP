@@ -239,21 +239,18 @@
     }
 
     /* ── Helper fetch JSON ───────────────────────────────────────────────── */
-
+    // DRY 27/07/2026 (PIANO qkApiFetch): la validazione HTTP/content-type e il
+    // parsing sono ora delegati a window.qkApiFetch() (assets/js/app.js),
+    // condiviso con altri 5 file che duplicavano la stessa logica. Contratto
+    // verso i chiamanti invariato: su risposta non valida lancia un Error col
+    // messaggio generico già mostrato in precedenza (showModalErr(e.message)),
+    // con il dettaglio diagnostico completo ora nel log invece che sparso su
+    // 3 righe separate.
     async function postJson(url, formData) {
-      const res = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin',
-      });
-
-      const text = await res.text();
       try {
-        return JSON.parse(text);
-      } catch (_) {
-        console.error('[customers-addresses] Risposta non-JSON da', url);
-        console.error('[customers-addresses] HTTP status:', res.status);
-        console.error('[customers-addresses] Body raw:', text);
+        return await window.qkApiFetch(url, { method: 'POST', body: formData });
+      } catch (e) {
+        console.error('[customers-addresses]', e.message);
         throw new Error('Errore del server. Riprova o controlla la console.');
       }
     }

@@ -132,8 +132,9 @@
     fd.append('rows', JSON.stringify(parsedRows));
 
     try {
-      var res = await fetch(IMPORT_URL, { method:'POST', body:fd });
-      var d = await res.json();
+      // DRY 27/07/2026 (PIANO qkApiFetch): validazione HTTP/content-type
+      // delegata a window.qkApiFetch() (assets/js/app.js).
+      var d = await window.qkApiFetch(IMPORT_URL, { method:'POST', body:fd });
       var resWrap = document.getElementById('importResultPrezziSales');
       resWrap.className = d.ok ? 'qk-alert qk-alert-success mt-3' : 'qk-alert qk-alert-danger mt-3';
 

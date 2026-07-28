@@ -633,7 +633,8 @@ $v = $values;
 window.QK_ORDERS_CREATE_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
   margineSogliaVerde: <?= json_encode($margineSogliaVerde ?? 20.0) ?>,
-  margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>
+  margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>,
+  ottieniPrezzoUrl: <?= json_encode(url('sales/pricelists/api/ottieni-prezzo')) ?>
 };
 </script>
 <script src="<?= url('assets/js/pricing-widget.js') ?>"></script>

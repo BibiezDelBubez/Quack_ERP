@@ -365,6 +365,42 @@
   /* ────────────────────────────────────────────────────────────────────────
      UTILITY GLOBAL
   ──────────────────────────────────────────────────────────────────────── */
+  // qkApiFetch — wrapper condiviso per le chiamate JSON al backend Quack.
+  // Nato dal fix del bug reale in pricing-widget.js (27/07/2026, vedi
+  // docs/CHANGELOG - Gruppo B Unificazione Autocomplete §7 e
+  // docs/plans/PIANO - Helper Condiviso qkApiFetch): quella funzione
+  // costruiva l'URL con una variabile `BASE` mai esistita, il server
+  // rispondeva con una pagina 404 HTML, e `res.json()` andava in crash con
+  // un errore criptico. Estratta qui la validazione (status HTTP + content
+  // type) prima di leggere il corpo, così ogni chiamata condivisa dell'app
+  // la eredita gratis invece di reimplementarla in ogni file.
+  //
+  // Contratto: valida la risposta e RITORNA il body già parsato come JSON.
+  // Su risposta non valida LANCIA un Error con un messaggio diagnostico
+  // completo (URL, status, content-type, anteprima del corpo) — il
+  // chiamante resta responsabile della reazione (try/catch proprio: messaggio
+  // utente, fallback silenzioso, ecc.), qui cambia solo COSA viene rilevato
+  // come fallimento, non cosa succede dopo.
+  //
+  // Opzione A (decisa 27/07/2026, PIANO qkApiFetch §8): qualunque status
+  // HTTP non-2xx è trattato come errore, indipendentemente dal content-type
+  // della risposta. Verificato che questo gestionale, quando va in errore
+  // fatale non gestito, non produce mai un JSON applicativo pulito con
+  // status 500 (includes/error_reporter.php prova a includere
+  // app/views/errors/500.php, che non esiste nel progetto — bug indipendente,
+  // segnalato, non corretto qui) — quindi oggi non esiste un caso reale in
+  // cui questa scelta scarti un messaggio applicativo utile.
+  window.qkApiFetch = async function (url, options = {}) {
+    const opts = Object.assign({ credentials: 'same-origin' }, options);
+    const res = await fetch(url, opts);
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) {
+      const preview = await res.text().catch(function () { return ''; });
+      throw new Error('qkApiFetch: risposta non valida da ' + url + ' (status ' + res.status + ', content-type "' + contentType + '")' + (preview ? ': ' + preview.slice(0, 200) : ''));
+    }
+    return res.json();
+  };
+
   // D0.5 (PIANO Motore di Pricing Multi-UoM §5.2/§8): questa funzione è SOLO ANTEPRIMA UI.
   // Usa un singolo fattore float (qFactor) con aritmetica nativa JS, non la frazione esatta
   // num_factor/den_factor a precisione arbitraria (BCMath) usata da qk_uom_converti_riga()

@@ -422,9 +422,18 @@ function _qk_err_send_mailgun(string $subject, string $body): void
 }
 
 /* ── Handler principale ──────────────────────────────────────────────────── */
-function _qk_handle_error(string $level, string $type, string $message, string $file, int $line, string $trace, array $context = []): void
+/**
+ * DRY/estensione 27/07/2026 (PIANO Punti 1-2-3 Basso Rischio, Punto 1,
+ * Estensione A): la firma passa da `void` a `string`, ritornando l'hash già
+ * calcolato internamente per la deduplicazione — così i chiamanti che ne
+ * hanno bisogno (l'exception handler e lo shutdown handler qui sotto)
+ * possono mostrarlo all'utente come codice di riferimento. Verificato che
+ * nessuno dei chiamanti preesistenti (404.php, set_error_handler più sotto)
+ * catturasse il valore di ritorno: cambio 100% backward-compatible.
+ */
+function _qk_handle_error(string $level, string $type, string $message, string $file, int $line, string $trace, array $context = []): string
 {
-    if (!QK_ERROR_REPORT_ENABLED) return;
+    if (!QK_ERROR_REPORT_ENABLED) return '';
 
     $md      = _qk_err_build_md($level, $type, $message, $file, $line, $trace, $context);
     $hash    = md5($type . $file . $line . $message);
@@ -445,11 +454,28 @@ function _qk_handle_error(string $level, string $type, string $message, string $
     if (_qk_err_should_send_digest()) {
         _qk_err_flush_digest();
     }
+
+    return $hash;
+}
+
+/* ── Risposta 500 condivisa (DRY) ─────────────────────────────────────────── */
+/**
+ * Nuova 27/07/2026 (PIANO Punti 1-2-3 Basso Rischio, Punto 1): un solo posto
+ * decide come rispondere con un 500, usato sia dall'exception handler sia
+ * dallo shutdown handler per gli errori fatali non catchabili (Estensione B
+ * — prima quest'ultimo non produceva alcuna risposta HTTP). In sviluppo non
+ * fa nulla: i due chiamanti gestiscono da soli il dump tecnico a schermo.
+ */
+function _qk_render_500_response(string $hash): void
+{
+    if (APP_ENV === 'development') return;
+    http_response_code(500);
+    include APP_ROOT_DIR . '/app/views/errors/500.php';
 }
 
 /* ── Registra exception handler ──────────────────────────────────────────── */
 set_exception_handler(function (\Throwable $e): void {
-    _qk_handle_error(
+    $qk_hash = _qk_handle_error(
         'EXCEPTION',
         get_class($e),
         $e->getMessage(),
@@ -466,8 +492,7 @@ set_exception_handler(function (\Throwable $e): void {
         echo htmlspecialchars($e->getTraceAsString());
         echo '</pre>';
     } else {
-        http_response_code(500);
-        include APP_ROOT_DIR . '/app/views/errors/500.php';
+        _qk_render_500_response($qk_hash);
     }
     exit(1);
 });
@@ -499,7 +524,7 @@ register_shutdown_function(function (): void {
     $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR];
     if (!in_array($err['type'], $fatalTypes, true)) return;
 
-    _qk_handle_error(
+    $qk_hash = _qk_handle_error(
         'FATAL',
         _qk_err_type_label($err['type']),
         $err['message'],
@@ -507,4 +532,12 @@ register_shutdown_function(function (): void {
         $err['line'],
         'N/A (errore fatale, stack trace non disponibile)'
     );
+
+    // Estensione B (27/07/2026, PIANO Punti 1-2-3 Basso Rischio, Punto 1):
+    // prima di questa modifica gli errori fatali non catchabili (E_ERROR,
+    // E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR) venivano solo loggati, senza
+    // MAI produrre una risposta HTTP — il browser riceveva una risposta
+    // vuota/troncata invece di un 500. Stesso helper condiviso usato
+    // dall'exception handler qui sopra.
+    _qk_render_500_response($qk_hash);
 });
