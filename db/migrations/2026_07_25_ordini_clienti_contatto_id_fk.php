@@ -160,9 +160,13 @@ try {
 
     // Verifica collaterale (non solo il conteggio FK sopra): la vista
     // v_ordini_scoperto_prodotto deve restare davvero interrogabile, non solo
-    // presente a schema — prova diretta che legacy_alter_table non ha
-    // lasciato la vista in uno stato rotto.
-    $pdo->query('SELECT COUNT(*) FROM v_ordini_scoperto_prodotto')->fetchColumn();
+    // sintatticamente valida per SQLite (verifica pragmatica del RENAME).
+    // NOTA: controlliamo prima se esiste, perché a seconda dell'ordine di esecuzione
+    // alfabetico delle migrazioni potrebbe non esistere ancora.
+    $viewExists = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type='view' AND name='v_ordini_scoperto_prodotto'")->fetchColumn();
+    if ($viewExists) {
+        $pdo->query('SELECT COUNT(*) FROM v_ordini_scoperto_prodotto')->fetchColumn();
+    }
 
     $pdo->exec('COMMIT');
     $pdo->exec('PRAGMA foreign_keys = ON');

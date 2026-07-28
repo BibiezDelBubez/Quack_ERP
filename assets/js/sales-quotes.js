@@ -232,6 +232,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function buildRiga(prefill = {}) {
     const idx = righeCount++;
     const tr  = document.createElement('tr');
+    tr.classList.add('offerta-riga');
     tr.dataset.idx = idx;
 
     tr.dataset.uomStock = prefill.uom_stock || prefill.unita_misura || '';

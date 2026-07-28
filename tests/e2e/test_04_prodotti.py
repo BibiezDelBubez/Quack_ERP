@@ -3,7 +3,8 @@ import pytest
 from playwright.sync_api import Page, expect
 import openpyxl
 
-EXCEL_FILE_PATH = r"C:\Users\michel.papetti\Documents\xampp\htdocs\Quack\audit\MaterialePerTest\Prodotti_Tracciato.xlsx"
+import os
+EXCEL_FILE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../audit/MaterialePerTest/Prodotti_Tracciato.xlsx"))
 
 def read_products_from_excel(filepath):
     """

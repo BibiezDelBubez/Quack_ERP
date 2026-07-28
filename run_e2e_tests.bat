@@ -5,7 +5,16 @@ echo     Avvio Simulazione Automatica Quack ERP (E2E)
 echo ===================================================
 echo.
 echo I test verranno eseguiti in ordine bottom-up:
-echo dalle anagrafiche di base fino ai flussi complessi.
+echo 01. Aziende Interne
+echo 02. Categorie Prodotti
+echo 03. Anagrafiche (Clienti, Fornitori)
+echo 04. Prodotti
+echo 05. Listini
+echo 06. Ciclo Acquisti
+echo 07. Ciclo Vendite
+echo 08. Magazzino
+echo 09. Utenti e Profilo
+echo 10. Impostazioni Generali
 echo.
 echo.
 echo Vuoi vedere il browser in azione durante il test?
@@ -24,6 +33,11 @@ if /I "%VIEW_BROWSER%"=="s" (
 )
 
 echo.
+:: Calcola dinamicamente l'URL in base al nome della cartella in cui si trova questo file
+for %%I in (.) do set CURRENT_DIR=%%~nxI
+set QUACK_TEST_URL=http://localhost/%CURRENT_DIR%/
+echo URL base rilevato per i test: %QUACK_TEST_URL%
+
 :: Attivazione ambiente e lancio pytest
 call tests\e2e\.venv\Scripts\activate.bat
 pytest tests\e2e %PYTEST_ARGS%

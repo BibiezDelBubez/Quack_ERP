@@ -1,7 +1,9 @@
 import pytest
 from playwright.sync_api import Playwright, Page, expect
 
-BASE_URL = "http://localhost:8080/quack/"
+import os
+
+BASE_URL = os.environ.get("QUACK_TEST_URL", "http://localhost/Quack/")
 
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):

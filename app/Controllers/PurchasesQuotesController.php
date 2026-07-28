@@ -121,6 +121,7 @@ class PurchasesQuotesController extends BaseController
                 if (empty($errors)) {
                     try {
                         $id = qk_offerta_save($this->pdo, $values, $righe, (int)current_user()['id']);
+                        flash_set('success', 'Preventivo salvato.');
                         redirect(url('purchases/quotes/edit') . '?id=' . $id . '&saved=1');
                     } catch (\Throwable $e) {
             error_log('[' . basename(__FILE__) . ':' . __LINE__ . '] Exception: ' . $e->getMessage());

@@ -82,6 +82,27 @@ document.addEventListener('DOMContentLoaded', function () {
       const pDropdown = tr.querySelector('.r-prodotto-dropdown');
       const pClear    = tr.querySelector('.r-prodotto-clear');
 
+      if (pInput) {
+        const m2o = new QkM2O({
+          inputEl:    pInput,
+          hiddenEl:   pHidden,
+          dropdownEl: pDropdown,
+          clearBtn:   pClear,
+          apiUrl:     buildProdottoApiUrl(),
+          labelKey:   'nome',
+          columns:    [{ key: 'nome', label: 'Prodotto' }, { key: 'sku_interno', label: 'SKU' }],
+          onSelect:   (id, row) => fillRigaProdotto(tr, row),
+          onClear:    () => clearRigaProdotto(tr)
+        });
+        prodottoM2oInstances.push(m2o);
+      }
+
+      tr.querySelector('.r-rimuovi').addEventListener('click', () => {
+        tr.remove();
+      });
+
+      const defaultDateInput = document.getElementById('off-data-consegna-default');
+      if (defaultDateInput && defaultDateInput.value) {
         const rowDate = tr.querySelector('.r-consegna');
         if (rowDate && !rowDate.value) {
           rowDate.value = defaultDateInput.value;

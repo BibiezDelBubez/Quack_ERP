@@ -56,6 +56,8 @@ def test_06_ciclo_acquisti(logged_page: Page):
     expect(page.locator("h1")).to_contain_text("Preventivi")
     
     page.click("a.btn-qk-primary[href$='purchases/quotes/create']")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("h1")).to_contain_text("preventivo", ignore_case=True)
     
     # Seleziona Fornitore creato
     fornitore_input = page.locator("#off-fornitore-label")
@@ -87,8 +89,13 @@ def test_06_ciclo_acquisti(logged_page: Page):
     time.sleep(1) # Aspettiamo JS
     prod_input.type(prod_sku, delay=100)
     
-    prod_dropdown = last_row.locator(f".r-prodotto-dropdown .qk-m2o-option:has-text('{prod_sku}')").first
-    prod_dropdown.wait_for(state="visible", timeout=10000)
+    prod_dropdown = page.locator(f".r-prodotto-dropdown .qk-m2o-option:has-text('{prod_sku}'), .r-prodotto-dropdown .qk-ac-option:has-text('{prod_sku}')").first
+    try:
+        prod_dropdown.wait_for(state="visible", timeout=10000)
+    except Exception as e:
+        print("TIMEOUT! Dropdown HTML:")
+        print(page.locator(".r-prodotto-dropdown").inner_html())
+        raise e
     prod_dropdown.click()
     
     # Quantità e Prezzo

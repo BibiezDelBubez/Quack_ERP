@@ -704,10 +704,11 @@ window.QkCustomerCompliance = {
   csrfToken:  <?= json_encode(csrf_token()) ?>,
 };
 </script>
-<script src="<?= url('assets/js/searchable-select.js') ?>"></script>
 <script src="<?= url('assets/js/customers-addresses.js') ?>"></script>
-<script src="<?= url('assets/js/customers-form.js') ?>"></script>
 <script src="<?= url('assets/js/customers-contacts.js') ?>"></script>
 <script src="<?= url('assets/js/customers-compliance.js') ?>"></script>
 
 <?php endif; ?>
+
+<script src="<?= url('assets/js/searchable-select.js') ?>"></script>
+<script src="<?= url('assets/js/customers-form.js') ?>"></script>

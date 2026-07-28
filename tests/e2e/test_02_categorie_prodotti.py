@@ -5,7 +5,8 @@ from playwright.sync_api import Page, expect
 from utils.logger import log_scoperta
 
 # Percorso all'excel fornito dall'utente
-EXCEL_PATH = r"C:\Users\michel.papetti\Documents\xampp\htdocs\Quack\audit\MaterialePerTest\Prodotti_Tracciato.xlsx"
+import os
+EXCEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../audit/MaterialePerTest/Prodotti_Tracciato.xlsx"))
 
 def get_categorie_da_excel():
     """Estrae l'elenco delle categorie uniche dal file Excel"""
@@ -53,7 +54,24 @@ def test_creazione_categorie_da_excel(logged_page: Page):
         # Compila il nome della categoria
         page.fill("#cat-nome", nome_cat)
         
-        # Lasciamo vuoti genitore e immagine (per ora, per semplicit del test)
+        # Test della categoria genitore con QkM2O (non deterministico, ~30% probabilità)
+        import random
+        import time
+        if random.random() < 0.3 and categorie_excel:
+            parent_cat = random.choice(categorie_excel)
+            if parent_cat != nome_cat: # Evita di mettersi come genitore di se stesso
+                parent_input = page.locator("#cat-parent-label")
+                parent_input.click()
+                parent_input.fill("")
+                time.sleep(0.5)
+                parent_input.type(parent_cat, delay=100)
+                
+                dropdown_opt = page.locator(f"#cat-parent-dropdown .qk-m2o-option:has-text('{parent_cat}')").first
+                try:
+                    dropdown_opt.wait_for(state="visible", timeout=5000)
+                    dropdown_opt.click()
+                except Exception:
+                    pass # Se non la trova (magari non è ancora stata creata), proseguiamo
         
         # Salva
         page.click("#modal-categoria button[type='submit']")
