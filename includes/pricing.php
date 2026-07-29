@@ -30,7 +30,7 @@ declare(strict_types=1);
  * attuale, SalesPricelistsController::apiOttieniPrezzo(), converte la quantità ricevuta
  * dal client prima di invocarla.
  */
-function qk_get_sale_price(PDO $pdo, int $prodottoId, int $listinoId, float $quantita = 1.0, ?string $dataRiferimento = null, ?int $clienteId = null): ?array
+function qk_get_sale_price(PDO $pdo, int $prodottoId, ?int $listinoId, float $quantita = 1.0, ?string $dataRiferimento = null, ?int $clienteId = null): ?array
 {
     if (!$dataRiferimento) {
         $dataRiferimento = date('Y-m-d');
@@ -141,53 +141,39 @@ function qk_get_sale_price(PDO $pdo, int $prodottoId, int $listinoId, float $qua
         }
     }
 
-    // --- LEVEL 2: STANDARD / PUBBLICO (IS_DEFAULT = 1) ---
-    $stmtL = $pdo->prepare(
-        "SELECT id, nome, valuta FROM listini
-         WHERE is_default = 1 AND attivo = 1
-           AND (valido_dal IS NULL OR valido_dal <= :data)
-           AND (valido_al  IS NULL OR valido_al  >= :data)"
+    // --- LEVEL 2: PREZZO BASE (listino_id IS NULL) ---
+    $stmtP = $pdo->prepare(
+        "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
+         FROM listini_prezzi
+         WHERE listino_id IS NULL
+           AND prodotto_id = :pid
+           AND quantita_minima_stock <= :qty
+         ORDER BY quantita_minima_stock DESC
+         LIMIT 1"
     );
-    $stmtL->execute([':data' => $dataRiferimento]);
-    $listino = $stmtL->fetch(PDO::FETCH_ASSOC);
+    $stmtP->execute([
+        ':pid'  => $prodottoId,
+        ':qty'  => $quantita,
+    ]);
+    $row = $stmtP->fetch(PDO::FETCH_ASSOC);
 
-    if ($listino) {
-        $fallbackListinoId = (int)$listino['id'];
-
-        $stmtP = $pdo->prepare(
-            "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
-             FROM listini_prezzi
-             WHERE listino_id = :lid
-               AND prodotto_id = :pid
-               AND quantita_minima_stock <= :qty
-             ORDER BY quantita_minima_stock DESC
-             LIMIT 1"
-        );
-        $stmtP->execute([
-            ':lid'  => $fallbackListinoId,
-            ':pid'  => $prodottoId,
-            ':qty'  => $quantita,
-        ]);
-        $row = $stmtP->fetch(PDO::FETCH_ASSOC);
-
-        if ($row) {
-            $qMin    = (float)$row['quantita_minima'];
-            $sorgente = 'Listino Standard: ' . $listino['nome'];
-            if ($qMin > 0) {
-                $sorgente .= ' (Scaglione >= ' . number_format($qMin, 0, ',', '.') . ')';
-            }
-
-            return [
-                'prezzo_unitario' => (float)$row['prezzo_unitario'],
-                'sconto_perc'     => (float)$row['sconto_perc'],
-                'valuta'          => $listino['valuta'],
-                'listino_id'      => $fallbackListinoId,
-                'listino_nome'    => $listino['nome'],
-                'prezzo_sorgente' => $sorgente,
-                'origine'         => 'standard',
-                'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
-            ];
+    if ($row) {
+        $qMin    = (float)$row['quantita_minima'];
+        $sorgente = 'Prezzo Base (Catalogo)';
+        if ($qMin > 0) {
+            $sorgente .= ' (Scaglione >= ' . number_format($qMin, 0, ',', '.') . ')';
         }
+
+        return [
+            'prezzo_unitario' => (float)$row['prezzo_unitario'],
+            'sconto_perc'     => (float)$row['sconto_perc'],
+            'valuta'          => 'EUR', // Il prezzo base vive in valuta di sistema
+            'listino_id'      => null,
+            'listino_nome'    => 'Prezzo Base',
+            'prezzo_sorgente' => $sorgente,
+            'origine'         => 'base',
+            'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
+        ];
     }
 
     // --- LEVEL 3: DYNAMIC FALLBACK MARKUP ON COST ---

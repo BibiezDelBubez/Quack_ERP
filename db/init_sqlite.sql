@@ -814,7 +814,7 @@ WHERE rn = 1;
 
 CREATE TABLE IF NOT EXISTS listini_prezzi (
     id              INTEGER       PRIMARY KEY AUTOINCREMENT,
-    listino_id      INTEGER       NOT NULL REFERENCES listini(id) ON DELETE CASCADE,
+    listino_id      INTEGER       REFERENCES listini(id) ON DELETE CASCADE,
     prodotto_id     INTEGER       NOT NULL REFERENCES prodotti(id),
     quantita_minima DECIMAL(10,3) NOT NULL DEFAULT 0,  -- scaglione quantità
     prezzo_unitario DECIMAL(10,4) NOT NULL,             -- imponibile

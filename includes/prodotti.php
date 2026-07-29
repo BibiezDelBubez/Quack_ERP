@@ -542,7 +542,7 @@ function qk_prodotti_list(PDO $pdo, ?string $search, ?string $cat, bool $adr_onl
          LEFT JOIN giacenze g ON g.prodotto_id = p.id
          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
          LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.attivo = 1
-         LEFT JOIN listini_prezzi lp ON lp.prodotto_id = p.id AND lp.listino_id = (SELECT id FROM listini WHERE is_default = 1 LIMIT 1) AND lp.quantita_minima = 0
+         LEFT JOIN listini_prezzi lp ON lp.prodotto_id = p.id AND lp.listino_id IS NULL AND lp.quantita_minima = 0
          $cond
          GROUP BY p.id
          ORDER BY " . match($sort) {
@@ -603,7 +603,7 @@ function qk_load_prodotto_form(PDO $pdo, int $id): ?array
          return null;
      }
 
-     $stmtPrice = $pdo->prepare('SELECT prezzo_unitario FROM listini_prezzi WHERE listino_id = (SELECT id FROM listini WHERE is_default = 1 LIMIT 1) AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+     $stmtPrice = $pdo->prepare('SELECT prezzo_unitario FROM listini_prezzi WHERE listino_id IS NULL AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
      $stmtPrice->execute([$id]);
      $prezzo_base = $stmtPrice->fetchColumn();
 
@@ -769,7 +769,7 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
         if ($prezzo_base !== null) {
             // D3.2 (PIANO Motore di Pricing Multi-UoM §8): quantita_minima_stock deve essere
             // sempre valorizzato (0 = prezzo base) — altrimenti invisibile a getSalePrice().
-            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?, 0, ?, 0)')
+            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES (NULL, ?, 0, ?, ?, 0, ?, 0)')
                 ->execute([$id, $prezzo_base, $um_id, $um_id]);
         }
 
@@ -948,7 +948,7 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            $stmtCheckRule = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = (SELECT id FROM listini WHERE is_default = 1 LIMIT 1) AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+            $stmtCheckRule = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id IS NULL AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
             $stmtCheckRule->execute([$id]);
             $ruleId = $stmtCheckRule->fetchColumn();
             if ($ruleId) {
@@ -958,7 +958,7 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
                 $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ?, unita_misura_soglia_id = ?, quantita_minima_stock = 0 WHERE id = ?')
                     ->execute([$prezzo_base, $um_id, $um_id, $ruleId]);
             } else {
-                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES ((SELECT id FROM listini WHERE is_default = 1 LIMIT 1), ?, 0, ?, ?, 0, ?, 0)')
+                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES (NULL, ?, 0, ?, ?, 0, ?, 0)')
                     ->execute([$id, $prezzo_base, $um_id, $um_id]);
             }
         }

@@ -617,7 +617,7 @@ final class ProductsController extends BaseController
                 if ($prezzoBase !== null) {
                     $this->pdo->prepare(
                         'INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock)
-                         VALUES (1, :pid, 0, :prezzo, :um_id, 0, :um_id2, 0)'
+                         VALUES (NULL, :pid, 0, :prezzo, :um_id, 0, :um_id2, 0)'
                     )->execute([':pid' => $prodId, ':prezzo' => $prezzoBase, ':um_id' => $umId, ':um_id2' => $umId]);
                 }
 

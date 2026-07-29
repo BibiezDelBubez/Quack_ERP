@@ -985,24 +985,68 @@ if (QkPF.isEdit) {
     const hasComm = !!window.QkPF.uomCommercialId && qFactor > 1;
     const unitText = (currentSalesUomMode === 'commercial' && hasComm) ? window.QkPF.uomCommercial : window.QkPF.uomStock;
     
-    const qtyStr = prompt(`Inserisci la quantità minima per il nuovo scaglione (in ${unitText}):`);
-    if (qtyStr === null) return;
-    let qty = parseFloat(qtyStr.replace(',', '.'));
-    if (isNaN(qty) || qty <= 0) {
-      alert("Quantità non valida. Inserire un numero maggiore di 0.");
-      return;
-    }
+    if (table.querySelector('thead th input.qty-inline-input')) return;
 
-    if (currentSalesUomMode === 'commercial' && hasComm) {
-      qty = qty / qFactor;
-    }
+    const theadRow = table.querySelector('thead tr');
+    const th = document.createElement('th');
+    th.classList.add('qty-column-header', 'temp-qty-column');
+    th.style.width = "200px";
+    
+    th.innerHTML = `
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="input-group input-group-sm">
+          <input type="number" step="any" min="0" class="form-control qty-inline-input" placeholder="Qtà (${escapeHtml(unitText)})" style="min-width: 80px;">
+          <button class="btn btn-outline-success btn-confirm-qty" type="button"><i class="fa-solid fa-check"></i></button>
+          <button class="btn btn-outline-danger btn-cancel-qty" type="button"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+      </div>
+    `;
 
-    if (table.querySelector(`thead th[data-qty="${qty}"]`)) {
-      alert("Questo scaglione di quantità esiste già.");
-      return;
-    }
+    theadRow.appendChild(th);
+    const input = th.querySelector('.qty-inline-input');
+    input.focus();
 
-    insertQtyColumn(qty);
+    const rows = table.querySelectorAll('.listino-row');
+    rows.forEach(row => {
+      const td = document.createElement('td');
+      td.classList.add('temp-qty-cell');
+      row.appendChild(td);
+    });
+
+    const confirmFn = () => {
+      const qtyStr = input.value;
+      if (!qtyStr) return cancelFn();
+      let qty = parseFloat(qtyStr.replace(',', '.'));
+      if (isNaN(qty) || qty <= 0) {
+        alert("Quantità non valida. Inserire un numero maggiore di 0.");
+        return;
+      }
+      if (currentSalesUomMode === 'commercial' && hasComm) {
+        qty = qty / qFactor;
+      }
+      if (table.querySelector(`thead th[data-qty="${qty}"]`)) {
+        alert("Questo scaglione di quantità esiste già.");
+        return;
+      }
+      
+      cancelFn();
+      insertQtyColumn(qty);
+    };
+
+    const cancelFn = () => {
+      th.remove();
+      rows.forEach(row => {
+        const td = row.querySelector('.temp-qty-cell');
+        if (td) td.remove();
+      });
+    };
+
+    th.querySelector('.btn-confirm-qty').addEventListener('click', confirmFn);
+    th.querySelector('.btn-cancel-qty').addEventListener('click', cancelFn);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); confirmFn(); }
+      if (e.key === 'Escape') cancelFn();
+    });
   });
 
   function insertQtyColumn(qty) {

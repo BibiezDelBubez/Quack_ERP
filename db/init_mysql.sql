@@ -611,7 +611,7 @@ CREATE TABLE IF NOT EXISTS prodotti_fornitori_prezzi (
 
 CREATE TABLE IF NOT EXISTS listini_prezzi (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    listino_id INTEGER NOT NULL,
+    listino_id INTEGER,
     prodotto_id INTEGER NOT NULL,
     quantita_minima DECIMAL(10,3) NOT NULL DEFAULT 0,
     prezzo_unitario DECIMAL(10,4) NOT NULL,

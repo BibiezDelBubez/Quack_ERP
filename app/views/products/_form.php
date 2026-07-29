@@ -719,8 +719,8 @@ window.QkPF = {
           <div class="alert alert-info d-flex align-items-center mt-3" role="alert" style="background-color: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; border-radius: var(--qk-radius); padding: 1rem;">
             <i class="fa-solid fa-circle-info me-3 fa-lg"></i>
             <div style="font-size: 0.9rem;">
-              <strong>Gestione Prezzi & Listini</strong><br>
-              Ogni prezzo di vendita inserito in questa sezione deve appartenere a un Listino. Quando inserisci un prezzo "al volo", assicurati di scegliere il Listino corretto (es. Listino Base Pubblico). I listini qui definiti saranno immediatamente visibili nella gestione globale listini e utilizzati dal motore di pricing durante la creazione di ordini o preventivi.
+              <strong>Prezzi Base (Catalogo)</strong><br>
+              In questa sezione imposti i <strong>Prezzi Base</strong> dell'articolo (Item Master Prices). Questi prezzi sono slegati dai listini commerciali e costituiscono il prezzo di default (il fallback di sistema) usato quando al cliente non è assegnato alcun listino specifico.
             </div>
           </div>
 
@@ -967,8 +967,8 @@ window.QkPF = {
           <div class="alert alert-info d-flex align-items-center mb-3" role="alert" style="background-color: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; border-radius: var(--qk-radius); padding: 1rem;">
             <i class="fa-solid fa-circle-info me-3 fa-lg"></i>
             <div style="font-size: 0.9rem;">
-              <strong>Gestione Prezzi & Listini</strong><br>
-              Tutti i prezzi inseriti in questa sezione appartengono a un Listino d'Acquisto. Se non ne selezioni uno, il sistema creerà o aggiornerà automaticamente il listino <em>"Condizioni Base"</em> del fornitore per evitare "prezzi orfani". Inoltre, quando modifichi un prezzo esistente, il vecchio valore viene storicizzato (chiuso alla data di ieri) per mantenere intatta l'analisi dei costi storici.
+              <strong>Costi di Acquisto Base</strong><br>
+              In questa sezione definisci le condizioni d'acquisto di base (Item Master Costs) per ogni fornitore, slegate dai listini commerciali. Se non selezioni alcun Listino d'Acquisto, il sistema salverà il prezzo come "Costo Base". Quando modifichi un prezzo esistente, il vecchio valore viene storicizzato (chiuso alla data di ieri) per mantenere intatta l'analisi dei costi storici.
             </div>
           </div>
           <!-- ── Toolbar ─────────────────────────────────────────────────── -->
