@@ -54,7 +54,7 @@ class RfqDocumentService
         $wordHelper = new \Quack\WordHelper();
         $phpWord = $wordHelper->getPhpWord();
         $section = $wordHelper->createStandardSection();
-        $wordHelper->addStandardHeader($section, $azienda, 'RICHIESTA DI PREVENTIVO (RFQ)');
+        $wordHelper->addStandardHeader($section, $azienda, '');
         $wordHelper->addStandardFooter($section, 'RFQ: ' . $rfq['numero']);
 
         // Styles

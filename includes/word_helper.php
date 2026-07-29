@@ -64,20 +64,29 @@ class WordHelper
                 'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER
             ]);
         } elseif (!empty($azienda['logo_path']) && file_exists(upload_abs($azienda['logo_path']))) {
-            $headerTable = $header->addTable(['width' => self::MAX_PRINT_WIDTH]);
-            $headerTable->addRow();
-            $headerTable->addCell(5270)->addImage(upload_abs($azienda['logo_path']), ['height' => 45]);
-            $headerTable->addCell(5270, ['valign' => 'center'])->addText(
-                $documentTitle, 
-                ['name' => 'Arial', 'size' => 14, 'bold' => true, 'color' => '1A5276'], 
-                ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]
-            );
+            if ($documentTitle !== '') {
+                $headerTable = $header->addTable(['width' => self::MAX_PRINT_WIDTH]);
+                $headerTable->addRow();
+                $headerTable->addCell(5270)->addImage(upload_abs($azienda['logo_path']), ['height' => 45]);
+                $headerTable->addCell(5270, ['valign' => 'center'])->addText(
+                    $documentTitle, 
+                    ['name' => 'Arial', 'size' => 14, 'bold' => true, 'color' => '1A5276'], 
+                    ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::RIGHT]
+                );
+            } else {
+                $header->addImage(upload_abs($azienda['logo_path']), [
+                    'width' => 500,
+                    'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER
+                ]);
+            }
         } else {
-            $header->addText(
-                $documentTitle, 
-                ['name' => 'Arial', 'size' => 16, 'bold' => true, 'color' => '1A5276'], 
-                ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]
-            );
+            if ($documentTitle !== '') {
+                $header->addText(
+                    $documentTitle, 
+                    ['name' => 'Arial', 'size' => 16, 'bold' => true, 'color' => '1A5276'], 
+                    ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER]
+                );
+            }
         }
     }
 

@@ -6,7 +6,6 @@ require_once INCLUDES_DIR . '/sales_quotes.php';
 require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/compliance.php';
 require_once INCLUDES_DIR . '/impostazioni.php';
-require_once APP_ROOT_DIR . '/app/Services/SalesQuoteDocumentService.php';
 
 final class SalesQuotesController extends BaseController
 {

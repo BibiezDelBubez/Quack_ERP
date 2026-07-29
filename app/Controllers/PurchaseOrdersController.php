@@ -581,7 +581,7 @@ class PurchaseOrdersController extends BaseController
         $wordHelper = new \Quack\WordHelper();
         $phpWord = $wordHelper->getPhpWord();
         $section = $wordHelper->createStandardSection();
-        $wordHelper->addStandardHeader($section, $azienda, 'ORDINE DI ACQUISTO A FORNITORE');
+        $wordHelper->addStandardHeader($section, $azienda, '');
         $wordHelper->addStandardFooter($section, 'Ordine: ' . $ordine['numero']);
 
         // Styles

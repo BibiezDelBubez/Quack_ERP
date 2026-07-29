@@ -61,7 +61,7 @@ class SalesQuoteDocumentService
         $wordHelper = new \Quack\WordHelper();
         $phpWord = $wordHelper->getPhpWord();
         $section = $wordHelper->createStandardSection();
-        $wordHelper->addStandardHeader($section, $azienda, 'PREVENTIVO DI VENDITA');
+        $wordHelper->addStandardHeader($section, $azienda, '');
         $wordHelper->addStandardFooter($section, 'Prev. N°: ' . $quota['numero_preventivo']);
 
         // Styles

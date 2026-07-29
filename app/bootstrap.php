@@ -8,6 +8,21 @@ if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
     require_once __DIR__ . '/../vendor/autoload.php';
 }
 
+// Autoloader PSR-4 per il namespace App\
+spl_autoload_register(function ($class) {
+    $prefix = 'App\\';
+    $base_dir = __DIR__ . '/';
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) {
+        return;
+    }
+    $relative_class = substr($class, $len);
+    $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
+    if (file_exists($file)) {
+        require $file;
+    }
+});
+
 // Verifica che la cartella del database esista (solo rilevante per SQLite:
 // se il file non è ancora stato spostato/creato, l'app deve fallire in modo
 // chiaro invece di ricrearne uno vuoto in un posto sbagliato).

@@ -4,7 +4,6 @@ declare(strict_types=1);
 require_once INCLUDES_DIR . '/tabelle_base.php';
 require_once INCLUDES_DIR . '/purchases_rfq.php';
 require_once INCLUDES_DIR . '/anagrafiche.php';
-require_once APP_ROOT_DIR . '/app/Services/RfqDocumentService.php';
 
 /**
  * RfqController — Richieste di Offerta (ciclo acquisti v2).
