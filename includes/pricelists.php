@@ -264,21 +264,25 @@ function qk_get_clienti_assegnati_listino(PDO $pdo, int $listinoId): array
  * canonica (quantita_minima_stock), esclusa la riga stessa in modifica.
  * Estratta da SalesPricelistsController::apiSaveRiga() (§5.2 del piano).
  */
-function qk_listino_prezzo_riga_esiste_duplicato(PDO $pdo, int $listinoId, int $prodottoId, float $qMinStock, int $escludiRigaId): bool
+function qk_listino_prezzo_riga_esiste_duplicato(PDO $pdo, ?int $listinoId, int $prodottoId, float $qMinStock, int $escludiRigaId): bool
 {
+    $listinoCond = $listinoId === null ? "listino_id IS NULL" : "listino_id = :listino_id";
     $st = $pdo->prepare("
         SELECT id FROM listini_prezzi
-        WHERE listino_id = :listino_id
+        WHERE $listinoCond
           AND prodotto_id = :prodotto_id
           AND quantita_minima_stock = :qmin_stock
           AND id != :riga_id
     ");
-    $st->execute([
-        ':listino_id'  => $listinoId,
+    $params = [
         ':prodotto_id' => $prodottoId,
         ':qmin_stock'  => $qMinStock,
         ':riga_id'     => $escludiRigaId,
-    ]);
+    ];
+    if ($listinoId !== null) {
+        $params[':listino_id'] = $listinoId;
+    }
+    $st->execute($params);
     return (bool) $st->fetch();
 }
 
@@ -288,8 +292,25 @@ function qk_listino_prezzo_riga_esiste_duplicato(PDO $pdo, int $listinoId, int $
  * unita_misura_id, note, quantita_minima_intento, unita_misura_soglia_id,
  * quantita_minima_stock. Estratta da SalesPricelistsController::apiSaveRiga().
  */
-function qk_listino_prezzo_riga_update(PDO $pdo, int $rigaId, int $listinoId, array $data): void
+function qk_listino_prezzo_riga_update(PDO $pdo, int $rigaId, ?int $listinoId, array $data): void
 {
+    $listinoCond = $listinoId === null ? "listino_id IS NULL" : "listino_id = :listino_id";
+    $params = [
+        ':prodotto_id'  => $data['prodotto_id'],
+        ':qmin'         => $data['quantita_minima'],
+        ':prezzo'       => $data['prezzo_unitario'],
+        ':sconto'       => $data['sconto_perc'],
+        ':unita_misura_id' => $data['unita_misura_id'],
+        ':note'         => $data['note'],
+        ':qmin_intento' => $data['quantita_minima_intento'],
+        ':um_soglia_id' => $data['unita_misura_soglia_id'],
+        ':qmin_stock'   => $data['quantita_minima_stock'],
+        ':id'           => $rigaId,
+    ];
+    if ($listinoId !== null) {
+        $params[':listino_id'] = $listinoId;
+    }
+
     $pdo->prepare(
         "UPDATE listini_prezzi SET
             prodotto_id     = :prodotto_id,
@@ -302,20 +323,8 @@ function qk_listino_prezzo_riga_update(PDO $pdo, int $rigaId, int $listinoId, ar
             unita_misura_soglia_id  = :um_soglia_id,
             quantita_minima_stock   = :qmin_stock,
             modificato_manualmente_il = CURRENT_TIMESTAMP
-         WHERE id = :id AND listino_id = :listino_id"
-    )->execute([
-        ':prodotto_id'  => $data['prodotto_id'],
-        ':qmin'         => $data['quantita_minima'],
-        ':prezzo'       => $data['prezzo_unitario'],
-        ':sconto'       => $data['sconto_perc'],
-        ':unita_misura_id' => $data['unita_misura_id'],
-        ':note'         => $data['note'],
-        ':qmin_intento' => $data['quantita_minima_intento'],
-        ':um_soglia_id' => $data['unita_misura_soglia_id'],
-        ':qmin_stock'   => $data['quantita_minima_stock'],
-        ':id'           => $rigaId,
-        ':listino_id'   => $listinoId,
-    ]);
+         WHERE id = :id AND $listinoCond"
+    )->execute($params);
 }
 
 /**

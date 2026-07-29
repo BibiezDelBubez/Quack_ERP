@@ -285,22 +285,23 @@ final class SalesPricelistsController extends BaseController
             exit;
         }
 
-        $listinoId   = filter_input(INPUT_POST, 'listino_id', FILTER_VALIDATE_INT);
-        $rigaId      = filter_input(INPUT_POST, 'riga_id',    FILTER_VALIDATE_INT); // 0 = nuova
-        $prodottoId  = filter_input(INPUT_POST, 'prodotto_id', FILTER_VALIDATE_INT);
-        $qMin        = filter_input(INPUT_POST, 'quantita_minima', FILTER_VALIDATE_FLOAT);
-        $prezzo      = filter_input(INPUT_POST, 'prezzo_unitario', FILTER_VALIDATE_FLOAT);
-        $sconto      = filter_input(INPUT_POST, 'sconto_perc', FILTER_VALIDATE_FLOAT);
-        $unitaMisuraId = filter_input(INPUT_POST, 'unita_misura_id', FILTER_VALIDATE_INT);
+        $listinoIdInput = $_POST['listino_id'] ?? '';
+        $listinoId = ($listinoIdInput === '' || $listinoIdInput === 'null') ? null : (int)$listinoIdInput;
+        $rigaId      = (int)($_POST['riga_id'] ?? 0);
+        $prodottoId  = isset($_POST['prodotto_id']) ? (int)$_POST['prodotto_id'] : null;
+        $qMin        = isset($_POST['quantita_minima']) ? (float)$_POST['quantita_minima'] : null;
+        $prezzo      = isset($_POST['prezzo_unitario']) ? (float)$_POST['prezzo_unitario'] : null;
+        $sconto      = isset($_POST['sconto_perc']) ? (float)$_POST['sconto_perc'] : null;
+        $unitaMisuraId = isset($_POST['unita_misura_id']) && $_POST['unita_misura_id'] !== '' ? (int)$_POST['unita_misura_id'] : null;
         $note        = trim(post('note') ?? '');
 
-        if (!$listinoId || !$prodottoId || $prezzo === false || $prezzo === null) {
+        if (!$prodottoId || $prezzo === false || $prezzo === null) {
             echo json_encode(['ok' => false, 'error' => 'Parametri mancanti o non validi.']);
             exit;
         }
 
-        // Verifica listino esiste
-        if (!qk_get_listino($this->pdo, $listinoId)) {
+        // Verifica listino esiste se passato
+        if ($listinoId !== null && !qk_get_listino($this->pdo, $listinoId)) {
             echo json_encode(['ok' => false, 'error' => 'Listino non trovato.']);
             exit;
         }

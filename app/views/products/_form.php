@@ -746,8 +746,14 @@ window.QkPF = {
               $rules_map[$lid][$qty] = $regola;
           }
 
-          // Mostra tutti i listini attivi a sistema
+          // Mostra tutti i listini attivi a sistema, prependendo il Prezzo Base
           $listini_da_mostrare = $listini;
+          array_unshift($listini_da_mostrare, [
+              'id' => 0,
+              'nome' => 'Prezzo Base (Catalogo)',
+              'valuta' => $listini[0]['valuta'] ?? 'EUR',
+              'is_base' => true
+          ]);
           ?>
 
           <!-- Banner Prezzi Consigliati -->
@@ -809,26 +815,26 @@ window.QkPF = {
                   <tbody>
                     <?php foreach ($listini_da_mostrare as $listino): 
                         $lid = (int)$listino['id'];
-                        $isStandard = ($lid === 1);
+                        $isBase = !empty($listino['is_base']);
                         
                         // Cerca regola base (qty = 0)
                         $baseRule = $rules_map[$lid]['0'] ?? null;
-                        $basePrice = $baseRule ? (float)$baseRule['prezzo_unitario'] : ($isStandard ? (float)($v['prezzo_vendita_base'] ?? 0) : null);
+                        $basePrice = $baseRule ? (float)$baseRule['prezzo_unitario'] : ($isBase ? (float)($v['prezzo_vendita_base'] ?? 0) : null);
                         $baseDiscount = $baseRule ? (float)$baseRule['sconto_perc'] : 0.0;
                         $baseNote = $baseRule ? $baseRule['note'] : '';
-                        $baseRowId = $baseRule ? $baseRule['id'] : ($isStandard ? -1 : 0);
+                        $baseRowId = $baseRule ? $baseRule['id'] : 0;
                         $hasBaseDetails = ($baseDiscount > 0 || $baseNote !== '');
                     ?>
-                    <tr class="listino-row" data-listino-id="<?= $lid ?>" data-valuta="<?= e($listino['valuta']) ?>">
-                      <td class="listino-info-cell" style="<?= $isStandard ? 'background: #f1f5f9; border-left: 4px solid var(--qk-primary);' : '' ?>">
+                    <tr class="listino-row" data-listino-id="<?= $isBase ? '' : $lid ?>" data-valuta="<?= e($listino['valuta']) ?>">
+                      <td class="listino-info-cell" style="<?= $isBase ? 'background: #f1f5f9; border-left: 4px solid var(--qk-primary);' : '' ?>">
                         <div class="d-flex flex-column gap-1">
                           <span style="font-size: 0.85rem; font-weight: 700; color: var(--qk-text-primary);"><?= e($listino['nome']) ?></span>
                           <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-light text-dark border" style="font-size: 0.68rem;"><?= e($listino['valuta']) ?></span>
-                            <?php if ($isStandard): ?>
-                              <span class="badge bg-primary text-white" style="font-size: 0.65rem; padding: 2px 5px; font-weight: 600;">LISTINO PRINCIPALE</span>
+                            <?php if ($isBase): ?>
+                              <span class="badge bg-primary text-white" style="font-size: 0.65rem; padding: 2px 5px; font-weight: 600;">PREZZO BASE</span>
                             <?php else: ?>
-                              <span class="badge bg-secondary text-white" style="font-size: 0.65rem; padding: 2px 5px; font-weight: 500;">Listino Speciale</span>
+                              <span class="badge bg-secondary text-white" style="font-size: 0.65rem; padding: 2px 5px; font-weight: 500;">Listino Specifico</span>
                             <?php endif; ?>
                           </div>
                         </div>
