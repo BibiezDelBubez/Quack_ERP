@@ -1,0 +1,36 @@
+Sto avendo dei dubbi. Mi sa che la gestione dei prezzi vendita e acquisto va rivista.
+
+I veri "luoghi" deputati a raccogliere i prezzi dei prodotti sono
+
+- "http://localhost/Quack/sales/pricelists" per i listini di vendita
+- "http://localhost/Quack/purchases/pricelists" per i listini di acquisto
+
+Però, va data all'utente la possibilità di inserire dei prezzi anche nelle schede prodotto per diversi motivi
+
+- Comodità dell'utente. Quando crea un prodotto da zero può impostare velocemente i prezzi direttamente dalla scheda
+- La scheda prodotto è un modo molto comodo per vedere in un colpo solo TUTTI i prezzi di acquisto (o tutti i prezzi di vendita) di uno specifico prodotto. è insomma una vista prodotto-centrica di prezzi vendita o costi di acqusito
+
+Quindi: 
+- Ci deve essere una tab "Prezzi di Vendita & Listini" in cui l'utente può inserire prezzi di vendita e i prezzi (minimi e massimi) di rivendita suggeriti. La schermata RRP è un cassetto, la schermata dei prezzi di vendita è ispirata a NetSuite, con una griglia.
+- Ci deve essere una tab "Costi d'Acquisto & Fornitori" in cui l'utente può inserire i costi di acquisto per singolo fornitore. La schermata è ispirata a Odoo e Dynamics 365
+
+Ora, quelli che per NetSuite, Dynamics, Odoo sarebbero "prezzo base" e "costo base" in Dynamics 365 sono prezzi che hanno però id_listino=NULL. Però
+
+1) Gli altri prezzi di acquisto inseriti tramite matrice NetSuite-style nella tab "Costi d'Acquisto & Fornitori" dove finiscono?
+2) Gli altri prezzi di vendita inseriti tramite lista Odoo-style/Dynamics-Style nella tab "Prezzi di Vendita & Listini", dove finiscono?
+
+
+
+
+Il punto è come rendere comodo, intuitivo e professionale il collegamento tra i prezzi nei listini e i prezzi nella scheda prodotto
+
+
+
+DOMANDE
+- A livello di DB, i prezzi di acquisto inseriti tramite scheda prodotto, dove vanno? I prezzi di vendita inseriti tramite sche da prodotto, dove vanno?
+- Nel 2026 è normale/comodo/best practice che i prezzi inseriti nella scheda prodotto non siano visibili nei listini di acquisto e di vendita?
+- é normale/comodo/best practice che se cerco di inserire un prezzo di vendita nella scheda prodotto, il sistema mi dice che non è possibile perché non trova un listino di default? in altre parole, è normale/comodo/best practice che l'utente deve prima creare un listino predefinito e poi può inserire i prezzi di vendita tramite scheda utente?
+- Riguardo TUTTI e dico tutti i punti sopra, tra gli ERP best in class, quelli con ux più comoda, moderna, intuitiva cosa fanno?
+
+
+1) Sarebbe bello se in questi luoghi deputati ci fossero anche i listini generali
