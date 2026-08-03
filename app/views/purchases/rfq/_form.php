@@ -987,4 +987,4 @@ window.QK_RFQ_CONFIG = {
   rfqStato: <?= json_encode($values['stato'] ?? 'bozza') ?>
 };
 </script>
-<script src="<?= url('assets/js/rfq-form.js') ?>"></script>
+<script src="<?= url('assets/js/rfq-form.js') ?>?v=<?= time() ?>"></script>

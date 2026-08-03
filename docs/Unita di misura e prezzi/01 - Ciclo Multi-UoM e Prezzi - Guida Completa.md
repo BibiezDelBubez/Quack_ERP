@@ -62,8 +62,9 @@ Quack offre due modi per interagire con gli stessi dati sottostanti — **entram
 - URL: scheda prodotto → tab "Prezzi di Vendita" / "Costi d'Acquisto".
 - Scopo: inserimento rapido "al volo", confronto diretto durante l'operatività quotidiana.
 - Pattern UX **Master List + Drawer** (acquisti): la tabella principale mostra SKU fornitore, lead time e tariffa base; un drawer laterale nasconde la complessità (scaglioni volume, vincoli RRP, selettore listino d'acquisto) mantenendo la griglia principale pulita.
-- Pattern UX **Matrice Ibrida Lazy-Load** (vendite): righe = listini, colonne = scaglioni di quantità; sezione collassabile di default, che si apre automaticamente se ci sono 2+ listini o scaglioni. Regole anti-cluttering: nessuna colonna quantità se nessun listino usa scaglioni, massimo 4 colonne di default, nessuna riga per listini non assegnati al prodotto.
-- **Ereditarietà visiva delle celle vuote**: una cella vuota per uno scaglione non definito su un dato listino eredita visivamente il prezzo dello scaglione precedente **nello stesso listino** (mai da un altro listino — bug corretto il 13/07/2026: la versione precedente prendeva in prestito il prezzo dal listino Standard allo stesso scaglione, producendo un'anteprima che il motore di pricing reale non avrebbe mai applicato, perché la cascata a scaglioni cerca sempre solo dentro lo stesso listino).
+- Pattern UX **Matrice Prodotto-Centrica (Cascading NetSuite)** (vendite): righe = listini (il **Listino 1** funge da Listino Base e non è eliminabile), colonne = scaglioni di quantità.
+- **Ereditarietà visiva e logica (Cascading Verticale)**: a differenza dei vecchi comportamenti, l'applicazione sposa il modello NetSuite. Una cella vuota per un dato scaglione in un listino non-base (es. Listino Rivenditori) **eredita matematicamente il prezzo dal Listino Base (Listino 1) per quello stesso scaglione**, a cui viene poi sottratto in automatico lo `sconto_default_perc` configurato per quel listino. I placeholder JS informano l'utente sull'origine del calcolo (es. `(Ered.)` o `(Calcolato)`). Questa logica sostituisce i precedenti concetti di ereditarietà orizzontale o "fallback" su listini standard. 
+- La riga di un listino mostra un indicatore `readonly` della percentuale di sconto applicata, permettendo all'utente di avere chiara la derivazione matematica senza impazzire. L'inserimento manuale in una cella sovrascrive (override) la formula.
 
 ### Acquisti: nessun "listino d'acquisto globale predefinito"
 
@@ -221,3 +222,8 @@ Un reso/nota di credito **eredita sempre lo snapshot della riga d'ordine origina
 - Materiale comparativo di mercato: [00 - Best Practice di Mercato](00%20-%20Best%20Practice%20di%20Mercato%20(Multi-UoM%20e%20Pricing).md).
 - Registro storico delle decisioni (perché, non solo cosa): [REVISIONE - Ridondanze, Contraddizioni e Piano di Riorganizzazione.md](REVISIONE%20-%20Ridondanze%2C%20Contraddizioni%20e%20Piano%20di%20Riorganizzazione.md), [PIANO - Motore di Pricing Multi-UoM.md](PIANO%20-%20Motore%20di%20Pricing%20Multi-UoM.md).
 - Sviluppi rimandati deliberatamente: `docs/Backlog Sviluppi Futuri.md`.
+
+## Gestione Listini dalla Scheda Prodotto
+
+**IMPORTANTE (Best Practice ERP)**: Dalla scheda prodotto (Tab 'Prezzi di Vendita & Listini') NON è possibile creare nuovi listini commerciali (es. 'Listino B2B', 'Listino Rivenditori'). Questa è una scelta architetturale voluta e allineata agli standard ERP di fascia alta (es. NetSuite).
+I listini sono entità globali del sistema e vanno creati nell'apposita sezione di configurazione. Una volta creati, appariranno automaticamente come righe all'interno della matrice prezzi di ogni singolo prodotto, dove l'utente potrà inserire il prezzo, gli sconti o gli scaglioni di quantità per quello specifico articolo. Il 'Prezzo Base' (Listino di sistema ID 1) funge da default per i clienti privi di listino specifico.

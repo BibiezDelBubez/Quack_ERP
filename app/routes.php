@@ -117,6 +117,7 @@ return [
     '/products/tags'               => ['type' => 'controller', 'controller' => 'ProductsTagsController', 'action' => 'tags',             'auth' => true],
     '/products/tags/delete'        => ['type' => 'controller', 'controller' => 'ProductsTagsController', 'action' => 'deleteTag',          'auth' => true, 'permission' => 'manage_catalog'],
     '/products/api/prodotti'       => ['type' => 'controller', 'controller' => 'ProductsApiController', 'action' => 'searchProdotti',      'auth' => true],
+    '/products/api/save-costo-base'=> ['type' => 'controller', 'controller' => 'ProductsController', 'action' => 'apiSaveCostoBase',  'auth' => true, 'permission' => 'manage_catalog'],
     '/products/api/batch-associa-adr' => ['type' => 'controller', 'controller' => 'ProductsComplianceController', 'action' => 'apiBatchAssociaAdr', 'auth' => true, 'permission' => 'manage_catalog'],
     '/products/kit/componenti'     => ['type' => 'controller', 'controller' => 'ProductsKitController', 'action' => 'listComponentiKit',   'auth' => true],
     '/products/kit/save'           => ['type' => 'controller', 'controller' => 'ProductsKitController', 'action' => 'saveComponenteKit',   'auth' => true, 'permission' => 'manage_catalog'],

@@ -248,6 +248,14 @@ CREATE TABLE IF NOT EXISTS canali_vendita (
     attivo BOOLEAN      NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS prodotti_valutazione_costi (
+    prodotto_id INTEGER PRIMARY KEY REFERENCES prodotti(id) ON DELETE CASCADE,
+    costo_acquisto_base DECIMAL(10,4),
+    costo_acquisto_medio DECIMAL(10,4),
+    unita_misura_acquisto_id INTEGER REFERENCES unita_misura(id) ON DELETE SET NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS ruoli (
     id                   INTEGER      PRIMARY KEY AUTOINCREMENT,
     codice               VARCHAR(20)  NOT NULL UNIQUE,
@@ -307,8 +315,12 @@ CREATE TABLE IF NOT EXISTS listini (
     valido_dal  DATE,
     valido_al   DATE,
     is_default  BOOLEAN      NOT NULL DEFAULT 0,
+    sconto_default_perc DECIMAL(5,2) NOT NULL DEFAULT 0,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+INSERT OR IGNORE INTO listini (id, nome, valuta, is_default, attivo) 
+VALUES (1, 'Prezzo Base (Catalogo)', 'EUR', 1, 1);
 
 CREATE TABLE IF NOT EXISTS clienti_listini (
     id          INTEGER      PRIMARY KEY AUTOINCREMENT,

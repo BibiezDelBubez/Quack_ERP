@@ -1,0 +1,39 @@
+// Struttura dati del prodotto
+Prodotto {
+    id: INT
+    giacenza_attuale: DECIMAL
+    cmp_attuale: DECIMAL
+    costo_standard: DECIMAL
+    valore_totale_magazzino: DECIMAL
+}
+
+// FUNZIONE 1: Registrazione Entrata Merci (Acquisto)
+FUNZIONE registra_entrata_merci(prodotto_id, qta_entrata, prezzo_acquisto_unitario):
+    p = carica_prodotto(prodotto_id)
+    
+    valore_esistente = p.giacenza_attuale * p.cmp_attuale
+    valore_nuovo_carico = qta_entrata * prezzo_acquisto_unitario
+    
+    nuova_giacenza = p.giacenza_attuale + qta_entrata
+    
+    SE nuova_giacenza > 0 ALLORA:
+        p.cmp_attuale = (valore_esistente + valore_nuovo_carico) / nuova_giacenza
+    ALTRIMENTI:
+        p.cmp_attuale = p.costo_standard
+    FINE SE
+    
+    p.giacenza_attuale = nuova_giacenza
+    p.valore_totale_magazzino = p.giacenza_attuale * p.cmp_attuale
+    
+    salva_prodotto(p)
+FINE FUNZIONE
+
+// FUNZIONE 2: Calcolo Valore Totale Magazzino (Reportistica)
+FUNZIONE calcola_valore_totale_aziendale():
+    totale_euro = 0
+    PER OGNI p IN prodotti_attivi:
+        valore_prodotto = p.giacenza_attuale * p.cmp_attuale
+        totale_euro = totale_euro + valore_prodotto
+    FINE PER
+    RITORNA totale_euro
+FINE FUNZIONE

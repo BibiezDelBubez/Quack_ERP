@@ -128,7 +128,7 @@ window.QkPF = {
   <?= csrf_field() ?>
 
   <!-- ═══════════════════════ BARRA AZIONI SUPERIORE ═══════════════════════ -->
-  <div class="qk-card mb-3">
+  <div class="qk-card mb-3" id="top-action-bar">
     <div class="qk-card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
       <div class="d-flex align-items-center gap-2">
         <button type="submit" class="btn-qk btn-qk-primary">
@@ -156,6 +156,14 @@ window.QkPF = {
         </button>
       </div>
       <?php endif; ?>
+    </div>
+  </div>
+  
+  <div class="qk-alert qk-alert-info mb-3 d-none align-items-center" id="top-live-bar" style="padding: 10px 15px;">
+    <i class="fa-solid fa-cloud-arrow-up me-2" style="font-size: 1.2rem;"></i>
+    <div>
+      <strong>Salvataggio Automatico Attivo</strong><br>
+      <span style="font-size: 0.85rem;">Tutte le modifiche effettuate in questa scheda (incluso il Costo d'Acquisto Base) vengono salvate istantaneamente in tempo reale. Non è necessario premere alcun tasto "Salva".</span>
     </div>
   </div>
 
@@ -716,11 +724,12 @@ window.QkPF = {
           <?php else: ?>
 
           <!-- Banner Informativo Listini Vendita -->
-          <div class="alert alert-info d-flex align-items-center mt-3" role="alert" style="background-color: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; border-radius: var(--qk-radius); padding: 1rem;">
+          <div class="qk-alert qk-alert-info d-flex align-items-center mt-3" role="alert" style="padding: 1rem;">
             <i class="fa-solid fa-circle-info me-3 fa-lg"></i>
             <div style="font-size: 0.9rem;">
-              <strong>Prezzi Base (Catalogo)</strong><br>
-              In questa sezione imposti i <strong>Prezzi Base</strong> dell'articolo (Item Master Prices). Questi prezzi sono slegati dai listini commerciali e costituiscono il prezzo di default (il fallback di sistema) usato quando al cliente non è assegnato alcun listino specifico.
+              <strong>Gestione Listini & Prezzo Base</strong><br>
+              In questa matrice configuri i prezzi di questo specifico prodotto per i listini attivi. <br>
+              <strong>Best Practice ERP:</strong> Non puoi "creare" un nuovo listino da questa schermata. I listini commerciali (es. <em>Listino B2B</em>, <em>Listino Rivenditori</em>) sono entità globali del sistema e vanno creati nella sezione <strong>Configurazione Listini</strong>. Una volta creati, appariranno automaticamente qui come nuove righe, pronti per essere personalizzati con sconti o scaglioni per questo prodotto. Il <strong>Prezzo Base</strong> (prima riga) funge da fallback quando a un cliente non è assegnato alcun listino.
             </div>
           </div>
 
@@ -746,14 +755,16 @@ window.QkPF = {
               $rules_map[$lid][$qty] = $regola;
           }
 
-          // Mostra tutti i listini attivi a sistema, prependendo il Prezzo Base
-          $listini_da_mostrare = $listini;
-          array_unshift($listini_da_mostrare, [
-              'id' => 0,
-              'nome' => 'Prezzo Base (Catalogo)',
-              'valuta' => $listini[0]['valuta'] ?? 'EUR',
-              'is_base' => true
-          ]);
+          // Mostra tutti i listini attivi a sistema. Il listino Base (ID 1) è già incluso grazie alla modifica a DB.
+          $listini_da_mostrare = [];
+          foreach ($listini as $listino) {
+              if ($listino['id'] == 1) {
+                  $listino['is_base'] = true;
+                  array_unshift($listini_da_mostrare, $listino); // Mettilo sempre per primo
+              } else {
+                  $listini_da_mostrare[] = $listino;
+              }
+          }
           ?>
 
           <!-- Banner Prezzi Consigliati -->
@@ -773,7 +784,7 @@ window.QkPF = {
               <div>
                 <span class="qk-card-title">Matrice Prezzi di Vendita & Listini</span>
                 <span class="qk-card-subtitle" style="display:block; font-size:.78rem; color:var(--qk-text-muted);">
-                  Griglia dei prezzi per scaglione. I valori si salvano in automatico all'uscita dal campo (blur) o premendo Invio. Clicca sull'icona ingranaggio per sconti e note.
+                  Griglia dei prezzi per scaglione. I valori si salvano in automatico all'uscita dal campo (blur) o premendo Invio. Il prezzo viene calcolato automaticamente (Cascading) in base allo Sconto del Listino sul Prezzo Base (sostituendo il campo diventerà un prezzo in override).
                 </span>
               </div>
               <div class="text-end d-flex align-items-center gap-3">
@@ -793,6 +804,7 @@ window.QkPF = {
                   <thead>
                     <tr>
                       <th style="width: 250px; background: var(--qk-hover-bg, rgba(241, 245, 249, 0.6)); color: var(--qk-text-primary); border-bottom: 2px solid var(--qk-border);">Listino (Valuta)</th>
+                      <th style="width: 100px; text-align: center; border-bottom: 2px solid var(--qk-border);">Sconto %</th>
                       <th style="width: 200px; background: #f1f5f9; color: #0f172a; border-bottom: 2px solid var(--qk-border); font-weight: 700; text-align: center;">PREZZO BASE [Qtà 0+]</th>
                       <?php foreach ($qty_tiers as $qty): ?>
                       <th class="qty-column-header" data-qty="<?= $qty ?>" style="width: 200px;">
@@ -822,10 +834,11 @@ window.QkPF = {
                         $basePrice = $baseRule ? (float)$baseRule['prezzo_unitario'] : ($isBase ? (float)($v['prezzo_vendita_base'] ?? 0) : null);
                         $baseDiscount = $baseRule ? (float)$baseRule['sconto_perc'] : 0.0;
                         $baseNote = $baseRule ? $baseRule['note'] : '';
+                        $baseNote = $baseRule ? $baseRule['note'] : '';
                         $baseRowId = $baseRule ? $baseRule['id'] : 0;
-                        $hasBaseDetails = ($baseDiscount > 0 || $baseNote !== '');
+                        $scontoDefault = (float)($listino['sconto_default_perc'] ?? 0.0);
                     ?>
-                    <tr class="listino-row" data-listino-id="<?= $isBase ? '' : $lid ?>" data-valuta="<?= e($listino['valuta']) ?>">
+                    <tr class="listino-row" data-listino-id="<?= $isBase ? '' : $lid ?>" data-valuta="<?= e($listino['valuta']) ?>" data-sconto-default="<?= $scontoDefault ?>">
                       <td class="listino-info-cell" style="<?= $isBase ? 'background: #f1f5f9; border-left: 4px solid var(--qk-primary);' : '' ?>">
                         <div class="d-flex flex-column gap-1">
                           <span style="font-size: 0.85rem; font-weight: 700; color: var(--qk-text-primary);"><?= e($listino['nome']) ?></span>
@@ -840,6 +853,23 @@ window.QkPF = {
                         </div>
                       </td>
                       
+                      <!-- Colonna Sconto % -->
+                      <td>
+                        <div class="matrix-cell-wrapper p-1">
+                          <?php if ($isBase): ?>
+                            <div class="text-center text-muted" style="font-size:0.75rem">—</div>
+                          <?php else: ?>
+                            <div class="input-group input-group-sm">
+                              <input type="number" class="form-control listino-sconto-input text-end" 
+                                     step="0.01" min="0" max="100" placeholder="0.00" readonly
+                                     title="Sconto percentuale predefinito impostato nel Listino (sola lettura)"
+                                     value="<?= $scontoDefault > 0 ? number_format($scontoDefault, 2, '.', '') : '' ?>">
+                              <span class="input-group-text">%</span>
+                            </div>
+                          <?php endif; ?>
+                        </div>
+                      </td>
+
                       <!-- Colonna prezzo base [0+] -->
                       <td>
                         <div class="matrix-cell-wrapper" data-qty="0" data-riga-id="<?= $baseRowId ?>">
@@ -969,14 +999,75 @@ window.QkPF = {
           </div>
           <?php else: ?>
 
-          <!-- Banner Informativo Listini Acquisto -->
+          <!-- Banner Informativo Costi & Fornitori -->
           <div class="alert alert-info d-flex align-items-center mb-3" role="alert" style="background-color: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; border-radius: var(--qk-radius); padding: 1rem;">
             <i class="fa-solid fa-circle-info me-3 fa-lg"></i>
             <div style="font-size: 0.9rem;">
-              <strong>Costi di Acquisto Base</strong><br>
-              In questa sezione definisci le condizioni d'acquisto di base (Item Master Costs) per ogni fornitore, slegate dai listini commerciali. Se non selezioni alcun Listino d'Acquisto, il sistema salverà il prezzo come "Costo Base". Quando modifichi un prezzo esistente, il vecchio valore viene storicizzato (chiuso alla data di ieri) per mantenere intatta l'analisi dei costi storici.
+              <strong>Costi d'Acquisto e Fornitori (Item Master Costs)</strong><br>
+              In questa sezione definisci il costo di riferimento interno per il calcolo dei margini e configuri le anagrafiche dei fornitori. I listini o le condizioni d'acquisto specifiche si trovano nella griglia fornitori sottostante.
             </div>
           </div>
+          
+          <!-- ── Valutazione Costi Interni ───────────────────────────────── -->
+          <div class="qk-card mb-4" style="border:1px solid var(--qk-primary);">
+            <div class="qk-card-header" style="background-color:rgba(14, 165, 233, 0.05); border-bottom:1px solid var(--qk-border); padding:.8rem 1.25rem;">
+              <h5 class="mb-0" style="font-size:1rem; color:var(--qk-primary); font-weight:600;">
+                <i class="fa-solid fa-calculator me-2"></i> Valutazione Costi d'Acquisto (Riferimento Interno)
+              </h5>
+            </div>
+            <div class="qk-card-body p-4">
+              <div class="row gx-4 gy-3">
+                <div class="col-md-4">
+                  <label class="qk-form-label" for="costo_acquisto_base">Costo d'Acquisto Base</label>
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">&euro;</span>
+                    <input type="number" step="0.0001" min="0" class="form-control" 
+                           id="costo_acquisto_base" name="costo_acquisto_base"
+                           value="<?= e($v['costo_acquisto_base']) ?>" placeholder="Es. 12.50">
+                  </div>
+                  <div class="form-text mt-1" style="font-size:0.75rem;">
+                    Costo standard inserito manualmente. Usato come fallback per i calcoli dei margini.
+                  </div>
+                </div>
+                
+                <div class="col-md-4">
+                  <label class="qk-form-label text-muted" for="costo_acquisto_medio">Costo Medio Ponderato (CMP)</label>
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text text-muted bg-light">&euro;</span>
+                    <input type="number" class="form-control bg-light" 
+                           id="costo_acquisto_medio" name="costo_acquisto_medio"
+                           value="<?= e($v['costo_acquisto_medio']) ?>" readonly placeholder="—">
+                  </div>
+                  <div class="form-text mt-1" style="font-size:0.75rem;">
+                    Calcolato automaticamente (sola lettura).
+                  </div>
+                </div>
+                
+                <div class="col-md-4">
+                  <label class="qk-form-label" for="unita_misura_acquisto_id">UoM di Riferimento</label>
+                  <select class="form-select form-select-sm" id="unita_misura_acquisto_id" name="unita_misura_acquisto_id">
+                    <?php if (!empty($v['unita_contenuto_id']) && (string)$v['unita_contenuto_id'] !== (string)$um_base_id): ?>
+                      <option value="<?= e($v['unita_contenuto_id']) ?>" <?= ((string)$v['unita_misura_acquisto_id'] === (string)$v['unita_contenuto_id']) ? 'selected' : '' ?>>
+                        Unità commerciale (<?= e($um_comm_codice) ?>)
+                      </option>
+                    <?php endif; ?>
+                    <?php if ($um_base_id): ?>
+                      <option value="<?= e($um_base_id) ?>" <?= (empty($v['unita_misura_acquisto_id']) || (string)$v['unita_misura_acquisto_id'] === (string)$um_base_id) ? 'selected' : '' ?>>
+                        Unità di stock (<?= e($um) ?>)
+                      </option>
+                    <?php endif; ?>
+                  </select>
+                  <div class="form-text mt-1" style="font-size:0.75rem;">
+                    Unità di misura su cui si basano i costi (tipicamente la Stock UoM).
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <h6 class="mb-3" style="font-weight:700; color:var(--qk-text-primary); font-size:1.05rem; border-bottom: 2px solid var(--qk-border); padding-bottom: 0.5rem;">
+            Matrice Fornitori (Approvvigionamento)
+          </h6>
           <!-- ── Toolbar ─────────────────────────────────────────────────── -->
           <div class="qk-table-toolbar qk-card mb-3"
                style="border-radius:var(--qk-radius);border:1px solid var(--qk-card-border)">

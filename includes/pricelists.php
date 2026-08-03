@@ -50,8 +50,8 @@ function qk_listino_insert(PDO $pdo, array $data): int
         $pdo->exec("UPDATE listini SET is_default = 0 WHERE is_default = 1");
     }
     $st = $pdo->prepare("
-        INSERT INTO listini (nome, descrizione, valuta, valido_dal, valido_al, is_default, attivo, created_at)
-        VALUES (:nome, :descrizione, :valuta, :valido_dal, :valido_al, :is_default, :attivo, CURRENT_TIMESTAMP)
+        INSERT INTO listini (nome, descrizione, valuta, valido_dal, valido_al, is_default, attivo, sconto_default_perc, created_at)
+        VALUES (:nome, :descrizione, :valuta, :valido_dal, :valido_al, :is_default, :attivo, :sconto, CURRENT_TIMESTAMP)
     ");
     $st->execute([
         ':nome'        => $data['nome'],
@@ -61,6 +61,7 @@ function qk_listino_insert(PDO $pdo, array $data): int
         ':valido_al'   => $data['valido_al'] ?? null,
         ':is_default'  => $data['is_default'] ?? 0,
         ':attivo'      => $data['attivo'] ?? 1,
+        ':sconto'      => $data['sconto_default_perc'] ?? 0.0,
     ]);
     return (int)$pdo->lastInsertId();
 }
@@ -76,7 +77,8 @@ function qk_listino_update(PDO $pdo, int $id, array $data): void
     $st = $pdo->prepare("
         UPDATE listini
            SET nome = :nome, descrizione = :descrizione, valuta = :valuta,
-               valido_dal = :valido_dal, valido_al = :valido_al, is_default = :is_default, attivo = :attivo
+               valido_dal = :valido_dal, valido_al = :valido_al, is_default = :is_default, attivo = :attivo,
+               sconto_default_perc = :sconto
          WHERE id = :id
     ");
     $st->execute([
@@ -88,6 +90,7 @@ function qk_listino_update(PDO $pdo, int $id, array $data): void
         ':valido_al'   => $data['valido_al'] ?? null,
         ':is_default'  => $data['is_default'] ?? 0,
         ':attivo'      => $data['attivo'] ?? 1,
+        ':sconto'      => $data['sconto_default_perc'] ?? 0.0,
     ]);
 }
 

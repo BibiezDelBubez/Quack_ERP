@@ -90,6 +90,7 @@ final class SalesPricelistsController extends BaseController
             'attivo'     => 1,
             'valido_dal' => date('Y-m-d'),
             'valido_al'  => '',
+            'sconto_default_perc' => '0.00',
         ];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -103,6 +104,7 @@ final class SalesPricelistsController extends BaseController
                     'attivo'      => post('attivo') === '1' ? 1 : 0,
                     'valido_dal'  => post('valido_dal') ?: null,
                     'valido_al'   => post('valido_al') ?: null,
+                    'sconto_default_perc' => (float)(str_replace(',', '.', post('sconto_default_perc') ?? '0')),
                 ];
 
                 if (empty($values['nome'])) {
@@ -164,6 +166,7 @@ final class SalesPricelistsController extends BaseController
             'valido_dal'  => $pricelist['valido_dal'] ?: '',
             'valido_al'   => $pricelist['valido_al'] ?: '',
             'is_default'  => (int)($pricelist['is_default'] ?? 0),
+            'sconto_default_perc' => (float)($pricelist['sconto_default_perc'] ?? 0.0),
         ];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -178,6 +181,7 @@ final class SalesPricelistsController extends BaseController
                     'valido_dal'  => post('valido_dal') ?: null,
                     'valido_al'   => post('valido_al') ?: null,
                     'is_default'  => (int)($pricelist['is_default'] ?? 0),
+                    'sconto_default_perc' => (float)(str_replace(',', '.', post('sconto_default_perc') ?? '0')),
                 ];
 
                 if (empty($values['nome'])) {
@@ -189,8 +193,9 @@ final class SalesPricelistsController extends BaseController
 
                 if (empty($errors)) {
                     try {
-                        if ((int)($pricelist['is_default'] ?? 0) === 1) {
-                            $values['nome'] = 'Listino Base Pubblico (Globale)';
+                        if ($id === 1 || (int)($pricelist['is_default'] ?? 0) === 1) {
+                            $values['nome'] = 'Prezzo Base (Catalogo)';
+                            $values['attivo'] = 1;
                         }
                         qk_listino_update($this->pdo, $id, $values);
                         redirect_with('sales/pricelists/edit?id=' . $id, 'success', 'Listino aggiornato.');
@@ -261,6 +266,9 @@ final class SalesPricelistsController extends BaseController
         $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
         if (!$id) {
             redirect_with('sales/pricelists', 'danger', 'ID non valido.');
+        }
+        if ($id === 1) {
+            redirect_with('sales/pricelists', 'danger', 'Il listino base non può essere eliminato.');
         }
 
         try {

@@ -141,11 +141,11 @@ function qk_get_sale_price(PDO $pdo, int $prodottoId, ?int $listinoId, float $qu
         }
     }
 
-    // --- LEVEL 2: PREZZO BASE (listino_id IS NULL) ---
+    // --- LEVEL 2: PREZZO BASE (listino_id = 1) ---
     $stmtP = $pdo->prepare(
         "SELECT prezzo_unitario, sconto_perc, note, quantita_minima, unita_misura_id
          FROM listini_prezzi
-         WHERE listino_id IS NULL
+         WHERE listino_id = 1
            AND prodotto_id = :pid
            AND quantita_minima_stock <= :qty
          ORDER BY quantita_minima_stock DESC
@@ -168,7 +168,7 @@ function qk_get_sale_price(PDO $pdo, int $prodottoId, ?int $listinoId, float $qu
             'prezzo_unitario' => (float)$row['prezzo_unitario'],
             'sconto_perc'     => (float)$row['sconto_perc'],
             'valuta'          => 'EUR', // Il prezzo base vive in valuta di sistema
-            'listino_id'      => null,
+            'listino_id'      => 1,
             'listino_nome'    => 'Prezzo Base',
             'prezzo_sorgente' => $sorgente,
             'origine'         => 'base',

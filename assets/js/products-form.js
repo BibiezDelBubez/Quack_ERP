@@ -716,24 +716,47 @@ if (QkPF.isEdit) {
       }
     }
 
+    // 1. Determiniamo i prezzi attivi della riga Listino 1 (Cascading Orizzontale interno)
+    const standardPrices = { 0: standardBaseVal };
+    const standardRow = table.querySelector('.listino-row[data-listino-id="1"]');
+    if (standardRow) {
+      const stdCells = Array.from(standardRow.querySelectorAll('.matrix-cell-wrapper[data-qty]:not([data-qty="0"])'))
+        .sort((a, b) => parseFloat(a.dataset.qty) - parseFloat(b.dataset.qty));
+      let lastStdVal = standardBaseVal;
+      stdCells.forEach(cell => {
+        const qty = parseFloat(cell.dataset.qty);
+        const cellValStr = cell.dataset.stockPrice || '';
+        if (cellValStr !== '') lastStdVal = parseFloat(cellValStr);
+        standardPrices[qty] = lastStdVal;
+      });
+    }
+
     const rows = table.querySelectorAll('.listino-row');
     rows.forEach(row => {
       const lid = row.dataset.listinoId;
       const isStandard = (lid === "1");
+      const scontoDefault = parseFloat(row.dataset.scontoDefault) || 0;
       
       const baseCell = row.querySelector('.matrix-cell-wrapper[data-qty="0"]');
       if (!baseCell) return;
       const baseValStr = baseCell.dataset.stockPrice || '';
-      const listinoBaseVal = baseValStr !== '' ? parseFloat(baseValStr) : (isStandard ? standardBaseVal : null);
+      
+      // Calcolo base teorico
+      let listinoBaseValTeorico = standardPrices[0];
+      if (!isStandard && listinoBaseValTeorico > 0 && scontoDefault > 0) {
+        listinoBaseValTeorico = listinoBaseValTeorico * (1 - (scontoDefault / 100));
+      }
+      
+      const listinoBaseVal = baseValStr !== '' ? parseFloat(baseValStr) : listinoBaseValTeorico;
 
       if (!isStandard) {
         const baseInput = baseCell.querySelector('.cell-price-input');
         if (baseValStr === '') {
-          let dispVal = standardBaseVal;
+          let dispVal = listinoBaseValTeorico;
           if (currentSalesUomMode === 'commercial' && hasComm) {
-            dispVal = standardBaseVal / qFactor;
+            dispVal = listinoBaseValTeorico / qFactor;
           }
-          baseInput.placeholder = dispVal.toFixed(4) + ' (Base)';
+          baseInput.placeholder = dispVal.toFixed(4) + ' (Calcolato)';
         } else {
           baseInput.placeholder = "—";
         }
@@ -742,19 +765,33 @@ if (QkPF.isEdit) {
       const cells = Array.from(row.querySelectorAll('.matrix-cell-wrapper[data-qty]:not([data-qty="0"])'))
         .sort((a, b) => parseFloat(a.dataset.qty) - parseFloat(b.dataset.qty));
 
-      let lastVal = listinoBaseVal !== null ? listinoBaseVal : standardBaseVal;
+      let lastVal = listinoBaseVal; // usato per fallback orizzontale se non standard
 
       cells.forEach(cell => {
+        const qty = parseFloat(cell.dataset.qty);
         const priceInput = cell.querySelector('.cell-price-input');
         const cellValStr = cell.dataset.stockPrice || '';
-
-        let dispVal = lastVal;
-        if (currentSalesUomMode === 'commercial' && hasComm) {
-          dispVal = lastVal / qFactor;
+        
+        let inheritedVal = lastVal; // default orizzontale
+        
+        if (!isStandard) {
+           // Cascading Verticale: Eredita dalla stessa colonna del Listino 1, applicando lo sconto!
+           let baseForCol = standardPrices[qty] !== undefined ? standardPrices[qty] : standardPrices[0];
+           inheritedVal = baseForCol;
+           if (baseForCol > 0 && scontoDefault > 0) {
+             inheritedVal = baseForCol * (1 - (scontoDefault / 100));
+           }
         }
-        priceInput.placeholder = dispVal.toFixed(4) + ' (Ered.)';
-
-        if (cellValStr !== '') {
+        
+        let dispVal = inheritedVal;
+        if (currentSalesUomMode === 'commercial' && hasComm) {
+          dispVal = inheritedVal / qFactor;
+        }
+        
+        if (cellValStr === '') {
+          priceInput.placeholder = dispVal.toFixed(4) + (isStandard ? ' (Ered.)' : ' (Calcolato)');
+        } else {
+          priceInput.placeholder = "—";
           lastVal = parseFloat(cellValStr);
         }
       });
@@ -1371,5 +1408,23 @@ if (QkPF.isEdit) {
 document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('btn-delete-prodotto')?.addEventListener('click', function() {
     document.getElementById('form-delete-prodotto')?.requestSubmit();
+  });
+
+  const tabEls = document.querySelectorAll('button[data-bs-toggle="tab"]');
+  tabEls.forEach(tab => {
+    tab.addEventListener('shown.bs.tab', function (event) {
+      const targetId = event.target.getAttribute('data-bs-target');
+      const actionBar = document.getElementById('top-action-bar');
+      const liveBar = document.getElementById('top-live-bar');
+      if (targetId === '#ptab-fornitori' || targetId === '#ptab-listini') {
+        actionBar?.classList.add('d-none');
+        liveBar?.classList.remove('d-none');
+        liveBar?.classList.add('d-flex');
+      } else {
+        actionBar?.classList.remove('d-none');
+        liveBar?.classList.add('d-none');
+        liveBar?.classList.remove('d-flex');
+      }
+    });
   });
 });

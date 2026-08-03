@@ -84,7 +84,7 @@ final class ProductsController extends BaseController
         $all_tags              = qk_load_all_tags($this->pdo);
         $prodotto_tag_ids      = [];
         $kit_componenti        = [];
-        $listini = qk_get_listini_vendita_attivi($this->pdo, true);
+        $listini = qk_get_listini_vendita_attivi($this->pdo, false); // Include base listino for the Matrix
         $iso_lingue = qk_get_iso_lingue_lista($this->pdo); // tab "Scheda di sicurezza" (M5)
 
         $page_title    = 'Nuovo prodotto';
@@ -257,7 +257,7 @@ final class ProductsController extends BaseController
         ');
         $listini_prezzi_regole->execute([$entity_id]);
         $prezzi_vendita_regole = $listini_prezzi_regole->fetchAll(PDO::FETCH_ASSOC);
-        $listini = qk_get_listini_vendita_attivi($this->pdo, true);
+        $listini = qk_get_listini_vendita_attivi($this->pdo, false); // Include base listino for the Matrix
         $iso_lingue = qk_get_iso_lingue_lista($this->pdo); // tab "Scheda di sicurezza" (M5)
 
         $page_title    = e($values['nome']) ?: 'Modifica prodotto';
@@ -369,6 +369,9 @@ final class ProductsController extends BaseController
             'sostanza_chimica_id'      => '',
             'prezzo_vendita_base'  => '',
             'markup_fallback_perc' => '',
+            'costo_acquisto_base'  => '',
+            'costo_acquisto_medio' => '',
+            'unita_misura_acquisto_id' => '',
         ];
     }
 
@@ -643,4 +646,47 @@ final class ProductsController extends BaseController
     /* ── API: elimina singola riga prezzo fornitore ───────────────────────── */
 
     /* ── Compliance prodotto ─────────────────────────────────────────────── */
+
+    /**
+     * POST /products/api/save-costo-base
+     * Salva asincronamente il costo d'acquisto base e l'UoM.
+     */
+    public function apiSaveCostoBase()
+    {
+        $this->requireAuth();
+        $this->requirePermission('manage_catalog');
+
+        $prodottoId = (int)($_POST['prodotto_id'] ?? 0);
+        $costoBase = $_POST['costo_acquisto_base'] ?? '';
+        $umAcquistoId = $_POST['unita_misura_acquisto_id'] ?? '';
+
+        if (!$prodottoId) {
+            echo json_encode(['ok' => false, 'error' => 'Prodotto ID mancante.']);
+            exit;
+        }
+
+        $costoNum = ($costoBase === '') ? null : (float)str_replace(',', '.', $costoBase);
+        $umIdNum = ($umAcquistoId === '') ? null : (int)$umAcquistoId;
+
+        try {
+            $stmt = $this->pdo->prepare('
+                INSERT INTO prodotti_valutazione_costi (prodotto_id, costo_acquisto_base, costo_acquisto_medio, unita_misura_acquisto_id)
+                VALUES (:pid, :costo, 0, :umid)
+                ON CONFLICT(prodotto_id) DO UPDATE SET 
+                    costo_acquisto_base = excluded.costo_acquisto_base,
+                    unita_misura_acquisto_id = excluded.unita_misura_acquisto_id
+            ');
+            $stmt->execute([
+                ':pid' => $prodottoId,
+                ':costo' => $costoNum,
+                ':umid' => $umIdNum
+            ]);
+
+            echo json_encode(['ok' => true]);
+        } catch (PDOException $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
 }
+

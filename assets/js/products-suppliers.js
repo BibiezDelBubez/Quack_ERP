@@ -822,5 +822,53 @@
       });
     }
 
+    // --- Nuovi controlli Costo Base (Auto-save e Ricalcolo dinamico) ---
+    const costoBaseInput = document.getElementById('costo_acquisto_base');
+    const uomAcquistoSelect = document.getElementById('unita_misura_acquisto_id');
+    const qtaContenuto = parseFloat(cfg.quantitaContenuto) || 1;
+
+    async function saveCostoBase() {
+      if (!cfg.prodottoId || cfg.prodottoId === '0') return; // Se nuovo prodotto, aspetta submit form
+      const fd = new FormData();
+      fd.append('prodotto_id', cfg.prodottoId);
+      fd.append('costo_acquisto_base', costoBaseInput.value);
+      fd.append('unita_misura_acquisto_id', uomAcquistoSelect.value);
+      
+      try {
+        const url = (cfg.baseUrl.endsWith('/') ? cfg.baseUrl.slice(0, -1) : cfg.baseUrl) + '/products/api/save-costo-base';
+        const res = await fetch(url, { method: 'POST', body: fd, headers: {'X-CSRF-TOKEN': CSRF} });
+        const data = await res.json();
+        if (data.ok) {
+           const origBg = costoBaseInput.style.backgroundColor;
+           costoBaseInput.style.backgroundColor = '#d1e7dd';
+           setTimeout(() => { costoBaseInput.style.backgroundColor = origBg; }, 600);
+        }
+      } catch(e) { console.error('Errore autosave costo base:', e); }
+    }
+
+    if (costoBaseInput && uomAcquistoSelect) {
+      costoBaseInput.addEventListener('blur', saveCostoBase);
+
+      let prevUom = uomAcquistoSelect.value;
+      uomAcquistoSelect.addEventListener('change', function() {
+        const newUom = this.value;
+        if (costoBaseInput.value && qtaContenuto > 1 && prevUom !== newUom) {
+          let currentCost = parseFloat(costoBaseInput.value.replace(',', '.'));
+          if (!isNaN(currentCost)) {
+            // Se passo da stock a commerciale, moltiplico il costo per la qta (costo del pacco)
+            if (String(newUom) === String(cfg.uomCommercialId)) {
+              currentCost = currentCost * qtaContenuto;
+            } else {
+              // Se torno da commerciale a stock, divido
+              currentCost = currentCost / qtaContenuto;
+            }
+            costoBaseInput.value = currentCost.toFixed(2);
+          }
+        }
+        prevUom = newUom;
+        saveCostoBase();
+      });
+    }
+
   });
 })();

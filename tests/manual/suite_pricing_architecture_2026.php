@@ -22,8 +22,8 @@ try {
     $pdo->exec("INSERT INTO unita_misura (id, codice, descrizione) VALUES (999, 'PZ', 'Pezzi') ON CONFLICT(id) DO NOTHING");
     $pdo->exec("INSERT INTO prodotti (id, sku_interno, nome, tipo, unita_misura_stock_id, attivo) VALUES (9999, 'TEST-PRICE', 'Prodotto Test Pricing', 'semplice', 999, 1)");
     
-    // Inserisco Prezzo Base (listino_id IS NULL)
-    $pdo->exec("INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_stock) VALUES (NULL, 9999, 0, 10.50, 999, 0)");
+    // Inserisco Prezzo Base (listino_id = 1)
+    $pdo->exec("INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_stock) VALUES (1, 9999, 0, 10.50, 999, 0)");
     
     // Inserisco Listino Commerciale ID 99
     $pdo->exec("INSERT INTO listini (id, nome, valuta, attivo, is_default) VALUES (99, 'Listino VIP', 'EUR', 1, 0)");

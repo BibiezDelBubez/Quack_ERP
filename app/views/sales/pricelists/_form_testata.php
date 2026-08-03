@@ -45,7 +45,17 @@
                value="<?= e($values['descrizione'] ?? '') ?>">
       </div>
 
-      <div class="qk-form-row" style="grid-template-columns:110px 1fr 1fr">
+      <div class="qk-form-row" style="grid-template-columns:100px 110px 1fr 1fr">
+        <div class="qk-form-group">
+          <label class="qk-form-label">Sconto %</label>
+          <div class="input-group input-group-sm">
+            <input type="number" name="sconto_default_perc" step="0.01"
+                   class="form-control"
+                   placeholder="0.00"
+                   value="<?= e($values['sconto_default_perc'] ?? '0.00') ?>">
+            <span class="input-group-text">%</span>
+          </div>
+        </div>
         <div class="qk-form-group">
           <label class="qk-form-label">Valuta</label>
           <input type="text" name="valuta"
