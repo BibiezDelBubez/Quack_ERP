@@ -141,6 +141,8 @@
         <i class="fa-solid fa-xmark"></i>
       </button>
     </td>
+  </tr>
+</template>
 
 
 

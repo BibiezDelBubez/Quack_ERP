@@ -66,16 +66,15 @@
             <div class="qk-form-error"><i class="fa-solid fa-circle-exclamation"></i> <?= e($errors['valuta']) ?></div>
           <?php endif; ?>
         </div>
+<?php if (empty($values['is_default'])): ?>
         <div class="qk-form-group">
           <label class="qk-form-label">Valido dal</label>
           <input type="date" name="valido_dal" class="qk-form-control"
-                 <?= !empty($values['is_default']) ? 'disabled' : '' ?>
                  value="<?= e($values['valido_dal']) ?>">
         </div>
         <div class="qk-form-group">
           <label class="qk-form-label">Valido al</label>
           <input type="date" name="valido_al" class="qk-form-control"
-                 <?= !empty($values['is_default']) ? 'disabled' : '' ?>
                  value="<?= e($values['valido_al']) ?>">
         </div>
       </div>
@@ -86,16 +85,21 @@
           <input type="hidden" name="attivo" value="0">
           <input class="form-check-input" type="checkbox" name="attivo" id="pl-attivo"
                  value="1" <?= ($values['attivo'] ?? 1) ? 'checked' : '' ?>
-                 <?= !empty($values['is_default']) ? 'disabled' : '' ?>
                  style="width:2.4rem;height:1.2rem;cursor:pointer;margin:0">
           <span style="font-size:.875rem;color:var(--qk-text-primary)" id="pl-attivo-label">
             <?= ($values['attivo'] ?? 1) ? 'Listino attivo' : 'Listino disattivato' ?>
           </span>
-          <?php if (!empty($values['is_default'])): ?>
-            <span class="badge bg-secondary ms-2 fw-normal" style="font-size: .75rem;">Sempre attivo, senza scadenze</span>
-          <?php endif; ?>
         </label>
       </div>
+<?php else: ?>
+        <div style="grid-column: 3 / -1; display: flex; align-items: flex-end;">
+            <div class="qk-alert qk-alert-success m-0 w-100 py-2 d-flex align-items-center">
+                <i class="fa-solid fa-check-circle me-2"></i>
+                <span style="font-size:.85rem"><strong>Sempre attivo</strong> (nessuna scadenza applicabile al catalogo base)</span>
+            </div>
+        </div>
+      </div>
+<?php endif; ?>
 
     </div>
 
