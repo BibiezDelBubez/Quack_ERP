@@ -2152,6 +2152,26 @@ CREATE TABLE IF NOT EXISTS metodi_pagamento (
     attivo      BOOLEAN      NOT NULL DEFAULT 1
 );
 
+-- Seed dei dati Metodi di Pagamento
+INSERT OR IGNORE INTO metodi_pagamento (codice, descrizione, attivo) VALUES
+    ('BB_VISTA', 'Bonifico Bancario Vista Fattura', 1),
+    ('BB_30', 'Bonifico Bancario 30gg', 1),
+    ('BB_60', 'Bonifico Bancario 60gg', 1),
+    ('BB_90', 'Bonifico Bancario 90gg', 1),
+    ('RB_30', 'Ricevuta Bancaria (RiBa) 30gg', 1),
+    ('RB_60', 'Ricevuta Bancaria (RiBa) 60gg', 1),
+    ('RB_90', 'Ricevuta Bancaria (RiBa) 90gg', 1),
+    ('RB_3060', 'Ricevuta Bancaria (RiBa) 30/60gg', 1),
+    ('RB_306090', 'Ricevuta Bancaria (RiBa) 30/60/90gg', 1),
+    ('RD_VISTA', 'Rimessa Diretta Vista Fattura', 1),
+    ('RD_30', 'Rimessa Diretta 30gg', 1),
+    ('RD_60', 'Rimessa Diretta 60gg', 1),
+    ('CON', 'Contanti', 1),
+    ('CC', 'Carta di Credito / PayPal', 1),
+    ('SDD', 'Addebito Diretto SEPA (SDD)', 1),
+    ('ASG', 'Assegno Bancario/Circolare', 1),
+    ('CONTR', 'Contrassegno', 1);
+
 -- RFQ - Richieste di Offerta
 CREATE TABLE IF NOT EXISTS rfq_testata (
     id                      INTEGER      PRIMARY KEY AUTOINCREMENT,
