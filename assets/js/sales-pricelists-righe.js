@@ -223,6 +223,36 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   tbody.addEventListener('change', function (e) {
+    if (e.target.matches('.r-unita-misura-id')) {
+      const tr = e.target.closest('tr.pl-riga');
+      if (tr) {
+        const qminInput = tr.querySelector('.r-qmin');
+        const prezzoInput = tr.querySelector('.r-prezzo');
+        const qFactor = parseFloat(tr.dataset.factor) || 1;
+        const uomStockId = String(tr.dataset.uomStockId);
+        const uomCommId = String(tr.dataset.uomCommercialId);
+        
+        let targetMode = '';
+        if (e.target.value === uomStockId) targetMode = 'stock';
+        else if (e.target.value === uomCommId) targetMode = 'commercial';
+        
+        if (targetMode && window.qkConvertUom) {
+          const { value: newQty, price: newPrice } = window.qkConvertUom({
+            value: qminInput.value,
+            price: prezzoInput.value,
+            qFactor: qFactor,
+            targetMode: targetMode
+          });
+          
+          if (newQty !== null) qminInput.value = newQty;
+          if (newPrice !== null) prezzoInput.value = newPrice;
+          
+          checkInputDirty(qminInput);
+          checkInputDirty(prezzoInput);
+        }
+      }
+    }
+
     if (e.target.matches('input, select')) {
       checkInputDirty(e.target);
       runBusinessValidations();

@@ -20,9 +20,9 @@ $_sconto = (float)($item['sconto_perc']      ?? 0);
 $_note   = $item['note']            ?? '';
 ?>
 <?php
-                    $uomNative = $item['um_native_code'] ?? $item['uom_commercial_code'] ?? $item['uom_stock_code'] ?? 'PZ';
-                    $uomStock  = $item['uom_stock_code'] ?? 'PZ';
-                    $uomComm   = $item['uom_commercial_code'] ?? $uomStock;
+                    $uomNative = $item['um_native_code'] ?? $item['um_comm_code'] ?? $item['um_stock_code'] ?? 'PZ';
+                    $uomStock  = $item['um_stock_code'] ?? 'PZ';
+                    $uomComm   = $item['um_comm_code'] ?? $uomStock;
                     $factor    = (float)($item['p_factor'] ?? 1) ?: 1;
 ?>
 <tr class="pl-riga"
@@ -31,10 +31,10 @@ $_note   = $item['note']            ?? '';
     data-prodotto-nome="<?= e($_nome) ?>"
     data-sku="<?= e($_sku) ?>"
     data-um="<?= e($_um) ?>"
-    data-uom-stock-id="<?= e($item['uom_stock_id'] ?? '') ?>"
-    data-uom-stock-code="<?= e($item['uom_stock_code'] ?? '') ?>"
-    data-uom-commercial-id="<?= e($item['uom_commercial_id'] ?? '') ?>"
-    data-uom-commercial-code="<?= e($item['uom_commercial_code'] ?? '') ?>"
+    data-uom-stock-id="<?= e($item['p_um_stock_id'] ?? '') ?>"
+    data-uom-stock-code="<?= e($item['um_stock_code'] ?? '') ?>"
+    data-uom-commercial-id="<?= e($item['p_um_comm_id'] ?? '') ?>"
+    data-uom-commercial-code="<?= e($item['um_comm_code'] ?? '') ?>"
     data-uom-selected-id="<?= e($item['unita_misura_id'] ?? '') ?>"
     data-qmin="<?= $_qmin ?>"
     data-prezzo="<?= $_prezzo ?>"
@@ -89,12 +89,12 @@ $_note   = $item['note']            ?? '';
   <td class="pl-td-um">
     <span class="pl-view pl-um-label r-um-view"><?= e($_um) ?></span>
     <select class="pl-edit qk-form-control qk-form-control-sm r-unita-misura-id" style="padding: .2rem .35rem; font-size: .8rem; text-align: left;">
-      <option value="<?= e($item['uom_stock_id'] ?? '') ?>" <?= (int)($item['unita_misura_id'] ?? $item['uom_stock_id'] ?? 0) === (int)($item['uom_stock_id'] ?? 0) ? 'selected' : '' ?>>
-        <?= e($item['uom_stock_code'] ?? 'pz') ?>
+      <option value="<?= e($item['p_um_stock_id'] ?? '') ?>" <?= (int)($item['unita_misura_id'] ?? $item['p_um_stock_id'] ?? 0) === (int)($item['p_um_stock_id'] ?? 0) ? 'selected' : '' ?>>
+        <?= e($item['um_stock_code'] ?? 'pz') ?>
       </option>
-      <?php if (!empty($item['uom_commercial_id'])): ?>
-        <option value="<?= e($item['uom_commercial_id']) ?>" <?= (int)($item['unita_misura_id'] ?? 0) === (int)$item['uom_commercial_id'] ? 'selected' : '' ?>>
-          <?= e($item['uom_commercial_code']) ?>
+      <?php if (!empty($item['p_um_comm_id'])): ?>
+        <option value="<?= e($item['p_um_comm_id']) ?>" <?= (int)($item['unita_misura_id'] ?? 0) === (int)$item['p_um_comm_id'] ? 'selected' : '' ?>>
+          <?= e($item['um_comm_code']) ?>
         </option>
       <?php endif; ?>
     </select>
