@@ -196,6 +196,8 @@ final class SalesPricelistsController extends BaseController
                         if ($id === 1 || (int)($pricelist['is_default'] ?? 0) === 1) {
                             $values['nome'] = 'Prezzo Base (Catalogo)';
                             $values['attivo'] = 1;
+                            $values['valido_dal'] = null;
+                            $values['valido_al'] = null;
                         }
                         qk_listino_update($this->pdo, $id, $values);
                         redirect_with('sales/pricelists/edit?id=' . $id, 'success', 'Listino aggiornato.');

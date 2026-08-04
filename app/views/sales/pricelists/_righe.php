@@ -200,6 +200,15 @@
 <!-- ExcelJS Library for reading/writing xlsx -->
 <script src="<?= asset('js/exceljs.min.js') ?>"></script>
 
+<script>
+  window.QkPricelistConfig = {
+      listinoId: <?= (int)$id ?>,
+      valuta: <?= json_encode($values['valuta'] ?? 'EUR') ?>,
+      csrfToken: <?= json_encode(csrf_token()) ?>,
+      apiImportUrl: <?= json_encode(url('/api/sales/pricelists/import')) ?>
+  };
+</script>
+
 <script defer src="<?= asset('js/sales-pricelists-righe.js') ?>?v=<?= time() ?>"></script>
 <script defer src="<?= asset('js/sales-pricelists-import.js') ?>?v=<?= time() ?>"></script>
 
