@@ -838,7 +838,7 @@ window.QkPF = {
                         $baseRowId = $baseRule ? $baseRule['id'] : 0;
                         $scontoDefault = (float)($listino['sconto_default_perc'] ?? 0.0);
                     ?>
-                    <tr class="listino-row" data-listino-id="<?= $isBase ? '' : $lid ?>" data-valuta="<?= e($listino['valuta']) ?>" data-sconto-default="<?= $scontoDefault ?>">
+                    <tr class="listino-row" data-listino-id="<?= $lid ?>" data-valuta="<?= e($listino['valuta']) ?>" data-sconto-default="<?= $scontoDefault ?>">
                       <td class="listino-info-cell" style="<?= $isBase ? 'background: #f1f5f9; border-left: 4px solid var(--qk-primary);' : '' ?>">
                         <div class="d-flex flex-column gap-1">
                           <span style="font-size: 0.85rem; font-weight: 700; color: var(--qk-text-primary);"><?= e($listino['nome']) ?></span>
