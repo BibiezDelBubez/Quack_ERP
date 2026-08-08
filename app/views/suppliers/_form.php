@@ -582,8 +582,11 @@ window.QkSupplierAddr = {
   csrfToken:  <?= json_encode(csrf_token()) ?>,
 };
 </script>
-<script src="<?= url('assets/js/suppliers-contacts.js') ?>"></script>
-<script src="<?= url('assets/js/suppliers-addresses.js') ?>"></script>
-<script src="<?= url('assets/js/suppliers-form.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md
+     §11.2/§11.3, 08/08/2026). -->
+<script src="<?= asset('js/suppliers-contacts.js') ?>"></script>
+<script src="<?= asset('js/suppliers-addresses.js') ?>"></script>
+<script src="<?= asset('js/suppliers-form.js') ?>"></script>
 
 <?php endif; ?>

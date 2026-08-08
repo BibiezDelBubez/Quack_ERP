@@ -704,11 +704,15 @@ window.QkCustomerCompliance = {
   csrfToken:  <?= json_encode(csrf_token()) ?>,
 };
 </script>
-<script src="<?= url('assets/js/customers-addresses.js') ?>"></script>
-<script src="<?= url('assets/js/customers-contacts.js') ?>"></script>
-<script src="<?= url('assets/js/customers-compliance.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     includes/functions.php e audit/piano-correzione-bug-righe-perse-vendita-
+     scoperto-ordini.md §11.2/§11.3, 08/08/2026 — stesso bug trovato e
+     corretto in sales/orders/_create.php, esteso qui per coerenza). -->
+<script src="<?= asset('js/customers-addresses.js') ?>"></script>
+<script src="<?= asset('js/customers-contacts.js') ?>"></script>
+<script src="<?= asset('js/customers-compliance.js') ?>"></script>
 
 <?php endif; ?>
 
-<script src="<?= url('assets/js/searchable-select.js') ?>"></script>
-<script src="<?= url('assets/js/customers-form.js') ?>"></script>
+<script src="<?= asset('js/searchable-select.js') ?>"></script>
+<script src="<?= asset('js/customers-form.js') ?>"></script>

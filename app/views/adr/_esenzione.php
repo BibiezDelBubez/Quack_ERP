@@ -173,7 +173,10 @@
 </div>
 
 <!-- ══ MOTORE + WIRING ══════════════════════════════════════════════════ -->
-<script src="<?= url('assets/js/adr-calcolatore.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md
+     §11.2/§11.3, 08/08/2026). -->
+<script src="<?= asset('js/adr-calcolatore.js') ?>"></script>
 <script>
 (function () {
 

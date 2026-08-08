@@ -467,7 +467,10 @@ $v = $values;
 </div>
 <?php endif; ?>
 
-<script src="<?= url('assets/js/aziende-form.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md
+     §11.2/§11.3, 08/08/2026). -->
+<script src="<?= asset('js/aziende-form.js') ?>"></script>
 
 <?php if ($isEdit): ?>
 <!-- Config PHP → JS -->
@@ -489,6 +492,6 @@ window.QkCustomerAddr = {
   csrfToken:  <?= json_encode(csrf_token()) ?>,
 };
 </script>
-<script src="<?= url('assets/js/customers-addresses.js') ?>"></script>
-<script src="<?= url('assets/js/customers-contacts.js') ?>"></script>
+<script src="<?= asset('js/customers-addresses.js') ?>"></script>
+<script src="<?= asset('js/customers-contacts.js') ?>"></script>
 <?php endif; ?>

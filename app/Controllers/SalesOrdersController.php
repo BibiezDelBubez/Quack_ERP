@@ -124,23 +124,19 @@ final class SalesOrdersController extends BaseController
                 // comunque: inutile calcolarlo).
                 $confermaVenditaScoperto = ($_POST['conferma_vendita_scoperto'] ?? '') === '1';
                 if (empty($errors)) {
-                    $righeStock = qk_calcola_righe_stock_ordine($this->pdo, $righe);
-                    $righePerCheck = [];
-                    foreach ($righeStock as $rs) {
-                        if ($rs['prodotto_id']) {
-                            $righePerCheck[] = [
-                                'prodotto_id'    => $rs['prodotto_id'],
-                                'quantita_stock' => $rs['uom']['quantita_stock'],
-                            ];
-                        }
-                    }
                     // P4b: il pre-check di disponibilita gira sul magazzino
                     // scelto esplicitamente dall'operatore, non piu su
                     // quello di sessione - altrimenti l'avviso di scoperto
                     // potrebbe riferirsi a una sede diversa da quella
                     // effettivamente scelta per la riserva.
-                    $magazzinoPerCheck = $magazzinoOrdineId;
-                    $warnings = qk_verifica_disponibilita_ordine($this->pdo, $righePerCheck, $magazzinoPerCheck);
+                    //
+                    // Estratta in qk_ordine_diretto_calcola_warnings_scoperto()
+                    // (includes/sales_orders.php) — audit/piano-correzione-bug-
+                    // righe-perse-vendita-scoperto-ordini.md, §5.1/§5.2: stessa
+                    // logica ora riusata anche dal pre-check AJAX
+                    // (apiVerificaDisponibilitaOrdine() qui sotto), invece di
+                    // essere duplicata in entrambi i punti.
+                    $warnings = qk_ordine_diretto_calcola_warnings_scoperto($this->pdo, $righe, $magazzinoOrdineId);
                 }
                 $bisognaConfermareScoperto = !empty($warnings) && !$confermaVenditaScoperto;
 
@@ -291,10 +287,17 @@ final class SalesOrdersController extends BaseController
         ];
     }
 
-    private function readPostOrderRighe(): array
+    /**
+     * Legge/sanitizza un array di righe ordine "grezze" (shape identico a
+     * $_POST['righe']/$_GET['righe']) indipendentemente dalla superglobale di
+     * provenienza — generalizzata da un corpo che prima leggeva $_POST in modo
+     * fisso, per essere riusabile anche dal pre-check GET
+     * (apiVerificaDisponibilitaOrdine()) senza duplicare questo stesso ciclo di
+     * sanitizzazione in due punti (Regola Aurea DRY, AGENTS.md).
+     * audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md, §5.3.
+     */
+    private function readOrderRigheFrom(array $raw): array
     {
-        $raw = $_POST['righe'] ?? [];
-        if (!is_array($raw)) return [];
         $out = [];
         foreach ($raw as $row) {
             if (!is_array($row)) continue;
@@ -321,6 +324,12 @@ final class SalesOrdersController extends BaseController
         return $out;
     }
 
+    private function readPostOrderRighe(): array
+    {
+        $raw = $_POST['righe'] ?? [];
+        return is_array($raw) ? $this->readOrderRigheFrom($raw) : [];
+    }
+
     public function apiClienti(): void
     {
         header('Content-Type: application/json');
@@ -331,7 +340,37 @@ final class SalesOrdersController extends BaseController
     public function apiProdotti(): void
     {
         header('Content-Type: application/json');
-        echo json_encode(qk_search_prodotti_orders($this->pdo, get_param('q', '')));
+        echo json_encode(qk_search_prodotti_documento_vendita($this->pdo, get_param('q', ''), 60));
+        exit;
+    }
+
+    /**
+     * GET /sales/orders/api/verifica-disponibilita?righe[0][prodotto_id]=..&righe[0][quantita]=..&righe[0][unita_misura]=..&...&magazzino_id=NN
+     *
+     * Pre-check AJAX richiamato da assets/js/sales-orders-create.js PRIMA che
+     * l'utente clicchi "Conferma Ordine", per decidere se mostrare la modale
+     * di conferma scoperto — senza mai passare da un submit/reload di pagina
+     * (che perderebbe le righe non ancora salvate: audit/piano-correzione-
+     * bug-righe-perse-vendita-scoperto-ordini.md, §3). Mirror concettuale di
+     * SalesQuotesController::apiVerificaDisponibilitaOrdine(), adattato per
+     * leggere le righe dal DOM (nessun id ordine ancora esistente) invece che
+     * da un id di preventivo già salvato.
+     *
+     * Il controllo autorevole resta comunque server-side in create(): questo
+     * endpoint è solo per l'anteprima UX, mai fidarsi ciecamente del client.
+     */
+    public function apiVerificaDisponibilitaOrdine(): void
+    {
+        $raw   = $_GET['righe'] ?? [];
+        $righe = is_array($raw) ? $this->readOrderRigheFrom($raw) : [];
+        $magazzinoId = qk_valida_magazzino_ordine_esplicito($this->pdo, get_param('magazzino_id', ''));
+
+        $warnings = ($magazzinoId !== null && !empty($righe))
+            ? qk_ordine_diretto_calcola_warnings_scoperto($this->pdo, $righe, $magazzinoId)
+            : [];
+
+        header('Content-Type: application/json');
+        echo json_encode(['warnings' => $warnings]);
         exit;
     }
 

@@ -364,7 +364,10 @@ function buildRiga(prefill = {}) {
   const prodottoIdHidden = tr.querySelector('.ord-inp-prodotto-id');
 
   function selectProdottoRiga(id, row) {
-    tr.querySelector('.ord-inp-prodotto-id').value  = id;
+    // .ord-inp-prodotto-id ora impostato automaticamente da QkM2O/QkPicker (Fase 2,
+    // audit/piano-correzione-bug-qkpicker-persistenza-selezione.md §7, 08/08/2026) —
+    // sia dal menu inline (setValue in entity_picker_modal.php:420) sia da "Cerca di
+    // più…" (fix di Fase 1, stesso file:248). Chiamata qui era ridondante.
     tr.querySelector('.ord-riga-search').value      = row.label;
     tr.querySelector('.ord-inp-desc').value         = row.label;
     tr.querySelector('.ord-inp-qta').value          = '1';
@@ -438,7 +441,15 @@ async function fetchOrdinePrice(tr, item) {
       prodottoId: item.id, listinoId, clienteId, quantita: 1,
       apiUrl: window.QK_ORDERS_CREATE_CONFIG.ottieniPrezzoUrl,
     });
-    if (data && data.ok && data.prezzo_unitario !== undefined && data.prezzo_unitario !== null) {
+    // Fix Bug D (audit/piano-correzione-bug-prezzo-preventivi-vendita.md §6bis): un prezzo a 0
+    // con origine 'manuale' significa che il motore prezzi non ha trovato NESSUNA riga di
+    // listino/costo reale per questo prodotto (fallback finale, qk_get_sale_price() Livello 4)
+    // — non va confuso con un prezzo a 0 volutamente configurato in un listino (origine
+    // 'dedicato'/'standard', es. prodotto omaggio/campionatura), che deve continuare a mostrare
+    // il cartellino verde come prima. Controllare l'origine invece del valore evita di trattare
+    // allo stesso modo questi due casi opposti (vedi anche SalesPricelistsController.php,
+    // apiSaveRiga(): solo i prezzi negativi sono rifiutati, 0 è un valore di listino legittimo).
+    if (data && data.ok && data.prezzo_unitario !== undefined && data.prezzo_unitario !== null && data.origine !== 'manuale') {
       const puInput = tr.querySelector('.ord-inp-pu');
       const badge   = tr.querySelector('.ord-price-badge');
       if (puInput && !puInput.value) {
@@ -615,5 +626,107 @@ document.getElementById('ord-btn-salva-prodotto')?.addEventListener('click', asy
 
 // Prima riga vuota all'apertura
 buildRiga();
+
+/* ── Vendita Allo Scoperto Controllata (P4) — pre-check AJAX prima del
+   submit, stesso principio già usato in sales-quotes.js per "Accetta e Crea
+   Ordine", qui applicato alla CREAZIONE (nessun id ordine ancora esistente:
+   le righe vengono lette dal DOM, non da un record già salvato). Fail-safe:
+   se il pre-check fallisce (rete/errore), NON si procede.
+   audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md, §5.7.
+
+   AGGIORNAMENTO 08/08/2026 — intercettazione spostata dal 'submit' del form
+   al CLICK del bottone: a differenza di Preventivi (sales-quotes.js,
+   #btn-accetta-crea-ordine, bottone ANNIDATO dentro il proprio <form>), qui
+   il bottone #ord-btn-submit e' FUORI dal <form> ed e' associato solo via
+   l'attributo form="form-ordine-diretto" (struttura preesistente della
+   pagina, non cambiata da questo fix). In test browser reali (Livello 2,
+   scenario S2) questo pattern si e' dimostrato inaffidabile: un click reale
+   sul bottone esterno non innescava in modo consistente l'evento 'submit'
+   intercettabile da form.addEventListener('submit', ...) — a volte il
+   preventDefault() funzionava (rilevato con dispatchEvent sintetico), a
+   volte no, con submission nativa e conseguente perdita righe (la stessa
+   regressione che questo fix doveva risolvere). Intercettare il CLICK del
+   bottone stesso, invece del submit del form, elimina l'ambiguita': e' il
+   bottone stesso a decidere se innescare il pre-check o lasciar procedere,
+   senza dipendere dal comportamento meno testato dei "submitter esterni". */
+(function () {
+  const form = document.getElementById('form-ordine-diretto');
+  const submitBtn = document.getElementById('ord-btn-submit');
+  const inputConferma = document.getElementById('ord-input-conferma-scoperto');
+  const selectMagazzino = document.getElementById('ord-select-magazzino');
+  if (!form || !submitBtn || !inputConferma || !selectMagazzino) return;
+
+  function fmtQta(n) {
+    return Number(n ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+  }
+
+  // Cambiare magazzino invalida una conferma di scoperto già data - il
+  // pre-check va rifatto sul nuovo magazzino (stesso principio di
+  // sales-quotes.js).
+  selectMagazzino.addEventListener('change', () => { inputConferma.value = ''; });
+
+  function collectRigheOrdinePerCheck() {
+    const righe = [];
+    document.querySelectorAll('#ord-tbody-righe tr').forEach(tr => {
+      const prodottoId = tr.querySelector('.ord-inp-prodotto-id')?.value || '';
+      if (!prodottoId) return;
+      righe.push({
+        prodotto_id:  prodottoId,
+        quantita:     tr.querySelector('.ord-inp-qta')?.value || '0',
+        unita_misura: tr.querySelector('.ord-inp-uom-stock')?.value || 'pz',
+      });
+    });
+    return righe;
+  }
+
+  submitBtn.addEventListener('click', async (e) => {
+    if (inputConferma.value === '1') return; // già confermato dalla modale: lascia procedere il submit nativo del bottone
+
+    e.preventDefault();
+    const righe = collectRigheOrdinePerCheck();
+    if (righe.length === 0) { form.requestSubmit(); return; } // nessuna riga: lascia che sia la validazione server-side a segnalarlo
+
+    const params = new URLSearchParams();
+    righe.forEach((r, i) => {
+      params.set(`righe[${i}][prodotto_id]`, r.prodotto_id);
+      params.set(`righe[${i}][quantita]`, r.quantita);
+      params.set(`righe[${i}][unita_misura]`, r.unita_misura);
+    });
+    params.set('magazzino_id', selectMagazzino.value);
+
+    let warnings;
+    try {
+      const res = await fetch(BASE + '/sales/orders/api/verifica-disponibilita?' + params.toString(), { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      warnings = Array.isArray(data.warnings) ? data.warnings : [];
+    } catch (err) {
+      console.error('Verifica disponibilità fallita:', err);
+      alert('Impossibile verificare la disponibilità a magazzino (errore di rete). Riprova.');
+      return; // fail-safe: mai procedere senza aver potuto verificare
+    }
+
+    if (warnings.length === 0) { form.requestSubmit(); return; }
+
+    const tbody = document.getElementById('ordms-righe-scoperte');
+    if (tbody) {
+      tbody.innerHTML = warnings.map(w => `
+        <tr>
+          <td>${esc(w.prodotto_nome)}</td>
+          <td class="text-end">${fmtQta(w.richiesto)}</td>
+          <td class="text-end">${fmtQta(w.disponibile)}</td>
+          <td class="text-end">${fmtQta(w.scoperto)}</td>
+        </tr>
+      `).join('');
+    }
+    openModal('ord-modal-scoperto');
+  });
+
+  document.getElementById('ord-btn-conferma-scoperto')?.addEventListener('click', () => {
+    inputConferma.value = '1';
+    bootstrap.Modal.getInstance(document.getElementById('ord-modal-scoperto'))?.hide();
+    form.submit();
+  });
+})();
 
 });

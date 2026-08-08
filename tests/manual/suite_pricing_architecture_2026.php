@@ -33,7 +33,11 @@ try {
     // Nessun listino passato -> Fallisce Level 1, va a Level 2 (Base)
     $resBase = qk_get_sale_price($pdo, 9999, null, 1.0, date('Y-m-d'));
     chk("Prezzo Base recuperato correttamente", 10.50, $resBase['prezzo_unitario']);
-    chk("Origine del Prezzo Base e' 'base'", 'base', $resBase['origine']);
+    // Fix Bug B1 (07/08/2026, audit/audit-bug-prezzo-preventivi-vendita.md): questo test
+    // asseriva 'base' come corretto — era in realta' il bug stesso (stringa non riconosciuta
+    // dal badge frontend). Il valore giusto, coerente con la documentazione di progetto e col
+    // comportamento di questo stesso ramo prima del 29/07/2026, e' 'standard'.
+    chk("Origine del Prezzo Base e' 'standard'", 'standard', $resBase['origine']);
 
     // 3. Test 2: Lettura Listino VIP
     $resVip = qk_get_sale_price($pdo, 9999, 99, 1.0, date('Y-m-d'));

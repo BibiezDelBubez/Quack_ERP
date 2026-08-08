@@ -312,4 +312,7 @@ window.QkWarehouse = {
   urlProdottoEdit:   <?= json_encode(url('products/edit')) ?>,
 };
 </script>
-<script src="<?= url('assets/js/warehouse-movement.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md
+     §11.2/§11.3, 08/08/2026). -->
+<script src="<?= asset('js/warehouse-movement.js') ?>"></script>

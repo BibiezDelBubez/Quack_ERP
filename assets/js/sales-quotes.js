@@ -260,7 +260,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <input type="hidden" name="righe[${idx}][uom_commercial_id]" class="inp-uom-commercial-id" value="${esc(tr.dataset.uomCommercialId)}">
         <input type="hidden" name="righe[${idx}][quantita_contenuto]" class="inp-quantita-contenuto" value="${esc(tr.dataset.quantitaContenuto)}">
         <input type="hidden" name="righe[${idx}][sku]" class="inp-sku" value="${esc(prefill.sku || '')}">
-        <input type="hidden" name="righe[${idx}][prezzo_manuale]" class="inp-prezzo-manuale" value="0">
+        <input type="hidden" name="righe[${idx}][prezzo_manuale]" class="inp-prezzo-manuale" value="${prefill.prezzo_override ? '1' : '0'}">
       </td>
       <td class="col-desc">
         <textarea name="righe[${idx}][descrizione]" class="qk-form-control inp-desc"
@@ -347,6 +347,18 @@ document.addEventListener('DOMContentLoaded', function () {
         // Richiama il motore di determinazione prezzi per ripristinare il valore originario
         fetchQuotePrice(tr);
       });
+
+      // Fix Bug A (audit/audit-bug-prezzo-preventivi-vendita.md): ripristina lo stato di
+      // "prezzo modificato manualmente" quando la riga viene ricostruita da dati preesistenti
+      // (riapertura di un preventivo salvato). DEVE eseguire qui, sincrono, prima che
+      // refetchAllRowPrices() possa girare — quella funzione parte solo dopo che tutte le
+      // righe sono state costruite e legge tr.dataset.priceMode in quel momento.
+      if (prefill.prezzo_override) {
+        tr.dataset.priceMode = 'manual';
+        badge.innerHTML = '<i class="fa-solid fa-pen-to-square text-warning"></i>';
+        badge.title = 'Prezzo modificato manualmente. Il calcolo automatico è sospeso.';
+        btnResetPrice.style.display = 'inline-block';
+      }
     }
 
     ['inp-qta','inp-pu','inp-sc','inp-iva'].forEach(cls => {
@@ -365,7 +377,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const prodottoIdHidden = tr.querySelector('.inp-prodotto-id');
 
     function selectProdottoRiga(id, row) {
-      tr.querySelector('.inp-prodotto-id').value  = id;
+      // .inp-prodotto-id ora impostato automaticamente da QkM2O/QkPicker (Fase 2,
+      // audit/piano-correzione-bug-qkpicker-persistenza-selezione.md §7, 08/08/2026) —
+      // sia dal menu inline (setValue in entity_picker_modal.php:420) sia da "Cerca di
+      // più…" (fix di Fase 1, stesso file:248). Chiamata qui era ridondante.
       tr.querySelector('.riga-search').value      = row.label;
       tr.querySelector('.inp-desc').value         = row.label;
       tr.querySelector('.inp-qta').value          = '1';

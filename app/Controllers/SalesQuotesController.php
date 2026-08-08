@@ -472,7 +472,7 @@ final class SalesQuotesController extends BaseController
     {
         header('Content-Type: application/json; charset=utf-8');
         $q = get_param('q');
-        echo json_encode(qk_search_prodotti_sales($this->pdo, $q), JSON_UNESCAPED_UNICODE);
+        echo json_encode(qk_search_prodotti_documento_vendita($this->pdo, $q), JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -726,6 +726,13 @@ final class SalesQuotesController extends BaseController
                 'quantita_contenuto'=> $r['quantita_contenuto'] ?? '1',
                 'sku'               => $r['sku'] ?? '',
                 'quantita_confezione'=> $r['quantita_confezione'] ?? '',
+                // Fix Bug A (audit/audit-bug-prezzo-preventivi-vendita.md): questo metodo non
+                // inoltrava affatto 'prezzo_manuale' dal POST — il campo hidden inviato dal
+                // form (assets/js/sales-quotes.js) veniva scartato qui, prima ancora di
+                // arrivare a qk_calcola_riga_offerta(), che pure lo legge correttamente.
+                // Senza questa riga il resto del fix (colonna DB, INSERT, frontend) non
+                // avrebbe mai ricevuto lo stato reale di override dal browser.
+                'prezzo_manuale'    => $r['prezzo_manuale'] ?? '0',
             ];
         }
         return $righe;

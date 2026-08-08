@@ -171,7 +171,14 @@ function qk_get_sale_price(PDO $pdo, int $prodottoId, ?int $listinoId, float $qu
             'listino_id'      => 1,
             'listino_nome'    => 'Prezzo Base',
             'prezzo_sorgente' => $sorgente,
-            'origine'         => 'base',
+            // Fix Bug B1 (audit/audit-bug-prezzo-preventivi-vendita.md): questo campo era
+            // 'base', stringa non riconosciuta dal badge frontend (assets/js/sales-quotes.js,
+            // che riconosce solo 'dedicato'/'standard'/'costo') né dal vocabolario documentato
+            // (docs/Unita di misura e prezzi/01 - Ciclo Multi-UoM e Prezzi - Guida Completa.md,
+            // riga 147) — causava triangolo rosso ("nessun prezzo configurato") anche quando il
+            // prezzo era stato trovato correttamente. 'standard' era il valore originale di
+            // questo stesso ramo prima del 29/07/2026.
+            'origine'         => 'standard',
             'unita_misura_id' => $row['unita_misura_id'] !== null ? (int)$row['unita_misura_id'] : null,
         ];
     }

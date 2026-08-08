@@ -139,7 +139,10 @@ window.QkTrasferimenti = {
   apiLottiPerMagazzino:  <?= json_encode(url('warehouse/api/lotti-per-magazzino')) ?>,
 };
 </script>
-<script src="<?= url('assets/js/warehouse-transfer.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md
+     §11.2/§11.3, 08/08/2026). -->
+<script src="<?= asset('js/warehouse-transfer.js') ?>"></script>
 <script>
 (function () {
   'use strict';

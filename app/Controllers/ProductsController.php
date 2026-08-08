@@ -613,15 +613,14 @@ final class ProductsController extends BaseController
                 }
 
                 // Prezzo di vendita base (listino 1)
-                // D3.2 (PIANO Motore di Pricing Multi-UoM §8): quantita_minima_stock deve essere
-                // valorizzato (0, coerente con "prezzo base") anche qui — senza, questa riga
-                // sarebbe invisibile a getSalePrice() dalla Fase 3 in poi (NULL non è mai <= :qty).
+                // Fix Bug B2 (audit/audit-bug-prezzo-preventivi-vendita.md): questo INSERT scriveva
+                // listino_id=NULL invece di listino_id=1, rendendo il prezzo invisibile a
+                // qk_get_sale_price() pur restando visibile nelle schermate prodotto (query diversa,
+                // meno strette). Ora usa la stessa funzione condivisa di creazione/aggiornamento
+                // prodotto singolo, per evitare che i tre percorsi divergano di nuovo.
                 $prezzoBase = $toFloat($row['prezzo_vendita_base'] ?? null);
                 if ($prezzoBase !== null) {
-                    $this->pdo->prepare(
-                        'INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock)
-                         VALUES (NULL, :pid, 0, :prezzo, :um_id, 0, :um_id2, 0)'
-                    )->execute([':pid' => $prodId, ':prezzo' => $prezzoBase, ':um_id' => $umId, ':um_id2' => $umId]);
+                    qk_salva_prezzo_base_prodotto($this->pdo, $prodId, $prezzoBase, $umId);
                 }
 
                 $inserted++;

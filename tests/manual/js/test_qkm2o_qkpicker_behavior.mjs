@@ -42,15 +42,23 @@ function check(label, cond) {
   }
 }
 
-// ── Estrae il vero sorgente JS di QkM2O/QkPicker da entity_picker_modal.php ──
-// (stesso file, nessuna riscrittura: se il componente condiviso cambia, questo
-// test lo scopre automaticamente perché carica il codice reale, non una copia).
+// ── Legge il vero sorgente JS di QkM2O/QkPicker ──
+// (stesso file usato in produzione, nessuna riscrittura: se il componente
+// condiviso cambia, questo test lo scopre automaticamente perché carica il
+// codice reale, non una copia).
+//
+// Aggiornamento 08/08/2026 (Fase 3, audit/piano-correzione-bug-qkpicker-
+// persistenza-selezione.md §8): il JS non è più inline dentro
+// includes/entity_picker_modal.php (che ora include solo un
+// <script src="...">) — è stato spostato in assets/js/components/
+// entity-picker.js. Legge direttamente quel file invece di fare regex-
+// extraction su un <script> che non esiste più.
 function extractQkM2OSource() {
-  const phpPath = path.join(REPO_ROOT, 'includes', 'entity_picker_modal.php');
-  const content = fs.readFileSync(phpPath, 'utf-8');
-  const m = content.match(/<script>\r?\n([\s\S]*)\r?\n<\/script>/);
-  if (!m) throw new Error('Impossibile estrarre il <script> da entity_picker_modal.php — il file è cambiato?');
-  return m[1];
+  const jsPath = path.join(REPO_ROOT, 'assets', 'js', 'components', 'entity-picker.js');
+  if (!fs.existsSync(jsPath)) {
+    throw new Error('assets/js/components/entity-picker.js non trovato — il componente è stato spostato altrove?');
+  }
+  return fs.readFileSync(jsPath, 'utf-8');
 }
 
 async function run() {
@@ -74,6 +82,18 @@ async function run() {
       <input type="text" id="cat-parent-label" class="qk-form-control qk-m2o-input" autocomplete="off">
       <button type="button" class="qk-m2o-clear d-none" id="cat-parent-clear">&times;</button>
       <div class="qk-m2o-dropdown" id="cat-parent-dropdown"></div>
+    </div>
+
+    <!-- Secondo campo, dedicato ai test del fix strutturale (audit/piano-
+         correzione-bug-qkpicker-persistenza-selezione.md, §10.1 J1-J4): stesso
+         markup minimo del campo cliente reale (sales-quotes.js), separato dal
+         campo categoria sopra per non interferire con gli assert già eseguiti
+         su quello. -->
+    <input type="hidden" id="cli-test-id" value="">
+    <div class="qk-m2o-wrap">
+      <input type="text" id="cli-test-label" class="qk-form-control qk-m2o-input" autocomplete="off">
+      <button type="button" class="qk-m2o-clear d-none" id="cli-test-clear">&times;</button>
+      <div class="qk-m2o-dropdown" id="cli-test-dropdown"></div>
     </div>
   </body></html>`, { url: 'http://localhost/products/categories' });
 
@@ -212,6 +232,78 @@ async function run() {
 
   pickerRows[0].dispatchEvent(new window.Event('click', { bubbles: true }));
   check('QkPicker: click su riga chiama onSelect con (id, row)', pickerSelected !== null && pickerSelected.row.nome !== undefined);
+
+  // J4 (§10.1): QkPicker costruito SENZA essere passato a nessun QkM2O — deve
+  // comportarsi esattamente come prima del fix (nessuna persistenza automatica,
+  // nessuna eccezione). Prova la retrocompatibilità del fix strutturale.
+  check('J4 — QkPicker standalone: this._m2o è undefined (fix strutturale non attivo, come da contratto)',
+    picker._m2o === undefined);
+
+  // ══════════════════════════════════════════════════════════════════════
+  // FIX STRUTTURALE — audit/piano-correzione-bug-qkpicker-persistenza-selezione.md
+  // QkPicker abbinato a QkM2O deve persistere la selezione DA SOLO, anche se
+  // l'onSelect esterno (qui deliberatamente vuoto, come l'originale
+  // selectCliente() difettoso) non tocca alcun campo. Questo è il test che,
+  // se esistesse prima, avrebbe impedito il bug originale di raggiungere
+  // produzione (§5 del piano: il vecchio test su QkPicker verificava solo la
+  // chiamata a onSelect, mai l'effetto persistente).
+  // ══════════════════════════════════════════════════════════════════════
+  const cliInputEl    = window.document.getElementById('cli-test-label');
+  const cliHiddenEl   = window.document.getElementById('cli-test-id');
+  const cliDropdownEl = window.document.getElementById('cli-test-dropdown');
+  const cliClearBtn   = window.document.getElementById('cli-test-clear');
+
+  let brokenOnSelectCalled = false;
+
+  const cliPicker = new window.QkPicker({
+    title:   'Cerca cliente (test)',
+    apiUrl:  '/sales/quotes/api/clienti',
+    columns: [{ key: 'nome', label: 'Nome' }],
+    // Deliberatamente "rotto" come l'originale selectCliente(): non imposta
+    // alcun campo hidden, riproduce esattamente la causa del bug reale.
+    onSelect: (id, row) => { brokenOnSelectCalled = true; },
+  });
+
+  const cliM2o = new window.QkM2O({
+    inputEl:    cliInputEl,
+    hiddenEl:   cliHiddenEl,
+    dropdownEl: cliDropdownEl,
+    clearBtn:   cliClearBtn,
+    apiUrl:     '/sales/quotes/api/clienti',
+    labelKey:   'nome',
+    columns:    [{ key: 'nome', label: 'Nome' }],
+    picker:     cliPicker,
+    onSelect:   (id, row) => { brokenOnSelectCalled = true; },
+  });
+
+  check('J3 — QkM2O con picker abbinato: costruito senza eccezioni', cliM2o instanceof window.QkM2O);
+  check('Registrazione automatica: picker._m2o punta alla giusta istanza QkM2O', cliPicker._m2o === cliM2o);
+
+  fetchCalls.length = 0;
+  cliPicker.open();
+  await new Promise(r => setTimeout(r, 50));
+
+  const cliRows = window.document.querySelectorAll('#qk-picker-results .qk-picker-row');
+  check('Setup: il picker cliente mostra le righe mockate (Solventi/Acidi/Basi riusate come dati fittizi)',
+    cliRows.length === 3);
+
+  cliRows[1].dispatchEvent(new window.Event('click', { bubbles: true })); // riga "Acidi", id=2
+
+  check('J1 — hiddenEl.value impostato AUTOMATICAMENTE dal componente, pur con onSelect "rotto"',
+    cliHiddenEl.value === '2');
+  check('J2 — inputEl.value impostato AUTOMATICAMENTE dal componente, pur con onSelect "rotto"',
+    cliInputEl.value === 'Acidi');
+  check('Il vecchio onSelect "rotto" viene comunque chiamato (nessuna regressione sulla sua invocazione)',
+    brokenOnSelectCalled === true);
+  check('Dropdown/clear button coerenti: clearBtn reso visibile da setValue() come nel percorso inline',
+    !cliClearBtn.classList.contains('d-none'));
+
+  // J5 (non-regressione): il percorso INLINE di QkM2O (digitazione diretta,
+  // non "Cerca di più…") deve restare identico a prima del fix — già
+  // verificato sopra dai check "click su risultato: ..." (righe ~178-181),
+  // che usano lo stesso identico codice (QkM2O._render(), non toccato dal
+  // fix). Nessun assert aggiuntivo necessario: se quelli sopra sono OK,
+  // J5 è implicitamente confermato.
 
   // ── Esito ──
   console.log('\n' + (failed === 0 ? `TUTTI I TEST OK (${total}/${total})` : `${failed}/${total} TEST FALLITI`));

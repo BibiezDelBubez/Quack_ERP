@@ -792,6 +792,148 @@ Perché al momento non è stato chiesto esplicitamente di costruirla — è un'i
 
 ---
 
+## 37. Bozza persistente per Ordini diretti (parita con Preventivi)
+
+**Aggiunta il:** 08/08/2026.
+
+**Fonte:** discussa durante la correzione del bug "righe perse sul percorso vendita allo scoperto"
+(`audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md`, che risolve invece il sintomo
+acuto - perdita dati su un singolo passaggio - con un pre-check AJAX + modale, mirror del pattern gia
+usato da Preventivi, eseguibile da subito).
+
+**Di cosa si tratta.** Anche dopo il fix mirato di cui sopra, resta un problema di fondo: un Ordine
+diretto, dal momento in cui l'utente inizia a compilarlo fino al salvataggio finale riuscito, esiste
+**solo nella memoria del browser**. Crash del browser, chiusura accidentale della scheda, timeout di
+sessione, caduta della connessione fanno perdere tutto il lavoro in corso, senza alcuna possibilita di
+recupero. I Preventivi non hanno questo problema: hanno un vero "Salva bozza" che scrive sul database
+in qualunque momento l'operatore lo richieda.
+
+**Perche non e "lo stesso fix di prima, solo piu esteso" - e una funzionalita nuova.** Verificato in
+`db/init_sqlite.sql` (righe 1322-1324), `ordini_clienti.stato` ha oggi questo vincolo:
+```sql
+stato TEXT NOT NULL CHECK (stato IN (
+    'in_lavorazione','parzialmente_spedito',
+    'spedito','completato','annullato','superato'))
+```
+Non esiste `'bozza'`: un ordine diretto nasce gia `'in_lavorazione'` - a differenza di
+`offerte_vendita.stato` (Preventivi, righe 1187-1189), che ha `'bozza'` come primo valore e come
+default. Introdurre una bozza vera per Ordini diretti richiede quindi una migrazione di schema, non
+solo codice applicativo - e per la Regola 7 di CLAUDE.md, una modifica di schema va valutata su
+`db/init_sqlite.sql` **e** `db/init_mysql.sql`, anche se lo sviluppo attivo resta su SQLite.
+
+### Domande aperte - da risolvere PRIMA di scrivere qualunque codice
+
+Sono decisioni di prodotto, non solo tecniche. Nessuna ha una risposta "ovviamente giusta" - vanno
+prese consapevolmente con l'utente prima di iniziare l'implementazione, e la risposta a ciascuna
+cambia concretamente cosa va costruito:
+
+1. **Riserva di stock.** Una bozza di Ordine diretto riserva la merce a magazzino come fa oggi un
+   ordine confermato (`qk_riserva_stock_ordine()`), o no - come fanno i Preventivi, che non toccano
+   mai la giacenza finche non vengono accettati? Se non riserva, cosa succede se la merce esaurisce
+   tra il salvataggio della bozza e la sua conferma finale (lo stesso identico tema "vendita allo
+   scoperto" gia affrontato altrove nel progetto, riproposto in una nuova forma)?
+2. **Numerazione progressiva.** `numero_ordine` (`qk_next_numero_ordine_diretto()` ->
+   `qk_next_sequence_number()`, `includes/functions.php:545`) e un contatore atomico pensato per
+   restare senza buchi. Se la bozza consuma subito un numero e viene poi abbandonata/cancellata, quel
+   numero resta "bruciato": accettabile, o la numerazione va assegnata solo alla conferma finale
+   (come probabilmente avviene gia implicitamente oggi, visto che un ordine nasce gia confermato)?
+3. **Visibilita nella lista Ordini.** Una bozza compare nella lista "Ordini Clienti"
+   (`SalesOrdersController::index()`) insieme agli ordini reali? Con quale stato/filtro dedicato, per
+   non far credere a chi guarda quella lista (magazzino, spedizioni, contabilita) che sia gia un
+   impegno reale quando non lo e ancora?
+4. **Controllo compliance.** Oggi `qk_compliance_check_sale()` blocca (mai un semplice avviso) la
+   creazione di un Ordine diretto - commento esplicito in `SalesOrdersController.php:98-104`: "un
+   ordine diretto non passa mai da un preventivo... sempre bloccante, mai solo avviso". Una bozza deve
+   passare comunque da quel controllo bloccante, o no (coerente con la logica "i Preventivi sono
+   speculativi, non controllati fino all'accettazione")? Se la bozza NON lo richiede ma la conferma
+   finale si, cosa succede a una bozza "bloccata in compliance" che resta appesa indefinitamente?
+5. **Meccanismo: autosave o bottone esplicito?** Un vero autosave (ogni N secondi o ad ogni modifica)
+   e piu robusto ma piu costoso da costruire bene (debounce, gestione conflitti, indicatore di stato
+   "salvato/salvataggio in corso/errore"); un bottone "Salva bozza" esplicito e il pattern gia
+   collaudato e in produzione per i Preventivi - meno lavoro, meno rischio, ma protegge solo se
+   l'utente lo clicca (non protegge da un crash prima del click).
+6. **Concorrenza.** Se lo stesso utente (o due utenti con permessi condivisi) apre la stessa bozza da
+   due schede/dispositivi contemporaneamente, come si gestisce il conflitto? Ultimo salvataggio vince
+   silenziosamente, o serve un lock/avviso esplicito?
+7. **Pulizia delle bozze abbandonate.** Una bozza mai confermata resta nel database per sempre, o
+   serve un meccanismo di scadenza/pulizia (job schedulato)? Da verificare anche se esiste gia un
+   meccanismo simile per i Preventivi in stato 'bozza' prima di inventarne uno nuovo da zero.
+8. **Permessi.** Salvare una bozza richiede lo stesso permesso `manage_orders` richiesto oggi per
+   creare un ordine finale, o un permesso piu permissivo (una bozza impegna meno l'azienda di un
+   ordine reale - potrebbe avere senso un accesso piu ampio, es. a chi oggi puo solo "proporre" ma non
+   "confermare")?
+9. **La domanda di fondo, prima di tutte le altre.** Se un Ordine diretto acquisisce una fase "bozza,
+   non ancora impegnativa, senza riserva stock, senza controllo compliance bloccante", in cosa si
+   distingue concettualmente da un Preventivo con un solo prodotto/cliente e nessun bisogno di invio
+   formale? Prima di costruire questa feature vale la pena chiedersi se il bisogno reale (non perdere
+   lavoro in corso) non sia gia meglio risolto **indirizzando verso i Preventivi esistenti** per
+   questo caso d'uso, invece di duplicare in Ordini diretti una macchina a stati che i Preventivi
+   hanno gia. La risposta a questa domanda cambia radicalmente lo scope di tutte le altre.
+
+### Mappa d'impatto preliminare (per area, non ancora file-per-file - prematuro finche le domande sopra non hanno risposta)
+
+- **Schema**: `db/init_sqlite.sql` e `db/init_mysql.sql` - nuovo valore enum su
+  `ordini_clienti.stato` (o tabella satellite separata, a seconda delle risposte alle domande 1-2), su
+  entrambi gli schemi gemelli.
+- **Model**: `includes/sales_orders.php` - `qk_ordine_cliente_salva()` (oggi l'unico punto di
+  scrittura, per esplicita scelta architetturale gia presa nel progetto, PIANO - Unificazione
+  Creazione Ordine Cliente, 26/07/2026) andrebbe esteso o affiancato da un percorso "salva bozza"
+  parallelo, con attenzione a non violare quel principio di scrittore unico gia in vigore.
+- **Controller**: `app/Controllers/SalesOrdersController.php` - nuova azione `salvaBozza()` (o
+  equivalente), nuova rotta in `app/routes.php`.
+- **Vista**: `app/views/sales/orders/_create.php` - nuovo bottone "Salva bozza" (mirror di quello gia
+  esistente per i Preventivi in `app/views/sales/quotes/_form.php`), eventuali nuovi stati UI se si
+  opta per autosave.
+- **Vista**: `app/views/sales/orders/_detail.php` - riapertura/continuazione di una bozza esistente.
+  Oggi questa vista assume sempre un ordine gia `in_lavorazione`+ (verificato in `edit()`,
+  `SalesOrdersController.php:443-518`, che oggi permette di modificare solo note e data di consegna,
+  MAI le righe prodotto) - andrebbe rivista per gestire anche lo stato bozza, incluso permettere la
+  modifica delle righe in quello stato (estensione di scope significativa rispetto a oggi).
+- **Lista ordini**: `SalesOrdersController::index()` e relativa vista - filtro/colonna per lo stato
+  bozza (dipende dalla domanda 3).
+- **Magazzino**: `qk_riserva_stock_ordine()` - impatto dipende dalla domanda 1; potenzialmente non
+  toccata affatto se le bozze non riservano nulla.
+- **Compliance**: `qk_compliance_check_sale()`, `qk_compliance_log_transactions()` - timing della
+  chiamata dipende dalla domanda 4.
+- **Numerazione**: `qk_next_numero_ordine_diretto()`/`qk_next_sequence_number()` - timing di
+  assegnazione dipende dalla domanda 2.
+- **Permessi**: verificare se esiste gia un permesso piu granulare riusabile, o se ne serve uno nuovo
+  (dipende dalla domanda 8).
+- **Report/Dashboard**: qualunque vista che conta/somma ordini (dashboard vendite, report fatturato)
+  andrebbe verificata per assicurarsi di non includere accidentalmente le bozze nei totali - mappatura
+  completa da fare solo quando e chiaro se le bozze avranno uno `stato` che queste query gia
+  escludono con un pattern riusabile (es. se gia filtrano fuori `'annullato'`/`'superato'`), o se sono
+  query che elencano gli stati espliciti uno per uno e andrebbero aggiornate manualmente.
+
+### Test - struttura minima proposta, da completare quando l'implementazione e decisa
+
+Non e possibile scrivere una batteria di test definitiva senza prima le risposte alle domande sopra
+(il comportamento atteso di ogni test dipende direttamente da quelle risposte). Struttura minima che
+qualunque implementazione dovra comunque coprire, come traccia per quando si riprende questa voce:
+
+- **Livello 1** (PHP reale, DB SQLite in memoria, stesso schema di
+  `tests/manual/suite_preventivo_conferma_ordine_scoperto.php`): salvataggio bozza, riapertura bozza,
+  conferma bozza -> ordine reale, cancellazione bozza, non-regressione sullo scrittore unico
+  `qk_ordine_cliente_salva()` sia per il percorso "diretto senza bozza" (se lasciato coesistere) sia
+  per il percorso "da preventivo accettato".
+- **Livello 2** (browser reale, Claude in Chrome, con schermate/letture DOM a supporto di ogni
+  esito): compilazione parziale -> salva bozza -> chiusura scheda -> riapertura -> dati intatti (il
+  test che dimostra che il problema di fondo e davvero risolto - equivalente concettuale del test "S3
+  decisivo" del piano collegato, ma per questo problema piu ampio); bozza non compare/compare
+  correttamente nelle liste secondo quanto deciso alla domanda 3; scoperto di stock su una bozza
+  gestito secondo quanto deciso alla domanda 1; non-regressione completa sul percorso Preventivi (zero
+  file di Preventivi dovrebbero risultare toccati da questa feature - da verificare a implementazione
+  fatta, non assunto in anticipo).
+
+### Stato
+
+**Non pianificato per l'esecuzione.** In attesa che l'utente risponda alle domande aperte sopra; dopo
+la risposta, questa voce va riscritta come un piano completo eseguibile (stesso livello di dettaglio
+del piano sorella `audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md`) prima di poter
+essere autorizzata ed eseguita.
+
+---
+
 # Piano di Implementazione: Stile Dinamico Documenti (ex Numeri Magici)
 
 ## Il Problema

@@ -109,6 +109,33 @@ function qk_calcola_righe_stock_ordine(PDO $pdo, array $righe): array
 }
 
 /**
+ * Calcola le righe scoperte (vendita allo scoperto) per un set di righe
+ * ordine ancora NON persistite — usata sia dal salvataggio reale
+ * (SalesOrdersController::create(), POST) sia dal pre-check AJAX
+ * (SalesOrdersController::apiVerificaDisponibilitaOrdine(), GET), per non
+ * duplicare la stessa logica di conversione+filtro in due punti (Regola
+ * Aurea DRY, AGENTS.md). Estratta come parte del fix del bug "righe perse sul
+ * percorso vendita allo scoperto" (audit/piano-correzione-bug-righe-perse-
+ * vendita-scoperto-ordini.md, §5.1, 08/08/2026).
+ *
+ * @param array $righe Stesso shape di readPostOrderRighe()/readOrderRigheFrom().
+ */
+function qk_ordine_diretto_calcola_warnings_scoperto(PDO $pdo, array $righe, int $magazzinoId): array
+{
+    $righeStock = qk_calcola_righe_stock_ordine($pdo, $righe);
+    $righePerCheck = [];
+    foreach ($righeStock as $rs) {
+        if ($rs['prodotto_id']) {
+            $righePerCheck[] = [
+                'prodotto_id'    => $rs['prodotto_id'],
+                'quantita_stock' => $rs['uom']['quantita_stock'],
+            ];
+        }
+    }
+    return qk_verifica_disponibilita_ordine($pdo, $righePerCheck, $magazzinoId);
+}
+
+/**
  * Crea un ordine cliente (testata + righe) — UNICO punto di scrittura su
  * ordini_clienti/ordini_clienti_righe in fase di CREAZIONE, sia per il
  * percorso diretto sia per il percorso da preventivo accettato.
@@ -837,58 +864,6 @@ function qk_get_ordine_cliente_figlio(PDO $pdo, int $ordinePadreId): ?array
     $st->execute([$ordinePadreId]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     return $row ?: null;
-}
-
-/**
- * Ricerca prodotti con dettagli arricchiti per ordini di vendita.
- * Riusa la stessa query dei preventivi.
- */
-function qk_search_prodotti_orders(PDO $pdo, string $q): array
-{
-    $stmt = $pdo->prepare("
-        SELECT p.id,
-               p.nome AS label,
-               p.sku_interno AS sku,
-               um.codice AS unita_misura,
-               p.unita_misura_stock_id,
-               p.descrizione_confezione AS quantita_confezione,
-               p.unita_contenuto_id,
-               um_comm.codice AS unita_misura_commerciale,
-               p.quantita_contenuto,
-               pf.rrp_min,
-               pf.rrp_max,
-               pf.fornitore_id AS rrp_fornitore_id,
-               -- Costo base: da v_costo_acquisto_prodotti (fix 'Listino Fantasma',
-               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql par.14b.
-               CASE WHEN p.tipo = 'kit' THEN (
-                   SELECT SUM(ck.quantita * vc.costo_acquisto)
-                   FROM componenti_kit ck
-                   LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
-                   WHERE ck.kit_id = p.id
-               ) ELSE (
-                   SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = p.id
-               ) END AS costo_base
-          FROM prodotti p
-          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
-          LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
-          LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id AND pf.is_principale = 1
-         WHERE p.attivo = 1
-           AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR pf.sku_fornitore LIKE :q)
-         ORDER BY p.nome
-         LIMIT 60
-    ");
-    $stmt->execute([':q' => '%' . $q . '%']);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // Normalizza campi
-    foreach ($rows as &$r) {
-        $r['rrp_min']   = isset($r['rrp_min'])   ? (float)$r['rrp_min']   : null;
-        $r['rrp_max']   = isset($r['rrp_max'])    ? (float)$r['rrp_max']   : null;
-        $r['costo_base'] = isset($r['costo_base']) ? (float)$r['costo_base'] : 0.0;
-        $r['quantita_contenuto'] = isset($r['quantita_contenuto']) ? (float)$r['quantita_contenuto'] : 1.0;
-    }
-    unset($r);
-    return $rows;
 }
 
 /**

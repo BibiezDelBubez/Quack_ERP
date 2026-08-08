@@ -187,3 +187,133 @@ A standard grid container widget for dashboards.
 * **Links Inside Alerts**: Any actionable link (`<a>`) generated inside an alert message (e.g. from controllers or flash messages) MUST use the class `.qk-alert-link`.
 * **Prohibited**: **NEVER write inline styles** (`style="color:...; font-weight:..."`) in PHP controllers or views for alert text/links. Using `.qk-alert-link` ensures `color: inherit`, keeping the link in bold (`font-weight: 700`), underlined, and visually aligned with the container alert type.
 
+### F. Confirmation Modal Pattern (pre-check AJAX + Bootstrap modal)
+
+Used whenever an action needs an explicit, non-blocking user confirmation before proceeding — never a
+hard block, always a documented override path. Codified 08/08/2026 (see
+`audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md`) after the pattern was already in
+use in two independent places (`sales/quotes/_form.php` — `qk-modal-scoperto-preventivo`,
+`sales/orders/_create.php` — `ord-modal-scoperto`) without a shared write-up, per AGENTS.md's
+recommendation to centralize a pattern once it repeats.
+
+**Structure** — a `.modal.fade` + `.modal-dialog-centered` with:
+```html
+<div class="modal fade" id="..." tabindex="-1" aria-labelledby="...-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--qk-card-bg);color:var(--qk-text-primary);border:1px solid var(--qk-border)">
+      <div class="modal-header" style="border-color:var(--qk-border)">
+        <h5 class="modal-title" id="...-title"><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>Titolo avviso</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Testo esplicativo: perché serve conferma, cosa succede se si procede.</p>
+        <div class="qk-table-wrap">
+          <table class="qk-table" style="font-size:.85rem">
+            <!-- dettaglio righe interessate -->
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--qk-border)">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn-qk btn-qk-success" id="btn-conferma-...">
+          <i class="fa-solid fa-triangle-exclamation"></i> Conferma comunque e procedi
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+**Interaction flow (JS)**:
+1. Un pre-check AJAX (`GET`, mai `POST`) valuta se serve mostrare la modale — mai un submit/reload di
+   pagina per scoprirlo, altrimenti si rischia di perdere dati non ancora persistiti (vedi il bug
+   descritto nel piano collegato).
+2. Se nessun avviso: procede direttamente (submit reale, `form.requestSubmit()`), nessuna modale
+   mostrata — mai un'interruzione quando non serve.
+3. Se ci sono avvisi: popola la tabella nel `.modal-body` con i dati del pre-check e mostra la modale
+   via `bootstrap.Modal.getOrCreateInstance(el).show()`.
+4. **Fail-safe di rete obbligatorio**: se il pre-check fallisce (errore di rete/HTTP), NON si procede
+   mai come se non ci fosse nulla da segnalare — mostrare un `alert()` esplicito e fermarsi. Non
+   riusare helper generici che inghiottono errori di rete restituendo un default silenzioso (es.
+   `apiFetch()` in `sales-orders-create.js`, che intenzionalmente NON viene usato per questo pattern).
+5. Il bottone di conferma nella modale imposta un campo hidden dedicato (es.
+   `conferma_vendita_scoperto`), chiude la modale, e fa il submit reale — mai un secondo pre-check.
+6. **Importante — dove agganciare l'intercettazione**: se il bottone che innesca il pre-check è
+   ANNIDATO dentro il proprio `<form>` (pattern preferito, es. Preventivi), intercettare il `submit`
+   del form è affidabile. Se il bottone è invece ESTERNO al form (collegato solo via l'attributo HTML
+   `form="..."`), intercettare il `submit` del form si è dimostrato **inaffidabile** in test con click
+   realmente simulati (vedi il piano collegato, §11.2, bug #1) — agganciare invece l'intercettazione
+   al `click` del bottone stesso, con `form.requestSubmit()` per il submit finale.
+
+**Script tag freshness**: qualunque pagina che include script JS specifici della pagina (non condivisi
+da tutto il sito) deve usare l'helper `asset()` (`includes/functions.php`, cache-busting automatico
+via `?v=filemtime()`), mai `url()` (nessun cache-busting) — un errore in questo senso ha reso
+intermittenti i test di questo stesso pattern in `sales/orders/_create.php` (vedi il piano collegato,
+§11.2, bug #2) perché il browser continuava a servire una copia in cache del file anche dopo modifiche
+su disco.
+
+### G. Campi di ricerca entità — `QkM2O` / `QkPicker` (autocomplete stile Odoo)
+
+Componente JS condiviso, obbligatorio per **qualunque** campo che cerca un'entità esistente
+(cliente, fornitore, prodotto, categoria, sostanza chimica, listino, ecc.) — mai reinventare una
+ricerca ad-hoc con `fetch()` e un `<div>` di risultati scritti a mano: esiste già una storia di
+duplicazioni di questo esatto pattern in questo progetto (vedi `docs/plans/PIANO - Unificazione
+Autocomplete (qkAutocomplete verso QkM2O).md`), oltre al rischio di reintrodurre bug già risolti una
+volta nel componente condiviso.
+
+**Sorgente**: `assets/js/components/entity-picker.js` (caricato una sola volta in `includes/footer.php`
+tramite `includes/entity_picker_modal.php`, disponibile globalmente su ogni pagina come `QkM2O` e
+`QkPicker`). Spostato qui da inline in `entity_picker_modal.php` l'08/08/2026 (Fase 3,
+`audit/piano-correzione-bug-qkpicker-persistenza-selezione.md` §8) per renderlo cache-abile dal
+browser invece di essere ri-scaricato/ri-parsato ad ogni pagina.
+
+**Due componenti, quasi sempre usati insieme**:
+- **`QkM2O`** — il campo di testo con dropdown inline (autocomplete): digitando, mostra fino a
+  `pageSize` risultati (default 8) direttamente sotto il campo.
+- **`QkPicker`** — la modale "Cerca di più…" a schermo intero, con tabella paginata e ricerca più
+  ampia. Opzionale: un `QkM2O` può funzionare da solo (vedi i campi Listino/Prodotto riga in
+  Trasferimenti e Movimenti di magazzino), oppure essere abbinato a un `QkPicker` passandolo come
+  `picker:` nella config di `QkM2O` — a quel punto compare l'opzione "Cerca di più…" in fondo al
+  dropdown inline.
+
+**Uso minimo**:
+```js
+const picker = new QkPicker({           // opzionale, solo se serve "Cerca di più…"
+  title:   'Cerca: Fornitore',
+  apiUrl:  '/products/api/fornitori',
+  columns: [{ key: 'ragione_sociale', label: 'Nome' }, { key: 'email', label: 'E-mail' }],
+});
+
+const m2o = new QkM2O({
+  inputEl:    document.getElementById('mf-fornitore-label'),  // <input type="text">
+  hiddenEl:   document.getElementById('mf-fornitore-id'),     // <input type="hidden">
+  dropdownEl: document.getElementById('mf-m2o-dd'),           // <div> vuoto
+  clearBtn:   document.getElementById('mf-fornitore-clear'),  // opzionale
+  apiUrl:     '/products/api/fornitori',
+  labelKey:   'ragione_sociale',
+  columns:    [{ key: 'ragione_sociale', label: 'Ragione sociale' }, { key: 'email', label: 'E-mail' }],
+  picker:     picker,       // opzionale
+  onSelect:   (id, row) => { /* side-effect facoltativi, es. caricare dettagli */ },
+});
+```
+
+**Garanzia strutturale (dall'08/08/2026) — leggere prima di scrivere un `onSelect`**: la persistenza
+del valore selezionato (`hiddenEl.value = id`, `inputEl.value = label`) è **automatica e garantita dal
+componente stesso**, sia dal menu inline sia da "Cerca di più…" — **non va mai reimplementata a mano
+dentro `onSelect`**. Prima di questa data non era così: `QkPicker._select()` chiamava solo
+`cfg.onSelect(id, row)` e si fidava che chi scriveva l'`onSelect` esterno ricordasse di impostare i
+campi — un `onSelect` che dimenticava di farlo (il caso reale: `selectCliente()` in
+`sales-quotes.js`/`sales-orders-create.js`) faceva sembrare che "niente fosse stato selezionato" dopo
+aver scelto un cliente dalla modale, con conseguente blocco del salvataggio. Vedi
+`audit/piano-correzione-bug-qkpicker-persistenza-selezione.md` per l'analisi completa e la batteria di
+test (13 campi con `QkPicker` verificati uno per uno).
+
+`onSelect` va quindi usato **solo** per side-effect aggiuntivi (caricare dettagli correlati,
+aggiornare altri campi della riga, mostrare avvisi) — mai per l'assegnazione base di id/label, che il
+componente fa già da solo.
+
+**Nota su ricerche a 1 carattere**: per design, `QkM2O` non lancia una ricerca se il testo digitato è
+esattamente 1 carattere (query troppo ampia/rumorosa) — chiude il dropdown invece di interrogare
+l'API. Premere Invio forza comunque la ricerca, bypassando questo limite (utile per codici brevi come
+le classi ADR: "1", "2", "3"...).
+

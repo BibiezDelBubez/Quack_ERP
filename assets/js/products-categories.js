@@ -7,6 +7,12 @@
   var CAT_COLS = ['nome','parent_nome','posizione_categoria','immagine_path'];
   var CAT_HEADERS = ['nome *','parent_nome','posizione_categoria','immagine_path'];
 
+  // Riferimento condiviso tra il blocco di inizializzazione (sotto) e l'handler
+  // show.bs.modal più in basso, che deve poter ricalcolare l'apiUrl (con l'exclude_id
+  // corretto) ogni volta che il modale si apre per una categoria diversa — vedi
+  // audit/piano-correzione-bug-exclude-id-categoria-genitore.md, 08/08/2026.
+  var catParentM2O = null;
+
   // ── Categoria Genitore ───────────────────────────────────────────────────
   // Migrato da window.qkAutocomplete a QkM2O (componente condiviso, vedi
   // docs/plans/PIANO - Unificazione Autocomplete, D4, 27/07/2026).
@@ -14,22 +20,27 @@
   // genitore di se stessa) prima era un filtro client-side qui; ora e'
   // lato server via exclude_id (qk_search_categorie), perche' QkM2O
   // interroga l'endpoint direttamente senza hook di trasformazione dati.
+  //
+  // Bug corretto 08/08/2026 (vedi piano sopra): il campo #cat-id (da cui si
+  // legge l'id da escludere) viene letto qui solo una volta, al caricamento
+  // della pagina — prima ancora che l'utente apra mai il modale, condiviso
+  // per tutta la lista, per una categoria specifica. L'apiUrl iniziale qui
+  // sotto è quindi corretto SOLO per il caso "pagina appena caricata,
+  // nessun modale ancora aperto" (equivalente a creazione, nessun id da
+  // escludere) — il ricalcolo vero avviene nell'handler show.bs.modal.
   document.addEventListener('DOMContentLoaded', function() {
     var pInput = document.getElementById('cat-parent-label');
     var pHidden = document.getElementById('cat-parent-id');
     var pDropdown = document.getElementById('cat-parent-dropdown');
     var pClear = document.getElementById('cat-parent-clear');
-    var selfId = document.getElementById('cat-id') ? document.getElementById('cat-id').value : '';
 
     if (pInput) {
-      var apiUrl = cfg.apiUrl + (selfId ? '?exclude_id=' + encodeURIComponent(selfId) : '');
-
-      new QkM2O({
+      catParentM2O = new QkM2O({
         inputEl:    pInput,
         hiddenEl:   pHidden,
         dropdownEl: pDropdown,
         clearBtn:   pClear,
-        apiUrl:     apiUrl,
+        apiUrl:     cfg.apiUrl,
         labelKey:   'nome',
         columns:    [{ key: 'nome', label: 'Nome' }],
       });
@@ -109,6 +120,15 @@
           statusText.innerText = '';
           previewContainer.style.setProperty('display', 'none', 'important');
         }
+      }
+
+      // Ricalcola l'apiUrl del campo "Categoria genitore" con l'exclude_id corretto per
+      // QUESTA apertura del modale (create → nessun exclude_id; modifica → id della
+      // categoria in modifica, appena impostato sopra in idInput.value) — vedi
+      // audit/piano-correzione-bug-exclude-id-categoria-genitore.md, 08/08/2026.
+      if (catParentM2O) {
+        var selfIdNow = idInput.value;
+        catParentM2O.cfg.apiUrl = cfg.apiUrl + (selfIdNow ? '?exclude_id=' + encodeURIComponent(selfIdNow) : '');
       }
     });
 

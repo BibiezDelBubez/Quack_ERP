@@ -772,10 +772,9 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            // D3.2 (PIANO Motore di Pricing Multi-UoM §8): quantita_minima_stock deve essere
-            // sempre valorizzato (0 = prezzo base) — altrimenti invisibile a getSalePrice().
-            $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES (1, ?, 0, ?, ?, 0, ?, 0)')
-                ->execute([$id, $prezzo_base, $um_id, $um_id]);
+            // Fix Bug B2 (audit/audit-bug-prezzo-preventivi-vendita.md): scrittura centralizzata
+            // in qk_salva_prezzo_base_prodotto() — vedi commento della funzione qualche riga sotto.
+            qk_salva_prezzo_base_prodotto($pdo, $id, $prezzo_base, $um_id);
         }
         
         $costo_base = isset($v['costo_acquisto_base']) && $v['costo_acquisto_base'] !== '' ? (float)str_replace(',', '.', (string)$v['costo_acquisto_base']) : null;
@@ -794,6 +793,37 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
         $pdo->rollBack();
         throw $e;
     }
+}
+
+/**
+ * Salva/aggiorna il prezzo di vendita base di un prodotto (listino_id = 1, quantita_minima = 0).
+ *
+ * Fix Bug B2 (07/08/2026, audit/audit-bug-prezzo-preventivi-vendita.md, Regola Aurea AGENTS.md
+ * DRY): prima di questa estrazione la stessa logica ("se c'è un prezzo base, scrivi/aggiorna una
+ * riga in listini_prezzi con listino_id=1, quantita_minima_stock=0") era duplicata in tre punti
+ * — qui (creazione), qui sotto (aggiornamento) e in ProductsController::apiImportCsv() (import
+ * massivo) — e i tre percorsi sono potuti divergere silenziosamente: l'import CSV, ad un certo
+ * punto, scriveva listino_id=NULL invece di 1, rendendo il prezzo invisibile al motore
+ * (qk_get_sale_price()) pur restando corretto sugli altri due percorsi. Unica fonte di verità
+ * d'ora in poi per tutti e tre i chiamanti.
+ */
+function qk_salva_prezzo_base_prodotto(PDO $pdo, int $prodottoId, float $prezzo, ?int $umId): void
+{
+    $stmtCheck = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+    $stmtCheck->execute([$prodottoId]);
+    $rigaId = $stmtCheck->fetchColumn();
+
+    if ($rigaId) {
+        // D3.2: valorizza/ripara anche quantita_minima_stock qui, così eventuali righe create
+        // prima di questo fix (o con quantita_minima_stock NULL) vengono corrette al primo
+        // salvataggio successivo del prodotto.
+        $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ?, unita_misura_soglia_id = ?, quantita_minima_stock = 0 WHERE id = ?')
+            ->execute([$prezzo, $umId, $umId, $rigaId]);
+        return;
+    }
+
+    $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES (1, ?, 0, ?, ?, 0, ?, 0)')
+        ->execute([$prodottoId, $prezzo, $umId, $umId]);
 }
 
 /* =============================================================================
@@ -962,19 +992,9 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
 
         $prezzo_base = isset($v['prezzo_vendita_base']) && $v['prezzo_vendita_base'] !== '' ? (float)str_replace(',', '.', (string)$v['prezzo_vendita_base']) : null;
         if ($prezzo_base !== null) {
-            $stmtCheckRule = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
-            $stmtCheckRule->execute([$id]);
-            $ruleId = $stmtCheckRule->fetchColumn();
-            if ($ruleId) {
-                // D3.2: valorizza/ripara anche quantita_minima_stock qui, così eventuali righe
-                // create prima di questo fix (con quantita_minima_stock NULL) vengono corrette
-                // al primo salvataggio successivo del prodotto.
-                $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ?, unita_misura_soglia_id = ?, quantita_minima_stock = 0 WHERE id = ?')
-                    ->execute([$prezzo_base, $um_id, $um_id, $ruleId]);
-            } else {
-                $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES (1, ?, 0, ?, ?, 0, ?, 0)')
-                    ->execute([$id, $prezzo_base, $um_id, $um_id]);
-            }
+            // Fix Bug B2 (audit/audit-bug-prezzo-preventivi-vendita.md): scrittura centralizzata
+            // in qk_salva_prezzo_base_prodotto() — stessa funzione usata da creazione e import CSV.
+            qk_salva_prezzo_base_prodotto($pdo, $id, $prezzo_base, $um_id);
         }
         
         // UPSERT per prodotti_valutazione_costi (Tappa 3 Refactoring Costi d'Acquisto)
@@ -1208,6 +1228,87 @@ function qk_search_prodotti(PDO $pdo, string $q = '', int $limit = 50, ?int $exc
     }
     $stmt->execute($params);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Ricerca prodotti con dettagli arricchiti (prezzi, costo, unità di misura) per
+ * righe di documenti di vendita (preventivi e ordini diretti).
+ *
+ * Storia (CLAUDE.md punto 1, 08/08/2026): esistevano due copie indipendenti di
+ * questa query — qk_search_prodotti_sales() in includes/sales_quotes.php e
+ * qk_search_prodotti_orders() in includes/sales_orders.php — nonostante il
+ * docblock di quest'ultima dichiarasse "Riusa la stessa query dei preventivi".
+ * Non era vero: erano ~95% identiche ma mantenute a mano separatamente, e sono
+ * andate alla deriva — la copia ordini usava "pf.is_principale" (colonna mai
+ * esistita in prodotti_fornitori, vedi db/init_sqlite.sql) al posto del join
+ * corretto su ordine_preferenza_fornitore, causando un PDOException su ogni
+ * ricerca prodotto dalla pagina Ordini diretti (SalesOrdersController::apiProdotti).
+ * Unificate qui in un'unica funzione condivisa da entrambi i chiamanti, per
+ * evitare che la stessa correzione debba essere fatta due volte in futuro.
+ *
+ * NB: qk_pricelist_search_prodotti() (includes/pricelists.php) resta
+ * volutamente separata — usa una vista di costo diversa, non gestisce i Kit,
+ * ha un limite diverso e cerca anche su 'ean': un caso d'uso realmente diverso,
+ * non una duplicazione di questo.
+ *
+ * @param int $limit Preventivi e pricelists usano 50, gli ordini diretti 60:
+ *                    parametrizzato per preservare il comportamento storico di
+ *                    ciascun chiamante invece di sceglierne uno arbitrariamente.
+ */
+function qk_search_prodotti_documento_vendita(PDO $pdo, string $q, int $limit = 50): array
+{
+    $stmt = $pdo->prepare("
+        SELECT p.id,
+               p.nome AS label,
+               p.sku_interno AS sku,
+               p.categoria_id,
+               um.codice AS unita_misura,
+               p.unita_misura_stock_id,
+               p.descrizione_confezione AS quantita_confezione,
+               p.unita_contenuto_id,
+               um_comm.codice AS unita_misura_commerciale,
+               p.quantita_contenuto,
+               pf.rrp_min,
+               pf.rrp_max,
+               pf.fornitore_id AS rrp_fornitore_id,
+               -- Costo base: da v_costo_acquisto_prodotti (fix 'Listino Fantasma',
+               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql par.14b.
+               CASE WHEN p.tipo = 'kit' THEN (
+                   SELECT SUM(ck.quantita * vc.costo_acquisto)
+                   FROM componenti_kit ck
+                   LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
+                   WHERE ck.kit_id = p.id
+               ) ELSE (
+                   SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = p.id
+               ) END AS costo_base
+          FROM prodotti p
+          LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
+          LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
+          LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id
+             AND pf.attivo = 1
+             AND pf.ordine_preferenza_fornitore = (
+                 SELECT MIN(pf2.ordine_preferenza_fornitore)
+                 FROM prodotti_fornitori pf2
+                 WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
+             )
+         WHERE p.attivo = 1
+           AND (p.nome LIKE :q OR p.sku_interno LIKE :q OR pf.sku_fornitore LIKE :q)
+         ORDER BY p.nome
+         LIMIT :lim
+    ");
+    $stmt->bindValue(':q', '%' . $q . '%', PDO::PARAM_STR);
+    $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as &$r) {
+        $r['rrp_min']             = isset($r['rrp_min']) ? (float)$r['rrp_min'] : null;
+        $r['rrp_max']             = isset($r['rrp_max']) ? (float)$r['rrp_max'] : null;
+        $r['costo_base']          = isset($r['costo_base']) ? (float)$r['costo_base'] : 0.0;
+        $r['quantita_contenuto']  = isset($r['quantita_contenuto']) ? (float)$r['quantita_contenuto'] : 1.0;
+    }
+    unset($r);
+    return $rows;
 }
 
 /* =============================================================================

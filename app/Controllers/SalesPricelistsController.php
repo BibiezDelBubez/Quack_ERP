@@ -461,7 +461,14 @@ final class SalesPricelistsController extends BaseController
         try {
             $prodottoId = filter_input(INPUT_GET, 'prodotto_id', FILTER_VALIDATE_INT);
         $listinoId  = filter_input(INPUT_GET, 'listino_id',  FILTER_VALIDATE_INT);
-        $clienteId  = filter_input(INPUT_GET, 'cliente_id',  FILTER_VALIDATE_INT);
+        // Fix Bug C (audit/audit-bug-prezzo-preventivi-vendita.md): filter_input() restituisce
+        // `false` (non `null`) quando il parametro è presente ma vuoto — es. il preventivo nuovo
+        // che manda sempre `cliente_id=` prima che l'utente scelga il cliente
+        // (pricing-widget.js). `false` non è compatibile col parametro `?int` di getSalePrice()
+        // sotto strict_types, causava un TypeError catturato silenziosamente (prezzo 0 +
+        // triangolo rosso anche su prodotti con prezzo base reale). Normalizzato come già si fa
+        // due righe sotto per $unitaRichiestaId e $data.
+        $clienteId  = filter_input(INPUT_GET, 'cliente_id',  FILTER_VALIDATE_INT) ?: null;
         $quantita   = filter_input(INPUT_GET, 'quantita',    FILTER_VALIDATE_FLOAT);
         // D3.1 (PIANO Motore di Pricing Multi-UoM §5.1/§8 Fase 3): prima di questa modifica, `quantita`
         // arrivava come numero grezzo senza mai dichiarare in quale unità era espresso. Nuovo parametro

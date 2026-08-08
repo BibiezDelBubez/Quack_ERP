@@ -62,7 +62,17 @@ $v = $values;
         <i class="fa-solid fa-triangle-exclamation"></i> Conferma comunque e crea l'ordine
       </button>
     <?php else: ?>
-      <button type="submit" form="form-ordine-diretto" class="btn-qk btn-qk-primary">
+      <!-- id esplicito: il bottone e' FUORI dal <form> (associato solo via
+           l'attributo form="..."), un pattern meno affidabile del bottone
+           annidato usato da Preventivi (sales/quotes/_form.php,
+           #btn-accetta-crea-ordine, dentro il proprio <form>) per
+           l'intercettazione lato JS del click prima del submit nativo - vedi
+           assets/js/sales-orders-create.js, che aggancia l'intercettazione
+           al CLICK di questo bottone (non al submit del form) proprio per
+           questo motivo. audit/piano-correzione-bug-righe-perse-vendita-
+           scoperto-ordini.md, §5.6/§5.7, aggiornamento 08/08/2026 post
+           riscontro in test browser reale. -->
+      <button type="submit" form="form-ordine-diretto" id="ord-btn-submit" class="btn-qk btn-qk-primary">
         <i class="fa-solid fa-circle-check"></i> Conferma Ordine
       </button>
     <?php endif; ?>
@@ -94,6 +104,11 @@ $v = $values;
   <!-- Cliente nascosto -->
   <input type="hidden" name="cliente_id"    id="ord-cliente-id"    value="<?= e($v['cliente_id']) ?>">
   <input type="hidden" name="cliente_label" id="ord-cliente-label" value="<?= e($v['cliente_label']) ?>">
+
+  <!-- Vendita Allo Scoperto Controllata (P4) — valorizzato via JS solo dopo
+       conferma esplicita nella modale (vedi assets/js/sales-orders-create.js).
+       audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md, §5.6. -->
+  <input type="hidden" name="conferma_vendita_scoperto" id="ord-input-conferma-scoperto" value="">
 
   <!-- ── TESTATA ─────────────────────────────────────────────────────────── -->
   <div class="qk-card mb-3">
@@ -154,7 +169,7 @@ $v = $values;
                  modificabile - mai piu risolto in silenzio al salvataggio. -->
             <div class="qk-form-group" style="flex:0 0 190px; min-width:170px;">
               <label class="qk-form-label">Magazzino di evasione <span class="required">*</span></label>
-              <select name="magazzino_id" class="qk-form-control <?= isset($errors['magazzino_id']) ? 'is-invalid' : '' ?>" style="font-size:.85rem;">
+              <select name="magazzino_id" id="ord-select-magazzino" class="qk-form-control <?= isset($errors['magazzino_id']) ? 'is-invalid' : '' ?>" style="font-size:.85rem;">
                 <?php foreach ($magazziniOrdine as $mg): ?>
                   <option value="<?= $mg['id'] ?>" <?= (string)($v['magazzino_id'] ?? '') === (string)$mg['id'] ? 'selected' : '' ?>>
                     <?= e($mg['nome']) ?>
@@ -628,16 +643,64 @@ $v = $values;
   </div>
 </div>
 
+<!-- ══════════════ MODALE CONFERMA VENDITA ALLO SCOPERTO ══════════════════
+     Mirror di qk-modal-scoperto-preventivo (sales/quotes/_form.php) — stesso
+     pattern, adattato alla creazione ordine diretto (nessun id ordine ancora
+     esistente: le righe vengono passate al pre-check dal DOM, non da un id
+     già salvato). audit/piano-correzione-bug-righe-perse-vendita-scoperto-
+     ordini.md, §5.6. -->
+<div class="modal fade" id="ord-modal-scoperto" tabindex="-1" aria-labelledby="ordms-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--qk-card-bg);color:var(--qk-text-primary);border:1px solid var(--qk-border)">
+      <div class="modal-header" style="border-color:var(--qk-border)">
+        <h5 class="modal-title" id="ordms-title"><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>Disponibilità insufficiente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">
+          La disponibilità a magazzino non copre tutte le righe di questo ordine. La vendita allo scoperto è comunque permessa: verifica le quantità e, se va bene così, conferma qui sotto.
+        </p>
+        <div class="qk-table-wrap">
+          <table class="qk-table" style="font-size:.85rem">
+            <thead>
+              <tr><th>Prodotto</th><th class="text-end">Richiesto</th><th class="text-end">Disponibile</th><th class="text-end">Scoperto</th></tr>
+            </thead>
+            <tbody id="ordms-righe-scoperte"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--qk-border)">
+        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn-qk btn-qk-success" id="ord-btn-conferma-scoperto">
+          <i class="fa-solid fa-triangle-exclamation"></i> Conferma comunque e crea l'ordine
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════ JAVASCRIPT ═══════════════════════════════ -->
 <script>
 window.QK_ORDERS_CREATE_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
   margineSogliaVerde: <?= json_encode($margineSogliaVerde ?? 20.0) ?>,
   margineSogliaGiallo: <?= json_encode($margineSogliaGiallo ?? 10.0) ?>,
-  ottieniPrezzoUrl: <?= json_encode(url('sales/pricelists/api/ottieni-prezzo')) ?>
+  ottieniPrezzoUrl: <?= json_encode(url('sales/pricelists/api/ottieni-prezzo')) ?>,
+  verificaDisponibilitaUrl: <?= json_encode(url('sales/orders/api/verifica-disponibilita')) ?>
 };
 </script>
-<script src="<?= url('assets/js/pricing-widget.js') ?>"></script>
-<script src="<?= url('assets/js/margin-semaforo.js') ?>"></script>
-<script src="<?= url('assets/js/sales-orders-create.js') ?>"></script>
+<!-- asset(), non url(): cache-busting automatico via filemtime() (vedi
+     includes/functions.php). Prima di questo fix questi tre script erano
+     inclusi con url() (nessun cache-busting) mentre lo stesso pattern in
+     Preventivi (sales/quotes/_form.php) usa correttamente asset() per gli
+     stessi file condivisi (pricing-widget.js, margin-semaforo.js) - la
+     causa, scoperta in test browser reali (Livello 2, scenario S2), di
+     comportamento incoerente: il browser continuava a servire una copia
+     in cache di sales-orders-create.js anche dopo modifiche al file su
+     disco, perche' l'URL non cambiava mai tra una modifica e l'altra.
+     audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md,
+     aggiornamento 08/08/2026. -->
+<script src="<?= asset('js/pricing-widget.js') ?>"></script>
+<script src="<?= asset('js/margin-semaforo.js') ?>"></script>
+<script src="<?= asset('js/sales-orders-create.js') ?>"></script>
 

@@ -1288,7 +1288,8 @@ CREATE TABLE IF NOT EXISTS preventivi_righe (
     num_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- numeratore frazione di conversione per UoM
     den_factor_snapshot  INTEGER       NOT NULL DEFAULT 1,                     -- denominatore frazione di conversione per UoM
     posizione_riga  INTEGER       NOT NULL DEFAULT 0, -- ordine di visualizzazione
-    note_riga       TEXT
+    note_riga       TEXT,
+    prezzo_override BOOLEAN       NOT NULL DEFAULT 0       -- 1 = prezzo_unitario impostato manualmente, non sovrascrivere al refetch automatico (Bug A, audit/audit-bug-prezzo-preventivi-vendita.md)
 );
 
 CREATE TABLE IF NOT EXISTS ordini_clienti (

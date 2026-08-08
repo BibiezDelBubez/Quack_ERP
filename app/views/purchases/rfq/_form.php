@@ -987,4 +987,11 @@ window.QK_RFQ_CONFIG = {
   rfqStato: <?= json_encode($values['stato'] ?? 'bozza') ?>
 };
 </script>
-<script src="<?= url('assets/js/rfq-form.js') ?>?v=<?= time() ?>"></script>
+<!-- asset(), non url() con time() come query string manuale: il vecchio
+     approccio forzava un URL diverso ad OGNI richiesta (nessuna cache mai
+     valida, non solo dopo una modifica reale) - peggio del problema "cache
+     mai invalidata" degli altri file, anche se dalla parte opposta.
+     asset() usa filemtime() del file reale: cache valida finché il file
+     non cambia davvero. Vedi audit/piano-correzione-bug-righe-perse-
+     vendita-scoperto-ordini.md §11.2/§11.3, 08/08/2026. -->
+<script src="<?= asset('js/rfq-form.js') ?>"></script>

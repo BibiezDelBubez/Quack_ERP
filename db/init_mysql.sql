@@ -916,6 +916,7 @@ CREATE TABLE IF NOT EXISTS preventivi_righe (
     den_factor_snapshot INTEGER NOT NULL DEFAULT 1,
     posizione_riga INTEGER NOT NULL DEFAULT 0,
     note_riga TEXT,
+    prezzo_override TINYINT(1) NOT NULL DEFAULT 0,
     CONSTRAINT fk_preventivi_righe_unita_misura_stock_id FOREIGN KEY (unita_misura_stock_id) REFERENCES unita_misura(id),
     CONSTRAINT fk_preventivi_righe_unita_misura_id FOREIGN KEY (unita_misura_id) REFERENCES unita_misura(id),
     CONSTRAINT fk_preventivi_righe_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id),

@@ -92,54 +92,6 @@ function qk_search_clienti(PDO $pdo, string $q): array
 }
 
 /**
- * Ricerca prodotti con dettagli arricchiti per preventivi di vendita.
- */
-function qk_search_prodotti_sales(PDO $pdo, string $q): array
-{
-    $stmt = $pdo->prepare("
-        SELECT p.id, 
-               p.nome AS label, 
-               p.sku_interno AS sku, 
-               p.categoria_id,
-               um.codice AS unita_misura,
-               p.unita_misura_stock_id,
-               p.descrizione_confezione AS quantita_confezione,
-               p.unita_contenuto_id,
-               um_comm.codice AS unita_misura_commerciale,
-               p.quantita_contenuto,
-               pf.rrp_min,
-               pf.rrp_max,
-               pf.fornitore_id AS rrp_fornitore_id,
-               -- Costo base: da v_costo_acquisto_prodotti (fix 'Listino Fantasma',
-               -- audit/MASTER_AUDIT_REPORT.md) — vedi commento esteso in db/init_sqlite.sql par.14b.
-               CASE WHEN p.tipo = 'kit' THEN (
-                   SELECT SUM(ck.quantita * vc.costo_acquisto)
-                   FROM componenti_kit ck
-                   LEFT JOIN v_costo_acquisto_prodotti vc ON vc.prodotto_id = ck.componente_id
-                   WHERE ck.kit_id = p.id
-               ) ELSE (
-                   SELECT vc.costo_acquisto FROM v_costo_acquisto_prodotti vc WHERE vc.prodotto_id = p.id
-               ) END AS costo_base
-        FROM prodotti p
-        LEFT JOIN unita_misura um ON um.id = p.unita_misura_stock_id
-        LEFT JOIN unita_misura um_comm ON um_comm.id = p.unita_contenuto_id
-        LEFT JOIN prodotti_fornitori pf ON pf.prodotto_id = p.id 
-            AND pf.attivo = 1 
-            AND pf.ordine_preferenza_fornitore = (
-                SELECT MIN(pf2.ordine_preferenza_fornitore) 
-                FROM prodotti_fornitori pf2 
-                WHERE pf2.prodotto_id = p.id AND pf2.attivo = 1
-            )
-        WHERE p.attivo = 1
-          AND (p.nome LIKE :q OR p.sku_interno LIKE :q)
-        ORDER BY p.nome
-        LIMIT 50
-    ");
-    $stmt->execute([':q' => '%' . $q . '%']);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
-
-/**
  * Creazione rapida cliente.
  */
 function qk_crea_cliente_rapido(PDO $pdo, array $data): int
@@ -255,6 +207,14 @@ function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
         'costo_unitario' => $costo_unitario,
         'totale_costo_riga' => $totale_costo_riga,
         'margine_riga' => $margine_riga,
+        // Fix Bug A (audit/audit-bug-prezzo-preventivi-vendita.md): persiste lo stato di
+        // "prezzo modificato manualmente" così da poterlo ripristinare al ricaricamento della
+        // pagina — prima non esisteva alcuna colonna per questo, e refetchAllRowPrices()
+        // (assets/js/sales-quotes.js) sovrascriveva silenziosamente ogni override al reload.
+        // $r['prezzo_manuale'] è il campo hidden inviato dal form (nome storico lato JS/POST,
+        // diverso apposta dal nome colonna DB per distinguere INTENTO della richiesta da STATO
+        // persistito).
+        'prezzo_override' => (isset($r['prezzo_manuale']) && (string)$r['prezzo_manuale'] === '1') ? 1 : 0,
         'is_adr' => $is_adr,
         'quantita_stock' => $quantita_stock,
         'system_unit_price_stock' => $system_unit_price_stock,
@@ -428,12 +388,12 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
             preventivo_id, prodotto_id, descrizione, descrizione_confezione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
             totale_costo_riga, margine_riga, is_adr, quantita_stock, system_unit_price_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
-            num_factor_snapshot, den_factor_snapshot, posizione_riga, note_riga
+            num_factor_snapshot, den_factor_snapshot, posizione_riga, note_riga, prezzo_override
         ) VALUES (
             :preventivo_id, :prodotto_id, :descrizione, :descrizione_confezione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
             :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :system_unit_price_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
-            :num_factor_snapshot, :den_factor_snapshot, :posizione_riga, :note_riga
+            :num_factor_snapshot, :den_factor_snapshot, :posizione_riga, :note_riga, :prezzo_override
         )";
         $stmtLine = $pdo->prepare($sqlLine);
 
@@ -464,6 +424,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
                 ':den_factor_snapshot' => $rl['den_factor_snapshot'],
                 ':posizione_riga'    => $rl['posizione_riga'],
                 ':note_riga'         => $rl['note_riga'],
+                ':prezzo_override'   => $rl['prezzo_override'],
             ]);
         }
 
@@ -743,12 +704,12 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
             preventivo_id, prodotto_id, descrizione, descrizione_confezione, quantita, unita_misura_id, prezzo_unitario,
             sconto_perc, prezzo_netto, iva_perc, imponibile_riga, totale_riga, costo_unitario,
             totale_costo_riga, margine_riga, is_adr, quantita_stock, system_unit_price_stock, unita_misura_stock_id, quantita_contenuto_snapshot,
-            num_factor_snapshot, den_factor_snapshot, posizione_riga, note_riga
+            num_factor_snapshot, den_factor_snapshot, posizione_riga, note_riga, prezzo_override
         ) VALUES (
             :preventivo_id, :prodotto_id, :descrizione, :descrizione_confezione, :quantita, :unita_misura_id, :prezzo_unitario,
             :sconto_perc, :prezzo_netto, :iva_perc, :imponibile_riga, :totale_riga, :costo_unitario,
             :totale_costo_riga, :margine_riga, :is_adr, :quantita_stock, :system_unit_price_stock, :unita_misura_stock_id, :quantita_contenuto_snapshot,
-            :num_factor_snapshot, :den_factor_snapshot, :posizione_riga, :note_riga
+            :num_factor_snapshot, :den_factor_snapshot, :posizione_riga, :note_riga, :prezzo_override
         )";
 
         $stmtLine = $pdo->prepare($sqlLine);
@@ -778,6 +739,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
                 ':den_factor_snapshot' => $rl['den_factor_snapshot'],
                 ':posizione_riga'    => $rl['posizione_riga'],
                 ':note_riga'         => $rl['note_riga'],
+                ':prezzo_override'   => $rl['prezzo_override'],
             ]);
         }
 

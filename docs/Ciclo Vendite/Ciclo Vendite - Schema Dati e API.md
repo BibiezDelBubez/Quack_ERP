@@ -232,7 +232,7 @@ Organizzato per file. Firma copiata dal codice reale (letta in questa sessione);
 | `qk_next_numero_offerta(PDO $pdo): string` | 31 | Genera il prossimo `numero_preventivo` progressivo |
 | `qk_offerta_validate(array $values, array $righe): array` | 39 | Validazione lato server dei campi testata+righe |
 | `qk_search_clienti(PDO $pdo, string $q): array` | 75 | Autocomplete cliente nel form preventivo |
-| `qk_search_prodotti_sales(PDO $pdo, string $q): array` | 97 | Autocomplete prodotto (catalogo) nel form preventivo |
+| `qk_search_prodotti_documento_vendita(PDO $pdo, string $q, int $limit = 50): array` | `includes/prodotti.php` | Autocomplete prodotto (catalogo) nel form preventivo — **spostata** l'08/08/2026 in `includes/prodotti.php` e unificata con l'omologa di `sales_orders.php` (erano due copie indipendenti andate alla deriva, vedi CLAUDE.md punto 1 e riga sotto) |
 | `qk_crea_cliente_rapido(PDO $pdo, array $data): int` | 145 | Quick-create cliente da modale inline |
 | `qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array` | 183 | Calcola imponibile/IVA/margine di una riga preventivo |
 | `qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id): int` | 274 | Crea un nuovo preventivo in bozza |
@@ -255,6 +255,7 @@ Organizzato per file. Firma copiata dal codice reale (letta in questa sessione);
 | `qk_next_numero_ordine_diretto(PDO $pdo): string` | 23 | Progressivo numero ordine (percorso diretto) |
 | `qk_ordine_diretto_validate(array $values, array $righe): array` | 31 | Validazione ordine diretto |
 | `qk_calcola_righe_stock_ordine(PDO $pdo, array $righe): array` | 82 | Converte righe in quantità di stock per il check disponibilità |
+| `qk_ordine_diretto_calcola_warnings_scoperto(PDO $pdo, array $righe, int $magazzinoId): array` | 111 | Calcola le righe scoperte (vendita allo scoperto) per righe ordine NON ancora persistite — estratta l'08/08/2026 per essere condivisa tra `SalesOrdersController::create()` (POST) e il pre-check AJAX `apiVerificaDisponibilitaOrdine()` (GET), vedi `audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md` §5.1 |
 | `qk_ordine_cliente_salva(...)` | 173 | **Scrittore unificato** (PIANO - Unificazione Creazione Ordine Cliente, 26/07/2026): unico punto che crea un ordine sia dal preventivo sia diretto — include la chiamata a `qk_compliance_log_transactions()` (riga 401), risolvendo il gap descritto in `AUDIT 2` |
 | `qk_insert_ordine_diretto(PDO $pdo, array $values, array $righe, int $user_id, int $magazzinoId, array $venditaScopertoDettaglio = []): int` | 426 | Insert grezzo ordine diretto (chiamato dentro lo scrittore unificato) |
 | `qk_ordine_cliente_assicura_modificabile(string $statoAttuale, string $messaggioErrore): void` | 469 | Guard comune: lancia eccezione se lo stato non permette modifica |
@@ -264,7 +265,7 @@ Organizzato per file. Firma copiata dal codice reale (letta in questa sessione);
 | `qk_ordine_cliente_annulla(PDO $pdo, int $id): void` | 560 | Annulla ordine, rilascia solo il residuo non spedito (formula in Flusso Operativo §2.3) |
 | `qk_ordine_cliente_crea_revisione(PDO $pdo, int $ordine_id): int` | 670 | Crea nuova versione di un ordine non fatturato (Flusso Operativo §2.4) |
 | `qk_get_ordine_cliente_riferimento/figlio(...)` | 822, 834 | Naviga la catena versione padre/figlio |
-| `qk_search_prodotti_orders(PDO $pdo, string $q): array` | 846 | Autocomplete prodotto lato ordine diretto |
+| `qk_search_prodotti_documento_vendita(PDO $pdo, string $q, int $limit = 50): array` | `includes/prodotti.php` | Autocomplete prodotto lato ordine diretto — **spostata e unificata** l'08/08/2026: era una copia indipendente (`qk_search_prodotti_orders`) che referenziava `pf.is_principale`, colonna mai esistita in `prodotti_fornitori`, causando un `PDOException` su ogni ricerca prodotto. Vedi `audit/piano-correzione-bug-qkpicker-persistenza-selezione.md` e CLAUDE.md punto 1 |
 | `qk_ordine_cliente_segna_fatturato(PDO $pdo, int $id): void` | 897 | Imposta `stato_fatturazione='fatturato'` |
 | `qk_ordine_cliente_segna_da_fatturare(PDO $pdo, int $id): void` | 906 | Riporta a `'da_fatturare'` — **non guardato da maker-checker**, per scelta esplicita (Flusso Operativo §2.5) |
 | `qk_spedizioni_count/list(...)` | 915, 930 | Paginazione lista spedizioni |
@@ -359,6 +360,7 @@ Dettaglio completo del modello compliance: `Compliance - Restrizioni di Vendita.
 | `/sales/orders/api/cliente-dettagli` | `apiClienteDettagli` | Dettagli cliente |
 | `/sales/orders/api/crea-cliente` | `apiCreaCliente` | Quick-create cliente — permesso `manage_orders` |
 | `/sales/orders/api/crea-prodotto` | `apiCreaProdotto` | Quick-create prodotto — permesso `manage_catalog` |
+| `/sales/orders/api/verifica-disponibilita` | `apiVerificaDisponibilitaOrdine` | Pre-check vendita allo scoperto prima di "Conferma Ordine" in creazione — aggiunta 08/08/2026, stesso schema del pre-check Preventivi (riga sopra, §3.1) ma legge le righe da `$_GET` (DOM, ordine non ancora salvato) invece che da un id preventivo già persistito. Vedi `audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md` |
 
 ### 3.3 `SpedizioniController`
 

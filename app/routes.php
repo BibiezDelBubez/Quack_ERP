@@ -60,6 +60,11 @@ return [
     '/sales/orders/api/cliente-dettagli'   => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiClienteDettagli',    'auth' => true],
     '/sales/orders/api/crea-cliente'       => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiCreaCliente',        'auth' => true, 'permission' => 'manage_orders'],
     '/sales/orders/api/crea-prodotto'      => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiCreaProdotto',       'auth' => true, 'permission' => 'manage_catalog'],
+    // audit/piano-correzione-bug-righe-perse-vendita-scoperto-ordini.md, §5.5:
+    // pre-check AJAX richiamato da assets/js/sales-orders-create.js prima di
+    // "Conferma Ordine" — stesso schema esatto di
+    // /sales/quotes/api/verifica-disponibilita sopra.
+    '/sales/orders/api/verifica-disponibilita' => ['type' => 'controller', 'controller' => 'SalesOrdersController', 'action' => 'apiVerificaDisponibilitaOrdine', 'auth' => true],
 
     // ─── Vendite — Spedizioni ──────────────────────────────────────────────
     '/sales/shipments'            => ['type' => 'controller', 'controller' => 'SpedizioniController', 'action' => 'index',       'auth' => true],

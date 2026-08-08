@@ -35,6 +35,13 @@ db/.fuse_hidden*
 /tools/dev-php-sandbox/runtime/
 /tools/dev-php-sandbox/.debs-cache/
 
+# Stessa cosa ma finita per errore nella root del progetto invece che in
+# tools/dev-php-sandbox/ (probabile setup.sh lanciato dalla cartella
+# sbagliata in una sessione precedente). Contiene simlink Linux che
+# rompono "git add" su Windows ("Function not implemented") — va ignorata.
+/runtime/
+/.debs-cache/
+
 # Test E2E Python / Playwright
 tests/e2e/.venv/
 .pytest_cache/

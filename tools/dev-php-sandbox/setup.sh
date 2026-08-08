@@ -7,7 +7,7 @@
 # privilegi di root per un `apt-get install` classico.
 #
 # Questo script scarica un interprete PHP CLI completo (con le estensioni che
-# Quack usa davvero: pdo_sqlite, sqlite3, mbstring, curl) come pacchetti .deb
+# Quack usa davvero: pdo_sqlite, sqlite3, mbstring, curl, bcmath) come pacchetti .deb
 # e li ESTRAE (dpkg -x) in tools/dev-php-sandbox/runtime/, SENZA installarli
 # a livello di sistema e senza bisogno di sudo/root. Idempotente: si può
 # rilanciare quante volte serve, salta quello che ha già scaricato.
@@ -40,7 +40,13 @@ mkdir -p "$RUNTIME" "$DEBS"
 
 # Se già pronto (verifica minima: binario php presente e le estensioni chiave
 # nella lista moduli), non rifare nulla.
-if [ -x "$RUNTIME/php" ] && "$RUNTIME/php" -m 2>/dev/null | grep -qi pdo_sqlite && "$RUNTIME/php" -m 2>/dev/null | grep -qi curl; then
+# AGGIORNAMENTO 07/08/2026 (Bug A, audit/audit-bug-prezzo-preventivi-vendita.md):
+# aggiunta bcmath alla verifica — qk_uom_converti_riga() (includes/prodotti.php,
+# usata da qk_calcola_riga_offerta() nel ciclo vendite) chiama bcdiv()/bcmul(),
+# scoperto mancante testando fisicamente il fix del Bug A. Un runtime scaricato
+# PRIMA di questa data ha pdo_sqlite/curl ma non bcmath: la condizione sotto lo
+# rileva e riscarica solo il pacchetto mancante, senza ripartire da zero.
+if [ -x "$RUNTIME/php" ] && "$RUNTIME/php" -m 2>/dev/null | grep -qi pdo_sqlite && "$RUNTIME/php" -m 2>/dev/null | grep -qi curl && "$RUNTIME/php" -m 2>/dev/null | grep -qi bcmath; then
     echo "[dev-php-sandbox] Già pronto: $RUNTIME/php ($("$RUNTIME/php" -v | head -1))"
     exit 0
 fi
@@ -58,6 +64,7 @@ declare -A FALLBACK_VERSION=(
     [php8.1-sqlite3]="8.1.2-1ubuntu2"
     [php8.1-mbstring]="8.1.2-1ubuntu2"
     [php8.1-curl]="8.1.2-1ubuntu2"
+    [php8.1-bcmath]="8.1.2-1ubuntu2"
     [libargon2-1]="0~20171227-0.3"
     [libonig5]="6.9.7.1-2build1"
     [libsodium23]="1.0.18-1ubuntu0.22.04.1"
@@ -100,6 +107,7 @@ extension=ctype.so
 extension=tokenizer.so
 extension=fileinfo.so
 extension=curl.so
+extension=bcmath.so
 display_errors = Off
 log_errors = On
 EOF
@@ -116,4 +124,4 @@ chmod +x "$RUNTIME/php"
 
 echo "[dev-php-sandbox] Fatto. Verifica:"
 "$RUNTIME/php" -v
-"$RUNTIME/php" -m | grep -iE "pdo_sqlite|sqlite3|mbstring|curl"
+"$RUNTIME/php" -m | grep -iE "pdo_sqlite|sqlite3|mbstring|curl|bcmath"

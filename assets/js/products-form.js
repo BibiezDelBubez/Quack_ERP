@@ -576,7 +576,8 @@ if (QkPF.isEdit) {
       title:       'Cerca: Categoria',
       apiUrl:      QkPF.apiSearchCat,
       columns:     [{ key: 'nome', label: 'Nome categoria' }],
-      onSelect:    (id, row) => catM2O?.setValue(id, row.nome ?? ''),
+      // onSelect rimosso: setValue ora automatico su selezione da picker (Fase 1/2,
+      // audit/piano-correzione-bug-qkpicker-persistenza-selezione.md §6/§7, 08/08/2026)
       allowCreate: true,
       onCreate:    () => bootstrap.Modal.getOrCreateInstance(
                      document.getElementById('modal-new-cat')
@@ -609,7 +610,8 @@ if (QkPF.isEdit) {
         ],
         allowCreate: true,
         createUrl:   QkPF.suppliersCreateUrl,
-        onSelect:    (id, row) => mfM2O?.setValue(id, row.ragione_sociale ?? ''),
+        // onSelect rimosso: setValue ora automatico su selezione da picker (Fase 1/2,
+        // audit/piano-correzione-bug-qkpicker-persistenza-selezione.md §6/§7, 08/08/2026)
       });
 
       /* Il modale fornitore non gestisce più prezzi/listini (rinviati al tab
@@ -633,7 +635,8 @@ if (QkPF.isEdit) {
           { key: 'nome',        label: 'Nome' },
           { key: 'sku_interno', label: 'SKU' },
         ],
-        onSelect: (id, row) => mcM2O?.setValue(id, row.nome ?? ''),
+        // onSelect rimosso: setValue ora automatico su selezione da picker (Fase 1/2,
+        // audit/piano-correzione-bug-qkpicker-persistenza-selezione.md §6/§7, 08/08/2026)
       });
 
       mcM2O = new QkM2O({
