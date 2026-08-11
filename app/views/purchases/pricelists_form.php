@@ -341,7 +341,7 @@
             
             <?php if (!empty($items) && isset($pages) && $pages > 1): ?>
               <div class="mt-3">
-                <?= qk_pagination($page, $pages, '?id=' . $id . '&sort=' . $sort . '&dir=' . $dir . '&page=') ?>
+                <?php qk_paginate($total, $page, $pag['limit'], url('purchases/pricelists/edit')); ?>
               </div>
             <?php endif; ?>
           </div>

@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/magazzino.php';
+// Bug 2 (PIANO Correzioni Enterprise Post-Test Manuale 10-08-2026, §2.3 Parte B):
+// qk_salva_prezzo_base_prodotto() qui sotto è ora un wrapper sottile su
+// qk_listino_prezzo_riga_insert()/_update(), per non avere due implementazioni
+// indipendenti che scrivono una riga di listini_prezzi (la stessa causa già
+// riconosciuta del Bug B2 del 07/08/2026, applicata un livello più a fondo).
+require_once __DIR__ . '/pricelists.php';
 
 /* =============================================================================
    HELPERS
@@ -806,24 +812,40 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
  * punto, scriveva listino_id=NULL invece di 1, rendendo il prezzo invisibile al motore
  * (qk_get_sale_price()) pur restando corretto sugli altri due percorsi. Unica fonte di verità
  * d'ora in poi per tutti e tre i chiamanti.
+ *
+ * Bug 2, Parte B (PIANO Correzioni Enterprise Post-Test Manuale 10-08-2026, §2.3): questa
+ * funzione ora è un wrapper sottile su qk_listino_prezzo_riga_insert()/_update()
+ * (includes/pricelists.php) invece di un secondo INSERT/UPDATE scritto a mano — la stessa
+ * riga di prezzo base, che sia scritta da qui (form prodotto/CSV) o da apiSaveRiga() (matrice
+ * prezzi/pagina Listini Vendita), passa ora per un'unica implementazione, con la stessa
+ * canonicalizzazione e lo stesso controllo duplicati applicativo.
  */
 function qk_salva_prezzo_base_prodotto(PDO $pdo, int $prodottoId, float $prezzo, ?int $umId): void
 {
-    $stmtCheck = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima = 0 LIMIT 1');
+    $qMinStock = 0.0; // il prezzo base è sempre allo scaglione 0
+
+    $stmtCheck = $pdo->prepare('SELECT id FROM listini_prezzi WHERE listino_id = 1 AND prodotto_id = ? AND quantita_minima_stock = 0 LIMIT 1');
     $stmtCheck->execute([$prodottoId]);
-    $rigaId = $stmtCheck->fetchColumn();
+    $rigaId = (int) $stmtCheck->fetchColumn();
+
+    $rigaData = [
+        'prodotto_id'             => $prodottoId,
+        'quantita_minima'         => 0,
+        'prezzo_unitario'         => $prezzo,
+        'sconto_perc'             => 0.0,
+        'unita_misura_id'         => $umId,
+        'note'                    => null,
+        'quantita_minima_intento' => 0,
+        'unita_misura_soglia_id'  => $umId,
+        'quantita_minima_stock'   => $qMinStock,
+    ];
 
     if ($rigaId) {
-        // D3.2: valorizza/ripara anche quantita_minima_stock qui, così eventuali righe create
-        // prima di questo fix (o con quantita_minima_stock NULL) vengono corrette al primo
-        // salvataggio successivo del prodotto.
-        $pdo->prepare('UPDATE listini_prezzi SET prezzo_unitario = ?, unita_misura_id = ?, unita_misura_soglia_id = ?, quantita_minima_stock = 0 WHERE id = ?')
-            ->execute([$prezzo, $umId, $umId, $rigaId]);
+        qk_listino_prezzo_riga_update($pdo, $rigaId, 1, $rigaData);
         return;
     }
-
-    $pdo->prepare('INSERT INTO listini_prezzi (listino_id, prodotto_id, quantita_minima, prezzo_unitario, unita_misura_id, quantita_minima_intento, unita_misura_soglia_id, quantita_minima_stock) VALUES (1, ?, 0, ?, ?, 0, ?, 0)')
-        ->execute([$prodottoId, $prezzo, $umId, $umId]);
+    $rigaData['listino_id'] = 1;
+    qk_listino_prezzo_riga_insert($pdo, $rigaData);
 }
 
 /* =============================================================================

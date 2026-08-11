@@ -101,6 +101,66 @@
       renderMasterTable();
     });
 
+    /**
+     * Riga "canonica" per fornitore vs riga "ereditata".
+     * ------------------------------------------------------------------
+     * Bug 4 (PIANO Correzioni Enterprise Post-Test Manuale 10-08-2026, §4): SKU/nome
+     * prodotto fornitore/lead time/UoM sono colonne di prodotti_fornitori, cioè del
+     * legame (prodotto, fornitore) — non esistono "per scaglione" (db/init_sqlite.sql
+     * righe 684-709 vs 723-746). Quando lo stesso fornitore compare su più righe (più
+     * scaglioni di prezzo), solo la PRIMA riga di quel fornitore è la fonte di verità
+     * editabile per questi 4 campi; le altre li mostrano in sola lettura, ereditati.
+     *
+     * Riuso di due convenzioni UI già esistenti nell'app (non un design nuovo):
+     * l'etichetta "(Ered.)" già usata per i prezzi ereditati nella matrice listini
+     * (assets/js/products-form.js, placeholder tipo "10.0000 (Ered.)"), e lo stile
+     * readonly/bg-light già usato per il campo Costo Medio Ponderato in
+     * app/views/products/_form.php.
+     */
+    function computeCanonicalUids() {
+      const seenSuppliers = new Set();
+      const canonicalUids = new Set();
+      flatRows.filter(r => !r._isDeletedSoft).forEach(r => {
+        if (!r.fornitore_id) {
+          // Fornitore non ancora scelto su questa riga: non appartiene a nessun
+          // gruppo, resta sempre liberamente editabile.
+          canonicalUids.add(r._uid);
+        } else if (!seenSuppliers.has(r.fornitore_id)) {
+          seenSuppliers.add(r.fornitore_id);
+          canonicalUids.add(r._uid);
+        }
+      });
+      return canonicalUids;
+    }
+
+    function applyInheritedFieldState(tr, row, isCanonical) {
+      const fields = [
+        { sel: '.inp-sku', val: row.sku_fornitore || '' },
+        { sel: '.inp-nome-prod', val: row.nome_prodotto_fornitore || '' },
+        { sel: '.inp-lead', val: row.lead_time_giorni || 0 },
+      ];
+      fields.forEach(f => {
+        const inp = tr.querySelector(f.sel);
+        if (!inp) return;
+        inp.readOnly = !isCanonical;
+        inp.classList.toggle('bg-light', !isCanonical);
+        inp.title = isCanonical ? '' : 'Ereditato dalla riga principale di questo fornitore — modificalo lì.';
+        inp.value = isCanonical ? f.val : (f.val + ' (Ered.)');
+      });
+    }
+
+    // Unica funzione che decide e applica lo stato ereditato/editabile su TUTTA la
+    // tabella — chiamata sia dopo il render completo sia dopo eventi puntuali (scelta
+    // fornitore, eliminazione riga) che possono cambiare chi è "canonico" per un
+    // fornitore, cosi' la logica non è duplicata in più punti del file.
+    function refreshAllInheritedStates() {
+      const canonicalUids = computeCanonicalUids();
+      flatRows.filter(r => !r._isDeletedSoft).forEach(r => {
+        const rowTr = masterTbody.querySelector(`[data-uid="${r._uid}"]`);
+        if (rowTr) applyInheritedFieldState(rowTr, r, canonicalUids.has(r._uid));
+      });
+    }
+
     function renderMasterTable() {
       masterTbody.innerHTML = '';
       
@@ -203,22 +263,29 @@
               onSelect: (id, data) => {
                 row.fornitore_id = id;
                 row.nome_fornitore_rs = data.ragione_sociale;
-                
-                // AUTOFILL LOGIC
-                const existing = flatRows.find(r => r.fornitore_id == id && r._uid !== row._uid);
+
+                // AUTOFILL: se questo fornitore è già usato altrove su questo prodotto,
+                // eredita SKU/nome/lead/UoM dalla sua riga canonica (vedi
+                // computeCanonicalUids/applyInheritedFieldState sopra) invece di lasciare
+                // un secondo SKU indipendente per lo stesso fornitore.
+                const existing = flatRows.find(r => r.fornitore_id == id && r._uid !== row._uid && !r._isDeletedSoft);
                 if (existing) {
                    row.prodotto_fornitore_id = existing.prodotto_fornitore_id;
                    row.sku_fornitore = existing.sku_fornitore;
                    row.nome_prodotto_fornitore = existing.nome_prodotto_fornitore;
                    row.lead_time_giorni = existing.lead_time_giorni;
                    row.unita_misura_acquisto_id = existing.unita_misura_acquisto_id;
-                   tr.querySelector('.inp-sku').value = row.sku_fornitore || '';
-                   tr.querySelector('.inp-nome-prod').value = row.nome_prodotto_fornitore || '';
-                   tr.querySelector('.inp-lead').value = row.lead_time_giorni || 0;
                    const inpUom = tr.querySelector('.inp-uom');
                    if (inpUom) inpUom.value = row.unita_misura_acquisto_id || cfg.uomStockId;
                 }
-                
+
+                // Applica SUBITO lo stato readonly/ereditato (o editabile) su TUTTA la
+                // tabella, nello stesso istante in cui si sceglie il fornitore — non dopo
+                // il salvataggio async: cosi' non c'è mai un campo che "si svuota da solo"
+                // più avanti (PIANO §4.3 punto 3). Ricalcola anche le righe sorelle, nel
+                // caso questa riga fosse finora la canonica di un ALTRO fornitore.
+                refreshAllInheritedStates();
+
                 triggerSave(row, tr);
               }
             });
@@ -233,32 +300,36 @@
           const inp = tr.querySelector('.' + cls);
           if (inp) {
             inp.addEventListener('change', (e) => {
-              const sku = tr.querySelector('.inp-sku').value;
-              const nomeProd = tr.querySelector('.inp-nome-prod').value;
-              const leadTime = parseInt(tr.querySelector('.inp-lead').value) || 0;
+              // SKU/nome/lead/UoM si propagano ai fratelli SOLO se il cambio arriva dalla
+              // riga canonica: sulle righe ereditate questi 3 campi sono readonly e il loro
+              // valore visualizzato porta il suffisso " (Ered.)" (vedi
+              // applyInheritedFieldState) — leggerlo da lì propagherebbe quel suffisso nei
+              // dati salvati. Le righe ereditate restano comunque libere di far scattare
+              // questo handler per gli ALTRI campi (qta/prezzo/sconto/validità).
+              // targetUomId serve anche più sotto (conversione qta/prezzo), non solo qui:
+              // resta letto incondizionatamente, a differenza di sku/nomeProd/leadTime.
               const targetUomId = parseInt(tr.querySelector('.inp-uom').value) || cfg.uomStockId;
 
-              // Sync metadata for all rows of this supplier (state & DOM)
-              flatRows.forEach(r => {
-                 if (row.fornitore_id && r.fornitore_id == row.fornitore_id) {
-                    r.sku_fornitore = sku;
-                    r.nome_prodotto_fornitore = nomeProd;
-                    r.lead_time_giorni = leadTime;
-                    r.unita_misura_acquisto_id = targetUomId;
-                    
-                    const otherTr = masterTbody.querySelector(`[data-uid="${r._uid}"]`);
-                    if (otherTr && otherTr !== tr) {
-                       const inpSku = otherTr.querySelector('.inp-sku');
-                       if (inpSku) inpSku.value = sku;
-                       const inpNome = otherTr.querySelector('.inp-nome-prod');
-                       if (inpNome) inpNome.value = nomeProd;
-                       const inpLead = otherTr.querySelector('.inp-lead');
-                       if (inpLead) inpLead.value = leadTime;
-                       const inpUom = otherTr.querySelector('.inp-uom');
-                       if (inpUom) inpUom.value = targetUomId;
-                    }
-                 }
-              });
+              const isThisCanonical = computeCanonicalUids().has(row._uid);
+              if (isThisCanonical && row.fornitore_id) {
+                const sku = tr.querySelector('.inp-sku').value;
+                const nomeProd = tr.querySelector('.inp-nome-prod').value;
+                const leadTime = parseInt(tr.querySelector('.inp-lead').value) || 0;
+
+                // Sync metadata sullo STATO di tutte le righe dello stesso fornitore (fonte
+                // di verità per il salvataggio); il riflesso visivo lo applica un'unica
+                // funzione, refreshAllInheritedStates(), per non duplicare qui la logica di
+                // rendering readonly/"(Ered.)" già scritta sopra.
+                flatRows.forEach(r => {
+                   if (r.fornitore_id == row.fornitore_id) {
+                      r.sku_fornitore = sku;
+                      r.nome_prodotto_fornitore = nomeProd;
+                      r.lead_time_giorni = leadTime;
+                      r.unita_misura_acquisto_id = targetUomId;
+                   }
+                });
+                refreshAllInheritedStates();
+              }
 
               row.sconto_perc = parseFloat(tr.querySelector('.inp-sconto').value) || 0;
               row.valido_dal = tr.querySelector('.inp-vdal').value;
@@ -291,6 +362,11 @@
           }
         });
       });
+
+      // Applica lo stato readonly/ereditato (o editabile) su tutte le righe appena
+      // (ri)disegnate — stessa funzione usata dagli aggiornamenti puntuali sopra, cosi'
+      // il render iniziale e gli aggiornamenti successivi condividono un'unica logica.
+      refreshAllInheritedStates();
 
       // Prevent default form submission when pressing Enter in any input in this grid
       masterTbody.addEventListener('keydown', (e) => {
@@ -437,6 +513,11 @@
       }
 
       row._isDeletedSoft = true;
+
+      // Se questa era la riga canonica di questo fornitore, la riga rimanente più
+      // vecchia dello stesso fornitore diventa la nuova canonica ed editabile SUBITO,
+      // non solo al prossimo render completo (PIANO §4.3 punto 4 / test SK1.5).
+      refreshAllInheritedStates();
 
       const originalData = { ...row };
       const visibleCols = Array.from(document.querySelectorAll('#master-fornitori-table thead th'))
@@ -833,10 +914,11 @@
       fd.append('prodotto_id', cfg.prodottoId);
       fd.append('costo_acquisto_base', costoBaseInput.value);
       fd.append('unita_misura_acquisto_id', uomAcquistoSelect.value);
-      
+      fd.append('csrf_token', CSRF);
+
       try {
         const url = (cfg.baseUrl.endsWith('/') ? cfg.baseUrl.slice(0, -1) : cfg.baseUrl) + '/products/api/save-costo-base';
-        const res = await fetch(url, { method: 'POST', body: fd, headers: {'X-CSRF-TOKEN': CSRF} });
+        const res = await fetch(url, { method: 'POST', body: fd });
         const data = await res.json();
         if (data.ok) {
            const origBg = costoBaseInput.style.backgroundColor;

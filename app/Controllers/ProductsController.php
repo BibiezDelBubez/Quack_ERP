@@ -652,8 +652,17 @@ final class ProductsController extends BaseController
      */
     public function apiSaveCostoBase()
     {
-        $this->requireAuth();
-        $this->requirePermission('manage_catalog');
+        // Auth + permesso 'manage_catalog' sono già applicati a livello di router
+        // (vedi app/routes.php, voce '/products/api/save-costo-base'), come per
+        // tutte le altre rotte con 'auth' => true — nessun controllo duplicato qui.
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'Metodo non consentito.']);
+            exit;
+        }
+        if (!csrf_verify()) {
+            echo json_encode(['ok' => false, 'error' => 'Token di sicurezza non valido. Ricarica la pagina.']);
+            exit;
+        }
 
         $prodottoId = (int)($_POST['prodotto_id'] ?? 0);
         $costoBase = $_POST['costo_acquisto_base'] ?? '';

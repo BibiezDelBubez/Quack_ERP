@@ -934,6 +934,42 @@ essere autorizzata ed eseguita.
 
 ---
 
+## 38. Convenzione "prezzo senza listino" disallineata tra Vendite (`listino_id=1`) e Acquisti (`listino_id=NULL`)
+
+**Fonte.** Emerso il 10/08/2026 durante la verifica di bug diversi segnalati dall'utente (vedi
+`audit/PIANO - Correzioni Enterprise Post-Test Manuale (10-08-2026).md`, §2), confrontando il
+comportamento del codice con `docs/Unita di misura e prezzi/01 - Ciclo Multi-UoM e Prezzi - Guida
+Completa.md:65,229` e `docs/Unita di misura e prezzi/02 - Dettaglio Tecnico - Schema DB e
+Codice.md:71`.
+
+**Di cosa si tratta.** Quack rappresenta "il prezzo di un prodotto quando non è legato a nessun
+listino specifico" in due modi diversi a seconda del ciclo:
+- **Vendite**: `listini_prezzi.listino_id = 1` — un vero listino reale ("Prezzo Base (Catalogo)"),
+  riga esistente nella tabella `listini`, non eliminabile.
+- **Acquisti**: `prodotti_fornitori_prezzi.listino_acquisto_id = NULL` — nessun listino reale,
+  valore nullo.
+
+Entrambe le convenzioni sono documentate esplicitamente e intenzionali, non un refuso: il punto è
+che avere due modi diversi per esprimere lo stesso concetto ("nessun listino specifico") a seconda
+del ciclo è un'asimmetria architetturale — aumenta il rischio che chi lavora su entrambi i cicli
+assuma per errore che valga la stessa regola vista nell'altro.
+
+**Stato attuale.** Nessun bug noto causato da questa asimmetria oggi — trovata indagando su bug
+diversi, non a fronte di un malfunzionamento riscontrato lato acquisti.
+
+**Cosa servirebbe per implementarlo.** Decidere quale delle due convenzioni diventa lo standard per
+entrambi i cicli, poi allineare schema e funzioni di lettura/scrittura del ciclo che cambia. Non è
+una scelta ovvia nella direzione "acquisti si allinea a vendite": le vendite hanno una storia
+recente (07/08/2026) di un bug reale causato esattamente da `listino_id = NULL` (prezzo invisibile
+nei preventivi — vedi `audit/piano-correzione-bug-prezzo-preventivi-vendita.md`, Bug B2), quindi
+prima di scegliere la direzione va capito se quella stessa insidia esiste anche lato acquisti o è
+specifica del motore di pricing vendite.
+
+**Perché è rimandato.** Decisione esplicita dell'utente (10/08/2026): "non lo facciamo ora" —
+registrato qui solo per non perderlo tra una sessione e l'altra.
+
+---
+
 # Piano di Implementazione: Stile Dinamico Documenti (ex Numeri Magici)
 
 ## Il Problema

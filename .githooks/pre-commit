@@ -22,10 +22,36 @@ if [ -z "$FILES" ]; then
 fi
 
 if ! command -v php >/dev/null 2>&1; then
-    echo "[pre-commit] 'php' non trovato nel PATH: controllo encoding saltato (non bloccante)." >&2
-    echo "[pre-commit] Per attivarlo, assicurati che il php di XAMPP sia nel PATH di questo terminale." >&2
+    echo "[pre-commit] 'php' non trovato nel PATH: controllo encoding e analisi statica saltati (non bloccante)." >&2
+    echo "[pre-commit] Per attivarli, assicurati che il php di XAMPP sia nel PATH di questo terminale." >&2
     exit 0
 fi
 
 php "$REPO_ROOT/tools/check-utf8.php" $FILES
-exit $?
+UTF8_STATUS=$?
+if [ $UTF8_STATUS -ne 0 ]; then
+    exit $UTF8_STATUS
+fi
+
+# Analisi statica PHPStan sui file .php staged (Bug 1, 10/08/2026: un errore
+# come "Call to undefined function qk_pagination()" — mai esistita, solo un
+# refuso rispetto a qk_paginate() — era già segnalato da PHPStan da tempo, ma
+# solo se lanciato a mano; nessuno lo faceva prima di ogni commit, ed è
+# arrivato in produzione. Vedi
+# audit/PIANO - Correzioni Enterprise Post-Test Manuale (10-08-2026).md, §1).
+#
+# Non bloccante se le dipendenze non sono installate (stesso principio
+# difensivo del controllo 'php' sopra): un checkout senza 'composer install'
+# non deve impedire di committare, ma perde la protezione finché non lo fa.
+PHP_FILES=$(printf '%s\n' "$FILES" | grep '\.php$')
+if [ -n "$PHP_FILES" ]; then
+    if [ ! -x "$REPO_ROOT/vendor/bin/phpstan" ]; then
+        echo "[pre-commit] 'vendor/bin/phpstan' non trovato: analisi statica saltata (non bloccante)." >&2
+        echo "[pre-commit] Per attivarla: composer install." >&2
+        exit 0
+    fi
+    php "$REPO_ROOT/vendor/bin/phpstan" analyse --no-progress
+    exit $?
+fi
+
+exit 0

@@ -295,8 +295,17 @@ final class SalesPricelistsController extends BaseController
             exit;
         }
 
+        // Bug 2, Parte A (PIANO Correzioni Enterprise Post-Test Manuale 10-08-2026, §2.3):
+        // un listino_id vuoto non ha più un caso d'uso legittimo da quando il prezzo base si
+        // rappresenta con listino_id=1 esplicito (fix Bug B2, 07/08/2026) — prima veniva
+        // convertito silenziosamente in NULL, invisibile a qk_get_sale_price() e causa
+        // originaria del Bug B2. Confermato con l'utente il 10/08/2026: si rifiuta esplicitamente.
         $listinoIdInput = $_POST['listino_id'] ?? '';
-        $listinoId = ($listinoIdInput === '' || $listinoIdInput === 'null') ? null : (int)$listinoIdInput;
+        if ($listinoIdInput === '' || $listinoIdInput === 'null') {
+            echo json_encode(['ok' => false, 'error' => 'Listino non specificato. Il prezzo base va salvato con listino_id=1 (Prezzo Base Catalogo), non lasciato vuoto.']);
+            exit;
+        }
+        $listinoId = (int)$listinoIdInput;
         $rigaId      = (int)($_POST['riga_id'] ?? 0);
         $prodottoId  = isset($_POST['prodotto_id']) ? (int)$_POST['prodotto_id'] : null;
         $qMin        = isset($_POST['quantita_minima']) ? (float)$_POST['quantita_minima'] : null;
