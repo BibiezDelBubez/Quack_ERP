@@ -90,13 +90,6 @@ $v = $values;
     </ul>
   </div>
 </div>
-  <ul class="qk-status-path d-none d-sm-flex">
-    <li class="qk-status-path-item active">Bozza</li>
-    <li class="qk-status-path-item pending">In Lavorazione</li>
-    <li class="qk-status-path-item pending">Spedito</li>
-    <li class="qk-status-path-item pending">Completato</li>
-  </ul>
-</div>
 
 <form method="post" id="form-ordine-diretto" action="">
   <?= csrf_field() ?>

@@ -293,7 +293,7 @@ Questo report è **proattivo** (in anticipo) e complementare a un comportamento 
 
 ## 9. Fase I — Spedizione: l'interfaccia verso Magazzino/Lotti
 
-La Spedizione come fase/ciclo dell'ERP è ancora in fase di studio e definizione (non è deciso se sia una sotto-fase del Ciclo Vendite o un ciclo a sé stante) — tutti i dubbi, i punti chiave e le decisioni sulla lista di prelievo a due fasi (bozza `preparazione` → conferma) sono raccolti in [`docs/Spedizione/Spedizione - Note di Studio e Decisioni Aperte.md`](../Spedizione/Spedizione%20-%20Note%20di%20Studio%20e%20Decisioni%20Aperte.md). Questa sezione descrive solo l'interfaccia verso magazzino/giacenze/lotti — cosa succede quando una spedizione scarica un lotto — non il flusso interno della spedizione stessa.
+La Spedizione come fase/ciclo dell'ERP è ancora in fase di studio e definizione (non è deciso se sia una sotto-fase del Ciclo Vendite o un ciclo a sé stante) — confermato ancora aperto dall'utente l'11/08/2026. Tutti i dubbi, i punti chiave e le decisioni sulla lista di prelievo a due fasi (bozza `preparazione` → conferma) sono raccolti in [`docs/Spedizioni e DDT/Spedizione - Note di Studio e Decisioni Aperte.md`](../Spedizioni%20e%20DDT/Spedizione%20-%20Note%20di%20Studio%20e%20Decisioni%20Aperte.md) (link corretto l'11/08/2026 — puntava a una cartella `docs/Spedizione/` non più esistente, rinominata in `docs/Spedizioni e DDT/`). Vedi anche `docs/Ciclo Vendite/Ciclo Vendite - Flusso Operativo.md` §4, che ora riporta lo stesso avviso dal lato Vendite. Questa sezione descrive solo l'interfaccia verso magazzino/giacenze/lotti — cosa succede quando una spedizione scarica un lotto — non il flusso interno della spedizione stessa.
 
 ### 9.1 Magazzino di spedizione — campo esplicito
 

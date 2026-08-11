@@ -323,9 +323,17 @@ final class SalesQuotesController extends BaseController
                         redirect(url('sales/quotes/edit') . '?id=' . $id);
                         break;
                     }
+                    // PIANO - Architettura UX Preventivo-Ordine-Spedizione (11/08/2026),
+                    // §2.2/§5 Passo 2: prima il redirect qui sotto usava $id (il preventivo,
+                    // la pagina che l'utente sta per lasciare) invece di $nuovoOrderId (il
+                    // nuovo ordine appena creato, la cosa su cui l'utente vuole davvero
+                    // lavorare adesso) — $nuovoOrderId veniva calcolato e poi scartato ai
+                    // fini della navigazione. L'utente doveva accorgersi di un badge
+                    // "Ordine Generato" sul preventivo ormai bloccato in sola lettura e
+                    // cliccarci sopra, un passaggio in più non necessario.
                     $nuovoOrderId = qk_preventivo_conferma_ordine($this->pdo, $id, (int)current_user()['id'], $magazzinoOrdineId, $warningsScoperto);
                     flash_set('success', 'Preventivo accettato e Ordine di Vendita creato.');
-                    redirect(url('sales/quotes/edit') . '?id=' . $id);
+                    redirect(url('sales/orders/edit') . '?id=' . $nuovoOrderId);
                     break;
 
                 case 'nuova_versione':

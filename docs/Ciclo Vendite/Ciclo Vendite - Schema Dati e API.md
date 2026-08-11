@@ -15,7 +15,7 @@ Solo i campi rilevanti per capire il flusso sono commentati; per l'elenco colonn
 ```sql
 CREATE TABLE preventivi (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero_preventivo       VARCHAR(20) NOT NULL UNIQUE,     -- vedi §1.7 Flusso Operativo: bug noto su nuova versione
+    numero_preventivo       VARCHAR(20) NOT NULL UNIQUE,     -- bug storico su "nuova versione" corretto il 22/07/2026, vedi §1.7 Flusso Operativo
     cliente_id              INTEGER NOT NULL REFERENCES clienti_fornitori(id),
     indirizzo_spedizione_id INTEGER REFERENCES indirizzi(id),  -- FK "live", NULL se una-tantum
     contatto_id             INTEGER REFERENCES clienti_fornitori(id),
@@ -241,7 +241,7 @@ Organizzato per file. Firma copiata dal codice reale (letta in questa sessione);
 | `qk_preventivo_invia(PDO $pdo, int $id): void` | 805 | Transizione `bozza → inviato` (TransitionGuard) |
 | `qk_preventivo_rifiuta(PDO $pdo, int $id): void` | 827 | Transizione `→ rifiutato` |
 | `qk_next_numero_ordine_cliente(PDO $pdo): string` | 850 | Genera il prossimo `numero_ordine` progressivo |
-| `qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int` | 858 | Crea una nuova versione del preventivo — **bug noto**, vedi Flusso Operativo §1.7 |
+| `qk_preventivo_nuova_versione(PDO $pdo, int $id, int $userId): int` | 858 | Crea una nuova versione del preventivo — bug storico sul numero UNIQUE corretto il 22/07/2026, funzionante (verificato con esecuzione reale l'11/08/2026), vedi Flusso Operativo §1.7 |
 | `qk_preventivo_duplica(PDO $pdo, int $id, int $userId): int` | 953 | Duplica un preventivo esistente in una nuova bozza indipendente |
 | `qk_preventivo_verifica_disponibilita(PDO $pdo, int $preventivoId, ?int $magazzinoEsplicito = null): array` | 1040 | Pre-check disponibilità prima della conferma ordine (vendita allo scoperto) |
 | `qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId, int $magazzinoId, array $venditaScopertoDettaglio = []): int` | 1084 | Accetta il preventivo e crea l'ordine — delega a `qk_ordine_cliente_salva()` (§2.2) |

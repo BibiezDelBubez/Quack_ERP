@@ -60,7 +60,7 @@ Se una o più righe del preventivo superano la disponibilità reale a magazzino,
 
 **Cosa fa il backend**: `qk_preventivo_nuova_versione()` (`includes/sales_quotes.php:858`) — marca l'originale `annullato` e crea una copia con `versione+1`, `preventivo_padre_id` collegato, snapshot di indirizzo/contatto clonati (non condivisi) con l'originale.
 
-**Bug noto, non ancora corretto**: la funzione copia anche `numero_preventivo` (colonna `UNIQUE`) nel nuovo INSERT prima di rinominarlo — fallisce sempre con `UNIQUE constraint failed`. Il bottone "Crea Nuova Versione" è oggi **non funzionante**. Segnalato, in attesa di decisione separata (non affrontato in questa riscrittura documentale, che descrive lo stato del codice così com'è, bug incluso).
+**CORREZIONE (11/08/2026): l'affermazione precedente qui era sbagliata.** Questa sezione riportava "Bug noto, non ancora corretto: la funzione copia anche `numero_preventivo`... fallisce sempre con `UNIQUE constraint failed`... il bottone è oggi non funzionante" — ma il bug era già stato corretto il **22/07/2026**, cioè PRIMA che questo stesso documento (datato 26/07/2026) venisse scritto. La correzione (`includes/sales_quotes.php`, righe 862-887): le colonne che devono avere un valore diverso dall'originale (nuovo `numero_preventivo`, stato che riparte da `bozza`, `storico`, metadati) vengono ora scritte già corrette in un unico INSERT, mai più copiate dall'originale e "sistemate dopo". **Verificato di nuovo l'11/08/2026 eseguendo per davvero** (non solo leggendo) `tests/manual/suite_transition_guard_tappa6_preventivi.php` contro un database SQLite reale: 27 assert, 0 falliti, inclusi 6 assert dedicati proprio a `qk_preventivo_nuova_versione()` da stato `inviato` e `rifiutato` che confermano un nuovo numero sempre diverso dall'originale. **Il bottone "Crea Nuova Versione" funziona.**
 
 ### 1.8 Rifiuto (`inviato` → `rifiutato`)
 
@@ -131,6 +131,8 @@ Prima dell'introduzione del motore di transizioni comune (`App\Services\Transiti
 ---
 
 ## 4. Fase C — Spedizione
+
+> **AVVISO (aggiunto 11/08/2026): questa sezione descrive il comportamento del codice oggi, non un disegno considerato definitivo.** La Spedizione come fase/ciclo dell'ERP è **ancora un argomento apertamente in discussione**, non chiuso — confermato esplicitamente dall'utente in questa data. Tutti i dubbi, i punti chiave e le decisioni ancora da prendere (in particolare: se la creazione spedizione debba avere due fasi — bozza "in preparazione" poi conferma — invece dell'unico passaggio atomico descritto qui sotto) sono raccolti in [`docs/Spedizioni e DDT/Spedizione - Note di Studio e Decisioni Aperte.md`](../Spedizioni%20e%20DDT/Spedizione%20-%20Note%20di%20Studio%20e%20Decisioni%20Aperte.md) — leggerlo prima di trattare quanto segue come un punto di partenza stabile per nuovo lavoro. Le sezioni §4 e §5 restano comunque la fotografia corretta e verificata di cosa fa il codice **oggi**, non contraddicono quel documento sul piano dei fatti — la contraddizione risolta con questo avviso era solo sullo *status* (definitivo vs provvisorio), non sul comportamento reale.
 
 ### 4.1 Casi supportati
 

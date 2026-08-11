@@ -970,6 +970,39 @@ registrato qui solo per non perderlo tra una sessione e l'altra.
 
 ---
 
+## 39. `ThemeController::set()` (`/theme/set`) accetta POST senza `csrf_verify()`
+
+**Priorità.** Bassissima.
+
+**Fonte.** Emerso l'11/08/2026 durante una verifica sistemica CSRF su tutti i controller,
+raccomandazione nata dal Bug 3 di `audit/PIANO - Correzioni Enterprise Post-Test Manuale
+(10-08-2026).md` (vedi anche `audit/STATO - Correzioni Enterprise Post-Test Manuale (10-08-2026) -
+Residuo.md`, sezione "Aggiornamento"). Su 302 metodi controller analizzati, `ThemeController::set()`
+è l'unico gap reale trovato (gli altri 19 candidati erano falsi positivi: helper privati chiamati
+sempre da un metodo che già verifica `csrf_verify()` a monte).
+
+**Di cosa si tratta.** `ThemeController::set()` (`app/Controllers/ThemeController.php`) cambia il
+tema grafico dell'interfaccia salvato in sessione. Accetta richieste POST (oltre che GET) senza
+chiamare `csrf_verify()` — a differenza di quasi ogni altro endpoint scrivente del progetto. In
+teoria un sito esterno potrebbe forgiare una richiesta che, se un utente loggato la riceve (es. un
+tag `<img>` o un form nascosto su una pagina di terzi), cambia il suo tema senza che l'abbia
+richiesto lui nell'app.
+
+**Stato attuale.** Nessuna correzione applicata. Il rischio reale è minimo: il valore `theme` è
+validato contro una whitelist fissa (`QK_THEMES`), quindi una richiesta forgiata può al massimo
+cambiare il tema visualizzato — non può scrivere dati arbitrari, toccare prezzi/ordini, né
+qualunque altra azione. Puramente cosmetico.
+
+**Cosa servirebbe per implementarlo.** Stesso fix meccanico già applicato al Bug 3
+(`apiSaveCostoBase()`, 10/08/2026): aggiungere `csrf_verify()` in testa al metodo, e verificare se
+esiste un chiamante JS per questa rotta che vada aggiornato per inviare il token (`fd.append('csrf_token', ...)`
+o campo hidden nel form, secondo quale meccanismo usa la UI del selettore tema).
+
+**Perché è rimandato.** Decisione esplicita dell'utente (11/08/2026): registrare in backlog con
+bassissima priorità invece di correggere subito, dato il rischio trascurabile.
+
+---
+
 # Piano di Implementazione: Stile Dinamico Documenti (ex Numeri Magici)
 
 ## Il Problema
