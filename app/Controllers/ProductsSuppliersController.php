@@ -45,6 +45,15 @@ final class ProductsSuppliersController extends BaseController
         $leadTime      = $n('lead_time_giorni') !== null ? (int) $n('lead_time_giorni') : null;
         $unitaMisura   = $n('unita_misura_acquisto_id') !== null ? (int) $n('unita_misura_acquisto_id') : null;
 
+        // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio), Fase 1:
+        // override dell'aliquota IVA acquisto per questo specifico legame prodotto-fornitore
+        // (prodotti_fornitori.iva_acquisto_default) — opzionale, prevale sul default del
+        // prodotto solo quando valorizzato. Validato qui (0-100) invece che solo lato client.
+        $ivaAcquistoOverride = $n('iva_acquisto_default') !== null ? (float) $n('iva_acquisto_default') : null;
+        if ($ivaAcquistoOverride !== null && ($ivaAcquistoOverride < 0 || $ivaAcquistoOverride > 100)) {
+            echo json_encode(['ok' => false, 'error' => "L'aliquota IVA acquisto per questo fornitore deve essere un numero tra 0 e 100."]); exit;
+        }
+
         // D0.4 (PIANO Motore di Pricing Multi-UoM §5.6/§7.5, log decisioni punto L): l'unità di
         // acquisto di un fornitore deve SEMPRE coincidere con la Stock UoM o con la UoM commerciale
         // del prodotto — mai una terza unità priva di fattore di conversione noto. Questa regola era
@@ -93,6 +102,7 @@ final class ProductsSuppliersController extends BaseController
                        rrp_max                       = :rrp_max,
                        lead_time_giorni              = :lead_time,
                        unita_misura_acquisto_id      = :uom_id,
+                       iva_acquisto_default          = :iva_override,
                        note                          = :note,
                        updated_at                    = CURRENT_TIMESTAMP
                      WHERE id = :id AND prodotto_id = :pid'
@@ -107,6 +117,7 @@ final class ProductsSuppliersController extends BaseController
                     ':rrp_max'  => $rrpMax,
                     ':lead_time'=> $leadTime,
                     ':uom_id'   => $unitaMisura,
+                    ':iva_override' => $ivaAcquistoOverride,
                     ':note'     => $note,
                     ':id'       => $id,
                     ':pid'      => $prodotto_id,
@@ -117,11 +128,13 @@ final class ProductsSuppliersController extends BaseController
                     'INSERT INTO prodotti_fornitori
                        (prodotto_id, fornitore_id, sku_fornitore, nome_prodotto_fornitore,
                         quantita_minima, ordine_preferenza_fornitore, attivo,
-                        rrp_min, rrp_max, lead_time_giorni, unita_misura_acquisto_id, note, created_at)
+                        rrp_min, rrp_max, lead_time_giorni, unita_misura_acquisto_id,
+                        iva_acquisto_default, note, created_at)
                      VALUES
                        (:pid, :fid, :sku, :nome,
                         :qta, :ord_pref, :attivo,
-                        :rrp_min, :rrp_max, :lead_time, :uom_id, :note, CURRENT_TIMESTAMP)'
+                        :rrp_min, :rrp_max, :lead_time, :uom_id,
+                        :iva_override, :note, CURRENT_TIMESTAMP)'
                 )->execute([
                     ':pid'      => $prodotto_id,
                     ':fid'      => $fornitore_id,
@@ -134,6 +147,7 @@ final class ProductsSuppliersController extends BaseController
                     ':rrp_max'  => $rrpMax,
                     ':lead_time'=> $leadTime,
                     ':uom_id'   => $unitaMisura,
+                    ':iva_override' => $ivaAcquistoOverride,
                     ':note'     => $note,
                 ]);
                 $pfId = (int) $this->pdo->lastInsertId();

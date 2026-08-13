@@ -634,7 +634,10 @@ function _rfq_insert_righe(PDO $pdo, int $rfq_id, array $righe): void
     foreach ($righe as $pos => $r) {
         $qty     = (float)$r['quantita_richiesta'];
         $price   = ($r['prezzo_indicativo'] ?? '') !== '' ? (float)$r['prezzo_indicativo'] : 0.0;
-        $ivaPerc = ($r['iva_perc'] ?? '') !== '' ? (float)$r['iva_perc'] : 22.0;
+        // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e Cliente
+        // Esente, Livello Intermedio, Fase 4) — punto trovato solo ora con una
+        // ricerca più ampia, non era nell'elenco originale dei 19 punti (§2.1).
+        $ivaPerc = ($r['iva_perc'] ?? '') !== '' ? (float)$r['iva_perc'] : QK_IVA_ALIQUOTA_FALLBACK;
         
         $totali = qk_calcola_totali_riga($qty, $price, 0.0, $ivaPerc);
         $ivaRiga = $totali['iva_riga'];

@@ -28,6 +28,37 @@ $isFatturato = $statoFatturazione === 'fatturato';
 // comunque via TransitionGuard, ma con un errore invece che nasconderli).
 $canSave = !$isCompletato && !$isAnnullato && !$isSuperato;
 
+// PIANO - Architettura UX Preventivo-Ordine-Spedizione (§10, §11 — 11-12/08/2026):
+// quantità totali ordinate/spedite sull'ordine, usate per il testo dinamico
+// della guidance box (Passo 3-5), per il badge in alto (Passo 2/Diff 4b) e
+// per il testo del popup di conferma di "Chiudi Ordine" (Passo 6, Situazione
+// B). Non serve per decidere QUALI bottoni mostrare — quello usa
+// $isInLavorazione/$isParzSpedito/$isSpedito, già calcolati sopra e già
+// garantiti coerenti con le quantità spedite da
+// SpedizioneCalculatorService::creaSpedizione() (verificato leggendo
+// app/Services/SpedizioneCalculatorService.php, riga 413: lo stato è sempre
+// ricalcolato da lì ad ogni spedizione, mai lasciato disallineato).
+$progressoSpedizione = qk_calcola_progresso_spedizione_ordine($righe);
+$totUnitaOrdinate = $progressoSpedizione['tot_ordinate'];
+$totUnitaSpedite  = $progressoSpedizione['tot_spedite'];
+$unitaResidue     = $progressoSpedizione['residue'];
+
+// Ultima spedizione registrata, per il testo dinamico della guidance box
+// (Passo 4/5). $shipments è già ordinato DESC per data_spedizione, id
+// (verificato in includes/sales_orders.php, funzione
+// qk_get_ordine_cliente_spedizioni(), righe 1111-1122) — quindi il primo
+// elemento è sempre il più recente, nessun sort aggiuntivo necessario qui.
+$ultimaSpedizione = $shipments[0] ?? null;
+$ultimoDdt = null;
+if ($ultimaSpedizione) {
+    foreach (($ddts ?? []) as $d) {
+        if ((int)$d['spedizione_id'] === (int)$ultimaSpedizione['id']) {
+            $ultimoDdt = $d;
+            break;
+        }
+    }
+}
+
 $soSteps = [
   ['in_lavorazione',       'In Lavorazione'],
   ['parzialmente_spedito', 'Parz. Spedito'],
@@ -57,11 +88,17 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
     <h6 class="mb-1 fw-bold">Stato Avanzamento Documento</h6>
     <p class="mb-0 text-muted" style="font-size:0.875rem">
       <?php if ($isInLavorazione): ?>
-        L'ordine è <strong>in lavorazione</strong>. Verifica la merce ed effettua le spedizioni necessarie. Puoi contrassegnarlo come completato o fatturato.
+        Ordine confermato dal cliente<?php if (!empty($o['preventivo_numero'])): ?>, generato dal preventivo <strong><?= e($o['preventivo_numero']) ?></strong><?php endif; ?>. Prossimo passo: organizzare la spedizione. Nessuna unità ancora spedita su <strong><?= e($totUnitaOrdinate) ?></strong> totali.
       <?php elseif ($isParzSpedito): ?>
-        L'ordine è stato <strong>parzialmente spedito</strong>. In attesa di completare le restanti consegne.
+        <?php if ($ultimaSpedizione): ?>
+          Spedizione <strong><?= e($ultimaSpedizione['numero_spedizione']) ?></strong> registrata (<?= e($totUnitaSpedite) ?> di <?= e($totUnitaOrdinate) ?> unità).
+          <?php if ($ultimoDdt): ?>
+            DDT n. <strong><?= e($ultimoDdt['numero_documento_trasporto']) ?></strong> generato — <a href="<?= url('sales/shipments/ddt/view?id=' . $ultimoDdt['id']) ?>" target="_blank">apri il DDT</a>.
+          <?php endif; ?>
+        <?php endif; ?>
+        Prossimo passo: restano <strong><?= e($unitaResidue) ?></strong> unità da spedire.
       <?php elseif ($isSpedito): ?>
-        Tutta la merce è stata <strong>spedita</strong>. Puoi completare il flusso dell'ordine.
+        Tutte le <strong><?= e($totUnitaOrdinate) ?></strong> unità sono state spedite (<?= count($shipments) ?> spedizion<?= count($shipments) === 1 ? 'e' : 'i' ?>, <?= count($ddts ?? []) ?> DDT). Prossimo passo: fatturazione.
       <?php elseif ($isCompletato): ?>
         L'ordine è <strong>completato</strong>. Il ciclo operativo di questo documento è terminato.
       <?php elseif ($isAnnullato): ?>
@@ -78,13 +115,24 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
 <!-- Barra Azioni Sticky -->
 <div class="qk-sticky-action-bar mb-4">
   <div class="qk-sticky-action-bar-left">
-    <?php if ($canSave): ?>
-      <button type="submit" form="form-edit-ordine" class="btn-qk btn-qk-primary">
-        <i class="fa-solid fa-floppy-disk"></i> Salva Note
-      </button>
+    <?php // PIANO - Architettura UX Preventivo-Ordine-Spedizione (§10 punto 2,
+          // 11/08/2026): "Nuova Spedizione" promosso da link secondario dentro
+          // la card in fondo pagina a bottone primario qui. Visibile solo se
+          // resta qualcosa da spedire (!$isSpedito) — quando tutto è già
+          // spedito la schermata di destinazione si rifiuterebbe comunque
+          // (verificato: SpedizioniController.php, righe 84-87), questo evita
+          // solo di mostrare un bottone che porterebbe a un rifiuto certo. ?>
+    <?php if (!$isAnnullato && !$isCompletato && !$isSuperato && !$isSpedito): ?>
+      <a href="<?= url('sales/shipments/new') ?>?order_id=<?= $id ?>"
+         class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
+        <i class="fa-solid fa-plus me-1"></i> Nuova Spedizione
+      </a>
     <?php endif; ?>
 
-    <?php if (!$isCompletato && !$isAnnullato && !$isSuperato): ?>
+    <?php // Situazione A (PIANO §6 Passo 6, deciso 11/08/2026): tutto spedito,
+          // nessun residuo — "Completa Ordine", click diretto, nessuna
+          // conferma (non c'è nulla di distruttivo: è già tutto spedito). ?>
+    <?php if ($isSpedito): ?>
       <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -93,6 +141,35 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
           <i class="fa-solid fa-check me-1"></i> Completa Ordine
         </button>
       </form>
+    <?php endif; ?>
+
+    <?php // Situazione B (PIANO §6 Passo 6, deciso 11/08/2026): residuo non
+          // spedito ma si vuole chiudere comunque (tipicamente: il cliente ha
+          // rinunciato al resto). Visibile SOLO da 'parzialmente_spedito', non
+          // da 'in_lavorazione' con zero spedito — in quel caso l'azione
+          // corretta per abbandonare l'ordine è "Annulla Ordine" (bottone già
+          // esistente, invariato, barra destra), non questa: conseguenza
+          // diretta del testo del Passo 3 di questo piano ("Completa Ordine
+          // non compare più qui, in questo stato specifico"), non una nuova
+          // decisione presa qui. Stessa azione server-side "completa" di
+          // "Completa Ordine" sopra — nessuna nuova transizione di stato
+          // introdotta (PIANO §6 Passo 6, ultimo paragrafo). ?>
+    <?php if ($isParzSpedito): ?>
+      <form action="<?= url('sales/orders/action') ?>" method="post" class="d-inline"
+            onsubmit="return confirm('Restano <?= e($unitaResidue) ?> unità non spedite su questo ordine. Chiudendo ora, questo residuo non verrà più evaso automaticamente: dovrai creare un nuovo ordine se il cliente lo richiederà in futuro. Confermi la chiusura?');">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <input type="hidden" name="azione" value="completa">
+        <button type="submit" class="btn-qk btn-qk-secondary btn-qk-sm">
+          <i class="fa-solid fa-box-archive me-1"></i> Chiudi Ordine
+        </button>
+      </form>
+    <?php endif; ?>
+
+    <?php if ($canSave): ?>
+      <button type="submit" form="form-edit-ordine" class="btn-qk btn-qk-secondary">
+        <i class="fa-solid fa-floppy-disk"></i> Salva Note
+      </button>
     <?php endif; ?>
 
     <?php if ($isCompletato && !$isAnnullato): ?>
@@ -253,6 +330,10 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
             <i class="fa-solid fa-arrow-right me-1"></i>Versione successiva: <?= e($ordineFiglio['numero_ordine']) ?>
           </a>
         <?php endif; ?>
+        <a href="#spedizioni-ddt" class="qk-badge <?= !empty($shipments) ? 'confirmed' : 'draft' ?> fw-bold text-decoration-none" style="font-size:0.85rem" title="Vai alla sezione Spedizioni e DDT, in fondo alla pagina">
+          <i class="fa-solid fa-truck-fast me-1"></i>
+          Spedizioni: <?= count($shipments) ?> registrat<?= count($shipments) === 1 ? 'a' : 'e' ?><?php if ($totUnitaOrdinate > 0): ?> — <?= e($totUnitaSpedite) ?>/<?= e($totUnitaOrdinate) ?> unità spedite<?php endif; ?>
+        </a>
         <span class="qk-badge <?= $isFatturato ? 'confirmed' : 'draft' ?> fw-bold" style="font-size:0.85rem">
           <i class="fa-solid <?= $isFatturato ? 'fa-circle-check' : 'fa-hourglass' ?> me-1"></i>
           Fatturazione: <?= $isFatturato ? 'Fatturato' : 'Da Fatturare' ?>
@@ -429,17 +510,15 @@ foreach ($soSteps as $idx => [$s, $lbl]) {
 </form>
 
 <!-- ═══════════════════════════════════════════════════════════════════
-     SEZIONE SPEDIZIONI
+     SEZIONE SPEDIZIONI — resta in questa posizione (PIANO §10 punto 5,
+     12/08/2026): nessuno dei 4 ERP confrontati (SAP, NetSuite, Business
+     Central, Odoo) promuove questa tabella sopra le righe ordine. Il
+     rimando "in alto" sta nell'intestazione dell'ordine (badge sopra, righe
+     256+), che punta qui via ancora HTML.
      ═══════════════════════════════════════════════════════════════════ -->
-<div class="qk-card mb-4">
-  <div class="qk-card-header qk-flex-row qk-justify-between">
+<div class="qk-card mb-4" id="spedizioni-ddt" style="scroll-margin-top: calc(var(--qk-topbar-h) + 90px)">
+  <div class="qk-card-header">
     <span class="qk-card-title"><i class="fa-solid fa-truck-fast me-2"></i> Spedizioni e DDT</span>
-    <?php if (!$isAnnullato && !$isCompletato && !$isSuperato): ?>
-      <a href="<?= url('sales/shipments/new') ?>?order_id=<?= $id ?>"
-         class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
-        <i class="fa-solid fa-plus me-1"></i> Nuova Spedizione
-      </a>
-    <?php endif; ?>
   </div>
 
   <?php if (empty($shipments)): ?>

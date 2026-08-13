@@ -317,6 +317,11 @@ CREATE TABLE IF NOT EXISTS dettagli_clienti (
     fido_credito DECIMAL(10,2),
     codice_sdi VARCHAR(7),
     iva_esente TINYINT(1) NOT NULL DEFAULT 0,
+    -- Valori fissi invece di testo libero (PIANO - Aliquota IVA su Prodotti e
+    -- Cliente Esente, Fase 2): solo per uso interno/promemoria, non per
+    -- conformità fatturazione elettronica (esclusa per sempre, Backlog
+    -- Sviluppi Futuri voce 12) — non entra nel calcolo IVA, che dipende solo
+    -- da iva_esente. NULL = nessuna esenzione o motivo non specificato.
     codice_esenzione_iva VARCHAR(20),
     note_commerciali TEXT,
     note_interne TEXT,
@@ -326,7 +331,10 @@ CREATE TABLE IF NOT EXISTS dettagli_clienti (
     CONSTRAINT fk_dettagli_clienti_listino_id FOREIGN KEY (listino_id) REFERENCES listini(id),
     CONSTRAINT fk_dettagli_clienti_canale_vendita_default_id FOREIGN KEY (canale_vendita_default_id) REFERENCES canali_vendita(id),
     CONSTRAINT fk_dettagli_clienti_tipo_cliente_id FOREIGN KEY (tipo_cliente_id) REFERENCES tipi_cliente(id),
-    CONSTRAINT fk_dettagli_clienti_soggetto_id FOREIGN KEY (soggetto_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE
+    CONSTRAINT fk_dettagli_clienti_soggetto_id FOREIGN KEY (soggetto_id) REFERENCES clienti_fornitori(id) ON DELETE CASCADE,
+    CONSTRAINT chk_dettagli_clienti_codice_esenzione_iva CHECK (codice_esenzione_iva IS NULL OR codice_esenzione_iva IN (
+        'export_extra_ue', 'intra_ue', 'dichiarazione_intento', 'altro'
+    ))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS dettagli_fornitori (

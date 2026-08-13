@@ -125,6 +125,21 @@ class OrderCalculatorService
                 $umId       = $righeStock[$idx]['unita_misura_id'];
                 $uomResult  = $righeStock[$idx]['uom'];
 
+                // IVA: se il form ha inviato un valore, quello vince sempre — il
+                // campo resta modificabile anche per un cliente esente (PIANO -
+                // Aliquota IVA su Prodotti e Cliente Esente, Livello Intermedio,
+                // §7). Solo se manca del tutto si ricorre al motore unico invece
+                // di un fallback fisso "22" — mai fidarsi solo del client.
+                $ivaGrezza = $r['iva_perc'] ?? null;
+                $ivaRiga = ($ivaGrezza !== null && $ivaGrezza !== '')
+                    ? (float) $ivaGrezza
+                    : qk_risolvi_aliquota_iva_riga(
+                        $this->pdo,
+                        $prodottoId ?? 0,
+                        isset($values['cliente_id']) ? (int) $values['cliente_id'] : null,
+                        'vendita'
+                    );
+
                 $righeCanoniche[] = [
                     'prodotto_id' => $prodottoId,
                     'descrizione' => $r['descrizione'],
@@ -132,7 +147,7 @@ class OrderCalculatorService
                     'unita_misura_id' => $umId,
                     'prezzo_unitario' => (float) ($r['prezzo_unitario'] ?? 0),
                     'sconto_perc' => (float) ($r['sconto_perc'] ?? 0),
-                    'iva_perc' => (float) ($r['iva_perc'] ?? 22),
+                    'iva_perc' => $ivaRiga,
                     'costo_unitario' => (float) ($r['costo_unitario'] ?? 0),
                     'quantita_confezione' => $r['quantita_confezione'] ?? null,
                     'quantita_contenuto_snapshot' => $uomResult['quantita_contenuto_snapshot'],

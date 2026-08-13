@@ -442,7 +442,9 @@ function _offerta_insert_righe(PDO $pdo, int $offerta_id, array $righe): void
         $qta        = (float)($r['quantita_offerta'] ?? 0);
         $prezzo     = (float)($r['prezzo_unitario'] ?? 0);
         $sconto     = (float)($r['sconto_perc'] ?? 0);
-        $iva        = (float)($r['iva_perc'] ?? 22);
+        // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e Cliente
+        // Esente, Livello Intermedio, Fase 4) — mai più "22" ricopiato a mano.
+        $iva        = (float)($r['iva_perc'] ?? QK_IVA_ALIQUOTA_FALLBACK);
         
         $totali     = qk_calcola_totali_riga($qta, $prezzo, $sconto, $iva);
         $imponibile = $totali['imponibile'];
@@ -478,7 +480,9 @@ function _offerta_insert_righe(PDO $pdo, int $offerta_id, array $righe): void
         $qta        = (float)($r['quantita_offerta'] ?? 0);
         $prezzo     = (float)($r['prezzo_unitario'] ?? 0);
         $sconto     = (float)($r['sconto_perc'] ?? 0);
-        $iva        = (float)($r['iva_perc'] ?? 22);
+        // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e Cliente
+        // Esente, Livello Intermedio, Fase 4) — mai più "22" ricopiato a mano.
+        $iva        = (float)($r['iva_perc'] ?? QK_IVA_ALIQUOTA_FALLBACK);
 
         $totali     = qk_calcola_totali_riga($qta, $prezzo, $sconto, $iva);
         $imponibile = $totali['imponibile'];

@@ -379,7 +379,13 @@ function qk_ordine_cliente_salva(
                 $r['unita_misura_id'] ?? null,
                 $r['prezzo_unitario'] ?? 0,
                 $r['sconto_perc'] ?? 0,
-                $r['iva_perc'] ?? 22,
+                // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e
+                // Cliente Esente, Livello Intermedio, Fase 4): righe canoniche
+                // già costruite a monte (qk_calcola_riga_offerta() o
+                // OrderCalculatorService::insertDirectOrder(), entrambe già
+                // sul motore unico) — puro fallback difensivo, non un punto
+                // di calcolo.
+                $r['iva_perc'] ?? QK_IVA_ALIQUOTA_FALLBACK,
                 $r['costo_unitario'] ?? 0,
                 $r['quantita_confezione'] ?? null,
                 $r['quantita_contenuto_snapshot'] ?? 1.0,
@@ -1103,6 +1109,43 @@ function qk_get_ordine_cliente_righe(PDO $pdo, int $id): array
     ");
     $stLines->execute([$id]);
     return $stLines->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * PIANO - Architettura UX Preventivo-Ordine-Spedizione.md (§11.1, 12/08/2026):
+ * quantità totali ordinate/spedite/residue su un ordine, a partire dalle
+ * righe già caricate (es. da qk_get_ordine_cliente_righe()) — funzione pura,
+ * nessun accesso al DB, per poter essere richiamata sia dalla vista
+ * (app/views/sales/orders/_detail.php, guidance box + badge spedizioni) sia
+ * dai test automatici (tests/manual/suite_piano11_*.php) senza duplicare la
+ * stessa somma in due punti (CLAUDE.md, punto 1: prima di scrivere una
+ * funzione, cercare se esiste già — verificato con grep il 12/08/2026,
+ * nessuna funzione equivalente trovata; l'unico calcolo di residuo esistente
+ * prima d'ora era per-riga, dentro la query SQL di
+ * qk_get_righe_ordine_da_spedire() qui sotto, mai un totale aggregato per
+ * l'intero ordine).
+ *
+ * @param array $righe righe ordine, ognuna con almeno le chiavi
+ *                      'quantita_ordinata' e 'quantita_spedita' (stesso
+ *                      formato restituito da qk_get_ordine_cliente_righe()).
+ * @return array{tot_ordinate: float, tot_spedite: float, residue: float}
+ */
+function qk_calcola_progresso_spedizione_ordine(array $righe): array
+{
+    $totOrdinate = 0.0;
+    $totSpedite  = 0.0;
+    foreach ($righe as $r) {
+        $totOrdinate += (float)($r['quantita_ordinata'] ?? 0);
+        $totSpedite  += (float)($r['quantita_spedita'] ?? 0);
+    }
+    return [
+        'tot_ordinate' => $totOrdinate,
+        'tot_spedite'  => $totSpedite,
+        // Stessa soglia di tolleranza in virgola mobile già usata altrove in
+        // questo file per lo stesso tipo di confronto (qk_get_righe_ordine_da_spedire(),
+        // poco più sotto: "> 0.0005") — non un valore inventato qui.
+        'residue'      => $totOrdinate - $totSpedite,
+    ];
 }
 
 /**

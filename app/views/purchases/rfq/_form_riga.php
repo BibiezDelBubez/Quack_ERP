@@ -61,8 +61,8 @@
   </td>
   <td>
     <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva"
-           step="0.01" min="0" max="100" placeholder="22"
-           value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : '22' ?>" <?= $readonly ?>>
+           step="0.01" min="0" max="100" placeholder="<?= (int) QK_IVA_ALIQUOTA_FALLBACK ?>"
+           value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : QK_IVA_ALIQUOTA_FALLBACK ?>" <?= $readonly ?>>
   </td>
   <td class="col-data-consegna col-hidden">
     <input type="date" name="riga_data_consegna_richiesta[]" class="qk-form-control r-data-consegna"

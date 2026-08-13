@@ -321,9 +321,29 @@ $nContatti = count($contatti_preload);
                 </label>
               </div>
               <div class="qk-form-group">
-                <label class="qk-form-label">Codice Esenzione IVA</label>
-                <input type="text" name="codice_esenzione_iva" form="formCliente" class="qk-form-control"
-                       value="<?= e($v['codice_esenzione_iva'] ?? '') ?>" placeholder="es. N2.2 ex Art. 8c">
+                <label class="qk-form-label">Motivo Esenzione IVA</label>
+                <select name="codice_esenzione_iva" form="formCliente"
+                        class="qk-form-control <?= isset($errors['codice_esenzione_iva']) ? 'is-invalid' : '' ?>">
+                  <?php
+                    // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio), Fase 2:
+                    // insieme fisso al posto del testo libero — solo promemoria interno, non entra
+                    // nel calcolo dell'IVA (che dipende solo dalla checkbox "Cliente esente IVA" sopra).
+                    $motiviEsenzione = [
+                        ''                       => '— Non specificato —',
+                        'export_extra_ue'        => 'Esportazione extra-UE',
+                        'intra_ue'               => 'Cliente UE (reverse charge)',
+                        'dichiarazione_intento'  => 'Dichiarazione d\'intento (esportatore abituale)',
+                        'altro'                  => 'Altro',
+                    ];
+                    $currentMotivo = (string) ($v['codice_esenzione_iva'] ?? '');
+                  ?>
+                  <?php foreach ($motiviEsenzione as $val => $label): ?>
+                    <option value="<?= e($val) ?>" <?= $currentMotivo === $val ? 'selected' : '' ?>><?= e($label) ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <?php if (isset($errors['codice_esenzione_iva'])): ?>
+                  <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['codice_esenzione_iva']) ?></span>
+                <?php endif; ?>
               </div>
               <div class="qk-form-group">
                 <label class="qk-form-label">Regime Fiscale</label>

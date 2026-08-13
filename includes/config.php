@@ -149,5 +149,17 @@ define('QK_ERROR_THROTTLE_MINUTES', 30);
 // ── Brevo API key ─────────────────────────────────────────────────────────
 define('QK_BREVO_API_KEY', '***BREVO_API_KEY_RIMOSSA***');
 
+/* ── IVA ──────────────────────────────────────────────────────────────────
+   Aliquota usata come ultima rete di sicurezza quando un prodotto non ha
+   un'aliquota di default impostata e non c'è alcun override applicabile.
+   Unico punto in tutto il codebase — PIANO - Aliquota IVA su Prodotti e
+   Cliente Esente (Livello Intermedio), Fase 4: prima di questa costante
+   lo stesso valore era ripetuto hardcoded in oltre 15 punti diversi tra
+   PHP, viste e JS. Letta da qk_risolvi_aliquota_iva_riga()
+   (includes/prodotti.php); i punti che leggono ancora "22" a mano vanno
+   migrati a leggere questa costante man mano che vengono toccati.
+─────────────────────────────────────────────────────────────────────────── */
+define('QK_IVA_ALIQUOTA_FALLBACK', 22.0);
+
 /* ── Charset ──────────────────────────────────────────────────────────────── */
 header('Content-Type: text/html; charset=UTF-8');

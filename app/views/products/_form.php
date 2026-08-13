@@ -433,6 +433,25 @@ window.QkPF = {
                     <span class="input-group-text">%</span>
                   </div>
                 </div>
+                <!-- Aliquota IVA vendita di default (PIANO - Aliquota IVA su Prodotti
+                     e Cliente Esente, Fase 1): solo un suggerimento proposto sulle
+                     righe dei documenti di vendita, sempre modificabile a mano. -->
+                <div class="qk-form-group">
+                  <label class="qk-form-label">
+                    Aliquota IVA Vendita (default)
+                    <span class="qk-form-hint">Proposta in automatico nei preventivi/ordini — sempre modificabile riga per riga</span>
+                  </label>
+                  <div class="input-group">
+                    <input type="number" name="iva_vendita_default"
+                           class="qk-form-control <?= isset($errors['iva_vendita_default']) ? 'is-invalid' : '' ?>"
+                           value="<?= e($v['iva_vendita_default'] ?? '') ?>"
+                           placeholder="Usa aliquota di sistema" min="0" max="100" step="0.01">
+                    <span class="input-group-text">%</span>
+                  </div>
+                  <?php if (isset($errors['iva_vendita_default'])): ?>
+                    <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['iva_vendita_default']) ?></span>
+                  <?php endif; ?>
+                </div>
               </div>
             </div>
           </div>
@@ -1044,7 +1063,7 @@ window.QkPF = {
                 </div>
                 
                 <div class="col-md-4">
-                  <label class="qk-form-label" for="unita_misura_acquisto_id">UoM di Riferimento</label>
+                  <label class="qk-form-label" for="unita_misura_acquisto_id">UoM del Costo d'Acquisto Base</label>
                   <select class="form-select form-select-sm" id="unita_misura_acquisto_id" name="unita_misura_acquisto_id">
                     <?php if (!empty($v['unita_contenuto_id']) && (string)$v['unita_contenuto_id'] !== (string)$um_base_id): ?>
                       <option value="<?= e($v['unita_contenuto_id']) ?>" <?= ((string)$v['unita_misura_acquisto_id'] === (string)$v['unita_contenuto_id']) ? 'selected' : '' ?>>
@@ -1058,8 +1077,29 @@ window.QkPF = {
                     <?php endif; ?>
                   </select>
                   <div class="form-text mt-1" style="font-size:0.75rem;">
-                    Unità di misura su cui si basano i costi (tipicamente la Stock UoM).
+                    Indica in quale unità di misura è espresso il valore "Costo d'Acquisto Base" qui a sinistra. Cambiandola, quel valore viene riconvertito automaticamente; non riguarda il Costo Medio Ponderato (CMP), calcolato a parte.
                   </div>
+                </div>
+
+                <!-- Aliquota IVA acquisto di default (PIANO - Aliquota IVA su Prodotti
+                     e Cliente Esente, Fase 1): proposta sulle righe RFQ, sempre
+                     modificabile a mano; l'override per singolo fornitore si imposta
+                     nella Matrice Fornitori qui sotto. -->
+                <div class="col-md-4">
+                  <label class="qk-form-label" for="iva_acquisto_default">Aliquota IVA Acquisto (default)</label>
+                  <div class="input-group input-group-sm">
+                    <input type="number" step="0.01" min="0" max="100"
+                           class="form-control <?= isset($errors['iva_acquisto_default']) ? 'is-invalid' : '' ?>"
+                           id="iva_acquisto_default" name="iva_acquisto_default"
+                           value="<?= e($v['iva_acquisto_default'] ?? '') ?>" placeholder="Usa aliquota di sistema">
+                    <span class="input-group-text">%</span>
+                  </div>
+                  <div class="form-text mt-1" style="font-size:0.75rem;">
+                    Proposta nelle richieste d'offerta (RFQ); un fornitore specifico può avere un'aliquota diversa nella Matrice Fornitori.
+                  </div>
+                  <?php if (isset($errors['iva_acquisto_default'])): ?>
+                    <span class="qk-form-error"><i class="fa-solid fa-circle-xmark"></i> <?= e($errors['iva_acquisto_default']) ?></span>
+                  <?php endif; ?>
                 </div>
               </div>
             </div>
@@ -1108,6 +1148,10 @@ window.QkPF = {
                       <span>Sconto %</span>
                     </label>
                     <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
+                      <input type="checkbox" class="col-toggle form-check-input" value="iva_acquisto" checked>
+                      <span>IVA Acquisto %</span>
+                    </label>
+                    <label class="qk-flex-row qk-gap-sm" style="font-size:.85rem;font-weight:500;cursor:pointer;color:var(--qk-text-primary);margin:0; gap:.5rem; display:flex; align-items:center;">
                       <input type="checkbox" class="col-toggle form-check-input" value="lead_time" checked>
                       <span>Consegna (gg)</span>
                     </label>
@@ -1143,6 +1187,7 @@ window.QkPF = {
                   <th data-col="qta_min" style="width:90px; text-align:right;">Qtà Min.</th>
                   <th data-col="uom" style="width:90px; text-align:center;">UoM</th>
                   <th data-col="sconto" style="width:80px; text-align:right;">Sc. %</th>
+                  <th data-col="iva_acquisto" style="width:90px; text-align:right;" title="Override dell'aliquota IVA acquisto per questo fornitore — se vuoto, si usa il default del prodotto (PIANO - Aliquota IVA su Prodotti e Cliente Esente).">IVA Acq. %</th>
                   <th data-col="lead_time" style="width:90px; text-align:center;">Cons. (gg)</th>
                   <th data-col="valido_dal" style="width:130px; text-align:center;">Valido Dal</th>
                   <th data-col="valido_al" style="width:130px; text-align:center;">Valido Al</th>

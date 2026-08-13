@@ -314,7 +314,13 @@ final class SalesOrdersController extends BaseController
                 'quantita_contenuto'  => $s('quantita_contenuto', '1'),
                 'prezzo_unitario'     => $s('prezzo_unitario', '0'),
                 'sconto_perc'         => $s('sconto_perc', '0'),
-                'iva_perc'            => $s('iva_perc', '22'),
+                // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e
+                // Cliente Esente, Livello Intermedio, Fase 4). Scatta solo se
+                // la chiave manca del tutto (il campo numerico invia comunque
+                // '' se lasciato vuoto: quel caso arriva intatto a
+                // OrderCalculatorService::insertDirectOrder(), che lo
+                // riconosce come "mancante" e interroga il motore unico).
+                'iva_perc'            => $s('iva_perc', (string) QK_IVA_ALIQUOTA_FALLBACK),
                 'costo_unitario'      => $s('costo_unitario', '0'),
                 'quantita_confezione' => $s('quantita_confezione'),
                 'sku'                 => $s('sku'),
@@ -386,12 +392,19 @@ final class SalesOrdersController extends BaseController
         $indirizzi = qk_get_indirizzi_cliente($this->pdo, $clienteId);
         $contatti  = qk_get_contatti_cliente($this->pdo, $clienteId);
 
+        // qk_cliente_dettagli_payload() (includes/anagrafiche.php): stesso
+        // punto unico usato da SalesQuotesController::apiClienteDettagli() —
+        // prima questo metodo ricostruiva a mano un sottoinsieme di soli 2
+        // campi (condizioni_pagamento, listino_id), lasciando fuori
+        // iva_esente/codice_esenzione_iva e chiunque altro venisse aggiunto
+        // in futuro alla query condivisa. Il fallback sul listino di default
+        // (specifico dell'ordine diretto, vedi commento nella funzione
+        // condivisa) resta preservato via applicaListinoDefault=true.
+        $cliente = qk_cliente_dettagli_payload($this->pdo, $cliente, true);
+
         echo json_encode([
             'ok'        => true,
-            'cliente'   => [
-                'condizioni_pagamento' => $cliente['condizioni_pagamento'] ?? '',
-                'listino_id'           => $cliente['listino_id'] !== null ? (int)$cliente['listino_id'] : qk_get_listino_default_id($this->pdo)
-            ],
+            'cliente'   => $cliente,
             'indirizzi' => $indirizzi,
             'contatti'  => $contatti,
         ]);

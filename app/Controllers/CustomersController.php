@@ -251,6 +251,14 @@ class CustomersController extends BaseController
             $errors['email'] = 'Indirizzo email non valido.';
         }
 
+        // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio), Fase 2:
+        // codice_esenzione_iva non è più testo libero — insieme fisso di valori, solo per
+        // uso interno (non entra nel calcolo IVA, che dipende solo da iva_esente).
+        $codiceEsenzione = trim((string)($values['codice_esenzione_iva'] ?? ''));
+        if ($codiceEsenzione !== '' && !in_array($codiceEsenzione, ['export_extra_ue', 'intra_ue', 'dichiarazione_intento', 'altro'], true)) {
+            $errors['codice_esenzione_iva'] = 'Motivo di esenzione IVA non valido.';
+        }
+
         return $errors;
     }
 

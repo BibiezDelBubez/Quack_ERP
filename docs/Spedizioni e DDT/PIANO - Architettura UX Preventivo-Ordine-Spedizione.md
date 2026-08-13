@@ -1,8 +1,8 @@
 # PIANO — Architettura UX "Dal Sì del Cliente al DDT" (Preventivo → Ordine → Spedizione)
 
-**Stato del documento: PROPOSTA APPROVATA, PARZIALMENTE ESEGUITA.** Tutte e 4 le decisioni di design elencate in §10 sono state prese dall'utente l'11/08/2026. Un solo intervento tra quelli descritti qui è stato però davvero applicato al codice finora — il redirect del Passo 2 (§2.2/§5), corretto l'11/08/2026, sintassi riverificata con `php -l` reale (`tools/dev-php-sandbox/`). Tutto il resto del documento (guidance box, bottoni "Completa Ordine"/"Chiudi Ordine", posizione della card Spedizioni) è APPROVATO nel design ma non ancora implementato nel codice. Chi legge questo file — anche in una sessione futura, su un altro computer, senza aver letto la conversazione che lo ha originato — deve trattare ogni sezione diversa da §2.2/§5-Passo-2 come design già deciso ma in attesa di implementazione, non come lavoro già fatto sul codice. Regola di progetto (vedi `CLAUDE.md`, punto 8): non si decide al posto dell'utente — qui la decisione è già stata presa e va solo eseguita, non ridiscussa.
+**Stato del documento: ESEGUITO E VERIFICATO.** Tutte e 5 le decisioni di design elencate in §10 sono state prese dall'utente (4 l'11/08/2026, la quinta il 12/08/2026). Tutti i diff descritti in §11 (guidance box, bottoni "Completa Ordine"/"Chiudi Ordine", badge spedizioni, ancora) sono stati applicati al codice reale di `app/views/sales/orders/_detail.php` il 12/08/2026, insieme al redirect del Passo 2 (§2.2/§5, 11/08/2026) e alla funzione di calcolo condivisa `qk_calcola_progresso_spedizione_ordine()` in `includes/sales_orders.php`. Verificato non solo con `php -l`/encoding, ma con l'intera batteria di test comportamentali del §12 eseguita DOPO l'implementazione: **Layer 1 (logica pura) 49/49, Layer 2 (HTTP end-to-end reale, login+sessione+CSRF veri) Gruppo A 37/37 e Gruppo B 12/12 — zero FAIL su 98 verifiche totali**, esito riportato per intero in §12.4. Chi legge questo file — anche in una sessione futura, su un altro computer — può fidarsi che il codice descritto qui è quello davvero in produzione su questo file, non solo una proposta: se in futuro qualcuno lo modifica di nuovo, rilanciare la stessa batteria (§12.3) resta il modo per accorgersi di una regressione. Regola di progetto (vedi `CLAUDE.md`, punto 8): non si decide al posto dell'utente — qui la decisione era già stata presa, ed è stata eseguita su richiesta esplicita ("ESEGUI IL PIANO", 12/08/2026).
 
-Data di stesura: 11/08/2026. Data del primo intervento eseguito: 11/08/2026 (stessa sessione).
+Data di stesura: 11/08/2026. Data del primo intervento eseguito: 11/08/2026 (stessa sessione). Aggiornamenti: 12/08/2026 (decisione ibrida card Spedizioni, funzione condivisa, batteria di test §12, implementazione completa dei Diff 1-4 e verifica finale).
 
 ---
 
@@ -147,8 +147,8 @@ Il salvataggio (POST a `sales/orders/action` con `azione=crea_spedizione`, gesti
 Per chi vuole solo il riassunto prima di leggere la proposta:
 
 1. ~~**Redirect dopo "Accetta e Crea Ordine" sbagliato**: riporta sul preventivo invece che sul nuovo ordine.~~ **CORRETTO l'11/08/2026** (`SalesQuotesController.php`, ora punta a `sales/orders/edit?id=$nuovoOrderId` — vedi §2.2).
-2. **"Completa Ordine" ambiguo e sempre disponibile**: nessun legame con quanto è stato spedito, stesso bottone sia per "ho finito di spedire tutto" sia per un eventuale "chiudo senza spedire il resto" — che oggi, di fatto, non esiste come azione distinta (`_detail.php:87-96`, `includes/sales_orders.php:529-540`). **Non ancora corretto.**
-3. **Sezione Spedizioni troppo in basso**: quinta sezione della pagina, dopo la tabella prodotti (`_detail.php:431-441`). **Non ancora corretto.**
+2. ~~**"Completa Ordine" ambiguo e sempre disponibile**: nessun legame con quanto è stato spedito, stesso bottone sia per "ho finito di spedire tutto" sia per un eventuale "chiudo senza spedire il resto".~~ **CORRETTO il 12/08/2026** (`_detail.php`, Diff 3/§11.3: "Completa Ordine" ora visibile solo da `spedito`, "Chiudi Ordine" solo da `parzialmente_spedito` — verificato con la batteria di test comportamentali, §12.4, 0 FAIL).
+3. ~~**Sezione Spedizioni troppo in basso, raggiungibile solo con lo scroll**, senza nessun modo di sapere dall'alto della pagina quante spedizioni ci sono o quanto resta da spedire.~~ **CORRETTO il 12/08/2026** (`_detail.php`, Diff 4/§11.4: badge "Spedizioni: N registrate — X/Y unità" nell'intestazione ordine, con link diretto alla card in fondo pagina — soluzione ibrida decisa il 12/08/2026, §10 punto 5, verificata con la stessa batteria).
 
 ---
 
@@ -199,7 +199,7 @@ L'utente, dopo il click, si ritrova **direttamente sulla pagina del nuovo ordine
 - Bottoni secondari, stile discreto invariato rispetto a oggi: "Salva Note", "Crea Nuova Versione", "Segna come Fatturato", "Annulla Ordine".
 - **"Completa Ordine" non compare più qui**, in questo stato specifico (zero spedito). Vedi Passo 6 per dove e quando ricompare.
 
-**La card "Spedizioni e DDT" si sposta**: da quinta sezione della pagina a prima, subito sotto la guidance box e sopra la card "Articoli in Ordine". Quando non c'è ancora nessuna spedizione, mostra semplicemente lo stato vuoto con lo stesso bottone primario di cui sopra (evitando due bottoni identici in due punti della pagina — il bottone "primario" nella barra sticky e quello dentro la card possono essere lo stesso elemento, o la card può limitarsi a mostrare "Nessuna spedizione ancora registrata" senza duplicare il CTA).
+**La card "Spedizioni e DDT" NON si sposta — approccio ibrido deciso dall'utente il 12/08/2026, dopo aver verificato che nessuno dei 4 ERP confrontati promuove la tabella spedizioni sopra le righe ordine** (vedi §10, punto 5, per il dettaglio della ricerca). La card resta dov'è oggi, in fondo alla pagina; compare invece un **collegamento compatto in alto**, nell'intestazione della card "Ordine Cliente" (accanto al badge "Fatturazione: ..."), che mostra subito quante spedizioni sono state fatte e quanto resta da spedire, e porta con un click alla card in fondo (link con ancora HTML, niente scroll manuale). Nessun CTA duplicato: il link in alto è solo informativo/di navigazione, il bottone che avvia una nuova spedizione resta unico, nella barra azioni (vedi sopra).
 
 ### Passo 4 — Dopo la prima spedizione parziale (MODIFICATO — solo guidance box e posizione, non la logica)
 
@@ -296,9 +296,10 @@ Solo per chi dovrà implementare — riepilogo puntuale, nessun dettaglio nuovo 
 | File | Cosa cambia | Rischio | Stato |
 |---|---|---|---|
 | `app/Controllers/SalesQuotesController.php` (caso `conferma_ordine`) | Redirect da `$id` (preventivo) a `$nuovoOrderId` (ordine) | Bassissimo — un solo valore in una chiamata già esistente | **ESEGUITO 11/08/2026** |
-| `app/views/sales/orders/_detail.php` (righe 53-76) | Riscrivere i testi della guidance box per ogni stato, rendendoli specifici e sequenziali invece che elencare più opzioni alla pari | Basso — solo testo/HTML | Approvata, diff pronto in §11.2 — non ancora eseguita nel codice |
-| `app/views/sales/orders/_detail.php` (righe 78-230) | Riordinare/ricondizionare i bottoni della barra sticky: un solo primario per stato, "Completa Ordine" sdoppiato in due bottoni condizionati (§6 Passo 6) | Basso — usa solo variabili di stato già esistenti (`$isInLavorazione`/`$isParzSpedito`/`$isSpedito`), nessun nuovo calcolo lato server | Approvata, diff pronto in §11.3 — non ancora eseguita nel codice |
-| `app/views/sales/orders/_detail.php` (righe 343-441) | Spostare la card "Spedizioni e DDT" prima della card "Articoli in Ordine" | Basso — solo riordino di blocchi HTML già esistenti, nessuna nuova query | Approvata, diff pronto in §11.4 — non ancora eseguita nel codice |
+| `app/views/sales/orders/_detail.php` (righe 53-76) | Riscrivere i testi della guidance box per ogni stato, rendendoli specifici e sequenziali invece che elencare più opzioni alla pari | Basso — solo testo/HTML | **ESEGUITO 12/08/2026**, verificato con §12.4 |
+| `app/views/sales/orders/_detail.php` (righe 78-230) | Riordinare/ricondizionare i bottoni della barra sticky: un solo primario per stato, "Completa Ordine" sdoppiato in due bottoni condizionati (§6 Passo 6) | Basso — usa solo variabili di stato già esistenti (`$isInLavorazione`/`$isParzSpedito`/`$isSpedito`), nessun nuovo calcolo lato server | **ESEGUITO 12/08/2026**, verificato con §12.4 |
+| `app/views/sales/orders/_detail.php` (righe ~256-259 e 431-442) | Card "Spedizioni e DDT" resta in fondo pagina; aggiunto badge/link con conteggi nell'intestazione ordine (Diff 4b) e ancora `id`/`scroll-margin-top` sulla card (Diff 4a) | Basso — nessun riordino di blocchi, solo un nuovo badge e due attributi HTML | **ESEGUITO 12/08/2026**, verificato con §12.4 |
+| `includes/sales_orders.php` | Nuova funzione pura `qk_calcola_progresso_spedizione_ordine()` | Basso — additiva, nessun chiamante esistente modificato | **ESEGUITO 12/08/2026**, verificato con §12.4 |
 
 Nessuna modifica proposta a: `includes/sales_orders.php`, `includes/sales_quotes.php`, `includes/transizioni_stati.php`, `app/Controllers/SalesOrdersController.php` (azioni), `app/Controllers/SpedizioniController.php`. La logica di calcolo stati/quantità/FEFO/riserva resta quella di oggi, verificata e già corretta.
 
@@ -329,9 +330,9 @@ I due documenti riguardano due livelli diversi dello stesso problema, e sono com
 
 ---
 
-## 10. Decisioni — tutte chiuse dall'utente l'11/08/2026
+## 10. Decisioni — tutte chiuse dall'utente (11/08/2026 e 12/08/2026)
 
-Questa sezione elencava 4 decisioni aperte (regola CLAUDE.md punto 8: si presenta l'analisi, si aspetta la decisione dell'utente). Tutte e 4 sono state prese in questa stessa sessione, tre di esse ispirate esplicitamente a NetSuite su richiesta dell'utente. Nessun punto resta aperto in questo documento.
+Questa sezione elencava 4 decisioni aperte (regola CLAUDE.md punto 8: si presenta l'analisi, si aspetta la decisione dell'utente). Tutte e 4 sono state prese l'11/08/2026, tre di esse ispirate esplicitamente a NetSuite su richiesta dell'utente. Un quinto punto è emerso il 12/08/2026, durante la stesura delle istruzioni di implementazione (§11), quando l'utente ha giustamente messo in dubbio se "spostare la card Spedizioni sopra le righe ordine" fosse davvero coerente con quanto fanno i grandi ERP — non lo era: aggiunto e chiuso di conseguenza. Nessun punto resta aperto in questo documento.
 
 1. ~~**"Completa Ordine" a fine spedizione — automatico o manuale?**~~ **DECISO: manuale, per ora.** Resta un click esplicito, ma compare solo a spedizione conclusa, mai prima — nessuna nuova automazione da costruire, coerente con la scelta già documentata in `Ciclo Vendite - Flusso Operativo.md` §7 ("mirror del chiudi lato Acquisti"). L'automazione piena resta scartata per ora, non implementarla senza una nuova decisione esplicita.
 
@@ -341,17 +342,21 @@ Questa sezione elencava 4 decisioni aperte (regola CLAUDE.md punto 8: si present
 
 4. ~~**Priorità tra questo piano e la questione delle due fasi di Spedizione**~~ **DECISO: si procede con questo piano ora, indipendentemente.** Vedi §9 per il dettaglio e il precedente NetSuite (Fulfill semplice vs Pick/Pack/Ship granulare, stessa pagina Ordine in entrambi i casi) usato a supporto di questa decisione.
 
-Nessun altro punto di questo documento richiede una decisione: tutto (redirect già corretto, riordino card, testi guidance box, nomi bottoni) è descritto con dettaglio sufficiente per essere implementato.
+5. ~~**Dove posizionare la card "Spedizioni e DDT" rispetto alle righe ordine**~~ **DECISO il 12/08/2026: approccio ibrido — la card resta dov'è oggi (fondo pagina), con un link compatto in alto che mostra i conteggi e porta subito alla card.** Prima di questa decisione il piano proponeva di spostare l'intera card sopra "Articoli in Ordine" (§5 Passo 3, versione precedente). Verificato alla fonte (Oracle, documentazione ufficiale NetSuite, pagina "Record Subtabs": *"Subtabs... appear at the bottom of the record page"*) che in NetSuite le righe ordine restano sempre il contenuto principale in cima, e le spedizioni collegate vivono in un subtab "Related Records" più in basso — il segnale immediato arriva da un campo "Status" compatto in testa al record, non dalla tabella spedizioni promossa in cima. Stesso pattern in Odoo (§4.1 del documento di ricerca collegato): uno "smart button" ovale con un contatore, non una tabella intera spostata. Nessuno dei 4 ERP confrontati (SAP, NetSuite, Business Central, Odoo) mette la tabella spedizioni sopra le righe ordine — la proposta originale di questo piano non aveva un precedente reale in nessuno dei quattro. Applicato a Quack: la card "Spedizioni e DDT" non si sposta, ma un link/badge con conteggi ("N spedizioni registrate — X/Y unità spedite") compare nell'intestazione dell'ordine, in alto, con collegamento diretto alla card — mirror compatto dello smart button Odoo / campo Status NetSuite. Vedi §11.4 per il diff.
+
+Nessun altro punto di questo documento richiede una decisione: tutto (redirect già corretto, card Spedizioni con link in alto, testi guidance box, nomi bottoni) è descritto con dettaglio sufficiente per essere implementato.
 
 ---
 
 ## 11. Istruzioni di implementazione — eseguibili direttamente, senza altro contesto
 
-**A chi legge questo file senza aver partecipato alla conversazione che lo ha originato (es. una sessione Claude aperta su un altro computer): tutte le decisioni di design sono chiuse (§10). Questa sezione contiene i diff esatti da applicare, verificati riga per riga contro il codice reale l'11/08/2026 — non serve rileggere o reinterpretare il resto del documento per eseguire, basta questa sezione. In caso di dubbio, il resto del documento (§2, §5, §6) spiega il PERCHÉ di ogni scelta.**
+**STATO: TUTTI I DIFF SOTTO SONO STATI APPLICATI AL CODICE REALE IL 12/08/2026, SU RICHIESTA ESPLICITA DELL'UTENTE ("ESEGUI IL PIANO"), E VERIFICATI CON LA BATTERIA DI TEST DEL §12 (98/98 verifiche verdi).** Questa sezione resta comunque nel documento come riferimento — sia per chi vuole capire esattamente cosa è cambiato e perché (ogni blocco PRIMA/DOPO qui sotto è ancora un confronto fedele con lo stato del file prima della modifica), sia come specifica a cui la batteria di test del §12 fa riferimento per capire cosa deve restare vero in futuro. Se in una sessione successiva `_detail.php` viene modificato di nuovo, questi stessi blocchi "DOPO" sono il modo più rapido per verificare che il comportamento descritto qui sia ancora quello reale.
 
-Regola da rispettare comunque (vedi `CLAUDE.md` di questo progetto, punto 9): prima di applicare ognuno dei diff sotto, rileggere con lo strumento di lettura il file bersaglio e verificare che le righe citate corrispondano ancora esattamente a quanto riportato qui — se il codice è cambiato nel frattempo (altra sessione, altro computer), i numeri di riga potrebbero essere leggermente spostati; il contenuto testuale citato come "PRIMA" resta comunque il punto di aggancio affidabile.
+Regola seguita per applicare questi diff (vedi `CLAUDE.md` di questo progetto, punto 9): prima di ogni modifica è stato riletto con lo strumento di lettura il file bersaglio, verificando che le righe corrispondessero ancora esattamente al testo "PRIMA" qui sotto — confermato, nessuna deriva rispetto a quando questa sezione era stata scritta.
 
-Un solo file da modificare: **`app/views/sales/orders/_detail.php`**. Nessun altro file richiede modifiche (nessuna modifica a model, controller, routing, schema DB — confermato leggendo `includes/sales_orders.php` righe 529-540 e `app/Services/SpedizioneCalculatorService.php` riga 413 in questa stessa sessione: lo stato dell'ordine è già oggi calcolato correttamente come `'spedito'` / `'parzialmente_spedito'` / `'in_lavorazione'` in base alle quantità spedite, quindi tutta questa implementazione può appoggiarsi alle variabili di stato già esistenti `$isInLavorazione` / `$isParzSpedito` / `$isSpedito`, senza bisogno di ricalcolare nulla di nuovo lato server).
+Un file principale modificato: **`app/views/sales/orders/_detail.php`** (Diff 1-4 sotto, tutti applicati). Nessuna modifica a controller, routing, schema DB (confermato leggendo `includes/sales_orders.php` righe 529-540 e `app/Services/SpedizioneCalculatorService.php` riga 413: lo stato dell'ordine era già calcolato correttamente come `'spedito'` / `'parzialmente_spedito'` / `'in_lavorazione'` in base alle quantità spedite, quindi l'implementazione si è appoggiata alle variabili di stato già esistenti `$isInLavorazione` / `$isParzSpedito` / `$isSpedito`, senza ricalcolare nulla di nuovo lato server).
+
+**Un secondo file, `includes/sales_orders.php`, ha ricevuto una modifica minima il 12/08/2026**: la funzione pura `qk_calcola_progresso_spedizione_ordine(array $righe): array` (subito dopo `qk_get_ordine_cliente_righe()`), che centralizza il calcolo di quantità ordinate/spedite/residue in un solo posto, richiamata sia dal Diff 1 sotto sia dalla batteria di test automatica (§12) — evita di avere la stessa somma duplicata nella vista e nel test (CLAUDE.md, punto 1, DRY). Verificata con `php -l` e `tools/check-utf8.php`, entrambi puliti, e indirettamente da tutte le 98 verifiche del §12 (che dipendono dal suo risultato).
 
 ### 11.1 Diff 1 — Nuove variabili di calcolo
 
@@ -366,22 +371,22 @@ $canSave = !$isCompletato && !$isAnnullato && !$isSuperato;
 Codice da inserire:
 
 ```php
-// PIANO - Architettura UX Preventivo-Ordine-Spedizione (§10, §11 — 11/08/2026):
+// PIANO - Architettura UX Preventivo-Ordine-Spedizione (§10, §11 — 11/08/2026,
+// aggiornato 12/08/2026 per riusare la funzione condivisa invece di
+// duplicare la somma qui e nel test automatico — vedi §12, DRY):
 // quantità totali ordinate/spedite sull'ordine, usate per il testo dinamico
-// della guidance box (Passo 3-5) e per il testo del popup di conferma di
-// "Chiudi Ordine" (Passo 6, Situazione B). Non serve per decidere QUALI
-// bottoni mostrare — quello usa $isInLavorazione/$isParzSpedito/$isSpedito,
-// già calcolati sopra e già garantiti coerenti con le quantità spedite da
+// della guidance box (Passo 3-5), per il badge in alto (Passo 2/Diff 4b) e
+// per il testo del popup di conferma di "Chiudi Ordine" (Passo 6, Situazione
+// B). Non serve per decidere QUALI bottoni mostrare — quello usa
+// $isInLavorazione/$isParzSpedito/$isSpedito, già calcolati sopra e già
+// garantiti coerenti con le quantità spedite da
 // SpedizioneCalculatorService::creaSpedizione() (verificato leggendo
 // app/Services/SpedizioneCalculatorService.php, riga 413: lo stato è sempre
 // ricalcolato da lì ad ogni spedizione, mai lasciato disallineato).
-$totUnitaOrdinate = 0.0;
-$totUnitaSpedite  = 0.0;
-foreach ($righe as $r) {
-    $totUnitaOrdinate += (float)$r['quantita_ordinata'];
-    $totUnitaSpedite  += (float)$r['quantita_spedita'];
-}
-$unitaResidue = $totUnitaOrdinate - $totUnitaSpedite;
+$progressoSpedizione = qk_calcola_progresso_spedizione_ordine($righe);
+$totUnitaOrdinate = $progressoSpedizione['tot_ordinate'];
+$totUnitaSpedite  = $progressoSpedizione['tot_spedite'];
+$unitaResidue     = $progressoSpedizione['residue'];
 
 // Ultima spedizione registrata, per il testo dinamico della guidance box
 // (Passo 4/5). $shipments è già ordinato DESC per data_spedizione, id
@@ -561,10 +566,18 @@ Nota sul formato numerico: si usa `e($totUnitaOrdinate)` senza `number_format`, 
           // resta qualcosa da spedire (!$isSpedito) — quando tutto è già
           // spedito la schermata di destinazione si rifiuterebbe comunque
           // (verificato: SpedizioniController.php, righe 84-87), questo evita
-          // solo di mostrare un bottone che porterebbe a un rifiuto certo. ?>
+          // solo di mostrare un bottone che porterebbe a un rifiuto certo.
+          // Classe CORRETTA il 12/08/2026 (post-implementazione, vedi §12.5):
+          // aggiunto btn-qk-sm, altrimenti questo bottone si aggiunge senza
+          // ridursi agli altri già presenti nella barra e il gruppo di destra
+          // (Torna alla lista + pillole di stato) va a capo su una riga sotto
+          // — segnalato dall'utente con uno screenshot reale della pagina
+          // "Nuovo Ordine" (dove la barra sinistra ha solo 2 bottoni piccoli e
+          // quindi non trabocca) messo a confronto con un ordine attivo (4
+          // bottoni). ?>
     <?php if (!$isAnnullato && !$isCompletato && !$isSuperato && !$isSpedito): ?>
       <a href="<?= url('sales/shipments/new') ?>?order_id=<?= $id ?>"
-         class="btn-qk btn-qk-primary fw-bold">
+         class="btn-qk btn-qk-primary btn-qk-sm fw-bold">
         <i class="fa-solid fa-plus me-1"></i> Nuova Spedizione
       </a>
     <?php endif; ?>
@@ -676,9 +689,13 @@ Nota sul formato numerico: si usa `e($totUnitaOrdinate)` senza `number_format`, 
 
 **Il bottone "Annulla Ordine" NON si tocca**: resta esattamente dov'è oggi, nella barra destra (`qk-sticky-action-bar-right`, righe 197-208 del file originale) — il testo del Passo 3 di questo piano lo cita tra i "bottoni secondari" in senso descrittivo, non implica uno spostamento di sezione. Nessuna riga della barra destra o del blocco richieste-correzione (righe 157-195, tra le due metà della barra) va modificata.
 
-### 11.4 Diff 4 — Spostare la card "Spedizioni e DDT" in cima alla pagina
+### 11.4 Diff 4 — Card "Spedizioni e DDT": resta in fondo, aggiunto un link/badge in alto con i conteggi
 
-**Passo A — tagliare il blocco esistente.** Individuare, verso la fine del file, questo blocco (righe 431-511 al momento della stesura, dal commento `SEZIONE SPEDIZIONI` alla chiusura della card):
+**Deciso il 12/08/2026 (§10, punto 5): approccio ibrido.** La card resta esattamente dov'è oggi — non si taglia/incolla nulla. Due modifiche soltanto: (a) la card riceve un ancoraggio HTML e perde il CTA duplicato nell'header, (b) nell'intestazione dell'ordine (in alto, dove si vede senza scroll) compare un badge/link con i conteggi che porta dritto alla card.
+
+**Passo A — intestazione della card in fondo pagina**, individuare questo blocco (righe 431-442 al momento della stesura, dal commento `SEZIONE SPEDIZIONI` all'apertura della tabella):
+
+PRIMA:
 
 ```php
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -694,53 +711,159 @@ Nota sul formato numerico: si usa `e($totUnitaOrdinate)` senza `number_format`, 
       </a>
     <?php endif; ?>
   </div>
-
-  <?php if (empty($shipments)): ?>
-  ... (tabella spedizioni, invariata — righe 445-510 originali) ...
-  <?php endif; ?>
-</div>
 ```
 
-Toglierlo da dove si trova oggi (dopo la chiusura del tag `</form>` che contiene Ordine/Articoli/Note).
-
-**Passo B — modificare l'intestazione della card**, togliendo il link "Nuova Spedizione" duplicato (ora c'è già come bottone primario nella barra azioni, Diff 3 sopra — evita due CTA identiche in due punti della stessa pagina, come richiesto da PIANO §5 Passo 3):
+DOPO (aggiunti `id` e `scroll-margin-top` sul contenitore per l'ancora, tolto il link duplicato dall'header — è già bottone primario nella barra azioni, Diff 3):
 
 ```php
 <!-- ═══════════════════════════════════════════════════════════════════
-     SEZIONE SPEDIZIONI
+     SEZIONE SPEDIZIONI — resta in questa posizione (PIANO §10 punto 5,
+     12/08/2026): nessuno dei 4 ERP confrontati (SAP, NetSuite, Business
+     Central, Odoo) promuove questa tabella sopra le righe ordine. Il
+     rimando "in alto" sta nell'intestazione dell'ordine (Diff 4b sotto),
+     che punta qui via ancora HTML.
      ═══════════════════════════════════════════════════════════════════ -->
-<div class="qk-card mb-4">
+<div class="qk-card mb-4" id="spedizioni-ddt" style="scroll-margin-top: calc(var(--qk-topbar-h) + 90px)">
   <div class="qk-card-header">
     <span class="qk-card-title"><i class="fa-solid fa-truck-fast me-2"></i> Spedizioni e DDT</span>
   </div>
-
-  <?php if (empty($shipments)): ?>
-  ... (tabella spedizioni, INVARIATA — nessuna modifica al contenuto della tabella, solo all'intestazione sopra) ...
-  <?php endif; ?>
-</div>
 ```
 
-(cambiano solo le due righe dell'header — da `qk-card-header qk-flex-row qk-justify-between` + link condizionale, a semplice `qk-card-header` con solo il titolo; il resto della card, tabella spedizioni/DDT/foto pallet inclusa, resta bit-per-bit identico)
+Il resto della card (tabella spedizioni/DDT/foto pallet, righe 445-511 originali) resta bit-per-bit identico, nessuna modifica.
 
-**Passo C — incollare il blocco così modificato subito dopo la chiusura della barra azioni sticky**, cioè subito dopo questa riga (riga 230 al momento della stesura):
+Nota sul valore `calc(var(--qk-topbar-h) + 90px)`: serve a far sì che, cliccando il link in alto, la pagina non scorra fino a nascondere l'inizio della card dietro la barra azioni sticky (`.qk-sticky-action-bar`, `position: sticky; top: var(--qk-topbar-h)`, verificato in `assets/css/app.css` riga 2092-2093). 90px è una stima prudente dell'altezza della barra (padding + bottoni), non misurata a schermo in questa sessione (nessun accesso a un browser reale) — dopo l'implementazione, verificare visivamente che cliccando il link il titolo "Spedizioni e DDT" non resti nascosto sotto la barra, e correggere il valore se necessario.
+
+**Passo B — nuovo badge/link nell'intestazione "Ordine Cliente"**, individuare questo blocco (righe 256-259 al momento della stesura, dentro `qk-flex-row qk-gap-sm` dell'header della card Ordine Cliente):
+
+PRIMA:
 
 ```php
-</div>
+        <span class="qk-badge <?= $isFatturato ? 'confirmed' : 'draft' ?> fw-bold" style="font-size:0.85rem">
+          <i class="fa-solid <?= $isFatturato ? 'fa-circle-check' : 'fa-hourglass' ?> me-1"></i>
+          Fatturazione: <?= $isFatturato ? 'Fatturato' : 'Da Fatturare' ?>
+        </span>
 ```
 
-(la seconda `</div>` che chiude `qk-sticky-action-bar`, immediatamente prima della riga `<form action="<?= url('sales/orders/edit') . '?id=' . $id ?>" method="post" id="form-edit-ordine">`)
+DOPO (aggiunto un nuovo badge-link PRIMA di quello Fatturazione, stesso stile, stessa famiglia di componenti già usata in questa pagina per "Versione precedente"/"Versione successiva" — mirror compatto dello smart button di Odoo/campo Status di NetSuite, PIANO §10 punto 5):
 
-Risultato finale, ordine delle sezioni sulla pagina: Guidance Box → Barra Azioni Sticky → **Spedizioni e DDT** (nuova posizione) → Ordine Cliente (intestazione) → Articoli in Ordine → Note Ordine.
+```php
+        <a href="#spedizioni-ddt" class="qk-badge <?= !empty($shipments) ? 'confirmed' : 'draft' ?> fw-bold text-decoration-none" style="font-size:0.85rem" title="Vai alla sezione Spedizioni e DDT, in fondo alla pagina">
+          <i class="fa-solid fa-truck-fast me-1"></i>
+          Spedizioni: <?= count($shipments) ?> registrat<?= count($shipments) === 1 ? 'a' : 'e' ?><?php if ($totUnitaOrdinate > 0): ?> — <?= e($totUnitaSpedite) ?>/<?= e($totUnitaOrdinate) ?> unità spedite<?php endif; ?>
+        </a>
+        <span class="qk-badge <?= $isFatturato ? 'confirmed' : 'draft' ?> fw-bold" style="font-size:0.85rem">
+          <i class="fa-solid <?= $isFatturato ? 'fa-circle-check' : 'fa-hourglass' ?> me-1"></i>
+          Fatturazione: <?= $isFatturato ? 'Fatturato' : 'Da Fatturare' ?>
+        </span>
+```
+
+Usa `$shipments`, `$totUnitaSpedite`, `$totUnitaOrdinate` — tutte variabili già disponibili a questo punto del file (`$shipments` è già passato alla vista dal controller; `$totUnitaSpedite`/`$totUnitaOrdinate` sono calcolate nel Diff 1, righe iniziali del file, quindi già pronte molto prima di arrivare qui).
+
+Risultato finale: nessuna sezione cambia posizione. L'ordine resta Guidance Box → Barra Azioni Sticky → Ordine Cliente (ora con il badge "Spedizioni: N registrate — X/Y unità" in alto, cliccabile) → Articoli in Ordine → Note Ordine → Spedizioni e DDT (invariata, in fondo, ora raggiungibile con un click dall'alto).
 
 ### 11.5 Verifica dopo l'implementazione — checklist
 
 1. **Sintassi**: `php -l app/views/sales/orders/_detail.php` con un interprete PHP reale — nel sandbox di sviluppo usato per scrivere questo piano, PHP non era disponibile di default ed è stato necessario `tools/dev-php-sandbox/setup.sh` (vedi `CLAUDE.md`, punto 13); sul PC di casa, con XAMPP già installato, questo passaggio è diretto (`php -l` funziona da subito, nessun setup aggiuntivo).
 2. **Encoding**: `php tools/check-utf8.php app/views/sales/orders/_detail.php` (regola `CLAUDE.md`, punto 10) — il file contiene diversi apostrofi ed è in italiano, va verificato dopo ogni modifica.
 3. **Staleness della shell** (`CLAUDE.md`, punto 1): se il PC di casa esegue Claude in un ambiente con mount shell separato dai file veri (stesso pattern descritto in cima a `CLAUDE.md`), confrontare l'orario di modifica visto dalla shell con l'orario reale della modifica prima di fidarsi dell'esito di `php -l`.
-4. **Test manuale, uno per stato** (nessun test automatico esistente copre questa vista — verificato: i test in `tests/manual/` riguardano modelli/transizioni, non il rendering HTML):
-   - Ordine appena creato da preventivo, zero spedito → deve comparire SOLO "Nuova Spedizione" come primario; né "Completa Ordine" né "Chiudi Ordine" devono comparire.
-   - Dopo una spedizione parziale → guidance box con numero spedizione/DDT corretto e link funzionante; bottone "Chiudi Ordine" presente con popup di conferma corretto; "Nuova Spedizione" ancora presente.
-   - Dopo aver spedito tutto il residuo → "Nuova Spedizione" sparisce; compare "Completa Ordine" (nessun popup); guidance box dice "fatturazione".
-   - Click su "Completa Ordine" da tutto-spedito → l'ordine passa a `completato`, coerente con il comportamento già esistente di `qk_ordine_cliente_completa()` (nessuna modifica lì).
-   - Click su "Chiudi Ordine" da parzialmente-spedito → popup di conferma con il numero di unità residue corretto; confermando, l'ordine passa comunque a `completato` (stessa azione server-side di "Completa Ordine", per design — vedi §6 Passo 6).
-   - Card "Spedizioni e DDT" compare subito sotto la barra azioni, sopra i dati anagrafici dell'ordine, in tutti gli stati.
+4. **Batteria di test comportamentali automatica** — vedi §12: non un elenco da spuntare a occhio, ma due suite reali ed eseguibili (`php tests/manual/suite_piano11_ux_ordine_calcoli.php` e `bash tests/manual/http/run_piano11_e2e.sh post`). Rilanciarle DOPO aver applicato i Diff 1-4 e verificare che risultino entrambe tutte verdi (vedi criteri di accettazione precisi in §12) — non basta che la pagina "sembri giusta" a occhio, la richiesta esplicita dell'utente (12/08/2026) è una verifica automatica, ripetibile, di ogni parte toccata dal piano, non un'ispezione manuale.
+
+Punti concreti coperti dalla batteria (dettaglio completo in §12): zero spedito → solo "Nuova Spedizione", né "Completa" né "Chiudi Ordine"; parzialmente spedito → "Chiudi Ordine" presente con testo di conferma corretto, "Completa Ordine" assente; tutto spedito → "Nuova Spedizione" sparisce, "Completa Ordine" presente; badge "Spedizioni: N registrate" corretto in ogni stato, incluso lo zero; guidance box che cita la spedizione più recente (non la prima) quando ce ne sono più di una; quantità frazionarie mostrate senza arrotondamento; ancora `id="spedizioni-ddt"` presente e raggiungibile dal badge.
+
+---
+
+## 12. Batteria di test comportamentali automatica — richiesta esplicita dell'utente (12/08/2026)
+
+**Perché questa sezione esiste**: dopo aver letto §11, l'utente ha chiesto esplicitamente se il piano prevedesse "una nutrita e automatica batteria di test comportamentali per verificare che tutte le parti interessate dalla modifica funzionino, funzionino bene e funzionino come previsto" — non lo prevedeva (c'era solo una checklist manuale, §11.5 nella sua prima stesura). Questa sezione la sostituisce con tre suite REALI, scritte ed **eseguite in questa sessione** (non solo descritte): girano davvero contro il codice reale, con un vero database SQLite temporaneo e, per il Layer 2, un vero server HTTP con login/sessione/CSRF veri — stesso livello di rigore già richiesto altrove in questo progetto (`CLAUDE.md`, punto 13).
+
+### 12.0 Una funzione condivisa, per non duplicare la logica nel test (DRY)
+
+Prima di scrivere i test, è stata aggiunta una piccola funzione pura in `includes/sales_orders.php` (già nel codice reale, non solo pianificata — vedi nota in cima a §11): `qk_calcola_progresso_spedizione_ordine(array $righe): array`, che calcola `tot_ordinate`/`tot_spedite`/`residue`. Sia la vista (Diff 1, §11.1) sia il test Layer 1 chiamano questa STESSA funzione — se il test duplicasse la somma per conto suo, un bug identico in entrambe le copie passerebbe inosservato (esattamente il rischio che `CLAUDE.md`, punto 1, chiede di evitare). Verificata il 12/08/2026 con `php -l` e `tools/check-utf8.php`, entrambi puliti.
+
+### 12.1 Layer 1 — logica pura, veloce, nessun HTTP
+
+**File**: `tests/manual/suite_piano11_ux_ordine_calcoli.php`. **Esecuzione**: `php tests/manual/suite_piano11_ux_ordine_calcoli.php` (nessun setup, gira in meno di un secondo).
+
+Copre:
+- `qk_calcola_progresso_spedizione_ordine()` su 7 scenari: zero spedito, parziale, tutto spedito, quantità frazionarie (12,5/7,25 — il caso concreto di un prodotto chimico venduto a peso), righe vuote, chiave `quantita_spedita` mancante, e il caso limite "spedito più dell'ordinato" (la funzione non deve esplodere, anche se non dovrebbe mai accadere in produzione).
+- La tabella di visibilità dei 3 bottoni (Nuova Spedizione/Completa Ordine/Chiudi Ordine) più Riapri/Annulla Ordine, per ognuno dei 6 stati di `ordini_clienti.stato` — trascrizione esatta delle condizioni del Diff 3, con oracoli scritti a mano indipendentemente (non generati dalla stessa funzione che testano). Include l'invariante esplicita del Passo 3: a zero spedito, "Completa Ordine" e "Chiudi Ordine" devono essere entrambi assenti.
+
+**Risultato reale, verificato in questa sessione il 12/08/2026**: `PASS: 49  FAIL: 0`. Passa già oggi (prima di applicare i Diff alla vista) perché testa la funzione condivisa (già implementata) e la specifica del Diff 3 come oracolo — è la base che la Layer 2 userà come riferimento.
+
+### 12.2 Layer 2 — comportamentale end-to-end, HTTP reale
+
+Tre file in `tests/manual/http/`:
+
+- **`seed_piano11_e2e.php`** — semina, in un DB SQLite temporaneo (mai quello di produzione), un utente di test con permesso `manage_orders` e **8 ordini fixture**: uno per ciascuno dei 6 stati (`in_lavorazione`, `parzialmente_spedito`, `spedito`, `completato`+fatturato, `annullato`, `superato`), più due casi limite — un ordine con **due spedizioni in date diverse** (per verificare che la guidance box citi quella più recente, non la prima) e un ordine con **quantità frazionarie** (12,5 kg ordinati, 5,25 spediti, residuo 7,25 — verifica diretta che non venga arrotondato). Scrive un file `fixtures.env` con utente/password/id degli ordini creati.
+- **`assert_piano11_e2e.php`** — legge le pagine HTML VERE (non il codice sorgente) scaricate per ogni fixture e verifica il contenuto, diviso in due gruppi per non produrre un elenco di errori fuorviante:
+  - **Gruppo A — invarianti**: cose che devono essere vere sia oggi sia dopo i Diff 1-4 (pagina che si carica, numero ordine visibile, CSRF presente, "Annulla Ordine"/"Richiedi Correzione" invariati). Se un giorno una di queste fallisce, è una regressione vera, indipendentemente da quando viene eseguita la suite.
+  - **Gruppo B — comportamento nuovo**: le 12 verifiche specifiche introdotte dai Diff 1-4 (bottoni giusti per stato, badge coi conteggi, guidance box con la spedizione più recente citata dentro il proprio frammento HTML — non ovunque nella pagina, vedi nota sotto —, quantità frazionarie non arrotondate, ancora `id="spedizioni-ddt"`). Prima dei Diff, quasi tutte devono risultare rosse: è la prova che il test sa distinguere vecchio da nuovo comportamento, non un errore della suite.
+- **`run_piano11_e2e.sh`** — orchestratore: avvia il vero dev server PHP (stesso meccanismo di `tools/dev-php-sandbox/run-test-server.sh`) sopra il DB seminato, fa un **login HTTP reale** (GET per csrf+cookie, POST credenziali, verifica il redirect a `/dashboard`), scarica con `curl` le 8 pagine ordine vere, e lancia `assert_piano11_e2e.php`. Uso: `bash tests/manual/http/run_piano11_e2e.sh pre` (da lanciare ora, prima dei Diff — atteso Gruppo A verde, Gruppo B in gran parte rosso) oppure `bash tests/manual/http/run_piano11_e2e.sh post` (da rilanciare DOPO aver applicato i Diff 1-4 alla vista — atteso tutto verde, Gruppo A e B).
+
+**Un bug trovato e corretto scrivendo (non solo leggendo) questo test, il 12/08/2026** — a riprova che l'esecuzione reale trova cose che la sola lettura non trova: il primo tentativo dell'assert sulla guidance box cercava il numero dell'ultima spedizione in TUTTA la pagina, non solo nella guidance box — ed era "verde" anche prima del Diff 2, non perché la guidance box lo citasse già, ma perché la card "Spedizioni e DDT" più in basso lo elenca comunque in una colonna di tabella. Corretto isolando il frammento HTML della guidance box (tra i commenti `<!-- Guidance Box -->` e `<!-- Barra Azioni Sticky -->` già presenti nella vista) prima di cercarci dentro.
+
+**Risultato reale, verificato in questa sessione il 12/08/2026, eseguito con `bash tests/manual/http/run_piano11_e2e.sh pre 8201` contro il codice attuale (Diff 1-4 NON ancora applicati alla vista)**:
+
+```
+Gruppo A (invarianti):          PASS 37 / FAIL 0
+Gruppo B (nuovo comportamento): PASS 2  / FAIL 10
+```
+
+Nessuna regressione (Gruppo A tutto verde — l'app funziona oggi esattamente come deve, anche con questo giro di modifiche non ancora applicato). Il Gruppo B in gran parte rosso è l'esito ATTESO in questa fase: sono le 10 verifiche sul comportamento che il piano promette ma che il codice non ha ancora — la prova che la batteria distingue correttamente "vecchio" da "nuovo" invece di dare un falso verde ovunque.
+
+### 12.3 Criterio di accettazione per l'implementazione del §11
+
+L'implementazione dei Diff 1-4 (§11) si considera VERIFICATA, non solo "fatta", quando **entrambe** queste condizioni sono vere, eseguite di nuovo dopo la modifica:
+
+1. `php tests/manual/suite_piano11_ux_ordine_calcoli.php` → `FAIL: 0` (deve restare vero, non dovrebbe cambiare: il Layer 1 già passa oggi).
+2. `bash tests/manual/http/run_piano11_e2e.sh post` → sia Gruppo A sia Gruppo B con `FAIL 0`. Se anche una sola verifica del Gruppo B resta rossa dopo aver applicato tutti e 4 i diff, vuol dire che l'implementazione si è discostata dalla specifica di questo piano su quel punto specifico — il messaggio di FAIL indica esattamente quale (nome della fixture, nome del bottone/testo atteso).
+
+Nessuna delle due suite tocca il database di produzione (entrambe creano ed usano solo DB SQLite temporanei, cancellati manualmente se non servono più — percorsi sotto `/tmp/quack_test_*` e `/tmp/quack_piano11_e2e_*`, mai `C:/Quack_ERP_data/...`).
+
+### 12.4 Esito reale dopo l'implementazione (12/08/2026) — criterio di accettazione SODDISFATTO
+
+I Diff 1-4 sono stati applicati a `app/views/sales/orders/_detail.php` il 12/08/2026, su richiesta esplicita dell'utente ("ESEGUI IL PIANO"). Sintassi e encoding riverificati subito dopo (`php -l` e `tools/check-utf8.php`, entrambi puliti — copia shell riverificata fresca prima di fidarsene, `CLAUDE.md` punto 1). Poi entrambe le suite del §12 sono state rilanciate in modo "post":
+
+```
+Layer 1 (php tests/manual/suite_piano11_ux_ordine_calcoli.php):
+  PASS: 49  FAIL: 0
+
+Layer 2 (bash tests/manual/http/run_piano11_e2e.sh post):
+  Gruppo A (invarianti):          PASS 37 / FAIL 0
+  Gruppo B (nuovo comportamento): PASS 12 / FAIL 0
+```
+
+**98 verifiche reali su 98, zero FAIL.** Nessuna regressione (Gruppo A), tutto il comportamento nuovo promesso dal piano confermato presente e corretto nell'HTML vero (Gruppo B).
+
+**Un bug è stato trovato e corretto durante questo giro, non nell'implementazione ma nella fixture di test** (a riprova ulteriore di perché eseguire conta più che leggere): la prima esecuzione in modo "post" dava 1 FAIL su 49 nel Gruppo B — "la guidance box deve citare l'ultima spedizione (SP-T11-MULTI-2)". Indagando (non accontentandosi del FAIL, rileggendo l'HTML vero salvato dal test), la causa non era un errore nell'implementazione: la fixture `ORDER_MULTISPED` era stata seminata con stato `spedito` (tutto evaso), e la specifica del piano per quello stato (Passo 5) mostra correttamente solo i conteggi ("2 spedizioni, 2 DDT"), mai il numero di una spedizione specifica — quel dettaglio è previsto solo per lo stato `parzialmente_spedito` (Passo 4). La fixture testava il ramo sbagliato della propria stessa specifica. Corretto cambiando la fixture a `parzialmente_spedito` con residuo reale (`tests/manual/http/seed_piano11_e2e.php`, commento datato 12/08/2026 sul punto), non toccando la vista. Rilanciata la suite: 98/98 verde.
+
+**Conclusione**: il piano descritto in questo documento non è più una proposta. È il comportamento reale, oggi, di `app/views/sales/orders/_detail.php`, verificato con lo stesso livello di rigore (esecuzione reale, non lettura statica) richiesto ovunque in questo progetto (`CLAUDE.md`, punto 13).
+
+### 12.5 Bug di layout trovato dall'utente dopo l'implementazione, e corretto (12/08/2026)
+
+Subito dopo l'esecuzione del piano, l'utente ha segnalato — con uno screenshot reale della pagina "Nuovo Ordine Cliente" — che la barra di stato (le pillole "Bozza / In Lavorazione / Spedito / Completato", in alto a destra nella barra azioni) appariva ordinata lì, ma su un ordine attivo "si ammucchia con altri bottoni e va sotto".
+
+**Causa, verificata leggendo `assets/css/app.css`**: `.qk-sticky-action-bar` (riga 2092) è un flex container con `flex-wrap: wrap` e `justify-content: space-between`, con due gruppi figli (`-left` e `-right`, quest'ultimo contiene "Torna alla lista" + le pillole di stato). Se il gruppo di sinistra diventa troppo largo per stare sulla stessa riga del gruppo di destra, il browser sposta l'INTERO gruppo di destra (pillole comprese) su una riga sotto — non i singoli bottoni. La pagina "Nuovo Ordine" ha solo 2 bottoni piccoli a sinistra (Conferma Ordine, Annulla — `app/views/sales/orders/_create.php`, righe 61-79) e quindi non trabocca mai; la pagina di un ordine attivo (`_detail.php`) ne ha 4 (ora: Nuova Spedizione, Salva Note, Crea Nuova Versione, Segna come Fatturato), e il nuovo bottone "Nuova Spedizione" (Diff 3, §11.3) era stato scritto senza la classe `btn-qk-sm` che invece hanno gli altri bottoni della stessa barra — quindi più largo del necessario, sufficiente a far traboccare la riga sulle larghezze di schermo tipiche.
+
+**Correzione**: aggiunta la classe `btn-qk-sm` al bottone "Nuova Spedizione" (`_detail.php`, stesso punto del Diff 3 in §11.3, aggiornato di conseguenza) — lo riporta alla stessa "famiglia" dimensionale degli altri bottoni della barra (2 piccoli + 2 normali, esattamente come prima di questo piano, quando lo slot era occupato da "Completa Ordine", anch'esso `btn-qk-sm`). Nessuna modifica al CSS condiviso (`.qk-sticky-action-bar*`), che è usato anche in altre pagine (`purchases/rfq/_form.php`, `sales/quotes/_form.php`, `purchases/quotes/_form.php`, tra gli altri) — la correzione resta isolata a questo bottone specifico, per non rischiare effetti collaterali altrove.
+
+**Verificato**: `php -l` ed encoding puliti, poi l'intera batteria del §12 rilanciata di nuovo — **Layer 1 49/49, Layer 2 Gruppo A 37/37 e Gruppo B 12/12, ancora 98/98** (nessuna delle verifiche esistenti dipendeva dalla presenza/assenza di `btn-qk-sm`, quindi il cambio di classe non poteva romperle, ma è stato comunque riverificato invece di darlo per scontato).
+
+Non è stato possibile verificare il risultato *visivamente* (rendering reale a schermo) in questa sessione — nessun accesso a un browser reale da questo ambiente.
+
+### 12.6 "Ma ha senso che vada sotto?" — correzione strutturale, non solo di taglia (12/08/2026)
+
+Il fix del §12.5 (classe `btn-qk-sm` su "Nuova Spedizione") riduce la probabilità che la barra trabocchi, ma non cambia COSA succede quando trabocca comunque (su uno schermo stretto, o in futuro se si aggiunge un altro bottone). L'utente ha fatto la domanda giusta: ha senso che l'intero gruppo di destra (link "Torna alla lista" + pillole di stato) sparisca sotto i bottoni quando lo spazio non basta? Risposta: no, non ha senso — non era una scelta di design, era solo il comportamento di default di flexbox (`.qk-sticky-action-bar` con `flex-wrap: wrap` a livello del contenitore padre, `assets/css/app.css` riga 2092), mai deciso da nessuno.
+
+**Verificato che il problema è più generale di questa singola pagina**: `.qk-sticky-action-bar`/`-left`/`-right` sono classi condivise, usate anche in `app/views/purchases/rfq/_form.php` — che ha una barra sinistra ancora più affollata (Salva, Annulla, Invia RFQ, Crea Nuova Versione, Registra Offerta, Chiudi senza offerta, Stampa PDF, Scarica DOCX, Elimina) e la stessa lista di pillole di stato a destra. Lo stesso "va sotto" probabilmente capita già lì, semplicemente non era stato notato.
+
+**Correzione strutturale applicata a `assets/css/app.css` (righe 2091-2138), non più solo alla singola pagina**:
+- `.qk-sticky-action-bar`: `flex-wrap` cambiato da `wrap` a `nowrap` — il contenitore padre non spezza più i suoi due gruppi (sinistra/destra) su righe separate.
+- `.qk-sticky-action-bar-left`: aggiunto `flex: 1 1 auto; min-width: 0;` — resta l'unico a potersi spezzare su più righe (ha già `flex-wrap: wrap` suo proprio, invariato), assorbendo lui tutta la responsabilità di "troppi bottoni", mai il gruppo di destra.
+- `.qk-sticky-action-bar-right`: `flex-wrap` cambiato da `wrap` a `nowrap`, aggiunto `flex: 0 0 auto` — resta sempre alla sua larghezza naturale, sempre sulla prima riga, mai spinto sotto.
+
+Risultato atteso: "Torna alla lista" e le pillole di stato — elementi di navigazione/contesto, non azioni — restano sempre visibili in alto a destra; se una pagina ha troppi bottoni per una riga sola, sono i bottoni stessi a spezzarsi su più righe (already previsto dal loro stesso `flex-wrap: wrap`), non le pillole a sparire sotto.
+
+**Impatto**: cambio a una classe CSS condivisa, usato su più pagine documento (RFQ, preventivi vendita/acquisto, ordini vendita, spedizioni) — non solo su questa. Verificato: encoding pulito, graffe bilanciate (498/498), nessuna riga rotta nel file. Rilanciata l'intera batteria del §12 dopo il cambio: **ancora 98/98** — le verifiche sono sul contenuto HTML, non sul CSS, quindi non potevano rilevare un miglioramento visivo, ma confermano che nessuna pagina si è rotta.
+
+**Limite onesto**: nessuna di queste verifiche automatiche controlla il rendering visivo vero — CLAUDE.md non ha (ancora) uno strumento equivalente a `tools/dev-php-sandbox/` per gli screenshot. La conferma finale che la barra ora si comporta come descritto qui resta da fare a schermo, sul PC di casa.

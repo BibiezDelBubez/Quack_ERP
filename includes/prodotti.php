@@ -96,6 +96,80 @@ function qk_prodotti_valida_quantita_contenuto(?string $s): ?string
     return null;
 }
 
+/**
+ * Motore di decisione unico per l'aliquota IVA da proporre su una riga di
+ * documento (RFQ, preventivo, ordine — vendita o acquisto).
+ *
+ * PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio), §5
+ * e §8 Fase 2. Scritta come funzione condivisa e neutra di dominio (non
+ * dentro sales_quotes.php/sales_orders.php/OrderCalculatorService.php, che
+ * non condividono oggi una logica di calcolo riga comune tra loro — vedi §6
+ * del piano) — unico punto che deve essere toccato per cambiare l'ordine di
+ * risoluzione, invece di replicarlo in ogni chiamante.
+ *
+ * Ordine di risoluzione:
+ *   1. Direzione vendita, cliente con iva_esente = 1 → 0%, sempre, a
+ *      prescindere dal prodotto (regola presa qui perché l'esenzione di un
+ *      cliente prevale per costruzione — export/dichiarazione d'intento).
+ *   2. Direzione acquisto, override fornitore
+ *      (prodotti_fornitori.iva_acquisto_default), se valorizzato per lo
+ *      specifico legame prodotto-fornitore.
+ *   3. Default di prodotto (prodotti.iva_vendita_default /
+ *      iva_acquisto_default), se valorizzato.
+ *   4. Fallback di sistema (QK_IVA_ALIQUOTA_FALLBACK, includes/config.php).
+ *
+ * @param PDO      $pdo
+ * @param int      $prodottoId
+ * @param int|null $controparteId Cliente (direzione 'vendita') o fornitore
+ *                 (direzione 'acquisto'). Null se non ancora scelto in
+ *                 testata: in quel caso i passi 1-2 sono saltati.
+ * @param string   $direzione     'vendita' | 'acquisto'.
+ * @return float   Aliquota IVA percentuale da proporre (0-100).
+ */
+function qk_risolvi_aliquota_iva_riga(PDO $pdo, int $prodottoId, ?int $controparteId, string $direzione): float
+{
+    if (!in_array($direzione, ['vendita', 'acquisto'], true)) {
+        throw new \InvalidArgumentException("Direzione IVA non valida: \"$direzione\" (attesi 'vendita' o 'acquisto').");
+    }
+
+    // Passo 1 — cliente esente (solo lato vendita).
+    if ($direzione === 'vendita' && $controparteId !== null) {
+        $stmt = $pdo->prepare(
+            'SELECT dc.iva_esente FROM dettagli_clienti dc WHERE dc.soggetto_id = :cid'
+        );
+        $stmt->execute([':cid' => $controparteId]);
+        $ivaEsente = $stmt->fetchColumn();
+        if ($ivaEsente !== false && (int)$ivaEsente === 1) {
+            return 0.0;
+        }
+    }
+
+    // Passo 2 — override fornitore (solo lato acquisto).
+    if ($direzione === 'acquisto' && $controparteId !== null) {
+        $stmt = $pdo->prepare(
+            'SELECT iva_acquisto_default FROM prodotti_fornitori
+              WHERE prodotto_id = :pid AND fornitore_id = :fid'
+        );
+        $stmt->execute([':pid' => $prodottoId, ':fid' => $controparteId]);
+        $override = $stmt->fetchColumn();
+        if ($override !== false && $override !== null) {
+            return (float) $override;
+        }
+    }
+
+    // Passo 3 — default di prodotto.
+    $colonna = $direzione === 'vendita' ? 'iva_vendita_default' : 'iva_acquisto_default';
+    $stmt = $pdo->prepare("SELECT $colonna FROM prodotti WHERE id = :pid");
+    $stmt->execute([':pid' => $prodottoId]);
+    $default = $stmt->fetchColumn();
+    if ($default !== false && $default !== null) {
+        return (float) $default;
+    }
+
+    // Passo 4 — fallback di sistema.
+    return QK_IVA_ALIQUOTA_FALLBACK;
+}
+
 /* =============================================================================
    LOOKUP
 ============================================================================= */
@@ -345,6 +419,7 @@ function qk_load_single_prodotto_fornitore(PDO $pdo, int $pf_id): ?array
                 um.codice AS unita_misura_codice,
                 pf.quantita_minima, pf.ordine_preferenza_fornitore, pf.attivo,
                 pf.rrp_min, pf.rrp_max, pf.lead_time_giorni, pf.note,
+                pf.iva_acquisto_default,
                 (pf.ordine_preferenza_fornitore = 1) AS preferenziale,
                 vf.prezzo AS prezzo_acquisto
            FROM prodotti_fornitori pf
@@ -366,6 +441,7 @@ function qk_load_prodotto_fornitori(PDO $pdo, int $prodotto_id): array
                 um.codice AS unita_misura_codice, pf.unita_misura_acquisto_id,
                 pf.quantita_minima, pf.ordine_preferenza_fornitore, pf.attivo,
                 pf.lead_time_giorni, pf.note,
+                pf.iva_acquisto_default,
                 (pf.ordine_preferenza_fornitore = 1) AS preferenziale,
                 vf.prezzo AS prezzo_acquisto
            FROM prodotti_fornitori pf
@@ -724,13 +800,15 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
                 tipo, categoria_id, note_interne,
                 attivo, traccia_lotti, unita_misura_stock_id, unita_contenuto_id, quantita_contenuto,
                 num_factor, den_factor, peso_netto_kg, peso_lordo_kg,
-                ean, is_adr, sostanza_chimica_id, markup_fallback_perc, created_at)
+                ean, is_adr, sostanza_chimica_id, markup_fallback_perc,
+                iva_vendita_default, iva_acquisto_default, created_at)
              VALUES
                (:sku_interno, :sku_ecommerce, :nome, :desc_breve, :desc_confezione, :desc_completa,
                 :tipo, :cat_id, :note_int,
                 :attivo, :traccia_lotti, :um_id, :unita_contenuto_id, :quantita_contenuto,
                 :num_factor, :den_factor, :peso_netto, :peso_lordo,
-                :ean, :is_adr, :sostanza_chimica_id, :markup_fallback_perc, CURRENT_TIMESTAMP)'
+                :ean, :is_adr, :sostanza_chimica_id, :markup_fallback_perc,
+                :iva_vendita_default, :iva_acquisto_default, CURRENT_TIMESTAMP)'
         );
         $stmt->execute([
             ':sku_interno'       => trim($v['sku_interno']),
@@ -755,6 +833,11 @@ function qk_insert_prodotto(PDO $pdo, array $v): int
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
             ':sostanza_chimica_id'   => qk_prodotti_null($v['sostanza_chimica_id'] ?? '') !== null ? (int) $v['sostanza_chimica_id'] : null,
             ':markup_fallback_perc'  => qk_prodotti_decimal($v['markup_fallback_perc'] ?? null),
+            // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio),
+            // Fase 1: default suggerito, opzionale — resta NULL se non compilato,
+            // nessun vincolo NOT NULL su queste due colonne (db/init_sqlite.sql:511-512).
+            ':iva_vendita_default'   => qk_prodotti_decimal($v['iva_vendita_default'] ?? null),
+            ':iva_acquisto_default'  => qk_prodotti_decimal($v['iva_acquisto_default'] ?? null),
         ]);
 
         $id = (int) $pdo->lastInsertId();
@@ -977,6 +1060,8 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
                is_adr                 = :is_adr,
                sostanza_chimica_id        = :sostanza_chimica_id,
                markup_fallback_perc   = :markup_fallback_perc,
+               iva_vendita_default    = :iva_vendita_default,
+               iva_acquisto_default   = :iva_acquisto_default,
                updated_at             = CURRENT_TIMESTAMP
              WHERE id = :id'
         )->execute([
@@ -1002,6 +1087,9 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
             ':is_adr'            => ($v['is_adr'] ?? '0') === '1' ? 1 : 0,
             ':sostanza_chimica_id' => qk_prodotti_null($v['sostanza_chimica_id'] ?? '') !== null ? (int) $v['sostanza_chimica_id'] : null,
             ':markup_fallback_perc' => qk_prodotti_decimal($v['markup_fallback_perc'] ?? null),
+            // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio), Fase 1.
+            ':iva_vendita_default'  => qk_prodotti_decimal($v['iva_vendita_default'] ?? null),
+            ':iva_acquisto_default' => qk_prodotti_decimal($v['iva_acquisto_default'] ?? null),
             ':id'                => $id,
         ]);
 
@@ -1075,7 +1163,7 @@ function qk_ricalcola_bozze_per_cambio_stock_uom(PDO $pdo, int $prodotto_id): ar
         require_once __DIR__ . '/sales_quotes.php';
     }
     $st = $pdo->prepare("
-        SELECT pr.* FROM preventivi_righe pr
+        SELECT pr.*, p.cliente_id AS __cliente_id FROM preventivi_righe pr
         JOIN preventivi p ON p.id = pr.preventivo_id
         WHERE pr.prodotto_id = ? AND p.stato = 'bozza'
     ");
@@ -1086,7 +1174,11 @@ function qk_ricalcola_bozze_per_cambio_stock_uom(PDO $pdo, int $prodotto_id): ar
         $umCodiceStmt->execute([$riga['unita_misura_id']]);
         $riga['unita_misura'] = $umCodiceStmt->fetchColumn() ?: 'pz';
 
-        $ricalcolata = qk_calcola_riga_offerta($pdo, $riga, (int)$riga['posizione_riga']);
+        // Riga già salvata: iva_perc è già valorizzato (qk_calcola_riga_offerta
+        // lo userà così com'è, il motore unico non entra in gioco qui) —
+        // __cliente_id passato solo per coerenza di firma, non incide sul
+        // ricalcolo di un valore già presente.
+        $ricalcolata = qk_calcola_riga_offerta($pdo, $riga, (int)$riga['posizione_riga'], isset($riga['__cliente_id']) ? (int)$riga['__cliente_id'] : null);
 
         $pdo->prepare("
             UPDATE preventivi_righe SET
@@ -1328,6 +1420,18 @@ function qk_search_prodotti_documento_vendita(PDO $pdo, string $q, int $limit = 
         $r['rrp_max']             = isset($r['rrp_max']) ? (float)$r['rrp_max'] : null;
         $r['costo_base']          = isset($r['costo_base']) ? (float)$r['costo_base'] : 0.0;
         $r['quantita_contenuto']  = isset($r['quantita_contenuto']) ? (float)$r['quantita_contenuto'] : 1.0;
+
+        // IVA proposta per la riga: motore unico (PIANO - Aliquota IVA su
+        // Prodotti e Cliente Esente, Livello Intermedio, §5/§8 Fase 2 punto 7).
+        // Qui il cliente non è ancora noto (questa è la ricerca prodotto, non
+        // ha un parametro cliente_id) — passato null, il motore salta i passi
+        // 1-2 e risolve solo su default di prodotto/fallback di sistema.
+        // L'azzeramento per cliente esente resta a carico della Fase 3
+        // (assets/js/sales-quotes.js, assets/js/sales-orders-create.js), che
+        // legge iva_esente già presente in apiClienteDettagli() e sovrascrive
+        // questo valore riga per riga — nessuna logica duplicata: qui si
+        // risolve solo "quale aliquota di prodotto", non "il cliente è esente".
+        $r['iva_perc'] = qk_risolvi_aliquota_iva_riga($pdo, (int)$r['id'], null, 'vendita');
     }
     unset($r);
     return $rows;

@@ -372,6 +372,8 @@ final class ProductsController extends BaseController
             'costo_acquisto_base'  => '',
             'costo_acquisto_medio' => '',
             'unita_misura_acquisto_id' => '',
+            'iva_vendita_default'  => '',
+            'iva_acquisto_default' => '',
         ];
     }
 
@@ -442,6 +444,20 @@ final class ProductsController extends BaseController
         $errQta = qk_prodotti_valida_quantita_contenuto($v['quantita_contenuto'] ?? null);
         if ($errQta !== null) {
             $errors['quantita_contenuto'] = $errQta;
+        }
+
+        // Aliquote IVA di default: campi opzionali (un prodotto può restare senza
+        // default impostato, vedi PIANO - Aliquota IVA su Prodotti e Cliente
+        // Esente, Fase 1) — se compilati, devono essere un numero tra 0 e 100.
+        foreach (['iva_vendita_default' => 'vendita', 'iva_acquisto_default' => 'acquisto'] as $field => $label) {
+            $raw = trim((string)($v[$field] ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+            $num = qk_prodotti_decimal($raw);
+            if ($num === null || $num < 0 || $num > 100) {
+                $errors[$field] = "L'aliquota IVA $label deve essere un numero tra 0 e 100.";
+            }
         }
 
         return $errors;

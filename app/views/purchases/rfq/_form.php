@@ -937,7 +937,7 @@ $savedOk = isset($saved) && $saved;
     </td>
     <td>
       <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva"
-             step="0.01" min="0" max="100" placeholder="22" value="22">
+             step="0.01" min="0" max="100" placeholder="<?= (int) QK_IVA_ALIQUOTA_FALLBACK ?>" value="<?= (int) QK_IVA_ALIQUOTA_FALLBACK ?>">
     </td>
     <td class="col-data-consegna col-hidden">
       <input type="date" name="riga_data_consegna_richiesta[]" class="qk-form-control r-data-consegna" value="">
@@ -974,6 +974,11 @@ $savedOk = isset($saved) && $saved;
    caricato DOPO rfq-form.js invece che prima. Consolidato qui, dove i tag
    PHP vengono davvero eseguiti. */
 window.QK_RFQ_CONFIG = {
+  // Unica fonte di verità per il fallback IVA lato JS (PIANO - Aliquota IVA
+  // su Prodotti e Cliente Esente, Livello Intermedio, Fase 4): stesso valore
+  // letto da qk_risolvi_aliquota_iva_riga() lato server, mai più un "22"
+  // ricopiato a mano in questo file.
+  ivaFallback: <?= json_encode(QK_IVA_ALIQUOTA_FALLBACK) ?>,
   apiFornitori: <?= json_encode(url('purchases/rfq/api/fornitori')) ?>,
   apiProdotti: <?= json_encode(url('purchases/rfq/api/prodotti')) ?>,
   apiPrezzo: <?= json_encode(url('purchases/rfq/api/ottieni-prezzo')) ?>,

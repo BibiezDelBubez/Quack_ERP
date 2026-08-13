@@ -3,6 +3,13 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+// qk_cliente_dettagli_payload() (sotto) chiama qk_get_listino_default_id(),
+// definita in tabelle_base.php — require esplicito in testa al file
+// (CLAUDE.md regola 4), non lasciato all'ordine di include casuale del
+// bootstrap. Stesso identico bug di require mancante già capitato una volta
+// su questa stessa funzione in includes/sales_quotes.php (vedi
+// audit/per ora vanno bene/criticita_risolte.md, 23/07/2026) — non ripeterlo qui.
+require_once __DIR__ . '/tabelle_base.php';
 
 /** @return PDO */
 function qk_db(): PDO
@@ -2144,6 +2151,63 @@ function qk_get_cliente_dettagli_per_preventivo(PDO $pdo, int $clienteId): ?arra
     $st->execute([$clienteId]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     return $row ?: null;
+}
+
+/**
+ * Costruisce il payload JSON-safe per l'endpoint "cliente-dettagli" a
+ * partire dalla riga grezza di qk_get_cliente_dettagli_per_preventivo().
+ *
+ * Estratta il 13/08/2026 dopo aver scoperto, durante il test manuale in
+ * browser della Fase 5 del PIANO - Aliquota IVA su Prodotti e Cliente
+ * Esente (Livello Intermedio), che SalesOrdersController::apiClienteDettagli()
+ * ricostruiva a mano un sottoinsieme di soli 2 campi (condizioni_pagamento,
+ * listino_id) mentre il gemello SalesQuotesController::apiClienteDettagli()
+ * restituiva l'intera riga — quindi il campo iva_esente non arrivava mai al
+ * JavaScript della pagina ordini diretti, che pure lo leggeva correttamente
+ * (sales-orders-create.js:118), lasciando la funzione "cliente esente"
+ * completamente inerte su quella pagina.
+ *
+ * Non è la prima volta che questi due metodi divergono sullo stesso dato:
+ * audit/per ora vanno bene/criticita_risolte.md, AUDIT 3 §2.1/2.2/2.3
+ * (23/07/2026), documenta un bug precedente sulla stessa coppia di metodi
+ * (filtro clienti disattivati mancante), risolto unificando la QUERY
+ * (qk_get_cliente_dettagli_per_preventivo(), sopra) ma non il modo in cui
+ * ciascun controller la trasformava in risposta JSON — che è rimasto
+ * duplicato, e quindi libero di divergere di nuovo, com'è successo qui.
+ * Questa funzione chiude anche quella seconda metà mai completata: un solo
+ * punto che decide la forma del payload, richiamato da entrambi i
+ * controller, cosicché un domani un tredicesimo campo aggiunto alla query
+ * sopra arrivi automaticamente a entrambi gli endpoint invece di richiedere
+ * di ricordarsi di aggiornare due whitelist indipendenti.
+ *
+ * @param array $cliente Riga grezza da qk_get_cliente_dettagli_per_preventivo()
+ *   (tutti i campi vengono passati al chiamante, non solo un sottoinsieme:
+ *   la selezione di QUALI campi esporre resta compito della query sopra,
+ *   non di questa funzione — evita di reintrodurre una seconda whitelist).
+ * @param bool $applicaListinoDefault Se true e listino_id è null, lo
+ *   sostituisce col listino di default di sistema. Comportamento finora
+ *   presente solo nell'ordine diretto (SalesOrdersController): un ordine
+ *   deve poter calcolare subito un prezzo, mentre un preventivo lascia
+ *   volutamente il campo vuoto per una scelta manuale dell'operatore
+ *   (verificato anche lato JS: sales-quotes.js:1120 applica listino_id solo
+ *   se già valorizzato, nessun fallback) — differenza reale tra le due
+ *   pagine, preservata qui esplicitamente invece di uniformarla senza
+ *   motivo.
+ */
+function qk_cliente_dettagli_payload(PDO $pdo, array $cliente, bool $applicaListinoDefault = false): array
+{
+    $payload = $cliente;
+    if ($applicaListinoDefault) {
+        // Stesso cast a (int) già presente nel vecchio codice di
+        // SalesOrdersController::apiClienteDettagli() (sia sul valore da DB
+        // sia sul default) — preservato qui identico, non solo il valore ma
+        // anche il tipo restituito, per non introdurre una differenza
+        // silenziosa rispetto al comportamento precedente.
+        $payload['listino_id'] = $payload['listino_id'] !== null
+            ? (int) $payload['listino_id']
+            : qk_get_listino_default_id($pdo);
+    }
+    return $payload;
 }
 
 /**

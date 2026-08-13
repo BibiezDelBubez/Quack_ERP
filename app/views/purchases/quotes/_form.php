@@ -359,7 +359,7 @@ $statoLabel = [
                   <input type="number" name="riga_sconto_perc[]" class="qk-form-control r-sconto" step="0.01" value="<?= isset($r['sconto_perc']) ? (float)$r['sconto_perc'] : '0' ?>">
                 </td>
                 <td class="col-iva">
-                  <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva" step="1" value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : '22' ?>">
+                  <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva" step="1" value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : QK_IVA_ALIQUOTA_FALLBACK ?>">
                 </td>
                 <td class="col-consegna">
                   <input type="date" name="riga_data_consegna_prevista[]" class="qk-form-control r-consegna" value="<?= e($r['data_consegna_prevista'] ?? '') ?>">
@@ -447,7 +447,7 @@ $statoLabel = [
                   <input type="number" name="riga_sconto_perc[]" class="qk-form-control" step="0.01" value="<?= isset($r['sconto_perc']) ? (float)$r['sconto_perc'] : '0' ?>" <?= $readonly ?>>
                 </td>
                 <td class="col-iva">
-                  <input type="number" name="riga_iva_perc[]" class="qk-form-control" step="1" value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : '22' ?>" <?= $readonly ?>>
+                  <input type="number" name="riga_iva_perc[]" class="qk-form-control" step="1" value="<?= isset($r['iva_perc']) ? (float)$r['iva_perc'] : QK_IVA_ALIQUOTA_FALLBACK ?>" <?= $readonly ?>>
                 </td>
                 <td class="col-consegna">
                   <input type="date" name="riga_data_consegna_prevista[]" class="qk-form-control" value="<?= e($r['data_consegna_prevista'] ?? '') ?>" <?= $readonly ?>>
@@ -743,7 +743,7 @@ $statoLabel = [
       <input type="number" name="riga_sconto_perc[]" class="qk-form-control r-sconto" step="0.01" value="0">
     </td>
     <td class="col-iva">
-      <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva" step="1" value="22">
+      <input type="number" name="riga_iva_perc[]" class="qk-form-control r-iva" step="1" value="<?= QK_IVA_ALIQUOTA_FALLBACK ?>">
     </td>
     <td class="col-consegna">
       <input type="date" name="riga_data_consegna_prevista[]" class="qk-form-control r-consegna">

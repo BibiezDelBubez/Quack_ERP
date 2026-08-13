@@ -16,6 +16,10 @@ document.addEventListener('DOMContentLoaded', function () {
   // sempre una stringa vuota. Allineato alla convenzione già usata in
   // products-form.js/products-suppliers.js/sales-orders-create.js/sales-quotes.js.
   const CSRF_TOKEN    = document.querySelector('input[name=csrf_token]')?.value ?? '';
+  // Fallback IVA centralizzato (PIANO - Aliquota IVA su Prodotti e Cliente
+  // Esente, Livello Intermedio, Fase 4) — stesso valore di
+  // QK_IVA_ALIQUOTA_FALLBACK letto lato server, mai più un "22" ricopiato qui.
+  const IVA_FALLBACK  = String(window.QK_RFQ_CONFIG.ivaFallback ?? 22);
   /* ── Stato globale ───────────────────────────────────────────────────── */
   let fornitoreSel = { id: String(window.QK_RFQ_CONFIG.fornitoreId || ''), nome: '' };
   let rigaIdx      = 0;  // contatore righe per data-idx univoci
@@ -81,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function () {
       uom:           p.uom ?? '',
       prezzo:        p.prezzo_unitario ?? '',
       prezzo_uom_id: p.prezzo_unitario_uom_id ?? null,
-      iva_perc:      p.iva_perc ?? '22',
+      iva_perc:      p.iva_perc ?? IVA_FALLBACK,
       uom_comm:      p.uom_comm || p.uom_comm_prod || p.uom || '—',
       uom_comm_id:   p.uom_comm_id || p.uom_comm_prod_id || p.uom_id || '',
       uom_comm_prod: p.uom_comm_prod ?? '',
@@ -239,7 +243,7 @@ document.addEventListener('DOMContentLoaded', function () {
           tr.dataset.quantitaContenuto = '1';
           const formatoSpan = tr.querySelector('.r-formato');
           if (formatoSpan) formatoSpan.textContent = '—';
-          if (ivaInput) ivaInput.value = '22';
+          if (ivaInput) ivaInput.value = IVA_FALLBACK;
           tr.dataset.fornitoreAbitualeId = '';
           tr.dataset.fornitoreAbitualeNome = '';
           updateFornitoreAbitualeWarning(tr);
@@ -303,7 +307,7 @@ document.addEventListener('DOMContentLoaded', function () {
         tr.dataset.quantitaContenuto = '1';
         const formatoSpan = tr.querySelector('.r-formato');
         if (formatoSpan) formatoSpan.textContent = '—';
-        if (ivaInput) ivaInput.value = '22';
+        if (ivaInput) ivaInput.value = IVA_FALLBACK;
         tr.dataset.fornitoreAbitualeId = '';
         tr.dataset.fornitoreAbitualeNome = '';
         updateFornitoreAbitualeWarning(tr);

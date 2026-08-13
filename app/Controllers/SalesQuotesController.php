@@ -614,9 +614,17 @@ final class SalesQuotesController extends BaseController
             if ($cliente) {
                 $contatti  = qk_get_contatti_cliente($this->pdo, $cliente_id);
                 $indirizzi = qk_get_indirizzi_cliente($this->pdo, $cliente_id);
+                // qk_cliente_dettagli_payload() (includes/anagrafiche.php):
+                // stesso punto unico usato da SalesOrdersController::apiClienteDettagli(),
+                // niente più whitelist di campi ricostruita a mano in ciascun
+                // controller — vedi commento in testa alla funzione condivisa
+                // per la causa del bug che questo refactor chiude (13/08/2026).
+                // Preventivi: nessun fallback sul listino di default (comportamento
+                // invariato rispetto a prima di questo refactor).
+                $cliente = qk_cliente_dettagli_payload($this->pdo, $cliente, false);
             }
         }
-        
+
         ob_end_clean();
         header('Content-Type: application/json');
         echo json_encode([
@@ -725,7 +733,14 @@ final class SalesQuotesController extends BaseController
                 'unita_misura'   => $r['unita_misura']   ?? '',
                 'prezzo_unitario' => $r['prezzo_unitario'] ?? 0,
                 'sconto_perc'    => $r['sconto_perc']    ?? 0,
-                'iva_perc'       => $r['iva_perc']       ?? 22,
+                // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e
+                // Cliente Esente, Livello Intermedio, Fase 4). Scatta solo se
+                // la chiave manca del tutto dal POST (praticamente mai: il
+                // campo numerico invia comunque '' se lasciato vuoto) — quel
+                // caso '' arriva intatto fino a qk_calcola_riga_offerta(),
+                // che lo riconosce come "mancante" e interroga il motore
+                // unico invece di usare questo fallback fisso.
+                'iva_perc'       => $r['iva_perc']       ?? QK_IVA_ALIQUOTA_FALLBACK,
                 'note_riga'      => $r['note_riga']      ?? '',
                 'uom_stock'         => $r['uom_stock'] ?? '',
                 'uom_stock_id'      => $r['uom_stock_id'] ?? '',

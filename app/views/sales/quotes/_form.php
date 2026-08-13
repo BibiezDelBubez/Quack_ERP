@@ -766,123 +766,31 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
 </form><!-- /form-offerta -->
 
 
-<!-- ══════════════════════ MODALE NUOVO CLIENTE ═════════════════════════════ -->
-<div class="modal fade" id="modal-nuovo-cliente" tabindex="-1" aria-labelledby="mnc-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="background:var(--qk-card-bg);color:var(--qk-text-primary);border:1px solid var(--qk-border)">
-      <div class="modal-header" style="border-color:var(--qk-border)">
-        <h5 class="modal-title" id="mnc-title"><i class="fa-solid fa-user-plus me-2"></i>Nuovo cliente rapido</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
-      </div>
-      <div class="modal-body">
-        <div id="mnc-error" class="qk-alert qk-alert-danger mb-3" style="display:none">
-          <i class="fa-solid fa-circle-xmark"></i> <span id="mnc-error-msg"></span>
-        </div>
-        <form id="form-nuovo-cliente" novalidate>
-          <!-- Tipo soggetto -->
-          <div class="qk-form-group">
-            <label class="qk-form-label">Tipo soggetto</label>
-            <div class="qk-flex-row qk-gap-sm">
-              <label class="qk-radio-card is-selected" id="rc-azienda">
-                <input type="radio" name="tipo_soggetto" value="azienda" checked>
-                <i class="fa-solid fa-building"></i> Azienda
-              </label>
-              <label class="qk-radio-card" id="rc-privato">
-                <input type="radio" name="tipo_soggetto" value="privato">
-                <i class="fa-solid fa-user"></i> Privato
-              </label>
-            </div>
-          </div>
-          <!-- Ragione sociale -->
-          <div class="qk-form-group" id="mnc-rs-wrap">
-            <label class="qk-form-label">Ragione sociale <span class="required">*</span></label>
-            <input type="text" name="ragione_sociale" id="mnc-ragione-sociale" class="qk-form-control"
-                   placeholder="Acme S.r.l.">
-          </div>
-          <!-- Nome / cognome per privati -->
-          <div class="d-none" id="mnc-nc-wrap">
-            <div class="qk-form-row">
-              <div class="qk-form-group">
-                <label class="qk-form-label">Nome <span class="required">*</span></label>
-                <input type="text" name="nome" class="qk-form-control" placeholder="Mario">
-              </div>
-              <div class="qk-form-group">
-                <label class="qk-form-label">Cognome <span class="required">*</span></label>
-                <input type="text" name="cognome" class="qk-form-control" placeholder="Rossi">
-              </div>
-            </div>
-          </div>
-          <!-- Contatti -->
-          <div class="qk-form-row">
-            <div class="qk-form-group">
-              <label class="qk-form-label">Email</label>
-              <input type="email" name="email" class="qk-form-control" placeholder="info@azienda.it">
-            </div>
-            <div class="qk-form-group">
-              <label class="qk-form-label">Telefono</label>
-              <input type="text" name="telefono" class="qk-form-control" placeholder="+39 0000 000000">
-            </div>
-          </div>
-        </form>
-      </div>
-      <div class="modal-footer" style="border-color:var(--qk-border)">
-        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn-qk btn-qk-primary" id="btn-salva-cliente">
-          <i class="fa-solid fa-floppy-disk"></i> Crea cliente
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- ══════════════════════ MODALE NUOVO CLIENTE ═════════════════════════════
+     PIANO - Correzione DRY-MVC Viste Documenti Vendita e Acquisto.md, Fase 1
+     (12/08/2026): estratta in components/modal_quick_cliente.php, condivisa
+     con sales/orders/_create.php — id identici a prima (nessun prefisso).
+     I 4 commenti HTML che c'erano qui (<!-- Tipo soggetto -->, ecc.) non
+     sono stati portati nel partial condiviso: erano assenti nella versione
+     gemella di _create.php, quindi la loro rimozione qui è la parte
+     esplicitamente attesa e documentata del diff di questa fase, non un
+     effetto collaterale involontario. -->
+<?php
+$qkMncIdPrefix = '';
+$qkMncTitleId  = 'mnc-title'; // invariato: questo file aveva aria-labelledby/id sul titolo
+require APP_ROOT_DIR . '/app/views/components/modal_quick_cliente.php';
+?>
 
-<!-- ══════════════════════ MODALE NUOVO PRODOTTO ════════════════════════════ -->
-<div class="modal fade" id="modal-nuovo-prodotto" tabindex="-1" aria-labelledby="mnp-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="background:var(--qk-card-bg);color:var(--qk-text-primary);border:1px solid var(--qk-border)">
-      <div class="modal-header" style="border-color:var(--qk-border)">
-        <h5 class="modal-title" id="mnp-title"><i class="fa-solid fa-box-open me-2"></i>Nuovo prodotto rapido</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
-      </div>
-      <div class="modal-body">
-        <div id="mnp-error" class="qk-alert qk-alert-danger mb-3" style="display:none">
-          <i class="fa-solid fa-circle-xmark"></i> <span id="mnp-error-msg"></span>
-        </div>
-        <form id="form-nuovo-prodotto" novalidate>
-          <div class="qk-form-group">
-            <label class="qk-form-label">Nome prodotto <span class="required">*</span></label>
-            <input type="text" name="nome" id="mnp-nome" class="qk-form-control"
-                   placeholder="Es. Flocculante liquido 5 Kg">
-          </div>
-          <div class="qk-form-row">
-            <div class="qk-form-group">
-              <label class="qk-form-label">SKU interno</label>
-              <input type="text" name="sku_interno" class="qk-form-control"
-                     placeholder="Lascia vuoto per auto-generare">
-            </div>
-            <div class="qk-form-group">
-              <label class="qk-form-label">Unità di misura</label>
-              <select name="unita_misura" class="qk-form-control">
-                <option value="pz">pz</option>
-                <option value="kg">kg</option>
-                <option value="l">l</option>
-                <option value="g">g</option>
-                <option value="ml">ml</option>
-              </select>
-            </div>
-          </div>
-          <p class="qk-text-muted" style="font-size:.82rem">
-            <i class="fa-solid fa-circle-info me-1"></i>
-            Il prezzo verrà impostato direttamente nella riga dell'offerta.
-          </p>
-        </form>
-      </div>
-      <div class="modal-footer" style="border-color:var(--qk-border)">
-        <button type="button" class="btn-qk btn-qk-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn-qk btn-qk-primary" id="btn-salva-prodotto"><i class="fa-solid fa-floppy-disk"></i> Crea prodotto</button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- ══════════════════════ MODALE NUOVO PRODOTTO ════════════════════════════
+     PIANO - Correzione DRY-MVC Viste Documenti Vendita e Acquisto.md, Fase 1
+     (12/08/2026): estratta in components/modal_quick_prodotto.php. -->
+<?php
+$qkMnpIdPrefix     = '';
+$qkMnpTitleId      = 'mnp-title'; // invariato
+$qkMnpUnitaMisura  = ['pz' => 'pz', 'kg' => 'kg', 'l' => 'l', 'g' => 'g', 'ml' => 'ml']; // invariato: 5 opzioni in questo documento
+$qkMnpContestoLabel = 'offerta';
+require APP_ROOT_DIR . '/app/views/components/modal_quick_prodotto.php';
+?>
 <!-- ══════════════════════ MODALE CAMBIO LISTINO ════════════════════════════ -->
 <div class="modal fade" id="modal-cambio-listino" tabindex="-1" aria-labelledby="mcl-title" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -948,6 +856,11 @@ $canCreaNuovaVersione = (new \App\Services\TransitionGuard(qk_transizioni_preven
 <script>
 window.QK_QUOTES_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
+  // Unica fonte di verità per il fallback IVA lato JS (PIANO - Aliquota IVA
+  // su Prodotti e Cliente Esente, Livello Intermedio, Fase 4): stesso valore
+  // letto da qk_risolvi_aliquota_iva_riga() lato server, mai più un "22"
+  // ricopiato a mano in questo file.
+  ivaFallback: <?= json_encode(QK_IVA_ALIQUOTA_FALLBACK) ?>,
   preloadedRighe: <?= json_encode($preloadedRighe ?? []) ?>,
   quoteStato: <?= json_encode($values['stato'] ?? 'bozza') ?>,
   listini: <?= json_encode(array_map(fn($l) => ['id' => $l['id'], 'label' => $l['nome'] . ' (' . $l['valuta'] . ')'], $listini)) ?>,
@@ -961,4 +874,5 @@ window.QK_QUOTES_CONFIG = {
 <script src="<?= asset('js/big.min.js') ?>"></script>
 <script src="<?= asset('js/pricing-widget.js') ?>"></script>
 <script src="<?= asset('js/margin-semaforo.js') ?>"></script>
+<script src="<?= asset('js/riga-vendita-calc.js') ?>"></script>
 <script src="<?= asset('js/sales-quotes.js') ?>"></script>

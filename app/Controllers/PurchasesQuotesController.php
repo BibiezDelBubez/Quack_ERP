@@ -91,7 +91,9 @@ class PurchasesQuotesController extends BaseController
                             'uom'                 => $r['uom'] ?? '',
                             'prezzo_unitario'     => ($r['prezzo_indicativo'] !== null && $r['prezzo_indicativo'] !== '') ? (string)$r['prezzo_indicativo'] : '',
                             'sconto_perc'         => '0',
-                            'iva_perc'            => isset($r['iva_perc']) ? (string)$r['iva_perc'] : '22',
+                            // Fallback centralizzato (PIANO - Aliquota IVA su
+                            // Prodotti e Cliente Esente, Livello Intermedio, Fase 4).
+                            'iva_perc'            => isset($r['iva_perc']) ? (string)$r['iva_perc'] : (string) QK_IVA_ALIQUOTA_FALLBACK,
                             'data_consegna_prevista' => $r['data_consegna_richiesta'] ?? '',
                             'note'                => '',
                         ];

@@ -1003,6 +1003,22 @@ bassissima priorità invece di correggere subito, dato il rischio trascurabile.
 
 ---
 
+## 40. Motore Aliquote IVA e Classificazione Fiscale (allineamento a SAP/NetSuite/Dynamics 365)
+
+**Fonte.** Emerso il 12/08/2026 analizzando la ricerca di best practice sull'IVA prodotti già raccolta dall'utente (finita in `Ciclo Acquisti/Ciclo Acquisti - Schema Dati e API.md` §2.5) e confrontandola col comportamento reale di SAP, NetSuite e Dynamics 365 Business Central. Piano completo: [PIANO - Motore Aliquote IVA e Classificazione Fiscale (Best-in-Class).md](PIANO%20-%20Motore%20Aliquote%20IVA%20e%20Classificazione%20Fiscale%20%28Best-in-Class%29.md). Il piano collegato di livello intermedio è stato **eseguito il 13/08/2026** (tutte le fasi tranne la verifica manuale in browser): [PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio).md](PIANO%20-%20Aliquota%20IVA%20su%20Prodotti%20e%20Cliente%20Esente%20%28Livello%20Intermedio%29.md). Guida di riferimento su come funziona oggi + roadmap enterprise, entrambe in un unico documento: [IVA - Guida Completa alla Gestione Attuale e Roadmap Enterprise.md](IVA%20-%20Guida%20Completa%20alla%20Gestione%20Attuale%20e%20Roadmap%20Enterprise.md).
+
+**Di cosa si tratta.** Il modello attuale salva l'IVA come percentuale grezza (`DECIMAL`) direttamente su prodotto/legame prodotto-fornitore. SAP, NetSuite e Dynamics 365 BC non fanno così: tutti risolvono l'aliquota da applicare da una **combinazione tra classificazione fiscale del prodotto e classificazione fiscale della controparte** (cliente/fornitore) tramite una tabella di determinazione — non da un numero fisso attaccato al solo prodotto. Questo piano (il modello enterprise, non quello intermedio già eseguito) risolverebbe quel limite strutturale.
+
+**Stato attuale (aggiornato al 13/08/2026).** Il livello intermedio è ora implementato: un motore unico (`qk_risolvi_aliquota_iva_riga()`) incrocia `dettagli_clienti.iva_esente` con l'IVA di prodotto/fornitore su tutti i punti di calcolo, con badge UI e fallback centralizzato — dettaglio completo nella guida collegata sopra. Restano assenti, come prima, un campo di plafond/dichiarazione d'intento e qualunque storicizzazione delle aliquote nel tempo: è esattamente questo il perimetro ancora coperto solo dal piano enterprise sottostante, non toccato dall'esecuzione del 13/08.
+
+**Vincolo importante emerso durante l'analisi.** La fatturazione elettronica reale è esclusa in modo permanente per questo progetto (voce 12 di questo stesso backlog) — quindi qualunque "motivo di esenzione" introdotto da questo piano serve solo a uso interno (correttezza del documento mostrato/stampato), non deve replicare la granularità dei codici natura N1-N7.9 richiesti dallo SDI, che qui non verrebbero mai consumati da un generatore XML.
+
+**Cosa servirebbe per implementarlo (sintesi, dettaglio completo nel piano collegato).** Nuova tabella `aliquote_iva` (codice, percentuale, validità temporale); i tre campi decimali esistenti diventano FK a questa tabella; nuovo campo a valori fissi per il motivo di esenzione cliente (sostituisce il testo libero attuale); una funzione unica di determinazione (`qk_risolvi_aliquota_iva()`) che applica l'ordine cliente-esente → dichiarazione-intento-con-plafond → override-fornitore → default-prodotto → fallback-di-sistema; opzionale, solo se confermato un caso reale, tracciamento del plafond delle dichiarazioni d'intento.
+
+**Perché è rimandato.** Tre motivi, dettagliati nel piano collegato §10: il valore reale dipende da un dato oggi sconosciuto (quanti clienti esteri/con dichiarazione d'intento ha davvero Quack — nessuna decisione presa, domande aperte elencate nel piano §5); è un cambio di modello dati non banale (cambia il tipo di tre colonne esistenti, tocca entrambi gli schemi gemelli); il piano di livello intermedio collegato copre già il problema più concreto verificato oggi (il suggerimento IVA che non funziona mai in pratica, e un cliente segnato esente che comunque non ottiene IVA 0). Da riprendere quando l'utente deciderà di rispondere alle domande aperte del piano.
+
+---
+
 # Piano di Implementazione: Stile Dinamico Documenti (ex Numeri Magici)
 
 ## Il Problema

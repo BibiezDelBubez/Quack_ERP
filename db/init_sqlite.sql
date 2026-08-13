@@ -439,7 +439,14 @@ CREATE TABLE IF NOT EXISTS dettagli_clienti (
     fido_credito              DECIMAL(10,2),
     codice_sdi                VARCHAR(7),                        -- codice SDI per fattura elettronica
     iva_esente                BOOLEAN      NOT NULL DEFAULT 0,
-    codice_esenzione_iva      VARCHAR(20),
+    -- Valori fissi invece di testo libero (PIANO - Aliquota IVA su Prodotti e
+    -- Cliente Esente, Fase 2): solo per uso interno/promemoria, non per
+    -- conformità fatturazione elettronica (esclusa per sempre, Backlog
+    -- Sviluppi Futuri voce 12) — non entra nel calcolo IVA, che dipende solo
+    -- da iva_esente. NULL = nessuna esenzione o motivo non specificato.
+    codice_esenzione_iva      VARCHAR(20) CHECK (codice_esenzione_iva IN (
+                                   'export_extra_ue', 'intra_ue', 'dichiarazione_intento', 'altro'
+                               )),
     note_commerciali          TEXT,
     note_interne              TEXT,
     regime_fiscale            VARCHAR(10),                       -- es. RF01 ordinario, RF19 forfettario

@@ -2089,6 +2089,23 @@ th.qk-sortable a:hover {
 }
 
 /* ── Sticky Action Bar for Document Forms ───────────────────────────────── */
+/* PIANO - Architettura UX Preventivo-Ordine-Spedizione.md, §12.6 (12/08/2026):
+   PRIMA questo contenitore aveva flex-wrap:wrap anche a questo livello, cioè
+   quando i bottoni a sinistra diventavano troppo larghi per stare sulla
+   stessa riga del gruppo di destra (link "Torna alla lista" + pillole di
+   stato), il browser spostava l'INTERO gruppo di destra su una riga sotto —
+   non i singoli bottoni. Comportamento non progettato (nessuno lo aveva
+   deciso), solo l'effetto di default di flexbox, diventato visibile appena
+   una pagina ha avuto abbastanza bottoni a sinistra (segnalato dall'utente
+   su sales/orders/_detail.php, ma già presente prima, non visto, su
+   purchases/rfq/_form.php che ha una barra sinistra ancora più affollata).
+   Ora: la barra non si spezza più in due righe come blocco intero
+   (flex-wrap:nowrap qui); è il gruppo SINISTRO (già con flex-wrap:wrap suo
+   proprio, riga sotto) a spezzarsi internamente su più righe se serve,
+   mentre il gruppo destro resta sempre fisso, sulla prima riga, mai spinto
+   sotto — coerente con l'idea che "Torna alla lista" e le pillole di stato
+   sono elementi di navigazione/contesto, non azioni, e non dovrebbero mai
+   sparire sotto una fila di bottoni. */
 .qk-sticky-action-bar {
   position: sticky;
   top: var(--qk-topbar-h);
@@ -2100,16 +2117,24 @@ th.qk-sortable a:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.75rem 1.25rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
-.qk-sticky-action-bar-left,
-.qk-sticky-action-bar-right {
+.qk-sticky-action-bar-left {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.qk-sticky-action-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
 }
 
 /* ── Standard Soft Delete Row UI ── */

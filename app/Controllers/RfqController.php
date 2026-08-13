@@ -716,7 +716,9 @@ class RfqController extends BaseController
                 'unita_misura_id'   => (string)($uom[$i] ?? ''),
                 'prezzo_indicativo' => (string)($prezzi[$i] ?? ''),
                 'note'              => (string)($note[$i] ?? ''),
-                'iva_perc'          => (string)($ivas[$i] ?? '22'),
+                // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e
+                // Cliente Esente, Livello Intermedio, Fase 4).
+                'iva_perc'          => (string)($ivas[$i] ?? QK_IVA_ALIQUOTA_FALLBACK),
                 'data_consegna_richiesta' => !empty($consegnaRichiesta[$i]) ? $consegnaRichiesta[$i] : null,
                 'e_rifiutato'             => !empty($eRifiutato[$i]) ? (int)$eRifiutato[$i] : 0,
             ];
@@ -786,7 +788,7 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
       LEFT JOIN clienti_fornitori cf_ab ON cf_ab.id = pf_ab.fornitore_id";
 
     $st = $pdo->prepare(
-        "SELECT p.id, p.sku_interno, p.nome, um.codice AS uom, p.iva_acquisto_default AS iva_perc,
+        "SELECT p.id, p.sku_interno, p.nome, um.codice AS uom,
                 p.unita_misura_stock_id AS uom_id,
                 um_comm_prod.codice AS uom_comm_prod,
                 p.unita_contenuto_id AS uom_comm_prod_id,
@@ -824,6 +826,18 @@ function qk_acquisti_prodotti_search(PDO $pdo, string $q, int $fornitore_id = 0,
               )
             : null;
         unset($row['fornitore_abituale_ragione_sociale'], $row['fornitore_abituale_nome_persona'], $row['fornitore_abituale_cognome_persona']);
+
+        // IVA proposta per la riga: motore unico invece della lettura diretta
+        // di p.iva_acquisto_default (PIANO - Aliquota IVA su Prodotti e Cliente
+        // Esente, Livello Intermedio, §5/§8 Fase 2 punto 7) — considera anche
+        // l'override per fornitore (prodotti_fornitori.iva_acquisto_default),
+        // mai letto qui prima d'ora nonostante il join già presente sopra.
+        $row['iva_perc'] = qk_risolvi_aliquota_iva_riga(
+            $pdo,
+            (int) $row['id'],
+            $fornitore_id > 0 ? $fornitore_id : null,
+            'acquisto'
+        );
     }
     unset($row);
 

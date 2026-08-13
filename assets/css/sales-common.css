@@ -74,7 +74,18 @@
   border-color: var(--qk-accent, #3b82f6);
   box-shadow: 0 0 0 2px var(--qk-accent-muted, rgba(59, 130, 246, 0.15));
 }
-#tbl-righe textarea.inp-desc, #tbl-righe-ord textarea.inp-desc {
+/* #tbl-righe-ord textarea.ord-inp-desc: sales-orders-create.js (riga 306)
+   assegna alla textarea descrizione la classe "ord-inp-desc" (prefisso
+   coerente con tutte le altre classi interne di quel file, es.
+   ord-inp-qta/ord-inp-pu), non "inp-desc" come sales-quotes.js (riga 266) —
+   la regola sotto, scritta assumendo lo stesso nome in entrambi i file, non
+   matchava mai per l'Ordine: la textarea ricadeva sulla regola generica
+   "textarea.qk-form-control { min-height: 90px }" di app.css, pensata per i
+   campi Note multi-riga, non per una cella di riga tabella. Bug segnalato
+   dall'utente il 12/08/2026, corretto qui senza toccare il JS (nessun altro
+   punto del codice referenzia questo class-name in modo da rendere sicuro
+   anche rinominarlo, ma la correzione minima è estendere il selettore). */
+#tbl-righe textarea.inp-desc, #tbl-righe-ord textarea.inp-desc, #tbl-righe-ord textarea.ord-inp-desc {
   min-height: 38px;
   height: 38px;
   resize: vertical;

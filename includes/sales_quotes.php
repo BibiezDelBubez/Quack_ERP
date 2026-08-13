@@ -132,13 +132,27 @@ function qk_crea_cliente_rapido(PDO $pdo, array $data): int
 /**
  * Calcola i valori economici e logistici di una riga preventivo.
  */
-function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos): array
+function qk_calcola_riga_offerta(PDO $pdo, array $r, int $pos, ?int $cliente_id = null): array
 {
     $prodotto_id = $r['prodotto_id'] ? (int)$r['prodotto_id'] : null;
     $qta = (float)($r['quantita'] ?? 0);
     $pu = (float)($r['prezzo_unitario'] ?? 0);
     $sconto = (float)($r['sconto_perc'] ?? 0);
-    $iva = (float)($r['iva_perc'] ?? 22);
+
+    // IVA: se il chiamante (form) ha inviato un valore, quello vince sempre —
+    // il campo resta modificabile anche per un cliente esente (PIANO -
+    // Aliquota IVA su Prodotti e Cliente Esente, Livello Intermedio, §7:
+    // decisione presa il 13/08/2026, "modificabile con avviso", non
+    // bloccato). Solo se il valore manca del tutto si ricorre al motore unico
+    // invece di un fallback fisso "22" — mai fidarsi solo del client (stesso
+    // principio già applicato altrove in questo file per lo stato del
+    // documento, vedi qk_update_offerta()). $prodotto_id ?? 0: righe senza
+    // prodotto collegato (testo libero) non hanno un default di prodotto da
+    // risolvere, il motore scende comunque al fallback di sistema.
+    $ivaGrezza = $r['iva_perc'] ?? null;
+    $iva = ($ivaGrezza !== null && $ivaGrezza !== '')
+        ? (float) $ivaGrezza
+        : qk_risolvi_aliquota_iva_riga($pdo, $prodotto_id ?? 0, $cliente_id, 'vendita');
 
     $prezzo_netto = round($pu * (1 - $sconto / 100), 4);
     $imponibile_riga = round($prezzo_netto * $qta, 2);
@@ -261,7 +275,7 @@ function qk_insert_offerta(PDO $pdo, array $values, array $righe, int $user_id):
         // Prepariamo i dati per ciascuna riga
         $righe_preparate = [];
         foreach ($righe as $pos => $r) {
-            $r_calc = qk_calcola_riga_offerta($pdo, $r, $pos);
+            $r_calc = qk_calcola_riga_offerta($pdo, $r, $pos, isset($values['cliente_id']) ? (int)$values['cliente_id'] : null);
             $righe_preparate[] = $r_calc;
 
             $raw_imponibile += $r_calc['imponibile_riga'];
@@ -539,7 +553,7 @@ function qk_update_offerta(PDO $pdo, int $id, array $values, array $righe, int $
 
         $righe_preparate = [];
         foreach ($righe as $pos => $r) {
-            $r_calc = qk_calcola_riga_offerta($pdo, $r, $pos);
+            $r_calc = qk_calcola_riga_offerta($pdo, $r, $pos, isset($values['cliente_id']) ? (int)$values['cliente_id'] : null);
             $righe_preparate[] = $r_calc;
 
             $raw_imponibile += $r_calc['imponibile_riga'];
@@ -1209,7 +1223,13 @@ function qk_preventivo_conferma_ordine(PDO $pdo, int $id, int $userId, int $maga
                 'unita_misura_id'             => $r['unita_misura_id'] ?? null,
                 'prezzo_unitario'             => $r['prezzo_unitario'] ?? 0,
                 'sconto_perc'                 => $r['sconto_perc'] ?? 0,
-                'iva_perc'                    => $r['iva_perc'] ?? 22,
+                // Fallback centralizzato (PIANO - Aliquota IVA su Prodotti e
+                // Cliente Esente, Livello Intermedio, Fase 4): $r['iva_perc']
+                // qui arriva già da una riga preventivo salvata (calcolata a
+                // suo tempo da qk_calcola_riga_offerta(), che già passa dal
+                // motore unico) — questo resta un puro fallback difensivo per
+                // un dato mancante/corrotto, non un punto di calcolo.
+                'iva_perc'                    => $r['iva_perc'] ?? QK_IVA_ALIQUOTA_FALLBACK,
                 'costo_unitario'              => $r['costo_unitario'] ?? 0,
                 'quantita_stock'              => $r['quantita_stock'],
                 'unita_misura_stock_id'       => $r['unita_misura_stock_id'] ?? null,

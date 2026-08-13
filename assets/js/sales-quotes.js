@@ -5,6 +5,10 @@ document.addEventListener('DOMContentLoaded', function () {
   'use strict';
 
   const CSRF = window.QK_QUOTES_CONFIG.csrf;
+  // Fallback IVA centralizzato (PIANO - Aliquota IVA su Prodotti e Cliente
+  // Esente, Livello Intermedio, Fase 4) — stesso valore di
+  // QK_IVA_ALIQUOTA_FALLBACK letto lato server, mai più un "22" ricopiato qui.
+  const IVA_FALLBACK = String(window.QK_QUOTES_CONFIG.ivaFallback ?? 22);
   const PRELOADED_RIGHE = window.QK_QUOTES_CONFIG.preloadedRighe;
   const quoteStato = window.QK_QUOTES_CONFIG.quoteStato || 'bozza';
   const BASE = (typeof QK_BASE !== 'undefined') ? QK_BASE : '';
@@ -51,7 +55,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     checkAllRowsCompliance();
-    loadClienteDettagli();
+    // true: scelta live dell'operatore, non il caricamento di un preventivo
+    // già salvato — qui è corretto azzerare l'IVA delle righe già presenti
+    // se il cliente scelto risulta esente (vedi loadClienteDettagli()).
+    loadClienteDettagli(true);
   }
 
   function clearCliente() {
@@ -63,6 +70,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     checkAllRowsCompliance();
+
+    // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio),
+    // §7/Fase 3: nessun cliente selezionato -> nessuna esenzione nota, nasconde
+    // il badge sulle righe già presenti (non ne azzera il valore).
+    clienteIvaEsente = false;
+    refreshAllIvaEsenteBadges();
 
     const spedSelect = document.getElementById('quote-indirizzo-spedizione-id');
     const contSelect = document.getElementById('quote-contatto-id');
@@ -146,6 +159,26 @@ document.addEventListener('DOMContentLoaded', function () {
      ───────────────────────────────────────────────────────────────────────── */
   let righeCount = 0;
   let currentUomMode = document.getElementById('sales-uom-mode')?.value || 'commercial';
+
+  // ── Cliente esente IVA — badge riga (PIANO - Aliquota IVA su Prodotti e
+  // Cliente Esente, Livello Intermedio, §7/Fase 3) ───────────────────────────
+  // Stesso linguaggio visivo già in uso in rfq-form.js per "Fornitore
+  // Abituale"/"Prezzo Fornitore" (badge giallo, non un blocco): il campo
+  // resta sempre modificabile, l'azzeramento è solo un default forte
+  // applicato quando il cliente viene scelto o quando si aggiunge/valorizza
+  // una riga nuova — MAI riscritto silenziosamente al solo caricamento di un
+  // preventivo già salvato (vedi loadClienteDettagli()), per non sovrascrivere
+  // un valore storico reale con un default.
+  let clienteIvaEsente = false;
+
+  function updateRigaIvaEsenteBadge(tr) {
+    const badge = tr.querySelector('.iva-esente-badge');
+    if (badge) badge.classList.toggle('d-none', !clienteIvaEsente);
+  }
+
+  function refreshAllIvaEsenteBadges() {
+    document.querySelectorAll('#tbody-righe tr.offerta-riga').forEach(updateRigaIvaEsenteBadge);
+  }
 
   function syncRowMetadata(tr, metadata) {
     if (metadata.uomStock !== undefined) {
@@ -244,6 +277,13 @@ document.addEventListener('DOMContentLoaded', function () {
     tr.dataset.rrpMin = prefill.rrp_min !== undefined && prefill.rrp_min !== null ? prefill.rrp_min : '';
     tr.dataset.rrpMax = prefill.rrp_max !== undefined && prefill.rrp_max !== null ? prefill.rrp_max : '';
 
+    // IVA: un prefill con iva_perc esplicito (riga di un preventivo già
+    // salvato, riaperto in modifica) vince sempre — non si sovrascrive un
+    // valore storico reale. Solo una riga davvero nuova (nessun prefill.iva_perc)
+    // riceve lo 0 automatico se il cliente già selezionato è esente.
+    const ivaHaValorePrefill = prefill.iva_perc !== undefined && prefill.iva_perc !== null && prefill.iva_perc !== '';
+    const ivaDefaultVal = ivaHaValorePrefill ? prefill.iva_perc : (clienteIvaEsente ? '0' : IVA_FALLBACK);
+
     tr.innerHTML = `
       <td class="col-search">
         <div class="qk-m2o-wrap">
@@ -303,8 +343,13 @@ document.addEventListener('DOMContentLoaded', function () {
                placeholder="0" min="0" max="100" step="0.01" value="${prefill.sconto_perc || '0'}">
       </td>
       <td class="col-iva">
-        <input type="number" name="righe[${idx}][iva_perc]" class="qk-form-control text-end inp-iva"
-               placeholder="22" min="0" max="100" step="1" value="${prefill.iva_perc || '22'}">
+        <div style="position:relative;">
+          <input type="number" name="righe[${idx}][iva_perc]" class="qk-form-control text-end inp-iva"
+                 placeholder="${esc(IVA_FALLBACK)}" min="0" max="100" step="1" value="${esc(String(ivaDefaultVal))}" style="padding-right:20px;">
+          <span class="iva-esente-badge ${clienteIvaEsente ? '' : 'd-none'}" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); font-size:0.8rem; cursor:help;" title="Cliente esente IVA: aliquota azzerata in automatico. Puoi comunque modificarla se serve un'eccezione.">
+            <i class="fa-solid fa-triangle-exclamation" style="color:#e0a800;"></i>
+          </span>
+        </div>
       </td>
       <td class="col-tot">
         <div class="riga-total">€ 0,00</div>
@@ -385,6 +430,18 @@ document.addEventListener('DOMContentLoaded', function () {
       tr.querySelector('.inp-desc').value         = row.label;
       tr.querySelector('.inp-qta').value          = '1';
       tr.querySelector('.inp-pu').value           = '';
+
+      // IVA proposta dal motore unico (qk_risolvi_aliquota_iva_riga(), già
+      // incluso nella risposta di ricerca prodotto — PIANO - Aliquota IVA su
+      // Prodotti e Cliente Esente, Livello Intermedio, §8 Fase 2 punto 7).
+      // Il cliente esente prevale comunque sul default di prodotto (§7).
+      const ivaInput = tr.querySelector('.inp-iva');
+      if (ivaInput) {
+        ivaInput.value = clienteIvaEsente
+          ? '0'
+          : (row.iva_perc !== undefined && row.iva_perc !== null && row.iva_perc !== '' ? row.iva_perc : IVA_FALLBACK);
+      }
+      updateRigaIvaEsenteBadge(tr);
 
       syncRowMetadata(tr, {
         uomStock: row.unita_misura || 'pz',
@@ -468,19 +525,17 @@ document.addEventListener('DOMContentLoaded', function () {
       const qta  = parseFloat(tr.querySelector('.inp-qta')?.value)  || 0;
       const pu   = parseFloat(tr.querySelector('.inp-pu')?.value)   || 0;
       const sc   = parseFloat(tr.querySelector('.inp-sc')?.value)   || 0;
-      const iva  = parseFloat(tr.querySelector('.inp-iva')?.value)  || 22;
-      
-      const puBig = Big(pu);
-      const qtaBig = Big(qta);
-      const scMultiplier = Big(1).minus(Big(sc).div(100)); // 1 - (sc/100)
-      
-      const pnBig = puBig.times(scMultiplier);
-      const totBig = pnBig.times(qtaBig).round(2);
-      const tot = totBig.toNumber();
-      
-      const rigBig = totBig.times(Big(iva).div(100)).round(2);
-      const rig = rigBig.toNumber();
-      
+      // Valore GREZZO (stringa dal DOM, non pre-parsato): qkCalcolaRigaVendita()
+      // (assets/js/riga-vendita-calc.js) deve poter distinguere "campo vuoto"
+      // da "campo con 0 legittimo" — un parseFloat() qui prima della chiamata
+      // riprodurrebbe esattamente il bug che questa funzione condivisa risolve
+      // (vedi commento in testa a riga-vendita-calc.js, 13/08/2026).
+      const ivaGrezza = tr.querySelector('.inp-iva')?.value;
+
+      const rigaCalc = qkCalcolaRigaVendita(pu, qta, sc, ivaGrezza, IVA_FALLBACK);
+      const tot = rigaCalc.imponibileRiga;
+      const rig = rigaCalc.ivaRiga;
+
       imponibile += tot;
       totIva     += rig;
       
@@ -527,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       }
 
-      const rowCostTotal = Big(costoConvertito).times(qtaBig).round(2).toNumber();
+      const rowCostTotal = Big(costoConvertito).times(qta).round(2).toNumber();
       totaleCosto += rowCostTotal;
 
       const rowDelta = Big(tot).minus(rowCostTotal).toNumber();
@@ -1004,18 +1059,25 @@ document.addEventListener('DOMContentLoaded', function () {
   let loadedContacts = [];
   let loadedAddresses = [];
 
-  async function loadClienteDettagli() {
+  // forceApplyZero: true solo quando la chiamata viene da una scelta live del
+  // cliente (selectCliente()) — false al bootstrap di pagina (riapertura di
+  // un preventivo già salvato con cliente già impostato), per non
+  // sovrascrivere un valore IVA storico reale già salvato sulle righe. Vedi
+  // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio), §7.
+  async function loadClienteDettagli(forceApplyZero = false) {
     if (!spedSelect || !contSelect) return;
     const clienteId = elClienteId.value;
     if (!clienteId) {
       spedSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
       contSelect.innerHTML = '<option value="">Seleziona cliente prima...</option>';
+      clienteIvaEsente = false;
+      refreshAllIvaEsenteBadges();
       return;
     }
 
     spedSelect.innerHTML = '<option value="">Caricamento...</option>';
     contSelect.innerHTML = '<option value="">Caricamento...</option>';
-    
+
     try {
       const res = await fetch(`${BASE}/sales/quotes/api/cliente-dettagli?cliente_id=${clienteId}`);
       const data = await res.json();
@@ -1023,7 +1085,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
       loadedContacts = data.contatti || [];
       loadedAddresses = data.indirizzi || [];
-      
+
+      // Cliente esente IVA (§7/Fase 3): badge sempre aggiornato; l'azzeramento
+      // vero e proprio delle righe già presenti scatta solo se questa chiamata
+      // viene da una scelta live dell'operatore (forceApplyZero), mai al solo
+      // caricamento di un preventivo già salvato.
+      clienteIvaEsente = !!(data.cliente && Number(data.cliente.iva_esente) === 1);
+      refreshAllIvaEsenteBadges();
+      if (forceApplyZero && clienteIvaEsente) {
+        document.querySelectorAll('#tbody-righe tr.offerta-riga .inp-iva').forEach(inp => { inp.value = '0'; });
+        calcTotali();
+      }
+
       if (custTelHidden) custTelHidden.value = data.cliente?.telefono || '';
       if (custEmailHidden) custEmailHidden.value = data.cliente?.email || data.cliente?.cellulare || '';
 

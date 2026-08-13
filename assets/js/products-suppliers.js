@@ -63,6 +63,10 @@
         lead_time_giorni: f.lead_time_giorni || 0,
         ordine_preferenza_fornitore: f.ordine_preferenza_fornitore || 2,
         unita_misura_acquisto_id: f.unita_misura_acquisto_id || cfg.uomStockId || null,
+        // Override IVA acquisto per questo fornitore (PIANO - Aliquota IVA su Prodotti
+        // e Cliente Esente, Fase 1) — attributo del legame (prodotto, fornitore), stesso
+        // trattamento canonico/ereditato di sku/nome/lead_time/uom qui sopra, non per scaglione.
+        iva_acquisto_default: (f.iva_acquisto_default !== null && f.iva_acquisto_default !== undefined) ? f.iva_acquisto_default : '',
         // Dati Prezzo (Figlio)
         prezzo_id: p ? p.id : null,
         quantita_minima: p ? parseFloat(p.quantita_minima) : 0,
@@ -89,6 +93,7 @@
         lead_time_giorni: 0,
         ordine_preferenza_fornitore: 2,
         unita_misura_acquisto_id: currentUomMode === 'stock' ? (cfg.uomStockId || null) : (cfg.uomCommercialId || cfg.uomStockId || null),
+        iva_acquisto_default: '',
         prezzo_id: null,
         quantita_minima: 0,
         prezzo: null,
@@ -138,6 +143,10 @@
         { sel: '.inp-sku', val: row.sku_fornitore || '' },
         { sel: '.inp-nome-prod', val: row.nome_prodotto_fornitore || '' },
         { sel: '.inp-lead', val: row.lead_time_giorni || 0 },
+        // Override IVA acquisto (PIANO - Aliquota IVA su Prodotti e Cliente Esente,
+        // Fase 1): stesso trattamento canonico/ereditato di sku/nome/lead qui sopra,
+        // è un attributo del legame (prodotto, fornitore), non dello scaglione.
+        { sel: '.inp-iva-override', val: (row.iva_acquisto_default !== '' && row.iva_acquisto_default !== null) ? row.iva_acquisto_default : '' },
       ];
       fields.forEach(f => {
         const inp = tr.querySelector(f.sel);
@@ -166,7 +175,7 @@
       
       const activeRows = flatRows.filter(r => !r._isDeletedSoft);
       if (activeRows.length === 0) {
-        masterTbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-muted">Nessun costo di acquisto impostato.</td></tr>`;
+        masterTbody.innerHTML = `<tr><td colspan="12" class="text-center py-4 text-muted">Nessun costo di acquisto impostato.</td></tr>`;
         return;
       }
 
@@ -230,6 +239,9 @@
           <td class="flat-grid-td" data-col="sconto">
              <input type="number" class="flat-grid-input text-end inp-sconto" value="${row.sconto_perc || 0}" step="0.01" min="0">
           </td>
+          <td class="flat-grid-td" data-col="iva_acquisto">
+             <input type="number" class="flat-grid-input text-end inp-iva-override" value="${row.iva_acquisto_default !== '' && row.iva_acquisto_default !== null ? row.iva_acquisto_default : ''}" step="0.01" min="0" max="100" placeholder="Default prodotto">
+          </td>
           <td class="flat-grid-td" data-col="lead_time">
             <input type="number" class="flat-grid-input text-center inp-lead" value="${row.lead_time_giorni}" min="0">
           </td>
@@ -275,6 +287,7 @@
                    row.nome_prodotto_fornitore = existing.nome_prodotto_fornitore;
                    row.lead_time_giorni = existing.lead_time_giorni;
                    row.unita_misura_acquisto_id = existing.unita_misura_acquisto_id;
+                   row.iva_acquisto_default = existing.iva_acquisto_default;
                    const inpUom = tr.querySelector('.inp-uom');
                    if (inpUom) inpUom.value = row.unita_misura_acquisto_id || cfg.uomStockId;
                 }
@@ -296,7 +309,7 @@
         tr.querySelector('.pref-star').addEventListener('click', () => setPreferito(row));
         tr.querySelector('.btn-delete-row').addEventListener('click', () => deleteRow(row));
 
-        ['inp-sku', 'inp-nome-prod', 'inp-qta', 'inp-uom', 'inp-prezzo', 'inp-sconto', 'inp-lead', 'inp-vdal', 'inp-val'].forEach(cls => {
+        ['inp-sku', 'inp-nome-prod', 'inp-qta', 'inp-uom', 'inp-prezzo', 'inp-sconto', 'inp-lead', 'inp-iva-override', 'inp-vdal', 'inp-val'].forEach(cls => {
           const inp = tr.querySelector('.' + cls);
           if (inp) {
             inp.addEventListener('change', (e) => {
@@ -315,6 +328,10 @@
                 const sku = tr.querySelector('.inp-sku').value;
                 const nomeProd = tr.querySelector('.inp-nome-prod').value;
                 const leadTime = parseInt(tr.querySelector('.inp-lead').value) || 0;
+                // Vuoto = nessun override, si usa il default IVA del prodotto (non 0%:
+                // 0 sarebbe un'aliquota reale valida, va distinto da "non impostato").
+                const ivaOverrideRaw = tr.querySelector('.inp-iva-override').value;
+                const ivaOverride = ivaOverrideRaw === '' ? '' : parseFloat(ivaOverrideRaw);
 
                 // Sync metadata sullo STATO di tutte le righe dello stesso fornitore (fonte
                 // di verità per il salvataggio); il riflesso visivo lo applica un'unica
@@ -326,6 +343,7 @@
                       r.nome_prodotto_fornitore = nomeProd;
                       r.lead_time_giorni = leadTime;
                       r.unita_misura_acquisto_id = targetUomId;
+                      r.iva_acquisto_default = ivaOverride;
                    }
                 });
                 refreshAllInheritedStates();
@@ -408,6 +426,9 @@
       fd.append('lead_time_giorni', String(row.lead_time_giorni || 0));
       fd.append('ordine_preferenza_fornitore', String(row.ordine_preferenza_fornitore));
       fd.append('unita_misura_acquisto_id', String(row.unita_misura_acquisto_id || cfg.uomStockId));
+      // Override IVA acquisto (PIANO - Aliquota IVA su Prodotti e Cliente Esente,
+      // Fase 1): stringa vuota = nessun override, il server lo salva come NULL.
+      fd.append('iva_acquisto_default', (row.iva_acquisto_default !== '' && row.iva_acquisto_default !== null && row.iva_acquisto_default !== undefined) ? String(row.iva_acquisto_default) : '');
       fd.append('attivo', '1');
       fd.append('no_prezzi', '1');
       fd.append('csrf_token', CSRF);

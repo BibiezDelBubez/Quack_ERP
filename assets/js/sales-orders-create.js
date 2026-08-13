@@ -5,6 +5,10 @@ document.addEventListener('DOMContentLoaded', function () {
 'use strict';
 
 const CSRF = window.QK_ORDERS_CREATE_CONFIG.csrf;
+// Fallback IVA centralizzato (PIANO - Aliquota IVA su Prodotti e Cliente
+// Esente, Livello Intermedio, Fase 4) — stesso valore di
+// QK_IVA_ALIQUOTA_FALLBACK letto lato server, mai più un "22" ricopiato qui.
+const IVA_FALLBACK = String(window.QK_ORDERS_CREATE_CONFIG.ivaFallback ?? 22);
 const BASE = (typeof QK_BASE !== 'undefined') ? QK_BASE : '';
 
 // ─── Utilità ──────────────────────────────────────────────────────────────
@@ -66,6 +70,11 @@ function clearCliente() {
   if (spedSel) spedSel.innerHTML = '<option value="">Seleziona cliente prima...</option>';
   if (contSel) contSel.innerHTML = '<option value="">Seleziona cliente prima...</option>';
   document.getElementById('ord-sped-fields-box').style.display = 'none';
+
+  // PIANO - Aliquota IVA su Prodotti e Cliente Esente (Livello Intermedio),
+  // §7/Fase 3: nessun cliente selezionato -> nessuna esenzione nota.
+  clienteIvaEsente = false;
+  refreshAllIvaEsenteBadges();
 }
 
 elClienteSearch?.addEventListener('input', () => { if (!elClienteSearch.value.trim()) clearCliente(); });
@@ -101,6 +110,17 @@ new QkM2O({
 async function loadClienteDettagli(clienteId) {
   const data = await apiFetch('/sales/orders/api/cliente-dettagli?cliente_id=' + clienteId);
   if (!data || !data.ok) return;
+
+  // Cliente esente IVA (PIANO - Aliquota IVA su Prodotti e Cliente Esente,
+  // Livello Intermedio, §7/Fase 3): ordine diretto, nessuna riga può già
+  // esistere da un documento salvato in precedenza (a differenza dei
+  // preventivi in modifica) — sicuro azzerare subito le righe già presenti.
+  clienteIvaEsente = !!(data.cliente && Number(data.cliente.iva_esente) === 1);
+  refreshAllIvaEsenteBadges();
+  if (clienteIvaEsente) {
+    document.querySelectorAll('#ord-tbody-righe tr .ord-inp-iva').forEach(inp => { inp.value = '0'; });
+    calcTotali();
+  }
 
   // Precompila condizioni pagamento
   if (data.cliente?.condizioni_pagamento) {
@@ -248,6 +268,21 @@ function onContSelChange() {
 let righeCount = 0;
 let currentUomMode = document.getElementById('ord-uom-mode')?.value || 'commercial';
 
+// Cliente esente IVA — badge riga (PIANO - Aliquota IVA su Prodotti e
+// Cliente Esente, Livello Intermedio, §7/Fase 3). Stesso linguaggio visivo
+// già in uso in rfq-form.js ("Fornitore Abituale"/"Prezzo Fornitore"): il
+// campo resta sempre modificabile, l'azzeramento è solo un default forte.
+let clienteIvaEsente = false;
+
+function updateRigaIvaEsenteBadge(tr) {
+  const badge = tr.querySelector('.iva-esente-badge');
+  if (badge) badge.classList.toggle('d-none', !clienteIvaEsente);
+}
+
+function refreshAllIvaEsenteBadges() {
+  document.querySelectorAll('#ord-tbody-righe tr').forEach(updateRigaIvaEsenteBadge);
+}
+
 document.getElementById('ord-uom-mode')?.addEventListener('change', (e) => {
   const newMode = e.target.value;
   document.querySelectorAll('#ord-tbody-righe tr').forEach(tr => {
@@ -285,6 +320,12 @@ function buildRiga(prefill = {}) {
   tr.dataset.uomCommercialId  = prefill.uom_commercial_id || '';
   tr.dataset.quantitaContenuto= prefill.quantita_contenuto || '1';
   tr.dataset.costoBase        = prefill.costo_unitario || prefill.costo_base || '0';
+
+  // IVA: un prefill con iva_perc esplicito vince sempre; solo una riga senza
+  // prefill.iva_perc riceve lo 0 automatico se il cliente già selezionato
+  // risulta esente.
+  const ivaHaValorePrefill = prefill.iva_perc !== undefined && prefill.iva_perc !== null && prefill.iva_perc !== '';
+  const ivaDefaultVal = ivaHaValorePrefill ? prefill.iva_perc : (clienteIvaEsente ? '0' : IVA_FALLBACK);
 
   tr.innerHTML = `
     <td class="col-search">
@@ -333,8 +374,13 @@ function buildRiga(prefill = {}) {
              placeholder="0" min="0" max="100" step="0.01" value="${prefill.sconto_perc||'0'}">
     </td>
     <td class="col-iva">
-      <input type="number" name="righe[${idx}][iva_perc]" class="qk-form-control text-end ord-inp-iva"
-             placeholder="22" min="0" max="100" step="1" value="${prefill.iva_perc||'22'}">
+      <div style="position:relative;">
+        <input type="number" name="righe[${idx}][iva_perc]" class="qk-form-control text-end ord-inp-iva"
+               placeholder="${esc(IVA_FALLBACK)}" min="0" max="100" step="1" value="${esc(String(ivaDefaultVal))}" style="padding-right:20px;">
+        <span class="iva-esente-badge ${clienteIvaEsente ? '' : 'd-none'}" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); font-size:0.8rem; cursor:help;" title="Cliente esente IVA: aliquota azzerata in automatico. Puoi comunque modificarla se serve un'eccezione.">
+          <i class="fa-solid fa-triangle-exclamation" style="color:#e0a800;"></i>
+        </span>
+      </div>
     </td>
     <td class="col-tot">
       <div class="ord-riga-total">€ 0,00</div>
@@ -372,6 +418,19 @@ function buildRiga(prefill = {}) {
     tr.querySelector('.ord-inp-desc').value         = row.label;
     tr.querySelector('.ord-inp-qta').value          = '1';
     tr.querySelector('.ord-inp-pu').value           = '';
+
+    // IVA proposta dal motore unico (qk_risolvi_aliquota_iva_riga(), già
+    // incluso nella risposta di ricerca prodotto — PIANO - Aliquota IVA su
+    // Prodotti e Cliente Esente, Livello Intermedio, §8 Fase 2 punto 7). Il
+    // cliente esente prevale comunque sul default di prodotto (§7).
+    const ivaInput = tr.querySelector('.ord-inp-iva');
+    if (ivaInput) {
+      ivaInput.value = clienteIvaEsente
+        ? '0'
+        : (row.iva_perc !== undefined && row.iva_perc !== null && row.iva_perc !== '' ? row.iva_perc : IVA_FALLBACK);
+    }
+    updateRigaIvaEsenteBadge(tr);
+
     tr.dataset.uomStock         = row.unita_misura || 'pz';
     tr.dataset.uomStockId       = row.unita_misura_stock_id || '';
     tr.dataset.uomCommercial    = row.unita_misura_commerciale || row.unita_misura || 'pz';
@@ -467,10 +526,15 @@ function calcTotali() {
     const qta  = parseFloat(tr.querySelector('.ord-inp-qta')?.value)  || 0;
     const pu   = parseFloat(tr.querySelector('.ord-inp-pu')?.value)   || 0;
     const sc   = parseFloat(tr.querySelector('.ord-inp-sc')?.value)   || 0;
-    const iva  = parseFloat(tr.querySelector('.ord-inp-iva')?.value)  || 22;
-    const pn   = pu * (1 - sc / 100);
-    const tot  = Math.round(pn * qta * 100) / 100;
-    const rig  = Math.round(tot * iva / 100 * 100) / 100;
+    // Valore GREZZO (stringa dal DOM, non pre-parsato): qkCalcolaRigaVendita()
+    // (assets/js/riga-vendita-calc.js) deve poter distinguere "campo vuoto"
+    // da "campo con 0 legittimo" — un parseFloat() qui prima della chiamata
+    // riprodurrebbe esattamente il bug che questa funzione condivisa risolve
+    // (vedi commento in testa a riga-vendita-calc.js, 13/08/2026).
+    const ivaGrezza = tr.querySelector('.ord-inp-iva')?.value;
+    const rigaCalc = qkCalcolaRigaVendita(pu, qta, sc, ivaGrezza, IVA_FALLBACK);
+    const tot = rigaCalc.imponibileRiga;
+    const rig = rigaCalc.ivaRiga;
     imponibile += tot;
     totIva     += rig;
     const rigTotal = tr.querySelector('.ord-riga-total');
