@@ -1213,7 +1213,37 @@ function qk_insert_lotto_manuale(PDO $pdo, array $v, int $utente_id): int
  * fornitore/DDT associato: sono dati storici non disponibili). Nessuna azione se il
  * prodotto non ha giacenza da nessuna parte — il cambio resta libero come oggi.
  *
+ * Tappa 1 (PIANO - Coerenza Strutturale Giacenze e Lotti, 14/08/2026): adotta il
+ * pattern `$ownTransaction` già usato altrove nel progetto (es.
+ * qk_ordine_cliente_salva()/qk_ordine_invei()), invece di aprire sempre una
+ * transazione propria indipendente. Questo permette a qk_update_prodotto() di
+ * chiamare questa funzione DENTRO la propria transazione quando traccia_lotti
+ * passa da 0 a 1 nello stesso salvataggio: se la conversione fallisce, l'intero
+ * salvataggio (incluso il flag traccia_lotti) torna indietro, invece di lasciare
+ * il prodotto "a lotti" con zero lotti veri (il bug alla base del caso
+ * TEST-BROWSER-A — due transazioni indipendenti, la seconda delle quali poteva
+ * fallire senza che la prima tornasse indietro).
+ *
+ * Tappa 2 (stesso piano, 14/08/2026): il nome del lotto generato
+ * (`INIZIALE-{magazzino}-{data}`) non è più garantito univoco solo dalla data —
+ * se lo stesso prodotto passa da questa conversione più volte nello stesso giorno
+ * (attiva/disattiva/riattiva, il meccanismo esatto che ha prodotto il caso
+ * TEST-BROWSER-A), il nome ripete e l'indice UNIQUE
+ * idx_lotti_prodotto_codice_unique (db/init_sqlite.sql) respinge l'inserimento.
+ * Da questa Tappa, per ciascun magazzino si conta quanti lotti con quel prefisso
+ * esistono già per questo prodotto e si aggiunge un numero progressivo quando non
+ * è il primo (es. `INIZIALE-3-20260814-2` per la seconda conversione dello stesso
+ * giorno). Questo conteggio è un check-then-act (SELECT poi INSERT): protetto da
+ * un lock applicativo per-prodotto (prodotto_traccia_lotti_toggle_lock, vedi
+ * db/migrations/2026_08_14_prodotto_traccia_lotti_toggle_lock.php), stesso
+ * principio di inventario_creazione_lock — necessario perché, a differenza di
+ * SQLite (un solo writer alla volta per costruzione), MySQL/InnoDB permette a due
+ * transazioni concorrenti di leggere lo stesso conteggio prima che una delle due
+ * scriva. Il lock viene preso e rilasciato nella stessa transazione di questa
+ * funzione: non è persistente, serve solo a serializzare l'istante del conteggio.
+ *
  * @return int numero di lotti di conversione creati (0 = nessuna giacenza da convertire)
+ * @throws \RuntimeException se un'altra conversione per lo stesso prodotto è già in corso
  */
 function qk_crea_lotti_conversione_iniziale(PDO $pdo, int $prodottoId, int $utente_id): int
 {
@@ -1226,24 +1256,52 @@ function qk_crea_lotti_conversione_iniziale(PDO $pdo, int $prodottoId, int $uten
         return 0;
     }
 
-    $pdo->beginTransaction();
+    $ownTransaction = !$pdo->inTransaction();
+    if ($ownTransaction) {
+        $pdo->beginTransaction();
+    }
     try {
+        // Lock applicativo (Tappa 2): vedi il docblock della funzione sopra.
+        try {
+            $pdo->prepare('INSERT INTO prodotto_traccia_lotti_toggle_lock (prodotto_id) VALUES (?)')
+                ->execute([$prodottoId]);
+        } catch (PDOException $eLock) {
+            throw new \RuntimeException('Un\'altra conversione lotti per questo prodotto è già in corso in questo momento. Riprova tra qualche istante.');
+        }
+
         $data = date('Ymd');
         $stLotto = $pdo->prepare(
             "INSERT INTO lotti (codice_lotto_interno, prodotto_id, origine_tipo, quantita_ricevuta, note, creato_da)
              VALUES (?, ?, 'rettifica', ?, ?, ?)"
         );
-        $stGiacLotto = $pdo->prepare(
-            'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-             VALUES (?, ?, ?, CURRENT_TIMESTAMP)'
+        // Tappa 3 (sotto-tappa 3.e): la scrittura di lotti_giacenze passa da
+        // GiacenzaLottoService::applicaDeltaLotto() invece di un INSERT
+        // diretto — qui NON si tocca mai l'aggregato giacenze (la giacenza
+        // esiste già: si sta solo attribuendo lo stock esistente a un lotto,
+        // non aggiungendone di nuovo), quindi si usa il metodo granulare
+        // "solo lotto" invece di applicaDelta() con $deltaAggregato = 0 (che
+        // scriverebbe comunque un UPDATE giacenze superfluo su una riga
+        // invariata, vedi il docblock della classe).
+        $giacenzaLottoService = qk_giacenza_lotto_service($pdo);
+        // Tappa 2: conta i lotti di conversione già esistenti per questo prodotto/
+        // magazzino/data, per decidere il suffisso progressivo del nome. Sotto la
+        // copertura del lock appena preso: nessun'altra richiesta concorrente sullo
+        // stesso prodotto può essere arrivata fin qui nel frattempo.
+        $stConta = $pdo->prepare(
+            "SELECT COUNT(*) FROM lotti WHERE prodotto_id = ? AND codice_lotto_interno LIKE ?"
         );
 
         foreach ($righe as $r) {
             $magazzinoId = (int) $r['magazzino_id'];
             $qta         = (float) $r['quantita_disponibile'];
 
+            $prefisso = sprintf('INIZIALE-%d-%s', $magazzinoId, $data);
+            $stConta->execute([$prodottoId, $prefisso . '%']);
+            $numeroProgressivo = (int) $stConta->fetchColumn() + 1;
+            $codiceLotto = $numeroProgressivo > 1 ? ($prefisso . '-' . $numeroProgressivo) : $prefisso;
+
             $stLotto->execute([
-                sprintf('INIZIALE-%d-%s', $magazzinoId, $data),
+                $codiceLotto,
                 $prodottoId,
                 $qta,
                 'Lotto generato automaticamente per convertire la giacenza già presente al momento dell\'attivazione della tracciabilità lotti su questo prodotto.',
@@ -1251,12 +1309,22 @@ function qk_crea_lotti_conversione_iniziale(PDO $pdo, int $prodottoId, int $uten
             ]);
             $lottoId = (int) $pdo->lastInsertId();
 
-            $stGiacLotto->execute([$lottoId, $magazzinoId, $qta]);
+            $giacenzaLottoService->applicaDeltaLotto($lottoId, $magazzinoId, $qta);
         }
 
-        $pdo->commit();
+        // Rilascia il lock: i lotti sono già scritti (dentro questa stessa
+        // transazione) — stesso ragionamento di qk_convalida_inventario() per
+        // inventario_creazione_lock (includes/inventario.php).
+        $pdo->prepare('DELETE FROM prodotto_traccia_lotti_toggle_lock WHERE prodotto_id = ?')
+            ->execute([$prodottoId]);
+
+        if ($ownTransaction) {
+            $pdo->commit();
+        }
     } catch (\Throwable $e) {
-        $pdo->rollBack();
+        if ($ownTransaction) {
+            $pdo->rollBack();
+        }
         throw $e;
     }
 
@@ -1383,6 +1451,27 @@ function qk_movements_list(
     }, $stRows->fetchAll(PDO::FETCH_ASSOC));
 
     return ['rows' => $rows, 'total' => $total];
+}
+
+/**
+ * Factory per App\Services\GiacenzaLottoService (Tappa 3, PIANO - Coerenza
+ * Strutturale Giacenze e Lotti), per i chiamanti procedurali di questo file
+ * e degli altri file `includes/*.php` che non hanno un container DI. La
+ * classe è stateless a parte il riferimento a $pdo: costruirne una nuova
+ * istanza ad ogni chiamata è economico e coerente con lo stile già in uso
+ * per i Repository del progetto (nessuna cache di istanza, es.
+ * SpedizioneRepository/SalesOrderRepository).
+ */
+function qk_giacenza_lotto_service(PDO $pdo): \App\Services\GiacenzaLottoService
+{
+    // require_once esplicito e lazy (non un autoloader globale): stesso
+    // pattern già in uso in includes/sales_orders.php per le classi
+    // App\Services/App\Repositories, necessario perché questo file può
+    // essere caricato anche da contesti (es. tests/manual/suite_*.php) che
+    // non passano da app/bootstrap.php e dal suo spl_autoload_register.
+    require_once __DIR__ . '/../app/Services/GiacenzaLottoService.php';
+
+    return new \App\Services\GiacenzaLottoService($pdo);
 }
 
 /**
@@ -1526,30 +1615,27 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
             // Se la rettifica non cambia nulla, lo consentiamo comunque (potrebbe servire per logging)
         }
 
-        // 3. Upsert giacenze per (prodotto, magazzino). scorta_minima non viene
-        //    toccata qui: è impostata a parte dall'operatore per la coppia
+        // 3. Aggiorna giacenze (prodotto, magazzino) e, se il movimento è su
+        //    un lotto, lotti_giacenze (lotto, magazzino) — scrittura unica
+        //    tramite GiacenzaLottoService (Tappa 3 del piano: prima di
+        //    questa classe questo upsert era duplicato in 5 punti diversi,
+        //    vedi il docblock della classe). scorta_minima non viene toccata
+        //    qui: è impostata a parte dall'operatore per la coppia
         //    (prodotto, magazzino), vedi §3.5.
-        if ($giac) {
-            $pdo->prepare(
-                'UPDATE giacenze SET quantita_disponibile = ?, updated_at = datetime(\'now\') WHERE prodotto_id = ? AND magazzino_id = ?'
-            )->execute([$qtaNuova, $v['prodotto_id'], $magazzino_id]);
-        } else {
-            $pdo->prepare(
-                'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                 VALUES (?, ?, ?, 0, 0, 0, datetime(\'now\'))'
-            )->execute([$v['prodotto_id'], $magazzino_id, $qtaNuova]);
-        }
-
-        // 4. Aggiorna la quantità del lotto IN QUESTO MAGAZZINO su lotti_giacenze
-        //    (non più sul campo aggregato lotti.quantita_disponibile, legacy).
+        //
+        //    Il delta da applicare all'aggregato è sempre (qtaNuova -
+        //    qtaCorrente), qualunque sia il ramo che li ha calcolati sopra
+        //    (rettificaSuLotto/carico/scarico/rettifica-senza-lotti): per
+        //    costruzione coincide sempre col delta da applicare al lotto
+        //    (quando presente), quindi non serve passare $deltaLotto
+        //    esplicitamente — vedi verifica nel commento di
+        //    GiacenzaLottoService::applicaDelta().
         if (!empty($v['lotto_id'])) {
-            if ($rettificaSuLotto) {
-                // Già letta sopra (qtaLottoPre) per calcolare il delta da applicare
-                // all'aggregato di prodotto: qui il valore inserito è la nuova
-                // giacenza assoluta DEL LOTTO, coerente con quanto già calcolato.
-                $qtaLottoCorrente = $qtaLottoPre;
-                $qtaLottoNuova    = $v['quantita'];
-            } else {
+            // Validazione "non sotto zero per il lotto in questo magazzino"
+            // (non delegata al service, che non fa validazioni di business —
+            // vedi docblock della classe): serve comunque leggere la
+            // giacenza attuale del lotto per il ramo non-rettifica.
+            if (!$rettificaSuLotto) {
                 $stLg = $pdo->prepare(
                     'SELECT quantita_disponibile FROM lotti_giacenze WHERE lotto_id = ? AND magazzino_id = ?'
                 );
@@ -1557,24 +1643,21 @@ function qk_insert_movimento_manuale(PDO $pdo, array $v, int $utente_id): int
                 $qtaLottoCorrente = $stLg->fetchColumn();
                 $qtaLottoCorrente = $qtaLottoCorrente !== false ? (float) $qtaLottoCorrente : 0.0;
 
-                if ($tipo === 'carico') {
-                    $qtaLottoNuova = $qtaLottoCorrente + $qtaMovimento;
-                } else { // scarico
-                    $qtaLottoNuova = $qtaLottoCorrente - $qtaMovimento;
-                    if ($qtaLottoNuova < 0) {
-                        throw new \RuntimeException('Giacenza del lotto insufficiente in questo magazzino.');
-                    }
+                if ($tipo === 'scarico' && ($qtaLottoCorrente - $qtaMovimento) < 0) {
+                    throw new \RuntimeException('Giacenza del lotto insufficiente in questo magazzino.');
                 }
             }
+        }
 
-            $pdo->prepare(
-                'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-                 VALUES (?, ?, ?, datetime(\'now\'))
-                 ON CONFLICT(lotto_id, magazzino_id) DO UPDATE SET
-                     quantita_disponibile = excluded.quantita_disponibile,
-                     updated_at = excluded.updated_at'
-            )->execute([$v['lotto_id'], $magazzino_id, $qtaLottoNuova]);
+        $giacenzaLottoService = qk_giacenza_lotto_service($pdo);
+        $giacenzaLottoService->applicaDelta(
+            (int) $v['prodotto_id'],
+            $magazzino_id,
+            $qtaNuova - $qtaCorrente,
+            !empty($v['lotto_id']) ? (int) $v['lotto_id'] : null
+        );
 
+        if (!empty($v['lotto_id'])) {
             // Aggiorna anche il totale storico ricevuto (lotti.quantita_ricevuta) quando si
             // carica altra merce su un lotto GIÀ ESISTENTE (es. stesso lotto fisico arrivato
             // in più consegne). Se il lotto è stato appena creato in questa stessa chiamata

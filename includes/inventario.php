@@ -8,6 +8,16 @@ declare(strict_types=1);
 // stati inclusi altrove (Tappa 1, PIANO - Motore Unificato di Transizioni di Stato).
 require_once __DIR__ . '/transizioni_stati.php';
 require_once __DIR__ . '/../app/Services/TransitionGuard.php';
+// NON require_once __DIR__.'/magazzino.php' qui: quel file trascina a cascata
+// magazzini_anagrafica.php -> anagrafiche.php -> db.php, che richiede la
+// costante DB_DRIVER già definita al momento del require — questo file viene
+// caricato anche da tests/manual/suite_create_inventario.php, che crea il
+// proprio PDO manualmente senza mai definire DB_DRIVER. GiacenzaLottoService
+// (Tappa 3) viene quindi richiesto direttamente qui sotto, con lo stesso
+// pattern già in uso in includes/sales_orders.php per le classi App\Services
+// (require_once puntuale della sola classe serve, non del file procedurale
+// che la "ospita" convenzionalmente).
+require_once __DIR__ . '/../app/Services/GiacenzaLottoService.php';
 
 // =============================================================================
 // inventario.php
@@ -104,8 +114,21 @@ function qk_valida_scostamenti_inventario(PDO $pdo, int $magazzinoId, array $rig
  * di test: due lotti con delta opposti, es. -10 e +5, cumulato -5 — se
  * applicato come valore unico a una riga sola, l'altro lotto resterebbe
  * silenziosamente disallineato dalla realtà).
+ *
+ * Tappa 4 (PIANO - Coerenza Strutturale Giacenze e Lotti): una riga senza
+ * lotto (`lotto_id IS NULL`) con scostamento positivo può portare dati per
+ * creare un nuovo lotto contestualmente (stesso caso d'uso già coperto per i
+ * movimenti manuali da `qk_insert_lotto_manuale()` — vedi anche
+ * `qk_crea_lotti_conversione_iniziale()`, stesso principio "giacenza già
+ * presente, va attribuita a un lotto vero"). Il chiamante (la facade) DEVE
+ * aver già rifiutato la convalida per qualunque riga così senza dati — qui
+ * non si ripete quel controllo, si presume già passato.
+ *
+ * @param array<string, array{codice_interno: string, codice_fornitore: string, data_scadenza: string, data_arrivo: string}> $nuovoLottoInput
+ *        indicizzato per la stessa chiave "prodottoId:" (lotto_id sempre
+ *        vuoto per queste righe) usata da $input['righe'] nella facade.
  */
-function qk_applica_rettifiche_inventario(PDO $pdo, int $inventarioId, int $magazzinoId, array $righeSalvate, int $utenteId): void
+function qk_applica_rettifiche_inventario(PDO $pdo, int $inventarioId, int $magazzinoId, array $righeSalvate, int $utenteId, array $nuovoLottoInput = []): void
 {
     foreach ($righeSalvate as $riga) {
         $delta = (float) $riga['quantita_contata'] - (float) $riga['giacenza_teorica'];
@@ -114,6 +137,33 @@ function qk_applica_rettifiche_inventario(PDO $pdo, int $inventarioId, int $maga
         }
 
         $quantitaAssoluta = abs($delta);
+        $lottoId = $riga['lotto_id'] ? (int) $riga['lotto_id'] : null;
+
+        // 0. Riga senza lotto, scostamento positivo, dati di un nuovo lotto
+        //    forniti: crealo ORA, prima di registrare movimento/giacenze, così
+        //    da poterlo referenziare in entrambi (stesso ordine di
+        //    qk_insert_movimento_manuale per il ramo 'nuovo_lotto').
+        if ($lottoId === null && $delta > 0) {
+            $key = $riga['prodotto_id'] . ':';
+            $nl = $nuovoLottoInput[$key] ?? null;
+            if ($nl !== null && trim((string) ($nl['codice_interno'] ?? '')) !== '') {
+                $lottoId = qk_insert_lotto_manuale($pdo, [
+                    'codice_lotto_interno'   => $nl['codice_interno'],
+                    'codice_lotto_fornitore' => $nl['codice_fornitore'] ?? '',
+                    'prodotto_id'            => $riga['prodotto_id'],
+                    'data_scadenza'          => ($nl['data_scadenza'] ?? '') !== '' ? $nl['data_scadenza'] : null,
+                    'data_arrivo'            => ($nl['data_arrivo']   ?? '') !== '' ? $nl['data_arrivo']   : null,
+                    'quantita_ricevuta'      => $delta,
+                ], $utenteId);
+
+                // La riga d'inventario ora punta al lotto appena creato — sia
+                // per lo storico (audit trail: quale conteggio ha generato
+                // quale lotto), sia perché il movimento/GiacenzaLottoService
+                // sotto usano $lottoId, non più $riga['lotto_id'].
+                $pdo->prepare('UPDATE inventari_righe SET lotto_id = ? WHERE id = ?')
+                    ->execute([$lottoId, $riga['id']]);
+            }
+        }
 
         // 1. Crea il movimento di magazzino, per QUESTO magazzino.
         // `quantita` resta la magnitudine (invariante di schema);
@@ -127,7 +177,7 @@ function qk_applica_rettifiche_inventario(PDO $pdo, int $inventarioId, int $maga
         $noteMov = sprintf("Rettifica da inventario #%d. Scostamento: %+.3f", $inventarioId, $delta);
         $stmtMov->execute([
             $riga['prodotto_id'],
-            $riga['lotto_id'],
+            $lottoId,
             $magazzinoId,
             $quantitaAssoluta,
             $delta,
@@ -140,32 +190,21 @@ function qk_applica_rettifiche_inventario(PDO $pdo, int $inventarioId, int $maga
         // Associa il movimento alla riga
         $pdo->prepare("UPDATE inventari_righe SET movimento_id = ? WHERE id = ?")->execute([$movimentoId, $riga['id']]);
 
-        // 2. Aggiorna la giacenza di QUESTO magazzino
-        $stGiac = $pdo->prepare("SELECT id, quantita_disponibile FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?");
-        $stGiac->execute([$riga['prodotto_id'], $magazzinoId]);
-        $giac = $stGiac->fetch(PDO::FETCH_ASSOC);
-
-        if ($giac) {
-            $nuovaQta = (float) $giac['quantita_disponibile'] + $delta;
-            $pdo->prepare("UPDATE giacenze SET quantita_disponibile = ?, updated_at = datetime('now') WHERE id = ?")
-                ->execute([$nuovaQta, $giac['id']]);
-        } else {
-            $pdo->prepare("INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, quantita_riservata, quantita_in_arrivo, scorta_minima, updated_at)
-                                 VALUES (?, ?, ?, 0, 0, 0, datetime('now'))")
-                ->execute([$riga['prodotto_id'], $magazzinoId, $delta]);
-        }
-
-        // 3. Aggiorna quantità disponibile del lotto in QUESTO magazzino
-        //    (lotti_giacenze, non più il campo aggregato lotti.quantita_disponibile)
-        if ($riga['lotto_id']) {
-            $pdo->prepare("
-                INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-                VALUES (?, ?, ?, datetime('now'))
-                ON CONFLICT(lotto_id, magazzino_id) DO UPDATE SET
-                    quantita_disponibile = quantita_disponibile + excluded.quantita_disponibile,
-                    updated_at = excluded.updated_at
-            ")->execute([$riga['lotto_id'], $magazzinoId, $delta]);
-        }
+        // 2. Aggiorna la giacenza di QUESTO magazzino e, se la riga è su un
+        //    lotto (esistente o appena creato al passo 0), la giacenza di
+        //    quel lotto in questo magazzino — scrittura unica tramite
+        //    GiacenzaLottoService (Tappa 3, PIANO - Coerenza Strutturale
+        //    Giacenze e Lotti: prima di questa classe questo upsert era
+        //    duplicato in 5 punti diversi, vedi il docblock della classe).
+        //    Stesso $delta per entrambe le tabelle: qui non esiste un caso in
+        //    cui divergano (a differenza di qk_crea_lotti_conversione_iniziale),
+        //    quindi non serve passare $deltaLotto esplicitamente.
+        (new \App\Services\GiacenzaLottoService($pdo))->applicaDelta(
+            (int) $riga['prodotto_id'],
+            $magazzinoId,
+            $delta,
+            $lottoId
+        );
     }
 }
 
@@ -256,6 +295,7 @@ function qk_inventario_prodotti_scope(PDO $pdo, int $magazzinoId, ?int $categori
     }
     $stmt = $pdo->prepare("
         SELECT p.id AS prodotto_id, p.nome AS nome_prodotto, p.sku_interno, u.codice AS uom,
+               p.traccia_lotti,
                l.id AS lotto_id, l.codice_lotto_interno,
                CASE WHEN p.traccia_lotti = 1 THEN COALESCE(lg.quantita_disponibile, 0)
                     ELSE COALESCE(g.quantita_disponibile, 0)
@@ -331,7 +371,11 @@ function qk_inventario_verifica_sovrapposizione(PDO $pdo, int $magazzinoId, arra
  *                       chiamante — dipende dal branch nuovo/esistente, che è
  *                       routing/UI, non dominio di scrittura),
  *                       'righe' => [chiave "prodottoId:lottoId" => quantità
- *                       contata già normalizzata in float, non $_POST grezzo]]
+ *                       contata già normalizzata in float, non $_POST grezzo],
+ *                       'nuovo_lotto' => [chiave "prodottoId:" (Tappa 4) =>
+ *                       ['codice_interno', 'codice_fornitore', 'data_scadenza',
+ *                       'data_arrivo'], solo per righe senza lotto di un
+ *                       prodotto a lotti — vedi qk_applica_rettifiche_inventario()]]
  * @return array{id:int, avvisi_riservata:list<string>}
  * @throws \Throwable qualunque eccezione sollevata durante la transazione
  *                     (lock occupato, sovrapposizione, PASS1 con violazioni)
@@ -347,6 +391,7 @@ function qk_convalida_inventario(PDO $pdo, ?int $id, array $input, int $utenteId
     $categoriaFiltroId = $input['categoria_filtro_id'] ?? null;
     $prodottiInventario = $input['prodotti_inventario'];
     $inputRighe = $input['righe'] ?? [];
+    $nuovoLottoInput = $input['nuovo_lotto'] ?? [];
 
     $pdo->beginTransaction();
     try {
@@ -439,10 +484,47 @@ function qk_convalida_inventario(PDO $pdo, ?int $id, array $input, int $utenteId
 
         // Convalida: genera i movimenti logistici e allinea le giacenze
         if ($azione === 'convalida') {
-            // Recupera le righe appena salvate
-            $stmtRighe = $pdo->prepare("SELECT * FROM inventari_righe WHERE inventario_id = ?");
+            // Recupera le righe appena salvate (con p.traccia_lotti: serve al
+            // controllo Tappa 4 subito sotto per distinguere "riga senza lotto
+            // perché il prodotto non traccia lotti" — normale, nessun dato
+            // richiesto — da "riga senza lotto perché il prodotto a lotti non
+            // ne ha ancora nessuno" — qui sì che serve un lotto, vedi sotto).
+            // Nota: si seleziona solo p.traccia_lotti, non p.* — selezionare
+            // anche p.id sovrascriverebbe ir.id nell'array associativo.
+            $stmtRighe = $pdo->prepare(
+                "SELECT ir.*, p.traccia_lotti, p.nome AS nome_prodotto_chk
+                   FROM inventari_righe ir
+                   JOIN prodotti p ON p.id = ir.prodotto_id
+                  WHERE ir.inventario_id = ?"
+            );
             $stmtRighe->execute([$id]);
             $righeSalvate = $stmtRighe->fetchAll(PDO::FETCH_ASSOC);
+
+            // Tappa 4: una riga di un prodotto a lotti, senza lotto (ne ha
+            // zero), con scostamento positivo, richiede i dati per crearne
+            // uno — altrimenti la rettifica finirebbe per aumentare
+            // silenziosamente solo l'aggregato `giacenze`, ricreando esatto
+            // il bug che questo intero piano corregge (un prodotto "a lotti"
+            // con giacenza aggregata ma zero lotti veri). Rifiutata PRIMA di
+            // PASS1 (controllo più specifico ed economico, fail-fast).
+            $righeSenzaLottoMancante = [];
+            foreach ($righeSalvate as $riga) {
+                $deltaChk = (float) $riga['quantita_contata'] - (float) $riga['giacenza_teorica'];
+                if ((int) $riga['traccia_lotti'] === 1 && empty($riga['lotto_id']) && $deltaChk > 0.0001) {
+                    $keyChk = $riga['prodotto_id'] . ':';
+                    $datiForniti = trim((string) ($nuovoLottoInput[$keyChk]['codice_interno'] ?? '')) !== '';
+                    if (!$datiForniti) {
+                        $nomeProdChk = (string) ($riga['nome_prodotto_chk'] ?? '');
+                        $righeSenzaLottoMancante[] = $nomeProdChk !== '' ? $nomeProdChk : ('#' . $riga['prodotto_id']);
+                    }
+                }
+            }
+            if (!empty($righeSenzaLottoMancante)) {
+                throw new \RuntimeException(
+                    'Impossibile convalidare: i seguenti prodotti a lotti hanno uno scostamento positivo ma non hanno ancora nessun lotto — indica i dati del nuovo lotto da creare per: ' .
+                    implode(', ', $righeSenzaLottoMancante) . '.'
+                );
+            }
 
             // PASS1 deve completarsi interamente PRIMA che PASS2 scriva qualunque
             // rettifica: se ci sono violazioni, si esce con throw senza mai
@@ -457,7 +539,7 @@ function qk_convalida_inventario(PDO $pdo, ?int $id, array $input, int $utenteId
                 );
             }
 
-            qk_applica_rettifiche_inventario($pdo, $id, $magazzinoInventarioId, $righeSalvate, $utenteId);
+            qk_applica_rettifiche_inventario($pdo, $id, $magazzinoInventarioId, $righeSalvate, $utenteId, $nuovoLottoInput);
 
             // Guardia sulla transizione vera e propria (bozza -> convalidato).
             // Per un inventario appena creato in questa stessa chiamata (ramo

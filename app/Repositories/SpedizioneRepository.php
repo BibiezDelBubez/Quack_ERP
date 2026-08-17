@@ -123,20 +123,33 @@ class SpedizioneRepository
     }
 
     /**
-     * UPSERT giacenza di lotto (scarico). Stesso ON CONFLICT già in uso
-     * prima dell'estrazione — invariato.
+     * UPSERT giacenza di lotto (scarico). Tappa 3 (PIANO - Coerenza
+     * Strutturale Giacenze e Lotti), sotto-tappa 3.d: delega a
+     * GiacenzaLottoService::applicaDeltaLotto(), che scrive esattamente lo
+     * stesso upsert (INSERT...ON CONFLICT/ON DUPLICATE KEY, quantità =
+     * quantità + delta) prima duplicato qui — pura deduplicazione, nessun
+     * cambio di comportamento (verificato: stesso valore assoluto scritto,
+     * stessa condizione di riga assente vs esistente).
      */
     public function aggiornaLottoGiacenza(int $lottoId, int $magazzinoId, float $qta): void
     {
-        $this->pdo->prepare("
-            INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-            VALUES (?, ?, -?, CURRENT_TIMESTAMP)
-            ON CONFLICT(lotto_id, magazzino_id) DO UPDATE
-                SET quantita_disponibile = quantita_disponibile - ?,
-                    updated_at = CURRENT_TIMESTAMP
-        ")->execute([$lottoId, $magazzinoId, $qta, $qta]);
+        $this->giacenzaLottoService()->applicaDeltaLotto($lottoId, $magazzinoId, -$qta);
     }
 
+    /**
+     * Decrementa la giacenza aggregata di (prodotto, magazzino). Tappa 3,
+     * sotto-tappa 3.d: NON delegata a GiacenzaLottoService (a differenza di
+     * aggiornaLottoGiacenza() sopra) perché quel servizio fa un upsert (crea
+     * la riga se assente), mentre questo metodo fa un UPDATE puro — se la
+     * riga giacenze non esiste ancora, questo metodo storicamente non
+     * scrive nulla (nessuna riga da decrementare), mentre l'upsert del
+     * servizio creerebbe una riga con quantità NEGATIVA. In pratica non
+     * dovrebbe mai accadere (si spedisce solo stock già riservato, quindi la
+     * riga giacenze esiste già), ma preservare il comportamento esatto
+     * pre-esistente in quel caso limite richiede di NON unificare questo
+     * punto di scrittura — vedi CLAUDE.md punto 8, "zero cambi di
+     * comportamento" resta il vincolo di questa Tappa.
+     */
     public function decrementaGiacenzaDisponibile(int $prodottoId, int $magazzinoId, float $qta): void
     {
         $this->pdo->prepare("
@@ -144,6 +157,13 @@ class SpedizioneRepository
                SET quantita_disponibile = quantita_disponibile - ?
              WHERE prodotto_id = ? AND magazzino_id = ?
         ")->execute([$qta, $prodottoId, $magazzinoId]);
+    }
+
+    private function giacenzaLottoService(): \App\Services\GiacenzaLottoService
+    {
+        require_once __DIR__ . '/../Services/GiacenzaLottoService.php';
+
+        return new \App\Services\GiacenzaLottoService($this->pdo);
     }
 
     public function getGiacenzaDisponibile(int $prodottoId, int $magazzinoId): float

@@ -473,8 +473,21 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
                 'UPDATE ordini_righe SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
             )->execute([$qtaAccettata, $ordineRigaId]);
 
-            // Aggiorna giacenza disponibile (usando quantita_stock), nel magazzino di questa ricezione
-            _ricezione_upsert_giacenza($pdo, $prodottoId, $magazzino_id, $quantita_stock);
+            // Aggiorna giacenza disponibile (aggregato prodotto+magazzino) e,
+            // se il prodotto traccia lotti, la giacenza del lotto individuato/
+            // creato sopra — scrittura unica tramite GiacenzaLottoService
+            // (Tappa 3 del piano: prima di questa classe questo upsert era
+            // duplicato in 5 punti diversi, vedi il docblock della classe).
+            // Il delta è sempre $quantita_stock per entrambe le tabelle: una
+            // ricezione confermata è sempre un carico (mai negativo, validato
+            // sopra con bccomp($qtaAccettata, '0', 3) <= 0), quindi non serve
+            // passare $deltaLotto esplicitamente.
+            qk_giacenza_lotto_service($pdo)->applicaDelta(
+                $prodottoId,
+                $magazzino_id,
+                (float) $quantita_stock,
+                $lotto_id
+            );
 
             // Decrementa in_arrivo (usando quantita_stock), nello stesso magazzino
             $pdo->prepare(
@@ -518,9 +531,18 @@ function qk_ricezione_conferma(PDO $pdo, int $ricezione_id, array $righeInput, i
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Gestisce la logica lotti durante una ricezione.
- * Ritorna l'ID del lotto (esistente o appena creato), oppure null se il prodotto
- * non traccia i lotti.
+ * Gestisce la logica lotti durante una ricezione: individua il lotto
+ * esistente o ne crea uno nuovo (anagrafica) e aggiorna
+ * lotti.quantita_ricevuta (dato storico immutabile, non una giacenza
+ * corrente). Ritorna l'ID del lotto (esistente o appena creato), oppure null
+ * se il prodotto non traccia i lotti.
+ *
+ * NON scrive più direttamente su lotti_giacenze (Tappa 3, PIANO - Coerenza
+ * Strutturale Giacenze e Lotti): il chiamante (qk_ricezione_conferma) lo fa
+ * in un'unica chiamata a GiacenzaLottoService::applicaDelta(), insieme
+ * all'aggiornamento dell'aggregato giacenze — stessa scrittura, prima
+ * duplicata in due punti separati (qui e in _ricezione_upsert_giacenza,
+ * ora rimossa).
  */
 function _ricezione_gestisci_lotto(
     PDO    $pdo,
@@ -538,22 +560,11 @@ function _ricezione_gestisci_lotto(
     if (!(bool)$traccia->fetchColumn()) return null;
 
     if (!empty($lottoData['id'])) {
-        // Lotto esistente: aggiorna il totale storico ricevuto (lotti.quantita_ricevuta,
-        // dato immutabile aggregato, non una giacenza corrente) e la giacenza del
-        // lotto NEL MAGAZZINO di questa ricezione (lotti_giacenze — il campo
-        // aggregato lotti.quantita_disponibile è stato rimosso, §3.9).
+        // Lotto esistente: aggiorna solo il totale storico ricevuto.
         $lot_id = (int)$lottoData['id'];
         $pdo->prepare(
             'UPDATE lotti SET quantita_ricevuta = quantita_ricevuta + ? WHERE id = ?'
         )->execute([$qta, $lot_id]);
-
-        $pdo->prepare(
-            'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-             VALUES (?, ?, ?, datetime(\'now\'))
-             ON CONFLICT(lotto_id, magazzino_id) DO UPDATE SET
-                 quantita_disponibile = quantita_disponibile + excluded.quantita_disponibile,
-                 updated_at = excluded.updated_at'
-        )->execute([$lot_id, $magazzino_id, $qta]);
 
         return $lot_id;
     }
@@ -561,7 +572,7 @@ function _ricezione_gestisci_lotto(
     if (!empty($lottoData['codice_lotto_interno'])) {
         // Nuovo lotto (anagrafica). `lotti.quantita_disponibile` è stata
         // rimossa (§3.9): la fonte di verità per "dove si trova" è
-        // lotti_giacenze, popolata subito dopo.
+        // lotti_giacenze, popolata dal chiamante subito dopo.
         $pdo->prepare(
             "INSERT INTO lotti
                 (codice_lotto_interno, codice_lotto_fornitore,
@@ -582,39 +593,11 @@ function _ricezione_gestisci_lotto(
             $qta,
             $utente_id,
         ]);
-        $lot_id = (int) $pdo->lastInsertId();
 
-        $pdo->prepare(
-            'INSERT INTO lotti_giacenze (lotto_id, magazzino_id, quantita_disponibile, updated_at)
-             VALUES (?, ?, ?, datetime(\'now\'))'
-        )->execute([$lot_id, $magazzino_id, $qta]);
-
-        return $lot_id;
+        return (int) $pdo->lastInsertId();
     }
 
     return null; // Prodotto traccia lotti ma nessun dato lotto fornito (validazione upstream)
-}
-
-/**
- * Inserisce o aggiorna la giacenza disponibile di un prodotto NEL MAGAZZINO indicato.
- */
-function _ricezione_upsert_giacenza(PDO $pdo, int $prodotto_id, int $magazzino_id, string $delta): void
-{
-    $exists = $pdo->prepare('SELECT id FROM giacenze WHERE prodotto_id = ? AND magazzino_id = ?');
-    $exists->execute([$prodotto_id, $magazzino_id]);
-    if ($exists->fetch()) {
-        $pdo->prepare(
-            'UPDATE giacenze
-                SET quantita_disponibile = quantita_disponibile + ?,
-                    updated_at = CURRENT_TIMESTAMP
-              WHERE prodotto_id = ? AND magazzino_id = ?'
-        )->execute([$delta, $prodotto_id, $magazzino_id]);
-    } else {
-        $pdo->prepare(
-            'INSERT INTO giacenze (prodotto_id, magazzino_id, quantita_disponibile, scorta_minima, updated_at)
-             VALUES (?,?,?,0,CURRENT_TIMESTAMP)'
-        )->execute([$prodotto_id, $magazzino_id, $delta]);
-    }
 }
 
 /**

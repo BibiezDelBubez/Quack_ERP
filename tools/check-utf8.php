@@ -25,6 +25,23 @@
  * questo esclude sistematicamente i falsi positivi (una vera lettera 'Ã'
  * isolata nel testo non supererebbe il round-trip).
  *
+ * ESTENSIONE DEL 17/08/2026 — AMPLIAMENTO DEL PATTERN CANDIDATO: il pattern
+ * precedente cercava solo il prefisso letterale 'â€' (cioè assumeva che il
+ * SECONDO carattere mojibake fosse sempre '€', vero solo per l'em-dash
+ * U+2014 e pochi altri casi con byte centrale originale 0x80). Qualunque
+ * carattere Unicode nel blocco U+2000-U+2FFF (punteggiatura tipografica,
+ * frecce, caratteri per disegnare box/tabelle, operatori matematici, ecc.)
+ * produce comunque una corruzione che INIZIA con 'â' (tutti condividono lo
+ * stesso primo byte UTF-8 0xE2, che CP1252 rimappa a 'â'), ma il secondo
+ * carattere mojibake varia col byte centrale originale — es. i caratteri
+ * per disegnare box (U+2550 ecc., byte centrale 0x95) producono 'â•' non
+ * 'â€'. Il pattern stretto lasciava passare questi casi senza nemmeno
+ * proporli a isVerifiedMojibake() per la verifica: scoperto perché 560
+ * occorrenze di questo tipo in assets/js/products-form.js non venivano
+ * segnalate da questo stesso script. Il pattern ora è 'â' + due caratteri
+ * qualunque; la verifica di round-trip (invariata) scarta comunque i
+ * candidati che non sono mojibake reale.
+ *
  * COSA FA:
  * 1. Controlla che ogni file passato come argomento sia UTF-8 valido.
  * 2. Segnala i file che sono UTF-8 valido ma contengono già il carattere di
@@ -87,14 +104,17 @@ function isVerifiedMojibake(string $candidate): ?string
 function findVerifiedMojibake(string $content): array
 {
     // Candidati: 'Ã'/'Â' (primo byte UTF-8 di un carattere Latin-1 Supplement
-    // doppio-codificato) o 'â€' (prefisso della famiglia di punteggiatura
-    // tipografica U+2000-U+20xx doppio-codificata) seguiti da un carattere
-    // qualunque. Non basta elencare a mano le combinazioni note: il secondo
+    // doppio-codificato, un solo carattere mojibake successivo) oppure 'â'
+    // seguita da DUE caratteri qualunque (primo byte UTF-8 comune a tutta la
+    // punteggiatura tipografica/frecce/box-drawing U+2000-U+2FFF doppio-
+    // codificata — vedi ESTENSIONE DEL 17/08/2026 in cima al file: non basta
+    // assumere che il carattere successivo sia sempre '€', va lasciato
+    // libero). Non basta elencare a mano le combinazioni note: il secondo
     // byte originale può cadere nel range CP1252 0x80-0x9F, che CP1252
     // rimappa a caratteri FUORI dal blocco Latin-1 (es. em-dash reale) — la
     // verifica vera è delegata a isVerifiedMojibake(), qui si individuano
     // solo i candidati da testare.
-    if (!preg_match_all('/Ã.|Â.|â€./us', $content, $matches, PREG_OFFSET_CAPTURE)) {
+    if (!preg_match_all('/Ã.|Â.|â../us', $content, $matches, PREG_OFFSET_CAPTURE)) {
         return [];
     }
 

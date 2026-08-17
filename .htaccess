@@ -26,6 +26,13 @@ RewriteCond %{REQUEST_URI} !/db/migrate\.php$ [NC]
 RewriteCond %{REQUEST_URI} !/test_mpdf\.php$ [NC]
 RewriteCond %{REQUEST_URI} !/test_docx\.php$ [NC]
 RewriteCond %{REQUEST_URI} !/test-500\.php$ [NC]
+# tools/check-giacenze-lotti.php (Tappa 5 — PIANO Coerenza Strutturale
+# Giacenze e Lotti): aggiunto il 17/08/2026 per permettere la verifica
+# end-to-end via browser dello stesso script CLI (stesso identico bootstrap
+# config.php/db.php, guardia invariata su basename($_SERVER['SCRIPT_FILENAME'])
+# — vedi tools/check-giacenze-lotti.php), sullo stesso modello già in uso
+# per db/crea_db.php, db/crea_db_sqlite.php e db/migrate.php sopra.
+RewriteCond %{REQUEST_URI} !/tools/check-giacenze-lotti\.php$ [NC]
 RewriteRule ^ index.php [L,QSA]
 
 # Se è un file reale (asset: css, js, img, ecc.), lascialo servire direttamente

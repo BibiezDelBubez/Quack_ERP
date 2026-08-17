@@ -39,6 +39,14 @@ declare(strict_types=1);
  * Esecuzione: php tests/manual/suite_create_inventario.php
  */
 
+// Tappa 3 (PIANO - Coerenza Strutturale Giacenze e Lotti): qk_applica_rettifiche_inventario()
+// ora usa App\Services\GiacenzaLottoService, che legge la costante DB_DRIVER
+// per scegliere la sintassi di upsert corretta (ON CONFLICT vs ON DUPLICATE
+// KEY). Questa suite crea il proprio PDO a mano (sotto) invece di passare da
+// includes/db.php: senza questa define(), la costante resterebbe
+// semplicemente non definita.
+define('DB_DRIVER', 'sqlite');
+
 require_once __DIR__ . '/../../includes/inventario.php';
 
 // ============================================================================

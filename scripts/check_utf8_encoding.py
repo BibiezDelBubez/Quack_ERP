@@ -18,8 +18,27 @@ Rileva DUE classi distinte di corruzione (vedi CLAUDE.md, regola 10, e
      UTF-8 (es. "è" -> byte 0xC3 0xA8 -> letti come 2 caratteri Latin-1 "Ã¨"
      -> ri-codificati in UTF-8 come 4 byte). Questo NON viene rilevato da un
      controllo di sola validità UTF-8, quindi serve un controllo separato per
-     pattern noti (Ã€-ÃŸ seguito da un carattere di continuazione, â€” per
-     l'em-dash, â€™ per l'apostrofo tipografico, ecc.).
+     pattern noti (Ã€-ÃŸ seguito da un carattere di continuazione, â seguita
+     da due caratteri qualunque per la punteggiatura tipografica/frecce/box-
+     drawing U+2000-U+2FFF doppio-codificata, ecc.).
+
+ESTENSIONE DEL 17/08/2026 — AMPLIAMENTO DEL PATTERN CANDIDATO (allineato a
+tools/check-utf8.php, che NON deve divergere silenziosamente da questo
+script): il pattern precedente cercava solo il prefisso letterale 'â€',
+cioè assumeva che il SECONDO carattere mojibake fosse sempre '€' (vero solo
+per l'em-dash U+2014 e pochi altri casi con byte centrale originale 0x80).
+Qualunque carattere Unicode nel blocco U+2000-U+2FFF (punteggiatura
+tipografica, frecce, caratteri per disegnare box/tabelle, operatori
+matematici, ecc.) produce comunque una corruzione che INIZIA con 'â' (tutti
+condividono lo stesso primo byte UTF-8 0xE2, che CP1252 rimappa a 'â'), ma
+il secondo carattere mojibake varia col byte centrale originale — es. i
+caratteri per disegnare box (U+2550 ecc., byte centrale 0x95) producono
+'â•' non 'â€'. Il pattern stretto lasciava passare questi casi senza
+nemmeno proporli a is_verified_mojibake() per la verifica: scoperto perché
+560 occorrenze di questo tipo in assets/js/products-form.js non venivano
+segnalate. Il pattern ora è 'â' + due caratteri qualunque; la verifica di
+round-trip (invariata) scarta comunque i candidati che non sono mojibake
+reale.
 
 Uso:
     python3 scripts/check_utf8_encoding.py            # scandisce tutto il repo
@@ -45,32 +64,83 @@ TEXT_EXTENSIONS = {
 EXCLUDED_DIRS = {'.git', 'node_modules', 'vendor', '.claude'}
 
 # Pattern CANDIDATI di mojibake: 'Ã'/'Â' (U+00C3/U+00C2, primo byte UTF-8 di
-# qualunque carattere Latin-1 Supplement doppio-codificato) o 'â€' (prefisso
-# tipico della famiglia di punteggiatura tipografica U+2000-U+20xx doppio-
-# codificata: em-dash, apostrofo/virgolette tipografiche, ellissi, €, ecc.)
-# seguiti da un qualunque carattere.
+# qualunque carattere Latin-1 Supplement doppio-codificato, UN SOLO carattere
+# mojibake successivo perché l'originale è un carattere UTF-8 a 2 byte) o
+# 'â' (U+00E2, primo byte UTF-8 comune a TUTTA la punteggiatura tipografica/
+# frecce/box-drawing U+2000-U+2FFF doppio-codificata, perché l'originale è un
+# carattere UTF-8 a 3 byte: la corruzione produce sempre 3 caratteri mojibake
+# distinti, uno per byte originale) seguita da DUE caratteri qualunque.
 #
 # NON basta elencare a mano le combinazioni note (es. 'Ã¨', 'â€”'): il
-# secondo byte originale può cadere nel range 0x80-0x9F di CP1252, che
-# CP1252 rimappa a caratteri tipografici (em-dash, virgolette...) con
-# codepoint FUORI dal blocco Latin-1 (es. 'Ã' + em-dash reale, per la
-# doppia codifica di '×') — un pattern basato solo su range di codepoint
-# li perderebbe silenziosamente. Per questo qui si individuano solo i
-# CANDIDATI, e la validazione vera è delegata a is_verified_mojibake():
-# il candidato è accettato SOLO se il round-trip CP1252<->UTF-8 è
-# byte-per-byte reversibile (vedi anche scripts/fix_utf8_mojibake.py).
-MOJIBAKE_CANDIDATE_RE = re.compile(r'Ã.|Â.|â€.')
+# secondo/terzo byte originale può cadere in punti diversi di CP1252 (inclusi
+# i suoi 5 byte non definiti, che mb_convert_encoding/Python gestiscono con
+# leniency diversa — vedi is_verified_mojibake) — un pattern basato solo su
+# combinazioni note le perderebbe silenziosamente (vedi ESTENSIONE DEL
+# 17/08/2026 sopra: il pattern precedente 'â€.' assumeva erroneamente che il
+# secondo carattere fosse sempre '€'). Per questo qui si individuano solo i
+# CANDIDATI, e la validazione vera è delegata a is_verified_mojibake(): il
+# candidato è accettato SOLO se il round-trip CP1252<->UTF-8 è byte-per-byte
+# reversibile (vedi anche scripts/fix_utf8_mojibake.py).
+MOJIBAKE_CANDIDATE_RE = re.compile(r'Ã.|Â.|â..')
+
+
+# CLAUDE.md regola 10 nota bene: 5 posizioni byte di CP1252 (0x81, 0x8D,
+# 0x8F, 0x90, 0x9D) sono "non definite" nella tabella classica Unicode.org —
+# il codec 'cp1252' nativo di Python le tratta in modo STRETTO e solleva
+# UnicodeEncodeError/UnicodeDecodeError su di esse. PHP (mb_convert_encoding)
+# e i browser (Windows-1252 secondo il WHATWG Encoding Standard) sono invece
+# LENIENTI: le passano attraverso come se fossero il codepoint C1 grezzo
+# corrispondente (byte 0xNN -> U+00NN), lo stesso comportamento di Latin-1
+# per quei 5 byte. Il vero mojibake trovato in questo progetto usa proprio
+# questi byte (es. byte 0x90, dentro la corruzione del carattere box-drawing
+# '═' U+2550) — usare il codec 'cp1252' stretto qui avrebbe fatto DIVERGERE
+# silenziosamente questo script da tools/check-utf8.php (che con
+# mb_convert_encoding li rileva già correttamente), esattamente il tipo di
+# divergenza che il docblock in cima al file vieta. Le due funzioni
+# _lenient_cp1252_* sotto replicano il comportamento lenient di PHP/WHATWG.
+_CP1252_UNDEFINED_BYTES = (0x81, 0x8D, 0x8F, 0x90, 0x9D)
+
+
+def _lenient_cp1252_encode(text: str) -> bytes:
+    """Come str.encode('cp1252'), ma senza sollevare eccezione sui 5
+    codepoint C1 corrispondenti ai byte 'non definiti' di CP1252: per quelli,
+    ricostruisce il byte originale per passthrough diretto invece di
+    fallire. Per ogni altro carattere il comportamento è invariato (solleva
+    UnicodeEncodeError se il carattere non è codificabile in CP1252 — questo
+    resta il segnale corretto di 'non è un candidato mojibake reale')."""
+    out = bytearray()
+    for ch in text:
+        codepoint = ord(ch)
+        if codepoint in _CP1252_UNDEFINED_BYTES:
+            out.append(codepoint)
+            continue
+        out += ch.encode('cp1252')
+    return bytes(out)
+
+
+def _lenient_cp1252_decode(data: bytes) -> str:
+    """Come bytes.decode('cp1252'), ma senza sollevare eccezione sui 5 byte
+    'non definiti' di CP1252: per quelli, usa il codepoint C1 corrispondente
+    (passthrough stile Latin-1) invece di fallire."""
+    out = []
+    for byte in data:
+        if byte in _CP1252_UNDEFINED_BYTES:
+            out.append(chr(byte))
+            continue
+        out.append(bytes([byte]).decode('cp1252'))
+    return ''.join(out)
 
 
 def is_verified_mojibake(candidate: str) -> str | None:
     """Ritorna il carattere corretto se il candidato è mojibake verificato
-    (round-trip CP1252->UTF-8 byte-per-byte reversibile), altrimenti None."""
+    (round-trip CP1252->UTF-8 byte-per-byte reversibile, con leniency sui 5
+    byte CP1252 non definiti — vedi sopra), altrimenti None."""
     try:
-        corrected = candidate.encode('cp1252').decode('utf-8')
+        corrected = _lenient_cp1252_encode(candidate).decode('utf-8')
     except (UnicodeEncodeError, UnicodeDecodeError):
         return None
     try:
-        if corrected.encode('utf-8').decode('cp1252') != candidate:
+        if _lenient_cp1252_decode(corrected.encode('utf-8')) != candidate:
             return None
     except (UnicodeEncodeError, UnicodeDecodeError):
         return None

@@ -421,6 +421,19 @@ CREATE TABLE IF NOT EXISTS prodotti (
     CONSTRAINT fk_prodotti_categoria_id FOREIGN KEY (categoria_id) REFERENCES categorie_prodotto(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Allineamento 17/08/2026 (migrazione 2026_08_03_create_prodotti_valutazione_costi,
+-- mai riportata qui prima d'ora — vedi commento gemello in db/init_sqlite.sql e
+-- la migrazione stessa per la definizione originale di questa tabella).
+CREATE TABLE IF NOT EXISTS prodotti_valutazione_costi (
+    prodotto_id INT PRIMARY KEY,
+    costo_acquisto_base DECIMAL(10,4),
+    costo_acquisto_medio DECIMAL(10,4),
+    unita_misura_acquisto_id INT,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (prodotto_id) REFERENCES prodotti(id) ON DELETE CASCADE,
+    FOREIGN KEY (unita_misura_acquisto_id) REFERENCES unita_misura(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS clp_h_statements (
     codice VARCHAR(6) NOT NULL PRIMARY KEY,
     testo TEXT NOT NULL,
@@ -797,6 +810,16 @@ CREATE TABLE IF NOT EXISTS inventario_creazione_lock (
     CONSTRAINT fk_inventario_creazione_lock_magazzino_id FOREIGN KEY (magazzino_id) REFERENCES magazzini(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Stesso pattern di lock applicativo di inventario_creazione_lock sopra, applicato
+-- alla generazione del nome del lotto di conversione in
+-- qk_crea_lotti_conversione_iniziale() (includes/magazzino.php) — Tappa 2, PIANO -
+-- Coerenza Strutturale Giacenze e Lotti, 14/08/2026. Vedi
+-- db/migrations/2026_08_14_prodotto_traccia_lotti_toggle_lock.php per i dettagli.
+CREATE TABLE IF NOT EXISTS prodotto_traccia_lotti_toggle_lock (
+    prodotto_id INT AUTO_INCREMENT PRIMARY KEY,
+    CONSTRAINT fk_prodotto_traccia_lotti_toggle_lock_prodotto_id FOREIGN KEY (prodotto_id) REFERENCES prodotti(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS log_stati_ordini (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tipo_documento VARCHAR(50) NOT NULL,
@@ -839,6 +862,10 @@ CREATE TABLE IF NOT EXISTS preventivi (
     totale_costo DECIMAL(10,2),
     margine_euro DECIMAL(10,2),
     margine_perc DECIMAL(5,2),
+    -- Allineamento 17/08/2026 (migrazione 2026_07_23_pdf_archiving_and_rfq_snapshot,
+    -- mai riportata qui prima d'ora — vedi commento gemello in db/init_sqlite.sql).
+    pdf_path TEXT,
+    pdf_hash VARCHAR(64),
     azienda_ragione_sociale TEXT,
     azienda_partita_iva TEXT,
     azienda_codice_fiscale TEXT,
@@ -994,6 +1021,10 @@ CREATE TABLE IF NOT EXISTS ordini_clienti (
     contatto_snapshot_id INTEGER,
     note TEXT,
     listino_id INTEGER,
+    -- Allineamento 17/08/2026 (migrazione 2026_07_23_pdf_archiving_and_rfq_snapshot,
+    -- mai riportata qui prima d'ora — vedi commento gemello in db/init_sqlite.sql).
+    pdf_path TEXT,
+    pdf_hash VARCHAR(64),
     creato_da INTEGER NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
@@ -1320,6 +1351,12 @@ CREATE TABLE IF NOT EXISTS rfq_testata (
     riferimento_rfq_interno TEXT,
     azienda_interna_id INTEGER,
     uom_mode VARCHAR(20) NOT NULL DEFAULT 'commercial' CHECK (uom_mode IN ('commercial', 'stock')),
+    -- Allineamento 17/08/2026 (migrazione 2026_07_23_pdf_archiving_and_rfq_snapshot,
+    -- mai riportata qui prima d'ora — vedi commento gemello in db/init_sqlite.sql).
+    pdf_path TEXT,
+    pdf_hash VARCHAR(64),
+    fornitore_ragione_sociale VARCHAR(255),
+    fornitore_indirizzo_snapshot TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE (numero),
@@ -1484,6 +1521,10 @@ CREATE TABLE IF NOT EXISTS ordini_testata (
     versione INTEGER NOT NULL DEFAULT 1,
     ordine_padre_id INTEGER,
     stato_fatturazione VARCHAR(255) NOT NULL DEFAULT 'da_fatturare',
+    -- Allineamento 17/08/2026 (migrazione 2026_07_23_pdf_archiving_and_rfq_snapshot,
+    -- mai riportata qui prima d'ora — vedi commento gemello in db/init_sqlite.sql).
+    pdf_path TEXT,
+    pdf_hash VARCHAR(64),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE (numero),
@@ -1875,6 +1916,12 @@ WHERE rn = 1;
 -- DATI SEED
 -- =============================================================================
 
+-- AGGIORNATO 17/08/2026: mancavano 26 migrazioni scritte tra il 13/07 e il
+-- 14/08/2026 (mai riportate qui). Di queste, 24 avevano già le modifiche
+-- riportate a mano nelle CREATE TABLE sopra (solo la lista era disallineata);
+-- 2 (2026_07_23_pdf_archiving_and_rfq_snapshot, 2026_08_03_create_prodotti_valutazione_costi)
+-- avevano anche lo schema realmente mancante — corretto nelle CREATE TABLE
+-- sopra nello stesso intervento (vedi commenti "Allineamento 17/08/2026").
 INSERT IGNORE INTO schema_migrations (id, migration, applied_at) VALUES
     (1, 'migrate_ordini_righe_uom', '2026-07-14 19:56:08'),
     (2, '2026_07_10_rfq_esito_chiusura', '2026-07-14 19:56:08'),
@@ -1884,7 +1931,33 @@ INSERT IGNORE INTO schema_migrations (id, migration, applied_at) VALUES
     (6, '2026_07_10_vista_costo_acquisto_base', '2026-07-14 19:56:08'),
     (7, '2026_07_10_movimenti_quantita_delta', '2026-07-14 19:56:08'),
     (8, '2026_07_22_rfq_righe_iva', '2026-07-22 00:00:00'),
-    (9, '2026_07_23_ordini_clienti_righe_kit_snapshot', '2026-07-23 00:00:00');
+    (9, '2026_07_23_ordini_clienti_righe_kit_snapshot', '2026-07-23 00:00:00'),
+    (10, '2026_07_13_fornitore_disattivato_costo_acquisto', '2026-08-17 00:00:00'),
+    (11, '2026_07_13_import_prezzi_tracciamento_manuale', '2026-08-17 00:00:00'),
+    (12, '2026_07_14_1_soglie_uom_canoniche', '2026-08-17 00:00:00'),
+    (13, '2026_07_14_2_popola_quantita_minima_stock', '2026-08-17 00:00:00'),
+    (14, '2026_07_14_aggiungi_azienda_denormalizzata_ordini_clienti', '2026-08-17 00:00:00'),
+    (15, '2026_07_17_seed_sequenza_ricezione_mancante', '2026-08-17 00:00:00'),
+    (16, '2026_07_17_stato_fatturazione_ordini_acquisto', '2026-08-17 00:00:00'),
+    (17, '2026_07_20_destinatario_ddt_congelato', '2026-08-17 00:00:00'),
+    (18, '2026_07_22_aziende_interne_attivo', '2026-08-17 00:00:00'),
+    (19, '2026_07_22_drop_legacy_restrizioni', '2026-08-17 00:00:00'),
+    (20, '2026_07_22_ordini_clienti_magazzino_id', '2026-08-17 00:00:00'),
+    (21, '2026_07_22_schede_sicurezza_prodotto_fornitore', '2026-08-17 00:00:00'),
+    (22, '2026_07_22b_rimozione_sostanze_chimiche_schede', '2026-08-17 00:00:00'),
+    (23, '2026_07_22c_mittente_ddt_e_magazzino_spedizione', '2026-08-17 00:00:00'),
+    (24, '2026_07_22d_ordini_clienti_versione_e_superato', '2026-08-17 00:00:00'),
+    (25, '2026_07_23_pdf_archiving_and_rfq_snapshot', '2026-08-17 00:00:00'),
+    (26, '2026_07_24_v_preventivi_stato_effettivo', '2026-08-17 00:00:00'),
+    (27, '2026_07_24b_seed_soglie_margine', '2026-08-17 00:00:00'),
+    (28, '2026_07_25_ordini_clienti_contatto_id_fk', '2026-08-17 00:00:00'),
+    (29, '2026_07_25_ordini_clienti_vendita_scoperto', '2026-08-17 00:00:00'),
+    (30, '2026_07_29_allow_null_listino_id', '2026-08-17 00:00:00'),
+    (31, '2026_08_03_create_prodotti_valutazione_costi', '2026-08-17 00:00:00'),
+    (32, '2026_08_03_seed_metodi_pagamento', '2026-08-17 00:00:00'),
+    (33, '2026_08_07_prezzo_override_righe', '2026-08-17 00:00:00'),
+    (34, '2026_08_13_dettagli_clienti_codice_esenzione_iva', '2026-08-17 00:00:00'),
+    (35, '2026_08_14_prodotto_traccia_lotti_toggle_lock', '2026-08-17 00:00:00');
 
 INSERT IGNORE INTO unita_misura (id, codice, descrizione, fattore_base, e_riferimento) VALUES
     (1, 'kg', 'Chilogrammo', 1, 1),

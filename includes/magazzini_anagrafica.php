@@ -351,10 +351,16 @@ function qk_imposta_magazzino_predefinito(PDO $pdo, int $id): void
  *    sarebbe fuorviante (stesso principio già adottato per il popup di
  *    annullamento ordine parzialmente ricevuto, Ciclo Acquisti REVISIONE
  *    §1.3) — si conta solo quanti prodotti hanno ancora giacenza;
+ *  - Tappa 6 (PIANO - Coerenza Strutturale Giacenze e Lotti): stesso guard
+ *    ripetuto anche su `lotti_giacenze`, indipendentemente dall'aggregato
+ *    `giacenze` sopra — un prodotto a lotti con l'aggregato disallineato dai
+ *    suoi lotti reali (vedi tools/check-giacenze-lotti.php) non deve poter
+ *    aggirare il controllo semplicemente perché l'aggregato risulta a zero;
  *  - se il magazzino disattivato era quello predefinito, il predefinito
  *    passa automaticamente al primo altro magazzino attivo rimasto.
  *
- * @throws \RuntimeException se è l'ultimo magazzino attivo o se ha giacenza residua
+ * @throws \RuntimeException se è l'ultimo magazzino attivo o se ha giacenza
+ *                            residua (aggregata o su un lotto)
  */
 function qk_disattiva_magazzino(PDO $pdo, int $id): void
 {
@@ -385,6 +391,29 @@ function qk_disattiva_magazzino(PDO $pdo, int $id): void
                 'ci sono ancora %d prodott%s con giacenza residua su questo magazzino. Trasferisci lo stock su un altro magazzino prima di disattivarlo.',
                 $prodottiConGiacenza,
                 $prodottiConGiacenza === 1 ? 'o' : 'i'
+            ));
+        }
+
+        // Tappa 6 (PIANO - Coerenza Strutturale Giacenze e Lotti): il controllo
+        // sopra guarda solo l'aggregato `giacenze` — per un prodotto a lotti,
+        // quell'aggregato dovrebbe sempre coincidere con la somma dei suoi
+        // `lotti_giacenze` (vedi tools/check-giacenze-lotti.php, Tappa 5), ma se
+        // per qualunque motivo (dato storico, percorso di scrittura non ancora
+        // migrato a GiacenzaLottoService, intervento manuale) sono disallineati,
+        // fidarsi solo dell'aggregato lascerebbe passare un magazzino con lotti
+        // ancora "vivi" ma invisibile al controllo sopra. Controllo indipendente,
+        // stessa soglia di tolleranza già in uso per l'aggregato.
+        $stLottiGiac = $pdo->prepare(
+            "SELECT COUNT(DISTINCT lg.lotto_id) FROM lotti_giacenze lg
+              WHERE lg.magazzino_id = ? AND lg.quantita_disponibile > 0.0005"
+        );
+        $stLottiGiac->execute([$id]);
+        $lottiConGiacenza = (int) $stLottiGiac->fetchColumn();
+        if ($lottiConGiacenza > 0) {
+            throw new \RuntimeException(sprintf(
+                'ci sono ancora %d lott%s con giacenza residua su questo magazzino. Trasferisci lo stock su un altro magazzino prima di disattivarlo.',
+                $lottiConGiacenza,
+                $lottiConGiacenza === 1 ? 'o' : 'i'
             ));
         }
 

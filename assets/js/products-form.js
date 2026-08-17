@@ -23,6 +23,14 @@
   /* ── Radio card + visibilità tab Kit ────────────────────────────────── */
   const kitTabLi = document.getElementById('ptab-li-kit');
   const kitTabBtn = document.getElementById('ptab-btn-kit');
+  // Tappa 6 (PIANO - Coerenza Strutturale Giacenze e Lotti): il checkbox è
+  // già reso disabled/unchecked lato server quando $v['tipo'] === 'kit'
+  // (vedi app/views/products/_form.php) — questo handler tiene lo stesso
+  // comportamento coerente anche quando l'utente cambia tipo prodotto SENZA
+  // ricaricare la pagina (stesso momento in cui già si mostra/nasconde il
+  // tab Kit qui sotto), invece di lasciare il checkbox abilitato fino al
+  // prossimo reload.
+  const tracciaLottiCheckbox = document.getElementById('traccia-lotti-checkbox');
 
   document.querySelectorAll('.qk-radio-card').forEach(card => {
     const inp = card.querySelector('input[type="radio"]');
@@ -39,13 +47,23 @@
         if (!isKit && kitTabBtn?.classList.contains('active')) {
           document.getElementById('ptab-btn-dati')?.click();
         }
+        // Un Kit non ha giacenza propria: disabilita (e deseleziona) "Traccia
+        // lotti", coerentemente col render server-side iniziale. Tornando a
+        // "Semplice" si riabilita soltanto — non si ripristina uno stato
+        // precedente, l'utente lo rispunta se lo desidera.
+        if (tracciaLottiCheckbox) {
+          tracciaLottiCheckbox.disabled = isKit;
+          if (isKit) {
+            tracciaLottiCheckbox.checked = false;
+          }
+        }
       }
     });
   });
 
-  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  /* ══════════════════════════════════════════════════════════════════════
      TAG — M2M chip field stile Odoo
-  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  ══════════════════════════════════════════════════════════════════════ */
   (function () {
     const API_TAG    = QkPF.apiTag;
     const field      = document.getElementById('tag-m2m-field');
@@ -277,14 +295,14 @@
   let catM2O = null;
 
 if (QkPF.isEdit) {
-  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  /* ══════════════════════════════════════════════════════════════════════
      FORNITORI — gestione metadata fornitore (modale leggero)
      I prezzi/scaglioni sono gestiti da products-suppliers.js nel tab.
      Qui gestiamo solo: apertura modale, salvataggio metadata, chiusura.
      Dopo ogni save/delete viene emesso un evento custom (qk:forn-saved /
      qk:forn-deleted) che products-suppliers.js ascolta per aggiornare
      la tabella senza ricaricare la pagina.
-  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  ══════════════════════════════════════════════════════════════════════ */
   const API_FORN_SAVE = QkPF.apiFornSave;
   const PRODOTTO_ID   = QkPF.prodottoId;
 
@@ -387,9 +405,9 @@ if (QkPF.isEdit) {
     }
   });
 
-  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  /* ══════════════════════════════════════════════════════════════════════
      KIT — gestione componenti
-  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  ══════════════════════════════════════════════════════════════════════ */
   const API_KIT_SAVE   = QkPF.apiKitSave;
   const API_KIT_DELETE = QkPF.apiKitDelete;
   const KIT_ID         = QkPF.prodottoId;
@@ -565,9 +583,9 @@ if (QkPF.isEdit) {
 
 }
 
-  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  /* ══════════════════════════════════════════════════════════════════════
      QkM2O init — rimandato a DOMContentLoaded
-  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  ══════════════════════════════════════════════════════════════════════ */
   document.addEventListener('DOMContentLoaded', function () {
     if (typeof QkM2O === 'undefined') return;
 

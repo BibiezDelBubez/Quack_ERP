@@ -515,13 +515,32 @@ window.QkPF = {
                 </div>
 
                 <!-- Traccia lotti -->
+                <?php
+                  // Tappa 6 (PIANO - Coerenza Strutturale Giacenze e Lotti): un Kit
+                  // non ha una giacenza propria (è composto dai suoi componenti, vedi
+                  // qk_inventario_prodotti_scope() e qk_check_giacenze_lotti(), che
+                  // escludono già i kit dal dominio giacenze/lotti) — tracciare lotti
+                  // su un Kit non avrebbe alcun dato reale a cui applicarsi. Verifica
+                  // Logic Bomb fatta prima di questa modifica: nessun selettore JS in
+                  // assets/js/products-form.js legge o scrive lo stato di questo
+                  // checkbox (solo name="traccia_lotti", nessun id, cercato in tutto
+                  // il file) — disabilitarlo qui non rompe nessuna logica esistente.
+                  $tracciaLottiDisabilitato = $v['tipo'] === 'kit';
+                ?>
                 <div class="qk-form-group">
                   <label class="qk-form-label">Tracciabilità</label>
                   <div class="mt-2">
-                    <label class="qk-flex-row qk-gap-sm" style="font-size:.875rem; cursor:pointer; font-weight:600;">
-                      <input type="checkbox" name="traccia_lotti" value="1"
-                             <?= qk_is_true($v['traccia_lotti'] ?? '1') ? 'checked' : '' ?>>
+                    <label class="qk-flex-row qk-gap-sm" id="traccia-lotti-label" style="font-size:.875rem; cursor:pointer; font-weight:600;">
+                      <input type="checkbox" name="traccia_lotti" value="1" id="traccia-lotti-checkbox"
+                             <?= (qk_is_true($v['traccia_lotti'] ?? '1') && !$tracciaLottiDisabilitato) ? 'checked' : '' ?>
+                             <?= $tracciaLottiDisabilitato ? 'disabled' : '' ?>>
                       Traccia lotti
+                      <span class="ms-1 text-primary"
+                            data-bs-toggle="tooltip" data-bs-placement="top"
+                            title="Non disponibile per i prodotti di tipo Kit/Bundle: un kit non ha una giacenza propria, è composto dai suoi articoli (che restano tracciabili singolarmente)."
+                            style="cursor:help">
+                        <i class="fa-solid fa-circle-question" style="color:var(--qk-text-muted);font-size:.9em"></i>
+                      </span>
                     </label>
                     <span class="qk-form-hint">Indica se si deve tracciare la movimentazione dei lotti di questo prodotto.</span>
                     <?php if (isset($errors['traccia_lotti'])): ?>

@@ -343,6 +343,12 @@ class WarehouseController extends BaseController
                 $data_inventario = post('data_inventario', date('Y-m-d'));
                 $note = post('note', '');
                 $inputRighe = $_POST['righe'] ?? [];
+                // Tappa 4 (PIANO - Coerenza Strutturale Giacenze e Lotti): dati
+                // per creare un nuovo lotto su una riga senza lotto (prodotto a
+                // lotti che ancora non ne ha), indicizzati per la stessa chiave
+                // "prodottoId:" di $inputRighe — vedi inventories_form.php e
+                // qk_convalida_inventario()/qk_applica_rettifiche_inventario().
+                $inputNuovoLotto = $_POST['nuovo_lotto'] ?? [];
 
                 if (empty($data_inventario)) {
                     $errors['data_inventario'] = 'La data di rilevamento è obbligatoria.';
@@ -374,6 +380,25 @@ class WarehouseController extends BaseController
                         $righeNormalizzate[$key] = (float) str_replace(',', '.', (string) $valRiga);
                     }
 
+                    // Tappa 4: normalizza i dati nuovo lotto (trim, cast a
+                    // stringa) — stesso confine "niente $_POST grezzo oltre
+                    // questo punto" già applicato sopra a $righeNormalizzate.
+                    // Righe senza un codice interno non vengono passate affatto
+                    // (equivale a "nessun dato fornito" per il chiamante).
+                    $nuovoLottoNormalizzato = [];
+                    foreach ($inputNuovoLotto as $key => $dati) {
+                        $codiceInterno = trim((string) ($dati['codice_interno'] ?? ''));
+                        if ($codiceInterno === '') {
+                            continue;
+                        }
+                        $nuovoLottoNormalizzato[$key] = [
+                            'codice_interno'   => $codiceInterno,
+                            'codice_fornitore' => trim((string) ($dati['codice_fornitore'] ?? '')),
+                            'data_scadenza'    => trim((string) ($dati['data_scadenza'] ?? '')),
+                            'data_arrivo'      => trim((string) ($dati['data_arrivo'] ?? '')),
+                        ];
+                    }
+
                     try {
                         $utente_id = (int)(current_user()['id'] ?? 0);
 
@@ -390,6 +415,7 @@ class WarehouseController extends BaseController
                             'categoria_filtro_id' => $categoriaFiltroId,
                             'prodotti_inventario' => $prodotti_inventario,
                             'righe'               => $righeNormalizzate,
+                            'nuovo_lotto'         => $nuovoLottoNormalizzato,
                         ], $utente_id);
 
                         $msg = $azione === 'convalida' ? 'Inventario convalidato e rettifiche applicate con successo.' : 'Bozza inventario salvata con successo.';

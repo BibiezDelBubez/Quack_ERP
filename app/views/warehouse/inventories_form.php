@@ -109,12 +109,12 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
               // Chiave unica per l'input: prodotto_id:lotto_id (lotto_id può essere vuoto o null)
               $key = $p['prodotto_id'] . ':' . ($p['lotto_id'] ?? '');
               $val = $values['righe'][$key] ?? null;
-              
+
               // Se non c'è valore inserito (bozza appena aperta), precompiliamo col teorico
               if ($val === null) {
                   $val = $p['giacenza_teorica'];
               }
-              
+
               $scostamento = (float)$val - (float)$p['giacenza_teorica'];
               $scostamentoClass = '';
               if ($scostamento > 0) {
@@ -127,13 +127,24 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
                   $scostamentoClass = 'text-muted';
                   $scostamentoText = '0,000';
               }
+
+              // Tappa 4 (PIANO - Coerenza Strutturale Giacenze e Lotti): un
+              // prodotto a lotti (traccia_lotti=1) senza ancora nessun lotto
+              // (lotto_id assente) mostra i campi per crearne uno — servono
+              // se lo scostamento risulta positivo (JS sotto li mostra/nasconde
+              // dinamicamente in base al valore digitato; qui il render
+              // iniziale segue lo stesso stato di $scostamento calcolato server-side).
+              $richiedeLotto = (int)($p['traccia_lotti'] ?? 0) === 1 && empty($p['lotto_id']);
+              $nuovoLottoVal = $values['nuovo_lotto'][$key] ?? ['codice_interno' => '', 'codice_fornitore' => '', 'data_scadenza' => '', 'data_arrivo' => ''];
             ?>
-            <tr data-row-key="<?= e($key) ?>" data-teorico="<?= (float)$p['giacenza_teorica'] ?>">
+            <tr data-row-key="<?= e($key) ?>" data-teorico="<?= (float)$p['giacenza_teorica'] ?>" <?= $richiedeLotto ? 'data-richiede-lotto="1"' : '' ?>>
               <td><code><?= e($p['sku_interno']) ?></code></td>
               <td>
                 <span class="fw-semibold"><?= e($p['nome_prodotto']) ?></span>
                 <?php if ($p['codice_lotto_interno']): ?>
                   <span class="qkwh-badge-lotti ms-2"><i class="fa-solid fa-tag"></i> Lotto: <?= e($p['codice_lotto_interno']) ?></span>
+                <?php elseif ($richiedeLotto): ?>
+                  <span class="qkwh-badge-lotti ms-2"><i class="fa-solid fa-triangle-exclamation"></i> Nessun lotto ancora</span>
                 <?php endif; ?>
               </td>
               <td class="text-end fw-semibold text-muted">
@@ -154,6 +165,41 @@ $isConvalidato = isset($inventario) && $inventario['stato'] === 'convalidato';
                 <?= $scostamentoText ?>
               </td>
             </tr>
+            <?php if ($richiedeLotto && !$isConvalidato): ?>
+            <tr class="qk-nuovo-lotto-row" data-row-key-lotto="<?= e($key) ?>" <?= $scostamento > 0 ? '' : 'hidden' ?>>
+              <td></td>
+              <td colspan="4">
+                <div class="qk-form-row mb-0" style="background:rgba(0,0,0,0.02); padding:.5rem; border-radius:.375rem;">
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Codice nuovo lotto <span class="required">*</span></label>
+                    <input type="text" name="nuovo_lotto[<?= e($key) ?>][codice_interno]"
+                           class="qk-form-control"
+                           value="<?= e($nuovoLottoVal['codice_interno']) ?>"
+                           placeholder="Es. LOT-2026-001">
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Codice lotto fornitore</label>
+                    <input type="text" name="nuovo_lotto[<?= e($key) ?>][codice_fornitore]"
+                           class="qk-form-control"
+                           value="<?= e($nuovoLottoVal['codice_fornitore']) ?>">
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Data scadenza</label>
+                    <input type="date" name="nuovo_lotto[<?= e($key) ?>][data_scadenza]"
+                           class="qk-form-control"
+                           value="<?= e($nuovoLottoVal['data_scadenza']) ?>">
+                  </div>
+                  <div class="qk-form-group">
+                    <label class="qk-form-label">Data arrivo</label>
+                    <input type="date" name="nuovo_lotto[<?= e($key) ?>][data_arrivo]"
+                           class="qk-form-control"
+                           value="<?= e($nuovoLottoVal['data_arrivo']) ?>">
+                  </div>
+                </div>
+                <span class="qk-form-hint">Questo prodotto è a lotti ma non ne ha ancora nessuno: lo scostamento positivo verrà attribuito a un nuovo lotto con questi dati, invece di aumentare solo la giacenza aggregata.</span>
+              </td>
+            </tr>
+            <?php endif; ?>
           <?php endforeach; ?>
           <?php endif; ?>
         </tbody>
@@ -197,11 +243,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const teorico = parseFloat(tr.dataset.teorico) || 0;
             const contata = parseFloat(this.value) || 0;
             const scostamento = contata - teorico;
-            
+
             const cell = tr.querySelector('.qk-scostamento-cell');
-            
+
             cell.className = 'text-end qk-scostamento-cell';
-            
+
             if (scostamento > 0) {
                 cell.classList.add('text-success', 'fw-bold');
                 cell.textContent = '+' + scostamento.toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -211,6 +257,22 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 cell.classList.add('text-muted');
                 cell.textContent = '0,000';
+            }
+
+            // Tappa 4 (PIANO - Coerenza Strutturale Giacenze e Lotti): se
+            // questa riga è per un prodotto a lotti ancora senza lotto
+            // (data-richiede-lotto="1"), la riga successiva del DOM è
+            // sempre la .qk-nuovo-lotto-row associata (renderizzata subito
+            // dopo <tr data-row-key> nella view solo quando $richiedeLotto è
+            // vero) — non serve/non basta un querySelector globale perché
+            // due inventari diversi potrebbero, in teoria, riusare la stessa
+            // chiave riga; il DOM di QUESTA pagina ha comunque sempre la
+            // corrispondenza posizionale 1:1, quindi si usa quella diretta.
+            if (tr.dataset.richiedeLotto === '1') {
+                const lottoRow = tr.nextElementSibling;
+                if (lottoRow && lottoRow.classList.contains('qk-nuovo-lotto-row')) {
+                    lottoRow.hidden = !(scostamento > 0);
+                }
             }
         });
     });

@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- SOLO quando le sue modifiche vengono anche riportate a mano nelle
 -- CREATE TABLE sopra/sotto (altrimenti un database esistente che non l'ha
 -- ancora applicata non la eseguirà più).
+--
+-- AGGIORNATO 17/08/2026: mancavano 26 migrazioni scritte tra il 13/07 e il
+-- 14/08/2026 — non erano schema realmente mancante (verificato colonna per
+-- colonna, tabella per tabella, vista per vista, vincolo per vincolo contro
+-- un database creato da zero con questo stesso file: tutte e 26 già presenti
+-- nelle CREATE TABLE sopra/sotto), solo questa lista non era stata
+-- aggiornata insieme allo schema — db/migrate.php le segnalava quindi come
+-- "in attesa" per errore, un falso allarme di sola contabilità.
 INSERT OR IGNORE INTO schema_migrations (migration) VALUES
     ('migrate_ordini_righe_uom'),
     ('2026_07_10_rfq_esito_chiusura'),
@@ -101,7 +109,33 @@ INSERT OR IGNORE INTO schema_migrations (migration) VALUES
     ('2026_07_10_vista_costo_acquisto_base'),
     ('2026_07_10_movimenti_quantita_delta'),
     ('2026_07_22_rfq_righe_iva'),
-    ('2026_07_23_ordini_clienti_righe_kit_snapshot');
+    ('2026_07_23_ordini_clienti_righe_kit_snapshot'),
+    ('2026_07_13_fornitore_disattivato_costo_acquisto'),
+    ('2026_07_13_import_prezzi_tracciamento_manuale'),
+    ('2026_07_14_1_soglie_uom_canoniche'),
+    ('2026_07_14_2_popola_quantita_minima_stock'),
+    ('2026_07_14_aggiungi_azienda_denormalizzata_ordini_clienti'),
+    ('2026_07_17_seed_sequenza_ricezione_mancante'),
+    ('2026_07_17_stato_fatturazione_ordini_acquisto'),
+    ('2026_07_20_destinatario_ddt_congelato'),
+    ('2026_07_22_aziende_interne_attivo'),
+    ('2026_07_22_drop_legacy_restrizioni'),
+    ('2026_07_22_ordini_clienti_magazzino_id'),
+    ('2026_07_22_schede_sicurezza_prodotto_fornitore'),
+    ('2026_07_22b_rimozione_sostanze_chimiche_schede'),
+    ('2026_07_22c_mittente_ddt_e_magazzino_spedizione'),
+    ('2026_07_22d_ordini_clienti_versione_e_superato'),
+    ('2026_07_23_pdf_archiving_and_rfq_snapshot'),
+    ('2026_07_24_v_preventivi_stato_effettivo'),
+    ('2026_07_24b_seed_soglie_margine'),
+    ('2026_07_25_ordini_clienti_contatto_id_fk'),
+    ('2026_07_25_ordini_clienti_vendita_scoperto'),
+    ('2026_07_29_allow_null_listino_id'),
+    ('2026_08_03_create_prodotti_valutazione_costi'),
+    ('2026_08_03_seed_metodi_pagamento'),
+    ('2026_08_07_prezzo_override_righe'),
+    ('2026_08_13_dettagli_clienti_codice_esenzione_iva'),
+    ('2026_08_14_prodotto_traccia_lotti_toggle_lock');
 
 -- =============================================================================
 -- 1. UNITÀ DI MISURA — CATEGORIE
@@ -1148,6 +1182,15 @@ CREATE TABLE IF NOT EXISTS inventari_righe (
 -- un lock persistente, serve solo a serializzare l'istante della creazione.
 CREATE TABLE IF NOT EXISTS inventario_creazione_lock (
     magazzino_id INTEGER PRIMARY KEY REFERENCES magazzini(id)
+);
+
+-- Stesso pattern di lock applicativo di inventario_creazione_lock sopra, applicato
+-- alla generazione del nome del lotto di conversione in
+-- qk_crea_lotti_conversione_iniziale() (includes/magazzino.php) — Tappa 2, PIANO -
+-- Coerenza Strutturale Giacenze e Lotti, 14/08/2026. Vedi
+-- db/migrations/2026_08_14_prodotto_traccia_lotti_toggle_lock.php per i dettagli.
+CREATE TABLE IF NOT EXISTS prodotto_traccia_lotti_toggle_lock (
+    prodotto_id INTEGER PRIMARY KEY REFERENCES prodotti(id)
 );
 
 -- =============================================================================

@@ -949,19 +949,23 @@ function qk_salva_prezzo_base_prodotto(PDO $pdo, int $prodottoId, float $prezzo,
  *         Conteggio righe ricalcolate per cambio Stock UoM (tutti 0 se la Stock
  *         UoM non è cambiata in questo salvataggio).
  */
-function qk_update_prodotto(PDO $pdo, int $id, array $v): array
+function qk_update_prodotto(PDO $pdo, int $id, array $v, ?int $utenteId = null): array
 {
     $umStmt = $pdo->prepare('SELECT id FROM unita_misura WHERE codice = :c');
     $umStmt->execute([':c' => $v['unita_misura'] ?? 'pz']);
     $um_id = $umStmt->fetchColumn() ?: null;
 
-    // Recupera la Stock UoM e la UoM commerciale attuali per verificare se
-    // l'utente sta davvero cambiando la Stock UoM (REVISIONE §6.3 Problema 2).
-    $stCurrent = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id FROM prodotti WHERE id = ?');
+    // Recupera la Stock UoM, la UoM commerciale e traccia_lotti attuali. traccia_lotti
+    // serve per rilevare la transizione 0 -> 1 (Tappa 1, PIANO - Coerenza Strutturale
+    // Giacenze e Lotti, 14/08/2026): la lettura va fatta PRIMA dell'UPDATE qui sotto,
+    // nella stessa transazione, per confrontarla col nuovo valore in arrivo da $v.
+    $stCurrent = $pdo->prepare('SELECT unita_misura_stock_id, unita_contenuto_id, traccia_lotti FROM prodotti WHERE id = ?');
     $stCurrent->execute([$id]);
     $currentRow = $stCurrent->fetch(PDO::FETCH_ASSOC) ?: [];
     $currentUmId = $currentRow['unita_misura_stock_id'] ?? null;
     $currentContenutoId = $currentRow['unita_contenuto_id'] ?? null;
+    $tracciaLottiPrima = (int) ($currentRow['traccia_lotti'] ?? 0);
+    $tracciaLottiDopo  = ($v['traccia_lotti'] ?? '0') === '1' ? 1 : 0;
     $stockUomCambiata = false;
 
     if ($currentUmId && (int)$currentUmId !== (int)$um_id) {
@@ -1131,11 +1135,27 @@ function qk_update_prodotto(PDO $pdo, int $id, array $v): array
             $ricalcoloBozze = qk_ricalcola_bozze_per_cambio_stock_uom($pdo, $id);
         }
 
+        // Tappa 1 (PIANO - Coerenza Strutturale Giacenze e Lotti, 14/08/2026): se
+        // traccia_lotti passa da 0 a 1 in questo stesso salvataggio, la conversione
+        // della giacenza esistente in lotti "di conversione" avviene QUI, dentro
+        // questa stessa transazione — non più come una seconda transazione separata
+        // chiamata dal controller dopo il commit. Se qk_crea_lotti_conversione_iniziale()
+        // fallisce (es. collisione di codice_lotto_interno), l'eccezione propaga al
+        // catch qui sotto e fa rollback anche del cambio di traccia_lotti appena
+        // scritto sopra: non può più esistere uno stato intermedio "a lotti ma senza
+        // lotti veri" raggiunto da un salvataggio andato solo parzialmente a buon fine.
+        $lottiConversioneCreati = 0;
+        if ($tracciaLottiPrima === 0 && $tracciaLottiDopo === 1) {
+            $lottiConversioneCreati = qk_crea_lotti_conversione_iniziale($pdo, $id, $utenteId ?? 0);
+        }
+
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
+
+    $ricalcoloBozze['lotti_conversione_creati'] = $lottiConversioneCreati;
 
     return $ricalcoloBozze;
 }
@@ -1779,7 +1799,89 @@ function qk_import_categories_massively(PDO $pdo, array $rows): array
 }
 
 
+/**
+ * Conta i lotti di un prodotto con giacenza ancora disponibile, in
+ * QUALUNQUE magazzino (la giacenza per lotto è per coppia lotto+magazzino,
+ * vedi `lotti_giacenze`, ma questo controllo è a livello prodotto: non ha
+ * senso permettere un'azione irreversibile — disabilitare la tracciatura
+ * lotti, o eliminare il prodotto — se ha ancora stock a lotto da qualche
+ * parte).
+ *
+ * Estratta da ProductsController::edit() (Tappa 6, PIANO - Coerenza
+ * Strutturale Giacenze e Lotti) per essere riusata anche da
+ * qk_delete_prodotto() qui sotto — stessa query, stesso significato, invece
+ * di due copie indipendenti che potrebbero divergere in futuro (CLAUDE.md,
+ * regola 1, DRY).
+ *
+ * @return array{n:int, tot:float} n = numero di lotti distinti con
+ *         giacenza > 0, tot = somma delle loro giacenze
+ */
+function qk_prodotto_lotti_con_giacenza_residua(PDO $pdo, int $prodottoId): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(DISTINCT l.id) AS n, COALESCE(SUM(lg.quantita_disponibile), 0) AS tot
+           FROM lotti l
+           JOIN lotti_giacenze lg ON lg.lotto_id = l.id
+          WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0'
+    );
+    $stmt->execute([$prodottoId]);
+    $r = $stmt->fetch(PDO::FETCH_ASSOC);
+    return ['n' => (int) $r['n'], 'tot' => (float) $r['tot']];
+}
+
+/**
+ * Costruisce il messaggio "N lotti hanno ancora giacenza disponibile" nello
+ * stesso formato già in uso (ora in due punti: guard di
+ * ProductsController::edit() e la precondizione sotto in
+ * qk_delete_prodotto()) — un'unica funzione di formattazione per non
+ * lasciar divergere pluralizzazione/formattazione numero tra le due.
+ */
+function qk_msg_lotti_con_giacenza_residua(int $n, float $tot): string
+{
+    // Bug pre-esistente corretto su richiesta esplicita dell'utente
+    // (14/08/2026): il primo %s includeva già il verbo ("o ha"/"i hanno") E
+    // il secondo %s lo ripeteva, producendo "1 lotto ha ha ancora..." (o
+    // "3 lotti hanno hanno ancora..." al plurale) — presente nel codice
+    // originale di ProductsController::edit() ancora prima della Tappa 6,
+    // mai notato perché nessuna suite testava questo messaggio. Ora il primo
+    // %s porta solo il suffisso ("o"/"i"), il secondo solo il verbo
+    // ("ha"/"hanno").
+    return sprintf(
+        '%d lott%s %s ancora giacenza disponibile (totale: %s)',
+        $n,
+        $n === 1 ? 'o' : 'i',
+        $n === 1 ? 'ha' : 'hanno',
+        number_format($tot, 3, ',', '.')
+    );
+}
+
 function qk_delete_prodotto(PDO $pdo, int $id): bool {
+    // Tappa 6 (PIANO - Coerenza Strutturale Giacenze e Lotti): controllo
+    // esplicito PRIMA di tentare la cancellazione di `giacenze`, invece di
+    // affidarsi solo all'eccezione FK sollevata più sotto dal DELETE su
+    // `prodotti` — quel percorso blocca comunque (catch(Throwable) qui
+    // sotto fa comunque il fallback di disattivazione), ma con un messaggio
+    // generico ("collegato a movimenti/ordini/preventivi") che non spiega
+    // la vera causa quando è questa. Qui invece si solleva subito
+    // un'eccezione parlante, che propaga al chiamante (ProductsController::delete()
+    // la mostra già oggi tramite il proprio catch(Throwable) generico, senza
+    // bisogno di modificare il controller) — stesso identico controllo e
+    // stesso messaggio già in uso nel guard di ProductsController::edit()
+    // per il caso "disabilita tracciatura lotti" (riuso, DRY, vedi
+    // qk_prodotto_lotti_con_giacenza_residua()/qk_msg_lotti_con_giacenza_residua()
+    // sopra).
+    //
+    // Nessuna transazione aperta ancora a questo punto: la lettura è fuori
+    // dalla transazione di cancellazione perché è puramente un controllo
+    // preliminare, non deve essere fatta rollback insieme al resto.
+    $lottiResidui = qk_prodotto_lotti_con_giacenza_residua($pdo, $id);
+    if ($lottiResidui['n'] > 0) {
+        throw new \RuntimeException(
+            'Impossibile eliminare il prodotto: ' . qk_msg_lotti_con_giacenza_residua($lottiResidui['n'], $lottiResidui['tot'])
+            . '. Azzera le giacenze di tutti i lotti prima di eliminare il prodotto.'
+        );
+    }
+
     $pdo->beginTransaction();
     try {
         $pdo->prepare("DELETE FROM giacenze WHERE prodotto_id = ?")->execute([$id]);

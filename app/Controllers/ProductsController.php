@@ -149,48 +149,48 @@ final class ProductsController extends BaseController
                     // verità è lotti_giacenze. Il guard resta a livello prodotto (non ha
                     // senso permettere di disabilitare la tracciatura lotti se il prodotto
                     // ha ancora stock a lotto ovunque si trovi).
-                    $stLotti = $this->pdo->prepare(
-                        'SELECT COUNT(DISTINCT l.id) AS n, COALESCE(SUM(lg.quantita_disponibile), 0) AS tot
-                           FROM lotti l
-                           JOIN lotti_giacenze lg ON lg.lotto_id = l.id
-                          WHERE l.prodotto_id = ? AND lg.quantita_disponibile > 0'
-                    );
-                    $stLotti->execute([$entity_id]);
-                    $lottiAttivi = $stLotti->fetch(PDO::FETCH_ASSOC);
+                    //
+                    // Tappa 6 (PIANO - Coerenza Strutturale Giacenze e Lotti): query e
+                    // formattazione del messaggio estratte in includes/prodotti.php
+                    // (qk_prodotto_lotti_con_giacenza_residua()/qk_msg_lotti_con_giacenza_residua())
+                    // per essere riusate anche dalla precondizione equivalente in
+                    // qk_delete_prodotto() — stesso identico controllo, stesso messaggio
+                    // (DRY, invece di due copie che potrebbero divergere).
+                    $lottiAttivi = qk_prodotto_lotti_con_giacenza_residua($this->pdo, $entity_id);
 
-                    if ((int) $lottiAttivi['n'] > 0) {
-                        $errors['traccia_lotti'] = sprintf(
-                            'Impossibile disabilitare la tracciatura lotti: %d lott%s %s ancora giacenza disponibile (totale: %s). '
-                            . 'Azzera le giacenze di tutti i lotti prima di disabilitare la tracciatura.',
-                            (int) $lottiAttivi['n'],
-                            (int) $lottiAttivi['n'] === 1 ? 'o ha' : 'i hanno',
-                            (int) $lottiAttivi['n'] === 1 ? 'ha' : 'hanno',
-                            number_format((float) $lottiAttivi['tot'], 3, ',', '.')
-                        );
+                    if ($lottiAttivi['n'] > 0) {
+                        $errors['traccia_lotti'] = 'Impossibile disabilitare la tracciatura lotti: '
+                            . qk_msg_lotti_con_giacenza_residua($lottiAttivi['n'], $lottiAttivi['tot'])
+                            . '. Azzera le giacenze di tutti i lotti prima di disabilitare la tracciatura.';
                     }
                 }
 
                 if (empty($errors)) {
                     try {
-                        $ricalcoloBozze = qk_update_prodotto($this->pdo, $entity_id, $values);
+                        // Tappa 1 (PIANO - Coerenza Strutturale Giacenze e Lotti, 14/08/2026):
+                        // qk_update_prodotto() ora gestisce internamente, nella STESSA
+                        // transazione, anche la conversione della giacenza esistente in lotti
+                        // quando traccia_lotti passa da 0 a 1 (prima era una seconda chiamata
+                        // separata qui sotto, in una transazione indipendente — se falliva
+                        // dopo che il salvataggio del prodotto era già confermato, il prodotto
+                        // restava "a lotti" senza lotti veri: il bug alla base del caso
+                        // TEST-BROWSER-A). Le due operazioni sono ora indivisibili: o vanno a
+                        // buon fine entrambe, o il salvataggio (incluso il flag traccia_lotti)
+                        // torna indietro per intero.
+                        $ricalcoloBozze = qk_update_prodotto(
+                            $this->pdo,
+                            $entity_id,
+                            $values,
+                            (int) (current_user()['id'] ?? 0)
+                        );
+                        $lottiConversioneCreati = $ricalcoloBozze['lotti_conversione_creati'] ?? 0;
+
                         if (!empty($_POST['rimuovi_foto'])) {
                             qk_rimuovi_immagine_prodotto($this->pdo, $entity_id);
                         } elseif (!empty($_FILES['foto_principale']['name'])) {
                             qk_salva_immagine_prodotto($this->pdo, $entity_id, $_FILES['foto_principale']);
                         }
 
-                        // Attivazione traccia_lotti (0 -> 1) su un prodotto con giacenza già
-                        // esistente: converte lo stock "orfano" in un lotto per magazzino,
-                        // invece di lasciarlo invisibile a FEFO/selezione lotto da questo
-                        // momento in poi (Revisione Gestione Magazzino e Lotti §4).
-                        $lottiConversioneCreati = 0;
-                        if (($loaded['traccia_lotti'] ?? '0') === '0' && $values['traccia_lotti'] === '1') {
-                            $lottiConversioneCreati = qk_crea_lotti_conversione_iniziale(
-                                $this->pdo,
-                                $entity_id,
-                                (int) (current_user()['id'] ?? 0)
-                            );
-                        }
                         // Sync tag
                         $raw_tags = $_POST['tag_ids'] ?? [];
                         $tag_ids  = array_map('intval', (array) $raw_tags);
@@ -198,7 +198,10 @@ final class ProductsController extends BaseController
 
                         // REVISIONE §6.3 Problema 2, punto 4: mostra il conteggio delle bozze
                         // ricalcolate solo se la Stock UoM è davvero cambiata in questo salvataggio.
-                        $totaleRicalcolate = array_sum($ricalcoloBozze);
+                        // 'lotti_conversione_creati' (Tappa 1, 14/08/2026) è un conteggio
+                        // concettualmente diverso (lotti creati, non bozze ricalcolate) e va
+                        // escluso da questa somma — ha già il proprio messaggio dedicato più sotto.
+                        $totaleRicalcolate = array_sum(array_diff_key($ricalcoloBozze, ['lotti_conversione_creati' => true]));
                         $msg = 'Prodotto aggiornato.';
                         if ($totaleRicalcolate > 0) {
                             $parti = [];
