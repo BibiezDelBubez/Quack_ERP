@@ -71,3 +71,7 @@ docs/*.jsonl
 
 # Segreti pronti per un setup su PC nuovo (contiene chiavi vere, mai committare)
 /credenziali-locali/
+
+# File con dati/chiavi WooCommerce in chiaro (tolti dal tracking il 20/08, solo locali)
+"docs/dati WooCommerce/Chiavi API Quack ERP.pdf"
+"docs/dati WooCommerce/woo-blueprint.json"
