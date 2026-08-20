@@ -68,3 +68,6 @@ docs/*.jsonl
 # Materiale di lavoro/audit: contiene spesso segreti in chiaro (gia' successo
 # due volte). Tienilo solo locale.
 /audit/
+
+# Segreti pronti per un setup su PC nuovo (contiene chiavi vere, mai committare)
+/credenziali-locali/
