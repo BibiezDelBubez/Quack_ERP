@@ -7,6 +7,24 @@
  * senza mai usare porte o hostname fissi.
  */
 
+/* ── Caricamento .env (mai committato) ──────────────────────────── */
+$_qk_env_file = dirname(__DIR__) . '/.env';
+if (is_readable($_qk_env_file)) {
+    foreach (file($_qk_env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $_qk_line) {
+        $_qk_line = trim($_qk_line);
+        if ($_qk_line === '' || $_qk_line[0] === '#' || !str_contains($_qk_line, '=')) {
+            continue;
+        }
+        [$_qk_key, $_qk_val] = explode('=', $_qk_line, 2);
+        $_qk_key = trim($_qk_key);
+        $_qk_val = trim($_qk_val, " \t\n\r\0\x0B\"'");
+        if (getenv($_qk_key) === false) {
+            putenv("$_qk_key=$_qk_val");
+        }
+    }
+    unset($_qk_env_file, $_qk_line, $_qk_key, $_qk_val);
+}
+
 /* ── Session ─────────────────────────────────────────────────────────────── */
 if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params([
@@ -20,7 +38,7 @@ if (session_status() === PHP_SESSION_NONE) {
 /* ── App info ─────────────────────────────────────────────────────────────── */
 define('APP_NAME',          'Quack ERP');
 define('APP_VERSION',       '0.1.0');
-define('APP_ENV',           'development'); // 'production' in prod
+define('APP_ENV',           getenv('QK_APP_ENV') ?: 'development'); // 'production' in prod
 
 // Non esiste più una costante DB_SCHEMA_VERSION da aggiornare a mano ad ogni
 // migrazione (andava puntualmente fuori sync). La versione dello schema di UN
@@ -132,10 +150,10 @@ if (APP_ENV === 'development') {
 define('QK_ERROR_REPORT_ENABLED',   true);
 
 // Destinatario delle mail di errore
-define('QK_ERROR_EMAIL_TO',         'michel.papetti@campioni.com');
+define('QK_ERROR_EMAIL_TO',         getenv('QK_ERROR_EMAIL_TO') ?: '');
 
 // Mittente — deve essere un sender verificato su Brevo
-define('QK_ERROR_EMAIL_FROM',       'michel.papetti@campioni.com');
+define('QK_ERROR_EMAIL_FROM',       getenv('QK_ERROR_EMAIL_FROM') ?: '');
 
 // Path del file di log (non serve cambiare)
 define('QK_ERROR_LOG_FILE',         APP_ROOT_DIR . '/logs/errors.md');
@@ -147,7 +165,7 @@ define('QK_ERROR_MAIL_PROVIDER',    'brevo');
 define('QK_ERROR_THROTTLE_MINUTES', 30);
 
 // ── Brevo API key ─────────────────────────────────────────────────────────
-define('QK_BREVO_API_KEY', '***BREVO_API_KEY_RIMOSSA***');
+define('QK_BREVO_API_KEY', getenv('QK_BREVO_API_KEY') ?: '');
 
 /* ── IVA ──────────────────────────────────────────────────────────────────
    Aliquota usata come ultima rete di sicurezza quando un prodotto non ha

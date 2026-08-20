@@ -2120,8 +2120,8 @@ INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES
 -- Configurazione WooCommerce (Canale vendita 2)
 INSERT OR IGNORE INTO Impostazioni (chiave, valore) VALUES 
 ('wc_api_url', 'https://piscinasuperstore.it/wp-json/wc/v3/'),
-('wc_consumer_key', '***WC_CONSUMER_KEY_RIMOSSA***'),
-('wc_consumer_secret', '***WC_CONSUMER_SECRET_RIMOSSA***'),
+('wc_consumer_key', ''),
+('wc_consumer_secret', ''),
 ('wc_sincronizzazione_attiva', '0');
 
 -- =========================================================================

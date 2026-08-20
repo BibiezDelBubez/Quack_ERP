@@ -54,3 +54,17 @@ tests/manual/js/node_modules/
 tests/manual/js/node_modules_todelete
 tests/manual/js/test_symlink_probe
 
+
+# Segreti locali (mai committare)
+/.env
+
+# Backup automatici del DB (creati da includes/db.php ad ogni rebuild schema)
+db/*.bak
+db/backups/
+
+# Cronologie di conversazione con Claude (pesanti, materiale interno)
+docs/*.jsonl
+
+# Materiale di lavoro/audit: contiene spesso segreti in chiaro (gia' successo
+# due volte). Tienilo solo locale.
+/audit/
