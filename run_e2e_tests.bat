@@ -15,6 +15,7 @@ echo 07. Ciclo Vendite
 echo 08. Magazzino
 echo 09. Utenti e Profilo
 echo 10. Impostazioni Generali
+echo 11. Spedizioni e DDT (Documenti di Trasporto)
 echo.
 echo.
 echo Vuoi vedere il browser in azione durante il test?
