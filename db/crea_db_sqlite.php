@@ -11,6 +11,14 @@ declare(strict_types=1);
 // file .sqlite diverso da quello che l'app usa davvero a runtime (vedi includes/db.php).
 require_once dirname(__DIR__) . '/includes/config.php';
 
+// Bloccato in produzione: nessuno di questi script ha un controllo di login,
+// e sono raggiungibili direttamente via browser per esigenze di setup locale
+// (vedi .htaccess). In produzione va usata un'altra via (CLI/SSH), mai HTTP aperto.
+if (defined('APP_ENV') && APP_ENV === 'production') {
+    http_response_code(403);
+    die('Accesso disabilitato quando APP_ENV=production.');
+}
+
 $sqlFile = APP_ROOT_DIR . '/db/init_sqlite.sql';
 
 // Stesso nome file usato da includes/db.php, così questo tool inizializza

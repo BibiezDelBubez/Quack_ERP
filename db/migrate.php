@@ -32,6 +32,14 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/config.php';
+
+// Bloccato in produzione: nessuno di questi script ha un controllo di login,
+// e sono raggiungibili direttamente via browser per esigenze di setup locale
+// (vedi .htaccess). In produzione va usata un'altra via (CLI/SSH), mai HTTP aperto.
+if (defined('APP_ENV') && APP_ENV === 'production') {
+    http_response_code(403);
+    die('Accesso disabilitato quando APP_ENV=production.');
+}
 require_once dirname(__DIR__) . '/includes/db.php'; // crea/apre $pdo sul DB reale dell'app
 
 // ── Assicura che schema_migrations esista anche su DB creati prima di questa

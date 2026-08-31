@@ -1,3 +1,4 @@
 # Ignora tutti i log generati automaticamente
 *.md
 .throttle.json
+.mail_queue.json
