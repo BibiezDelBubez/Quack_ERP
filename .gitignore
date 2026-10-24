@@ -78,3 +78,22 @@ docs/dati WooCommerce/woo-blueprint.json
 
 # Config locale di Claude Code (permessi/impostazioni della macchina, non del progetto)
 .claude/
+
+# Protezioni extra per repository pubblico
+/_non_pubblico/
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.pem
+*.key
+*.pyc
+logs/*
+!logs/.gitignore
+quack_erp_bonifica_completa.sh
+LEGGIMI_bonifica.md
+~$*
+APPLICA_REPO_PULITO.bat
+quack_pulito.bundle
